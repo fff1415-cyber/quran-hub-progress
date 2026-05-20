@@ -40,8 +40,8 @@ export interface WeekRecord {
   };
 }
 
-export type GradesStore = Record<string, Record<number, Record<string, WeekRecord>>>;
-// studentId -> week (1..18) -> day records
+export type GradesStore = Record<string, Record<number, WeekRecord>>;
+// studentId -> week (1..18) -> WeekRecord
 
 export const HALAQAT: Halaqa[] = [
   { id: 1, name: "حلقة عمرو بن شرحبيل", code: "2111", isTalqeen: false, teacher: "محمد", assistant: "سلمان" },
