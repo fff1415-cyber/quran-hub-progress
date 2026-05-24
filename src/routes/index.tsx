@@ -1,65 +1,54 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { HALAQAT, ADMIN_CODE, MUSAMMI_CODE, type Role } from "@/lib/mock-data";
-import { BookOpen, Shield, UserCheck, GraduationCap, Users, Mic } from "lucide-react";
-import { toast } from "sonner";
-import { Toaster } from "sonner";
+import { authenticateByCode, authenticateByNationalId } from "@/lib/mock-data";
+import { BookOpen, Shield, UserCheck, GraduationCap, Mic, Eye } from "lucide-react";
+import { toast, Toaster } from "sonner";
 
 export const Route = createFileRoute("/")({ component: LoginPage });
 
-const ROLES: { id: Role; label: string; icon: React.ElementType; needsCode: boolean }[] = [
-  { id: "admin", label: "إداري", icon: Shield, needsCode: true },
-  { id: "teacher", label: "معلم", icon: UserCheck, needsCode: true },
-  { id: "assistant", label: "مساعد", icon: Users, needsCode: true },
-  { id: "musammi", label: "مسمّع", icon: Mic, needsCode: true },
-  { id: "student", label: "طالب", icon: GraduationCap, needsCode: false },
-  { id: "parent", label: "ولي أمر", icon: BookOpen, needsCode: false },
-];
+type LoginMode = "staff" | "student";
 
 function LoginPage() {
   const navigate = useNavigate();
-  const [role, setRole] = useState<Role | null>(null);
-  const [code, setCode] = useState("");
+  const [mode, setMode] = useState<LoginMode>("staff");
+  const [value, setValue] = useState("");
 
-  const handleSubmit = () => {
-    if (!role) { toast.error("اختر صفة المسجل"); return; }
-    if (role === "student" || role === "parent") {
-      navigate({ to: "/student" });
-      return;
+  const submit = () => {
+    if (!value.trim()) { toast.error("أدخل الرمز / رقم الهوية"); return; }
+    if (mode === "staff") {
+      const auth = authenticateByCode(value);
+      if (!auth) { toast.error("رمز العضوية غير صحيح"); return; }
+      sessionStorage.setItem("qs_role", auth.role);
+      sessionStorage.setItem("qs_name", auth.name);
+      if (auth.halaqaId) sessionStorage.setItem("qs_halaqa", String(auth.halaqaId));
+      else sessionStorage.removeItem("qs_halaqa");
+
+      switch (auth.role) {
+        case "manager": navigate({ to: "/manager" }); break;
+        case "secretary": navigate({ to: "/admin" }); break;
+        case "supervisor": navigate({ to: "/supervisor" }); break;
+        case "musammi": navigate({ to: "/musammi" }); break;
+        case "teacher":
+        case "assistant":
+          navigate({ to: "/teacher", search: { h: auth.halaqaId! } });
+          break;
+      }
+    } else {
+      const student = authenticateByNationalId(value);
+      if (!student) { toast.error("رقم الهوية غير مسجل"); return; }
+      sessionStorage.setItem("qs_role", "student");
+      sessionStorage.setItem("qs_student", student.id);
+      navigate({ to: "/student", search: { s: student.id } });
     }
-    if (!code.trim()) { toast.error("أدخل رقم العضوية"); return; }
-    if (role === "admin") {
-      if (code === ADMIN_CODE) {
-        sessionStorage.setItem("qs_role", "admin");
-        navigate({ to: "/admin" });
-      } else toast.error("رمز إداري غير صحيح");
-      return;
-    }
-    if (role === "musammi") {
-      if (code === MUSAMMI_CODE) {
-        sessionStorage.setItem("qs_role", "musammi");
-        navigate({ to: "/musammi" });
-      } else toast.error("رمز المسمّع غير صحيح");
-      return;
-    }
-    // teacher / assistant — match halaqa code
-    const halaqa = HALAQAT.find((h) => h.code === code);
-    if (!halaqa) { toast.error("رمز الحلقة غير صحيح"); return; }
-    sessionStorage.setItem("qs_role", role);
-    sessionStorage.setItem("qs_halaqa", String(halaqa.id));
-    navigate({ to: "/teacher", search: { h: halaqa.id } });
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
       <Toaster position="top-center" richColors />
-
-      {/* Decorative ornament */}
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[600px] h-[600px] rounded-full bg-primary/5 blur-3xl pointer-events-none" />
 
-      <div className="glass-card rounded-3xl p-8 md:p-12 w-full max-w-2xl relative z-10 gold-glow">
-        {/* Header */}
-        <div className="text-center mb-10">
+      <div className="glass-card rounded-3xl p-8 md:p-12 w-full max-w-xl relative z-10 gold-glow">
+        <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl gold-gradient mb-4 gold-glow">
             <BookOpen className="w-10 h-10 text-primary-foreground" />
           </div>
@@ -74,58 +63,66 @@ function LoginPage() {
           </div>
         </div>
 
-        {/* Role selection */}
-        <div className="mb-8">
-          <label className="block text-sm text-muted-foreground mb-3">اختر صفة المسجل</label>
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {ROLES.map((r) => {
-              const Icon = r.icon;
-              const selected = role === r.id;
-              return (
-                <button
-                  key={r.id}
-                  onClick={() => setRole(r.id)}
-                  className={`group p-4 rounded-xl border transition-all duration-200 ${
-                    selected
-                      ? "border-primary bg-primary/10 gold-glow"
-                      : "border-border bg-card/50 hover:border-primary/50"
-                  }`}
-                >
-                  <Icon className={`w-6 h-6 mx-auto mb-2 ${selected ? "text-primary" : "text-muted-foreground group-hover:text-primary"}`} />
-                  <div className={`text-sm font-medium ${selected ? "text-primary" : "text-foreground"}`}>{r.label}</div>
-                </button>
-              );
-            })}
-          </div>
+        <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-secondary/40 mb-6">
+          <button
+            onClick={() => { setMode("staff"); setValue(""); }}
+            className={`py-2.5 rounded-lg text-sm font-bold transition-all ${mode === "staff" ? "gold-gradient text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            دخول الكادر التعليمي
+          </button>
+          <button
+            onClick={() => { setMode("student"); setValue(""); }}
+            className={`py-2.5 rounded-lg text-sm font-bold transition-all ${mode === "student" ? "gold-gradient text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
+          >
+            الطالب وولي الأمر
+          </button>
         </div>
 
-        {/* Membership code */}
-        {role && (role === "admin" || role === "teacher" || role === "assistant" || role === "musammi") && (
-          <div className="mb-6 animate-in fade-in slide-in-from-bottom-2">
-            <label className="block text-sm text-muted-foreground mb-2">رقم العضوية / رمز الدخول</label>
-            <input
-              type="password"
-              value={code}
-              onChange={(e) => setCode(e.target.value)}
-              onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
-              placeholder="••••"
-              maxLength={6}
-              className="w-full px-4 py-3 rounded-xl bg-input border border-border focus:border-primary focus:outline-none text-center text-2xl tracking-[0.5em] font-bold text-primary"
-            />
-          </div>
-        )}
+        <div className="mb-6">
+          <label className="block text-sm text-muted-foreground mb-2">
+            {mode === "staff" ? "رقم العضوية" : "رقم هوية الطالب"}
+          </label>
+          <input
+            type={mode === "staff" ? "password" : "text"}
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && submit()}
+            placeholder={mode === "staff" ? "••••" : "10 أرقام"}
+            maxLength={mode === "staff" ? 6 : 10}
+            inputMode="numeric"
+            className="w-full px-4 py-3 rounded-xl bg-input border border-border focus:border-primary focus:outline-none text-center text-2xl tracking-[0.3em] font-bold text-primary"
+          />
+        </div>
 
         <button
-          onClick={handleSubmit}
-          disabled={!role}
-          className="w-full py-4 rounded-xl gold-gradient text-primary-foreground font-bold text-lg disabled:opacity-40 disabled:cursor-not-allowed hover:scale-[1.02] transition-transform gold-glow"
+          onClick={submit}
+          className="w-full py-4 rounded-xl gold-gradient text-primary-foreground font-bold text-lg hover:scale-[1.02] transition-transform gold-glow"
         >
           دخول
         </button>
 
-        <p className="text-center text-xs text-muted-foreground mt-6">
-          الطالب وولي الأمر يدخلون مباشرة بدون رمز
-        </p>
+        <div className="mt-6 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
+          <div className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border/50">
+            <Shield className="w-4 h-4 text-primary" />
+            مدير • سكرتير
+          </div>
+          <div className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border/50">
+            <Eye className="w-4 h-4 text-primary" />
+            إشراف تعليمي
+          </div>
+          <div className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border/50">
+            <UserCheck className="w-4 h-4 text-primary" />
+            معلم • مساعد
+          </div>
+          <div className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border/50">
+            <Mic className="w-4 h-4 text-primary" />
+            مسمّع
+          </div>
+          <div className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border/50 col-span-2">
+            <GraduationCap className="w-4 h-4 text-primary" />
+            الطالب وولي الأمر — برقم الهوية
+          </div>
+        </div>
       </div>
     </div>
   );
