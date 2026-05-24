@@ -2,11 +2,13 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import {
-  loadHalaqat, loadStudents, loadGrades, saveGrades, emptyWeek, DAYS,
-  weekPercentage, type WeekRecord, type DayEntry,
+  loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, DAYS,
+  weekPercentage, enqueueSard, HIFZ_LABELS,
+  type WeekRecord, type DayEntry, type HifzValue, type Student,
 } from "@/lib/mock-data";
+import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
-import { ArrowRight, Check, CheckCircle2, ListChecks } from "lucide-react";
+import { ArrowRight, Check, CheckCircle2, ListChecks, Users, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/teacher")({
@@ -19,8 +21,15 @@ function TeacherPage() {
   const navigate = useNavigate();
   const halaqat = loadHalaqat();
   const halaqa = halaqat.find((x) => x.id === h);
-  const role = typeof window !== "undefined" ? sessionStorage.getItem("qs_role") : null;
-  const greeting = role === "assistant" ? "مرحباً بك سلمان" : "مرحباً بك محمد";
+  const [role, setRole] = useState<string | null>(null);
+  const [name, setName] = useState<string | null>(null);
+  useEffect(() => {
+    setRole(sessionStorage.getItem("qs_role"));
+    setName(sessionStorage.getItem("qs_name"));
+  }, []);
+
+  const isAssistant = role === "assistant";
+  const elevated = role === "manager" || role === "secretary" || role === "supervisor";
 
   if (!halaqa) {
     return (
@@ -36,14 +45,22 @@ function TeacherPage() {
   return (
     <div className="min-h-screen">
       <Toaster position="top-center" richColors />
-      <AppHeader title={halaqa.name} subtitle={role === "assistant" ? "مساعد" : "معلم"} />
+      <AppHeader title={halaqa.name} subtitle={isAssistant ? "مساعد" : elevated ? "مشرف" : "معلم"} />
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="glass-card rounded-2xl p-6 mb-6">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <div className="text-2xl display gold-text">{greeting}</div>
-              <div className="text-sm text-muted-foreground mt-1">{halaqa.name}</div>
+              <div className="text-2xl display gold-text">مرحباً {name || ""}</div>
+              <div className="text-sm text-muted-foreground mt-1 flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-bold">
+                  {isAssistant ? "مساعد" : elevated ? "صلاحية كاملة" : "معلم"}
+                </span>
+                {halaqa.name}
+              </div>
             </div>
+            {elevated && (
+              <HalaqaSwitcher current={halaqa.id} />
+            )}
             {w && (
               <button
                 onClick={() => navigate({ to: "/teacher", search: { h: halaqa.id } })}
@@ -56,40 +73,108 @@ function TeacherPage() {
           </div>
         </div>
 
-        {!w ? <WeeksGrid halaqaId={halaqa.id} /> : <WeekTable halaqaId={halaqa.id} weekNum={w} isTalqeen={halaqa.isTalqeen} />}
+        {!w ? (
+          <WeeksGrid halaqaId={halaqa.id} canAssign={!isAssistant} />
+        ) : (
+          <WeekTable halaqaId={halaqa.id} weekNum={w} isTalqeen={halaqa.isTalqeen} viewerRole={isAssistant ? "assistant" : "teacher"} />
+        )}
       </main>
     </div>
   );
 }
 
-function WeeksGrid({ halaqaId }: { halaqaId: number }) {
+function HalaqaSwitcher({ current }: { current: number }) {
   const navigate = useNavigate();
+  const halaqat = loadHalaqat();
+  return (
+    <select
+      value={current}
+      onChange={(e) => navigate({ to: "/teacher", search: { h: Number(e.target.value) } })}
+      className="px-3 py-2 rounded-lg bg-input border border-border text-sm"
+    >
+      {halaqat.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+    </select>
+  );
+}
+
+function WeeksGrid({ halaqaId, canAssign }: { halaqaId: number; canAssign: boolean }) {
+  const navigate = useNavigate();
+  const [showAssign, setShowAssign] = useState(false);
   return (
     <div>
-      <h2 className="text-xl font-bold mb-4 text-primary flex items-center gap-2">
-        <ListChecks className="w-5 h-5" /> الأسابيع الدراسية
-      </h2>
-      <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 lg:grid-cols-9 gap-3">
+      <div className="flex items-center justify-between mb-4">
+        <h2 className="text-xl font-bold text-primary flex items-center gap-2">
+          <ListChecks className="w-5 h-5" /> الأسابيع الدراسية
+        </h2>
+        {canAssign && (
+          <button onClick={() => setShowAssign(true)} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-primary/30 text-primary text-sm hover:bg-primary/10">
+            <Users className="w-4 h-4" />
+            تقسيم الطلاب بيني وبين المساعد
+          </button>
+        )}
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
         {Array.from({ length: 18 }, (_, i) => i + 1).map((n) => (
           <button
             key={n}
             onClick={() => navigate({ to: "/teacher", search: { h: halaqaId, w: n } })}
-            className="aspect-square rounded-xl glass-card hover:gold-glow hover:border-primary transition-all flex flex-col items-center justify-center group"
+            className="aspect-[5/3] rounded-xl glass-card hover:gold-glow hover:border-primary transition-all flex flex-col items-center justify-center group"
           >
-            <div className="text-xs text-muted-foreground">الأسبوع</div>
-            <div className="text-3xl display font-bold gold-text group-hover:scale-110 transition-transform">{n}</div>
+            <div className="text-xs text-muted-foreground">{weekLabel(n).split(" ")[0]}</div>
+            <div className="text-lg display font-bold gold-text group-hover:scale-105 transition-transform">{weekLabel(n).split(" ").slice(1).join(" ")}</div>
           </button>
         ))}
+      </div>
+      {showAssign && <AssignmentDialog halaqaId={halaqaId} onClose={() => setShowAssign(false)} />}
+    </div>
+  );
+}
+
+function AssignmentDialog({ halaqaId, onClose }: { halaqaId: number; onClose: () => void }) {
+  const [students, setStudents] = useState<Student[]>(() => loadStudents().filter((s) => s.halaqaId === halaqaId));
+  const setAssign = (id: string, to: "teacher" | "assistant") => {
+    const all = loadStudents();
+    const next = all.map((s) => s.id === id ? { ...s, assignedTo: to } : s);
+    saveStudents(next);
+    setStudents(next.filter((s) => s.halaqaId === halaqaId));
+  };
+  return (
+    <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+      <div className="glass-card rounded-2xl max-w-2xl w-full max-h-[85vh] overflow-hidden flex flex-col">
+        <div className="p-5 border-b border-border flex items-center justify-between">
+          <h3 className="text-lg font-bold text-primary">تقسيم الطلاب</h3>
+          <button onClick={onClose} className="p-2 hover:bg-secondary rounded-lg"><X className="w-5 h-5" /></button>
+        </div>
+        <div className="flex-1 overflow-y-auto p-5 space-y-2">
+          {students.map((s) => (
+            <div key={s.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
+              <span className="font-medium">{s.name}</span>
+              <div className="flex gap-2">
+                <button onClick={() => setAssign(s.id, "teacher")}
+                  className={`px-3 py-1 rounded text-xs font-bold ${s.assignedTo !== "assistant" ? "gold-gradient text-primary-foreground" : "border border-border text-muted-foreground"}`}>
+                  معي
+                </button>
+                <button onClick={() => setAssign(s.id, "assistant")}
+                  className={`px-3 py-1 rounded text-xs font-bold ${s.assignedTo === "assistant" ? "bg-primary/20 text-primary border border-primary" : "border border-border text-muted-foreground"}`}>
+                  المساعد
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
 }
 
-function WeekTable({ halaqaId, weekNum, isTalqeen }: { halaqaId: number; weekNum: number; isTalqeen: boolean }) {
-  const students = useMemo(() => loadStudents().filter((s) => s.halaqaId === halaqaId), [halaqaId]);
+function WeekTable({ halaqaId, weekNum, isTalqeen, viewerRole }: { halaqaId: number; weekNum: number; isTalqeen: boolean; viewerRole: "teacher" | "assistant" }) {
+  const allStudents = useMemo(() => loadStudents().filter((s) => s.halaqaId === halaqaId), [halaqaId]);
+  // assistants see only students assigned to assistant; teachers see all
+  const students = viewerRole === "assistant"
+    ? allStudents.filter((s) => s.assignedTo === "assistant")
+    : allStudents;
   const [grades, setGrades] = useState(() => loadGrades());
 
-  // Initialize empty weeks if missing
   useEffect(() => {
     let changed = false;
     const g = { ...grades };
@@ -114,18 +199,28 @@ function WeekTable({ halaqaId, weekNum, isTalqeen }: { halaqaId: number; weekNum
     update(studentId, (w) => ({ ...w, days: { ...w.days, [dayKey]: { ...w.days[dayKey], ...patch } } }));
   };
 
+  const toggleSard = (s: Student, on: boolean) => {
+    update(s.id, (w) => ({ ...w, sard: on }));
+    if (on) {
+      enqueueSard(s.id, s.halaqaId, weekNum);
+      toast.success(`تم إحالة الطالب ${s.name} للمسمّع`);
+    }
+  };
+
   return (
     <div className="glass-card rounded-2xl p-4 overflow-x-auto">
       <div className="flex items-center justify-between mb-4 px-2">
-        <h3 className="display text-xl gold-text">الأسبوع {weekNum}</h3>
-        <button
-          onClick={() => toast.success("تم الحفظ تلقائياً")}
-          className="flex items-center gap-2 text-sm text-success"
-        >
+        <h3 className="display text-xl gold-text">{weekLabel(weekNum)}</h3>
+        <span className="flex items-center gap-2 text-sm text-success">
           <CheckCircle2 className="w-4 h-4" /> حفظ تلقائي
-        </button>
+        </span>
       </div>
-      <table className="w-full text-sm border-collapse">
+      {students.length === 0 ? (
+        <p className="text-center py-8 text-muted-foreground text-sm">
+          {viewerRole === "assistant" ? "لم يُعيّن لك أي طالب بعد" : "لا يوجد طلاب"}
+        </p>
+      ) : (
+      <table className="w-full text-sm border-collapse min-w-[900px]">
         <thead>
           <tr className="bg-secondary/50">
             <th className="p-2 text-right sticky right-0 bg-secondary z-10 min-w-[140px]">الطالب</th>
@@ -141,17 +236,17 @@ function WeekTable({ halaqaId, weekNum, isTalqeen }: { halaqaId: number; weekNum
             <th className="sticky right-0 bg-secondary"></th>
             {DAYS.map((d) =>
               isTalqeen ? (
-                <>
-                  <th key={d.key + "a"} className="p-1 border-r border-border">حاضر</th>
-                  <th key={d.key + "w"} className="p-1">واجب</th>
-                </>
+                <React.Fragment key={d.key}>
+                  <th className="p-1 border-r border-border">حاضر</th>
+                  <th className="p-1">واجب</th>
+                </React.Fragment>
               ) : (
-                <>
-                  <th key={d.key + "a"} className="p-1 border-r border-border">الحضور</th>
-                  <th key={d.key + "h"} className="p-1">حفظ</th>
-                  <th key={d.key + "r"} className="p-1">ربط</th>
-                  <th key={d.key + "m"} className="p-1">مراجعة</th>
-                </>
+                <React.Fragment key={d.key}>
+                  <th className="p-1 border-r border-border">الحضور</th>
+                  <th className="p-1">حفظ</th>
+                  <th className="p-1">ربط</th>
+                  <th className="p-1">مراجعة</th>
+                </React.Fragment>
               )
             )}
             {!isTalqeen && <th></th>}
@@ -166,33 +261,40 @@ function WeekTable({ halaqaId, weekNum, isTalqeen }: { halaqaId: number; weekNum
             const pct = weekPercentage(w, isTalqeen);
             return (
               <tr key={s.id} className="border-b border-border/50 hover:bg-accent/30">
-                <td className="p-2 sticky right-0 bg-card font-medium">{s.name}</td>
+                <td className="p-2 sticky right-0 bg-card font-medium">
+                  <div className="flex flex-col">
+                    <span>{s.name}</span>
+                    {s.assignedTo === "assistant" && viewerRole === "teacher" && (
+                      <span className="text-[10px] text-muted-foreground">مع المساعد</span>
+                    )}
+                  </div>
+                </td>
                 {DAYS.map((d) => {
                   const e = w.days[d.key];
                   return isTalqeen ? (
-                    <>
-                      <td key={d.key + "a"} className="p-1 border-r border-border/30">
+                    <React.Fragment key={d.key}>
+                      <td className="p-1 border-r border-border/30">
                         <AttSelect value={e.attendance} talqeen onChange={(v) => updateDay(s.id, d.key, { attendance: v })} />
                       </td>
-                      <td key={d.key + "w"} className="p-1 text-center">
+                      <td className="p-1 text-center">
                         <Cbx checked={!!e.wajib} onChange={(v) => updateDay(s.id, d.key, { wajib: v })} />
                       </td>
-                    </>
+                    </React.Fragment>
                   ) : (
-                    <>
-                      <td key={d.key + "a"} className="p-1 border-r border-border/30">
+                    <React.Fragment key={d.key}>
+                      <td className="p-1 border-r border-border/30">
                         <AttSelect value={e.attendance} onChange={(v) => updateDay(s.id, d.key, { attendance: v })} />
                       </td>
-                      <td key={d.key + "h"} className="p-1 text-center">
-                        <Cbx checked={e.hifz} onChange={(v) => updateDay(s.id, d.key, { hifz: v })} />
+                      <td className="p-1">
+                        <HifzSelect value={e.hifz} onChange={(v) => updateDay(s.id, d.key, { hifz: v })} />
                       </td>
-                      <td key={d.key + "r"} className="p-1">
+                      <td className="p-1">
                         <PassFail value={e.rabt} onChange={(v) => updateDay(s.id, d.key, { rabt: v })} />
                       </td>
-                      <td key={d.key + "m"} className="p-1">
+                      <td className="p-1">
                         <PassFail value={e.muraja} onChange={(v) => updateDay(s.id, d.key, { muraja: v })} />
                       </td>
-                    </>
+                    </React.Fragment>
                   );
                 })}
                 {!isTalqeen && (
@@ -204,7 +306,7 @@ function WeekTable({ halaqaId, weekNum, isTalqeen }: { halaqaId: number; weekNum
                   <Cbx checked={w.testRabt} onChange={(v) => update(s.id, (x) => ({ ...x, testRabt: v }))} />
                 </td>
                 <td className="p-1 text-center border-r border-border/30">
-                  <Cbx checked={w.sard} onChange={(v) => update(s.id, (x) => ({ ...x, sard: v }))} />
+                  <Cbx checked={w.sard} onChange={(v) => toggleSard(s, v)} />
                 </td>
                 <td className="p-2 text-center font-bold">
                   <span className={pct >= 80 ? "text-success" : pct >= 50 ? "text-warning" : "text-muted-foreground"}>
@@ -216,13 +318,14 @@ function WeekTable({ halaqaId, weekNum, isTalqeen }: { halaqaId: number; weekNum
           })}
         </tbody>
       </table>
+      )}
     </div>
   );
 }
 
-function AttSelect({ value, onChange, talqeen }: { value: string; onChange: (v: any) => void; talqeen?: boolean }) {
+function AttSelect({ value, onChange, talqeen }: { value: string; onChange: (v: DayEntry["attendance"]) => void; talqeen?: boolean }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-input border border-border rounded px-1 py-1 text-xs">
+    <select value={value} onChange={(e) => onChange(e.target.value as DayEntry["attendance"])} className="w-full bg-input border border-border rounded px-1 py-1 text-xs">
       <option value="">—</option>
       <option value="present">حاضر</option>
       {!talqeen && <option value="late">متأخر</option>}
@@ -231,9 +334,19 @@ function AttSelect({ value, onChange, talqeen }: { value: string; onChange: (v: 
     </select>
   );
 }
-function PassFail({ value, onChange }: { value: string; onChange: (v: any) => void }) {
+function HifzSelect({ value, onChange }: { value: HifzValue; onChange: (v: HifzValue) => void }) {
   return (
-    <select value={value} onChange={(e) => onChange(e.target.value)} className="w-full bg-input border border-border rounded px-1 py-1 text-xs">
+    <select value={value} onChange={(e) => onChange(e.target.value as HifzValue)} className="w-full bg-input border border-border rounded px-1 py-1 text-xs font-bold">
+      <option value="">{HIFZ_LABELS[""]}</option>
+      <option value="half">{HIFZ_LABELS["half"]} (15)</option>
+      <option value="one">{HIFZ_LABELS["one"]} (20)</option>
+      <option value="two">{HIFZ_LABELS["two"]} (25)</option>
+    </select>
+  );
+}
+function PassFail({ value, onChange }: { value: string; onChange: (v: DayEntry["rabt"]) => void }) {
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value as DayEntry["rabt"])} className="w-full bg-input border border-border rounded px-1 py-1 text-xs">
       <option value="">—</option>
       <option value="pass">مجتاز</option>
       <option value="fail">راسب</option>
@@ -252,3 +365,6 @@ function Cbx({ checked, onChange }: { checked: boolean; onChange: (v: boolean) =
     </button>
   );
 }
+
+// React import for React.Fragment
+import React from "react";
