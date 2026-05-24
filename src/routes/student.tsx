@@ -115,7 +115,7 @@ function StudentPage() {
               <h3 className="display text-2xl gold-text mb-1">{selectedData.student.name}</h3>
               <p className="text-sm text-muted-foreground mb-4">{selectedData.halaqa.name}</p>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                <Stat label="المقاطع المحفوظة" value={selectedData.student.memorized} small />
+                <Stat label="المقاطع المحفوظة" value={selectedData.student.memorized || "—"} small />
                 <Stat label="النسبة الكلية" value={`${selectedData.overall}%`} />
                 <Stat label="نسبة الأسبوع" value={`${selectedData.weekPct}%`} />
                 <Stat label="مرات الغياب" value={String(selectedData.absences)} />
