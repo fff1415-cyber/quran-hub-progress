@@ -1,10 +1,13 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
-  loadHalaqat, loadStudents, loadGrades, studentOverallPercentage, weekPercentage, DAYS,
+  loadHalaqat, loadStudents, loadGrades, studentOverallPercentage, DAYS,
+  authenticateByNationalId,
 } from "@/lib/mock-data";
+import { getOperationalDayKey } from "@/lib/operational-date";
 import { AppHeader } from "@/components/AppHeader";
-import { Search, Trophy, BookOpen } from "lucide-react";
+import { Trophy, BookOpen, IdCard, X, CheckCircle2, Clock, AlertCircle, UserCheck } from "lucide-react";
+import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/student")({ component: StudentPage });
 
@@ -12,41 +15,38 @@ function StudentPage() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
   const grades = loadGrades();
-  const [q, setQ] = useState("");
-  const [selected, setSelected] = useState<string | null>(null);
+  const [nid, setNid] = useState("");
+  const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // Per-halaqa progress (avg overall pct of students)
-  const halaqaStats = useMemo(() => {
-    return halaqat.map((h) => {
-      const hs = students.filter((s) => s.halaqaId === h.id);
-      const avg = hs.length === 0 ? 0 : Math.round(hs.reduce((acc, s) => acc + studentOverallPercentage(s.id, h.isTalqeen, grades), 0) / hs.length);
-      return { halaqa: h, pct: avg };
-    });
-  }, [halaqat, students, grades]);
+  const halaqaStats = useMemo(() => halaqat.map((h) => {
+    const hs = students.filter((s) => s.halaqaId === h.id);
+    const avg = hs.length === 0 ? 0 : Math.round(hs.reduce((acc, s) => acc + studentOverallPercentage(s.id, h.isTalqeen, grades), 0) / hs.length);
+    return { halaqa: h, pct: avg };
+  }), [halaqat, students, grades]);
 
-  // Top 15 students
-  const top15 = useMemo(() => {
-    return students
-      .map((s) => {
-        const h = halaqat.find((x) => x.id === s.halaqaId)!;
-        return { student: s, halaqa: h, pct: studentOverallPercentage(s.id, h.isTalqeen, grades) };
-      })
-      .sort((a, b) => b.pct - a.pct)
-      .slice(0, 15);
-  }, [students, halaqat, grades]);
+  const top15 = useMemo(() => students
+    .map((s) => {
+      const h = halaqat.find((x) => x.id === s.halaqaId)!;
+      if (!h) return null;
+      return { student: s, halaqa: h, pct: studentOverallPercentage(s.id, h.isTalqeen, grades) };
+    })
+    .filter((x): x is NonNullable<typeof x> => !!x)
+    .sort((a, b) => b.pct - a.pct)
+    .slice(0, 15), [students, halaqat, grades]);
 
-  const filtered = useMemo(() => {
-    if (!q.trim()) return students.slice(0, 24);
-    return students.filter((s) => s.name.includes(q.trim()));
-  }, [q, students]);
+  const submit = () => {
+    if (!nid.trim()) { toast.error("أدخل رقم الهوية"); return; }
+    const s = authenticateByNationalId(nid);
+    if (!s) { toast.error("رقم الهوية غير مسجل"); return; }
+    setSelectedId(s.id);
+  };
 
-  const selectedData = useMemo(() => {
-    if (!selected) return null;
-    const s = students.find((x) => x.id === selected)!;
+  const data = useMemo(() => {
+    if (!selectedId) return null;
+    const s = students.find((x) => x.id === selectedId);
+    if (!s) return null;
     const h = halaqat.find((x) => x.id === s.halaqaId)!;
     const overall = studentOverallPercentage(s.id, h.isTalqeen, grades);
-    const currentWeek = 1;
-    const weekPct = weekPercentage(grades[s.id]?.[currentWeek], h.isTalqeen);
     let absences = 0, lates = 0;
     Object.values(grades[s.id] || {}).forEach((w) => {
       DAYS.forEach((d) => {
@@ -54,15 +54,19 @@ function StudentPage() {
         if (w.days[d.key]?.attendance === "late") lates++;
       });
     });
-    return { student: s, halaqa: h, overall, weekPct, absences, lates };
-  }, [selected, students, halaqat, grades]);
+    const todayKey = getOperationalDayKey();
+    const currentWeek = 1;
+    const todayStatus = grades[s.id]?.[currentWeek]?.days[todayKey]?.attendance || "";
+    return { s, h, overall, absences, lates, todayStatus };
+  }, [selectedId, students, halaqat, grades]);
 
   return (
     <div className="min-h-screen">
+      <Toaster position="top-center" richColors />
       <AppHeader title="نتائج الطلاب" subtitle="الطالب وولي الأمر" />
       <main className="max-w-6xl mx-auto px-4 py-8">
 
-        {/* Donut chart for halaqa progress */}
+        {/* Halaqa progress */}
         <section className="glass-card rounded-2xl p-6 mb-6">
           <h2 className="text-xl font-bold text-primary mb-4 flex items-center gap-2">
             <BookOpen className="w-5 h-5" /> تقدّم الحلقات
@@ -97,43 +101,70 @@ function StudentPage() {
           </div>
         </section>
 
-        {/* Search & student picker */}
-        <section className="glass-card rounded-2xl p-6">
-          <div className="relative mb-4">
-            <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
-            <input
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="ابحث عن اسم الطالب..."
-              className="w-full pr-10 pl-4 py-3 rounded-xl bg-input border border-border focus:border-primary focus:outline-none"
-            />
-          </div>
+        {/* National ID input — required to see personal data */}
+        <section className="glass-card rounded-2xl p-6 gold-glow">
+          <h2 className="text-xl font-bold text-primary mb-2 flex items-center gap-2">
+            <IdCard className="w-5 h-5" /> الاطلاع على نتائج الطالب
+          </h2>
+          <p className="text-xs text-muted-foreground mb-4">أدخل رقم هوية الطالب لعرض بياناته الخاصة فقط.</p>
 
-          {selectedData ? (
-            <div className="p-5 rounded-2xl border border-primary/30 bg-primary/5">
-              <button onClick={() => setSelected(null)} className="text-xs text-muted-foreground mb-3">← رجوع للقائمة</button>
-              <h3 className="display text-2xl gold-text mb-1">{selectedData.student.name}</h3>
-              <p className="text-sm text-muted-foreground mb-4">{selectedData.halaqa.name}</p>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                <Stat label="المقاطع المحفوظة" value={selectedData.student.memorized || "—"} small />
-                <Stat label="النسبة الكلية" value={`${selectedData.overall}%`} />
-                <Stat label="نسبة الأسبوع" value={`${selectedData.weekPct}%`} />
-                <Stat label="مرات الغياب" value={String(selectedData.absences)} />
-                <Stat label="مرات التأخر" value={String(selectedData.lates)} />
-              </div>
+          {!data ? (
+            <div className="flex gap-2 max-w-md">
+              <input
+                value={nid}
+                onChange={(e) => setNid(e.target.value)}
+                onKeyDown={(e) => e.key === "Enter" && submit()}
+                placeholder="رقم الهوية"
+                inputMode="numeric"
+                maxLength={10}
+                className="flex-1 px-4 py-3 rounded-xl bg-input border border-border focus:border-primary focus:outline-none text-center text-lg tracking-widest font-bold text-primary"
+              />
+              <button onClick={submit} className="px-6 py-3 rounded-xl gold-gradient text-primary-foreground font-bold">
+                عرض
+              </button>
             </div>
           ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 max-h-96 overflow-y-auto">
-              {filtered.map((s) => (
-                <button key={s.id} onClick={() => setSelected(s.id)}
-                  className="p-3 rounded-lg bg-secondary/50 hover:bg-primary/10 hover:border-primary border border-transparent text-sm text-right transition-all">
-                  {s.name}
+            <div className="p-5 rounded-2xl border border-primary/30 bg-primary/5">
+              <div className="flex items-start justify-between mb-4">
+                <div>
+                  <h3 className="display text-2xl gold-text mb-1">{data.s.name}</h3>
+                  <p className="text-sm text-muted-foreground">{data.h.name} · مستوى {data.s.level}</p>
+                </div>
+                <button onClick={() => { setSelectedId(null); setNid(""); }} className="p-2 rounded-lg hover:bg-secondary">
+                  <X className="w-5 h-5" />
                 </button>
-              ))}
+              </div>
+
+              {/* Today's status */}
+              <TodayBadge status={data.todayStatus} />
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
+                <Stat label="المقاطع المحفوظة" value={data.s.memorized || "—"} small />
+                <Stat label="النسبة العامة" value={`${data.overall}%`} />
+                <Stat label="مرات الغياب" value={String(data.absences)} />
+                <Stat label="مرات التأخر" value={String(data.lates)} />
+              </div>
             </div>
           )}
         </section>
       </main>
+    </div>
+  );
+}
+
+function TodayBadge({ status }: { status: string }) {
+  const map: Record<string, { label: string; icon: typeof CheckCircle2; cls: string }> = {
+    present: { label: "حاضر اليوم", icon: CheckCircle2, cls: "bg-success/15 text-success border-success/30" },
+    late: { label: "متأخر اليوم", icon: Clock, cls: "bg-warning/15 text-warning border-warning/30" },
+    excused: { label: "مستأذن اليوم", icon: UserCheck, cls: "bg-primary/15 text-primary border-primary/30" },
+    absent: { label: "غائب اليوم", icon: AlertCircle, cls: "bg-destructive/15 text-destructive border-destructive/30" },
+  };
+  const m = map[status] || { label: "لم تُسجَّل حالة اليوم بعد", icon: Clock, cls: "bg-muted text-muted-foreground border-border" };
+  const Icon = m.icon;
+  return (
+    <div className={`inline-flex items-center gap-2 px-4 py-2 rounded-xl border font-bold text-sm ${m.cls}`}>
+      <Icon className="w-4 h-4" />
+      {m.label}
     </div>
   );
 }

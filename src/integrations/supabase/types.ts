@@ -14,7 +14,105 @@ export type Database = {
   }
   public: {
     Tables: {
-      [_ in never]: never
+      halaqat: {
+        Row: {
+          assistant_code: string
+          assistant_name: string
+          created_at: string
+          id: number
+          is_talqeen: boolean
+          name: string
+          teacher_code: string
+          teacher_name: string
+        }
+        Insert: {
+          assistant_code?: string
+          assistant_name?: string
+          created_at?: string
+          id: number
+          is_talqeen?: boolean
+          name: string
+          teacher_code?: string
+          teacher_name?: string
+        }
+        Update: {
+          assistant_code?: string
+          assistant_name?: string
+          created_at?: string
+          id?: number
+          is_talqeen?: boolean
+          name?: string
+          teacher_code?: string
+          teacher_name?: string
+        }
+        Relationships: []
+      }
+      role_accounts: {
+        Row: {
+          code: string
+          created_at: string
+          id: string
+          name: string
+          permissions: string[]
+          role: string
+        }
+        Insert: {
+          code: string
+          created_at?: string
+          id?: string
+          name: string
+          permissions?: string[]
+          role: string
+        }
+        Update: {
+          code?: string
+          created_at?: string
+          id?: string
+          name?: string
+          permissions?: string[]
+          role?: string
+        }
+        Relationships: []
+      }
+      students: {
+        Row: {
+          assigned_to: string | null
+          created_at: string
+          halaqa_id: number
+          id: string
+          level: string
+          level_type: string
+          memorized: string | null
+          name: string
+          national_id: string
+          parent_phone: string
+        }
+        Insert: {
+          assigned_to?: string | null
+          created_at?: string
+          halaqa_id: number
+          id: string
+          level?: string
+          level_type?: string
+          memorized?: string | null
+          name: string
+          national_id: string
+          parent_phone?: string
+        }
+        Update: {
+          assigned_to?: string | null
+          created_at?: string
+          halaqa_id?: number
+          id?: string
+          level?: string
+          level_type?: string
+          memorized?: string | null
+          name?: string
+          national_id?: string
+          parent_phone?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never

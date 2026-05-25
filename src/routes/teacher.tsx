@@ -132,10 +132,11 @@ function WeeksGrid({ halaqaId, canAssign }: { halaqaId: number; canAssign: boole
 
 function AssignmentDialog({ halaqaId, onClose }: { halaqaId: number; onClose: () => void }) {
   const [students, setStudents] = useState<Student[]>(() => loadStudents().filter((s) => s.halaqaId === halaqaId));
-  const setAssign = (id: string, to: "teacher" | "assistant") => {
+  const setAssign = (id: string, to: "teacher" | "assistant" | undefined) => {
     const all = loadStudents();
     const next = all.map((s) => s.id === id ? { ...s, assignedTo: to } : s);
     saveStudents(next);
+    void import("@/lib/cloud-sync").then((m) => m.patchStudent(id, { assignedTo: to }));
     setStudents(next.filter((s) => s.halaqaId === halaqaId));
   };
   return (
@@ -146,17 +147,22 @@ function AssignmentDialog({ halaqaId, onClose }: { halaqaId: number; onClose: ()
           <button onClick={onClose} className="p-2 hover:bg-secondary rounded-lg"><X className="w-5 h-5" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-2">
+          <p className="text-xs text-muted-foreground mb-2">الأصل: كل الطلاب يظهرون عند المعلم وعند المساعد. عيّن طالباً لجهة معينة لإخفائه عن الجهة الأخرى.</p>
           {students.map((s) => (
             <div key={s.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
               <span className="font-medium">{s.name}</span>
               <div className="flex gap-2">
+                <button onClick={() => setAssign(s.id, undefined)}
+                  className={`px-3 py-1 rounded text-xs font-bold ${!s.assignedTo ? "gold-gradient text-primary-foreground" : "border border-border text-muted-foreground"}`}>
+                  كلاهما
+                </button>
                 <button onClick={() => setAssign(s.id, "teacher")}
-                  className={`px-3 py-1 rounded text-xs font-bold ${s.assignedTo !== "assistant" ? "gold-gradient text-primary-foreground" : "border border-border text-muted-foreground"}`}>
-                  معي
+                  className={`px-3 py-1 rounded text-xs font-bold ${s.assignedTo === "teacher" ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground"}`}>
+                  معي فقط
                 </button>
                 <button onClick={() => setAssign(s.id, "assistant")}
                   className={`px-3 py-1 rounded text-xs font-bold ${s.assignedTo === "assistant" ? "bg-primary/20 text-primary border border-primary" : "border border-border text-muted-foreground"}`}>
-                  المساعد
+                  المساعد فقط
                 </button>
               </div>
             </div>
@@ -169,10 +175,11 @@ function AssignmentDialog({ halaqaId, onClose }: { halaqaId: number; onClose: ()
 
 function WeekTable({ halaqaId, weekNum, isTalqeen, viewerRole }: { halaqaId: number; weekNum: number; isTalqeen: boolean; viewerRole: "teacher" | "assistant" }) {
   const allStudents = useMemo(() => loadStudents().filter((s) => s.halaqaId === halaqaId), [halaqaId]);
-  // assistants see only students assigned to assistant; teachers see all
+  // Default: both teacher and assistant see all students.
+  // After assignment: teacher hides those assigned to assistant, and vice versa.
   const students = viewerRole === "assistant"
-    ? allStudents.filter((s) => s.assignedTo === "assistant")
-    : allStudents;
+    ? allStudents.filter((s) => s.assignedTo !== "teacher")
+    : allStudents.filter((s) => s.assignedTo !== "assistant");
   const [grades, setGrades] = useState(() => loadGrades());
 
   useEffect(() => {
@@ -335,12 +342,13 @@ function AttSelect({ value, onChange, talqeen }: { value: string; onChange: (v: 
   );
 }
 function HifzSelect({ value, onChange }: { value: HifzValue; onChange: (v: HifzValue) => void }) {
+  // Show only the quantity (½ / ١ / ٢), hide the underlying score (15/20/25).
   return (
     <select value={value} onChange={(e) => onChange(e.target.value as HifzValue)} className="w-full bg-input border border-border rounded px-1 py-1 text-xs font-bold">
       <option value="">{HIFZ_LABELS[""]}</option>
-      <option value="half">{HIFZ_LABELS["half"]} (15)</option>
-      <option value="one">{HIFZ_LABELS["one"]} (20)</option>
-      <option value="two">{HIFZ_LABELS["two"]} (25)</option>
+      <option value="half">{HIFZ_LABELS["half"]}</option>
+      <option value="one">{HIFZ_LABELS["one"]}</option>
+      <option value="two">{HIFZ_LABELS["two"]}</option>
     </select>
   );
 }

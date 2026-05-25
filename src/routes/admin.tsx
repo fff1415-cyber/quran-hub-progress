@@ -2,11 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, loadGrades, loadNotifications, DAYS,
-  weekPercentage, type WeekRecord,
+  loadSardQueue, updateSardItem, pushNotification,
+  type WeekRecord,
 } from "@/lib/mock-data";
+import { getOperationalDayKey } from "@/lib/operational-date";
+import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
-import { Bell, MessageCircle, TrendingUp, UserX, Send } from "lucide-react";
-import { Toaster } from "sonner";
+import { Bell, MessageCircle, TrendingUp, UserX, Send, Zap, Clock } from "lucide-react";
+import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
 
@@ -15,14 +18,18 @@ function AdminPage() {
   const students = loadStudents();
   const grades = loadGrades();
   const notifications = loadNotifications();
-  const [tab, setTab] = useState<"today" | "cumulative" | "progress" | "alerts">("today");
+  const [queue, setQueue] = useState(() => loadSardQueue());
+  const [tab, setTab] = useState<"today" | "cumulative" | "progress" | "sard" | "alerts">("today");
 
-  // Today absences — find today's day key
-  const todayKey = useMemo(() => {
-    const d = new Date().getDay();
-    const map: Record<number, string> = { 0: "sun", 1: "mon", 2: "tue", 3: "wed", 4: "thu" };
-    return map[d] || "sun";
-  }, []);
+  const todayKey = useMemo(() => getOperationalDayKey(), []);
+  const scheduled = queue.filter((q) => q.status === "scheduled");
+
+  const forceImmediate = (id: string, name: string) => {
+    updateSardItem(id, { status: "pending", scheduledAt: new Date().toISOString() });
+    pushNotification({ message: `سمح الإداري بإعادة سرد فوري للطالب ${name}`, type: "sard" });
+    toast.success("تم — يمكن للمسمّع البدء فوراً");
+    setQueue(loadSardQueue());
+  };
 
   const todayAbsents = useMemo(() => {
     const currentWeek = 1; // for demo
@@ -65,6 +72,7 @@ function AdminPage() {
     { id: "today", label: "غياب اليوم", icon: UserX, count: todayAbsents.length },
     { id: "cumulative", label: "السجل التراكمي", icon: Bell, count: cumulativeAbsents.length },
     { id: "progress", label: "متابعة الربط والمراجعة", icon: TrendingUp },
+    { id: "sard", label: "السرد المعلّق", icon: Clock, count: scheduled.length },
     { id: "alerts", label: "الإشعارات", icon: Bell, count: notifications.filter((n) => !n.read).length },
   ];
 
@@ -180,6 +188,36 @@ function AdminPage() {
                 )}
               </div>
             ))}
+          </div>
+        )}
+
+        {tab === "sard" && (
+          <div className="glass-card rounded-2xl p-6">
+            <h2 className="text-xl font-bold mb-2 text-primary">طلاب في انتظار إعادة السرد</h2>
+            <p className="text-xs text-muted-foreground mb-4">يحق للإداري السماح بإعادة السرد فوراً دون انتظار يومين.</p>
+            {scheduled.length === 0 ? (
+              <p className="text-muted-foreground text-center py-8">لا يوجد</p>
+            ) : (
+              <div className="space-y-2">
+                {scheduled.map((q) => {
+                  const s = students.find((x) => x.id === q.studentId);
+                  const h = halaqat.find((x) => x.id === q.halaqaId);
+                  if (!s || !h) return null;
+                  return (
+                    <div key={q.id} className="flex items-center justify-between p-3 rounded-lg bg-warning/5 border border-warning/20">
+                      <div>
+                        <div className="font-bold">{s.name}</div>
+                        <div className="text-xs text-muted-foreground mt-1">{h.name} · {weekLabel(q.week)}</div>
+                      </div>
+                      <button onClick={() => forceImmediate(q.id, s.name)}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/20 text-warning border border-warning/30 font-bold text-sm">
+                        <Zap className="w-4 h-4" /> الإعادة الآن
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 
