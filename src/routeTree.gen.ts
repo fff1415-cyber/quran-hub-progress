@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as TeacherRouteImport } from './routes/teacher'
 import { Route as SupervisorRouteImport } from './routes/supervisor'
 import { Route as StudentRouteImport } from './routes/student'
+import { Route as SecretaryRouteImport } from './routes/secretary'
 import { Route as MusammiRouteImport } from './routes/musammi'
 import { Route as ManagerRouteImport } from './routes/manager'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -31,6 +32,11 @@ const SupervisorRoute = SupervisorRouteImport.update({
 const StudentRoute = StudentRouteImport.update({
   id: '/student',
   path: '/student',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SecretaryRoute = SecretaryRouteImport.update({
+  id: '/secretary',
+  path: '/secretary',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MusammiRoute = MusammiRouteImport.update({
@@ -65,6 +71,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
+  '/secretary': typeof SecretaryRoute
   '/student': typeof StudentRoute
   '/supervisor': typeof SupervisorRoute
   '/teacher': typeof TeacherRoute
@@ -75,6 +82,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
+  '/secretary': typeof SecretaryRoute
   '/student': typeof StudentRoute
   '/supervisor': typeof SupervisorRoute
   '/teacher': typeof TeacherRoute
@@ -86,6 +94,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
+  '/secretary': typeof SecretaryRoute
   '/student': typeof StudentRoute
   '/supervisor': typeof SupervisorRoute
   '/teacher': typeof TeacherRoute
@@ -98,6 +107,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/manager'
     | '/musammi'
+    | '/secretary'
     | '/student'
     | '/supervisor'
     | '/teacher'
@@ -108,6 +118,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/manager'
     | '/musammi'
+    | '/secretary'
     | '/student'
     | '/supervisor'
     | '/teacher'
@@ -118,6 +129,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/manager'
     | '/musammi'
+    | '/secretary'
     | '/student'
     | '/supervisor'
     | '/teacher'
@@ -129,6 +141,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   ManagerRoute: typeof ManagerRoute
   MusammiRoute: typeof MusammiRoute
+  SecretaryRoute: typeof SecretaryRoute
   StudentRoute: typeof StudentRoute
   SupervisorRoute: typeof SupervisorRoute
   TeacherRoute: typeof TeacherRoute
@@ -155,6 +168,13 @@ declare module '@tanstack/react-router' {
       path: '/student'
       fullPath: '/student'
       preLoaderRoute: typeof StudentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/secretary': {
+      id: '/secretary'
+      path: '/secretary'
+      fullPath: '/secretary'
+      preLoaderRoute: typeof SecretaryRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/musammi': {
@@ -201,6 +221,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   ManagerRoute: ManagerRoute,
   MusammiRoute: MusammiRoute,
+  SecretaryRoute: SecretaryRoute,
   StudentRoute: StudentRoute,
   SupervisorRoute: SupervisorRoute,
   TeacherRoute: TeacherRoute,
@@ -208,3 +229,13 @@ const rootRouteChildren: RootRouteChildren = {
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
+
+import type { getRouter } from './router.tsx'
+import type { startInstance } from './start.ts'
+declare module '@tanstack/react-start' {
+  interface Register {
+    ssr: true
+    router: Awaited<ReturnType<typeof getRouter>>
+    config: Awaited<ReturnType<typeof startInstance.getOptions>>
+  }
+}
