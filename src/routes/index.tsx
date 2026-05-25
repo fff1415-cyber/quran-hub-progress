@@ -25,7 +25,7 @@ function LoginPage() {
 
       switch (auth.role) {
         case "manager": navigate({ to: "/manager" }); break;
-        case "secretary": navigate({ to: "/admin" }); break;
+        case "secretary": navigate({ to: "/secretary" }); break;
         case "supervisor": navigate({ to: "/supervisor" }); break;
         case "musammi": navigate({ to: "/musammi" }); break;
         case "teacher":

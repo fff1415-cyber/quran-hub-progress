@@ -139,7 +139,11 @@ function ImportTab() {
     }
     saveHalaqat(nextHalaqat);
     saveStudents(updated);
-    toast.success(`تم: +${added} طالب جديد، تحديث ${updatedCount}، +${newHalaqat} حلقة`);
+    void import("@/lib/cloud-sync").then(async (m) => {
+      await m.pushHalaqat(nextHalaqat);
+      await m.pushStudents(updated);
+    });
+    toast.success(`تم: +${added} طالب جديد، تحديث ${updatedCount}، +${newHalaqat} حلقة — محفوظ في السحابة`);
     setPreview([]);
     setUrl("");
   };
@@ -298,12 +302,15 @@ function StudentsTab() {
   const add = () => {
     if (!form.name || !form.nationalId) { toast.error("الاسم ورقم الهوية مطلوبان"); return; }
     const next: Student[] = [...students, { id: `s-${Date.now()}`, ...form }];
-    setStudents(next); saveStudents(next); toast.success("تمت الإضافة");
+    setStudents(next); saveStudents(next);
+    void import("@/lib/cloud-sync").then((m) => m.pushStudents(next));
+    toast.success("تمت الإضافة وحُفظت في السحابة");
     setForm({ ...form, name: "", nationalId: "", parentPhone: "" });
   };
   const del = (id: string) => {
     const next = students.filter((s) => s.id !== id);
     setStudents(next); saveStudents(next);
+    void import("@/lib/cloud-sync").then((m) => m.deleteStudent(id));
   };
 
   return (
