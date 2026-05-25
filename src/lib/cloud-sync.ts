@@ -111,7 +111,11 @@ export async function pushStudents(students: Student[]) {
 
 /** Update a single student (partial). */
 export async function patchStudent(id: string, patch: Partial<Student>) {
-  const row: Record<string, unknown> = {};
+  const row: {
+    name?: string; halaqa_id?: number; national_id?: string;
+    parent_phone?: string; level?: string; level_type?: string;
+    assigned_to?: string | null; memorized?: string | null;
+  } = {};
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.halaqaId !== undefined) row.halaqa_id = patch.halaqaId;
   if (patch.nationalId !== undefined) row.national_id = patch.nationalId;
