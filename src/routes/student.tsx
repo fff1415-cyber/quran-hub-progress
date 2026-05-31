@@ -147,11 +147,12 @@ function StudentPage() {
               {/* Today's status */}
               <TodayBadge status={data.todayStatus} />
 
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mt-4">
-                <Stat label="المقاطع المحفوظة" value={data.s.memorized || "—"} small />
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
+                <Stat label="مقاطع محفوظة" value={String(data.memorizedCount)} />
                 <Stat label="النسبة العامة" value={`${data.overall}%`} />
                 <Stat label="مرات الغياب" value={String(data.absences)} />
                 <Stat label="مرات التأخر" value={String(data.lates)} />
+                <Stat label="مرات الاستئذان" value={String(data.excused)} />
               </div>
             </div>
           )}
