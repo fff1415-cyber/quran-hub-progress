@@ -219,6 +219,37 @@ export function updateSardItem(id: string, patch: Partial<SardQueueItem>) {
   saveSardQueue(queue);
 }
 
+/** Is a pending sard item considered late (>2 days since createdAt)? */
+export function isLateSard(q: SardQueueItem): boolean {
+  if (q.status !== "pending") return false;
+  const days = (Date.now() - new Date(q.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+  return days >= 2;
+}
+
+/** Scan queue, push a one-time notification per late item. */
+export function notifyLateSard(students: Student[]) {
+  if (typeof window === "undefined") return;
+  const NOTIFIED_KEY = "qshatawi_late_notified";
+  const notified: string[] = JSON.parse(localStorage.getItem(NOTIFIED_KEY) || "[]");
+  const queue = loadSardQueue();
+  const newly: string[] = [];
+  queue.forEach((q) => {
+    if (isLateSard(q) && !notified.includes(q.id)) {
+      const s = students.find((x) => x.id === q.studentId);
+      if (s) {
+        pushNotification({
+          message: `الطالب ${s.name} لم يقرأ السرد حتى الآن — تجاوز يومين`,
+          type: "sard",
+        });
+        newly.push(q.id);
+      }
+    }
+  });
+  if (newly.length > 0) {
+    localStorage.setItem(NOTIFIED_KEY, JSON.stringify([...notified, ...newly]));
+  }
+}
+
 export interface SardHistoryItem {
   id: string;
   studentId: string;
