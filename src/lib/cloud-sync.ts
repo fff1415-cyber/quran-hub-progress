@@ -61,7 +61,7 @@ function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
 
 let seeded = false;
 
-/** Pull latest students/halaqat from Cloud → cache to localStorage. Seeds defaults if empty. */
+/** Pull latest students/halaqat from Cloud → cache to localStorage. No auto-seeding. */
 export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: Halaqa[] } | null> {
   try {
     const [hRes, sRes] = await Promise.all([
@@ -71,18 +71,10 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
     if (hRes.error) throw hRes.error;
     if (sRes.error) throw sRes.error;
 
-    let halaqat = (hRes.data || []).map(rowToHalaqa);
-    let students = (sRes.data || []).map(rowToStudent);
+    const halaqat = (hRes.data || []).map(rowToHalaqa);
+    const students = (sRes.data || []).map(rowToStudent);
 
-    // First-run seeding of default halaqat
-    if (halaqat.length === 0 && !seeded) {
-      seeded = true;
-      await supabase.from("halaqat").upsert(HALAQAT.map(halaqaToRow));
-      const reload = await supabase.from("halaqat").select("*").order("id");
-      halaqat = (reload.data || []).map(rowToHalaqa);
-    }
-
-    // Seed role_accounts once
+    // Seed role_accounts once (staff only — manager/supervisor/secretary/musammi)
     const ra = await supabase.from("role_accounts").select("code").limit(1);
     if (!ra.error && (ra.data || []).length === 0) {
       await supabase.from("role_accounts").upsert(
