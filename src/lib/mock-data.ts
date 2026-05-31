@@ -126,19 +126,14 @@ const KEY_SARD_HISTORY = "qshatawi_sard_history_v2";
 export function loadStudents(): Student[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY_STUDENTS);
-  if (raw) return JSON.parse(raw);
-  const s = genStudents();
-  localStorage.setItem(KEY_STUDENTS, JSON.stringify(s));
-  return s;
+  return raw ? JSON.parse(raw) : [];
 }
 export function saveStudents(s: Student[]) { localStorage.setItem(KEY_STUDENTS, JSON.stringify(s)); }
 
 export function loadHalaqat(): Halaqa[] {
-  if (typeof window === "undefined") return HALAQAT;
+  if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY_HALAQAT);
-  if (raw) return JSON.parse(raw);
-  localStorage.setItem(KEY_HALAQAT, JSON.stringify(HALAQAT));
-  return HALAQAT;
+  return raw ? JSON.parse(raw) : [];
 }
 export function saveHalaqat(h: Halaqa[]) { localStorage.setItem(KEY_HALAQAT, JSON.stringify(h)); }
 
