@@ -47,6 +47,8 @@ function ManagerPage() {
           </Link>
         </div>
 
+        <div className="mb-6"><LateSardList /></div>
+
         {/* Halaqat quick view */}
         <section className="glass-card rounded-2xl p-6 mb-6">
           <h2 className="text-lg font-bold text-primary mb-3 flex items-center gap-2">
