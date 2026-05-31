@@ -126,19 +126,14 @@ const KEY_SARD_HISTORY = "qshatawi_sard_history_v2";
 export function loadStudents(): Student[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY_STUDENTS);
-  if (raw) return JSON.parse(raw);
-  const s = genStudents();
-  localStorage.setItem(KEY_STUDENTS, JSON.stringify(s));
-  return s;
+  return raw ? JSON.parse(raw) : [];
 }
 export function saveStudents(s: Student[]) { localStorage.setItem(KEY_STUDENTS, JSON.stringify(s)); }
 
 export function loadHalaqat(): Halaqa[] {
-  if (typeof window === "undefined") return HALAQAT;
+  if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY_HALAQAT);
-  if (raw) return JSON.parse(raw);
-  localStorage.setItem(KEY_HALAQAT, JSON.stringify(HALAQAT));
-  return HALAQAT;
+  return raw ? JSON.parse(raw) : [];
 }
 export function saveHalaqat(h: Halaqa[]) { localStorage.setItem(KEY_HALAQAT, JSON.stringify(h)); }
 
@@ -222,6 +217,37 @@ export function updateSardItem(id: string, patch: Partial<SardQueueItem>) {
   if (idx === -1) return;
   queue[idx] = { ...queue[idx], ...patch };
   saveSardQueue(queue);
+}
+
+/** Is a pending sard item considered late (>2 days since createdAt)? */
+export function isLateSard(q: SardQueueItem): boolean {
+  if (q.status !== "pending") return false;
+  const days = (Date.now() - new Date(q.createdAt).getTime()) / (1000 * 60 * 60 * 24);
+  return days >= 2;
+}
+
+/** Scan queue, push a one-time notification per late item. */
+export function notifyLateSard(students: Student[]) {
+  if (typeof window === "undefined") return;
+  const NOTIFIED_KEY = "qshatawi_late_notified";
+  const notified: string[] = JSON.parse(localStorage.getItem(NOTIFIED_KEY) || "[]");
+  const queue = loadSardQueue();
+  const newly: string[] = [];
+  queue.forEach((q) => {
+    if (isLateSard(q) && !notified.includes(q.id)) {
+      const s = students.find((x) => x.id === q.studentId);
+      if (s) {
+        pushNotification({
+          message: `الطالب ${s.name} لم يقرأ السرد حتى الآن — تجاوز يومين`,
+          type: "sard",
+        });
+        newly.push(q.id);
+      }
+    }
+  });
+  if (newly.length > 0) {
+    localStorage.setItem(NOTIFIED_KEY, JSON.stringify([...notified, ...newly]));
+  }
 }
 
 export interface SardHistoryItem {

@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { loadSardQueue, loadStudents, loadHalaqat } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
+import { LateSardList } from "@/components/SardLists";
 import { Crown, AlertTriangle, Settings, Shield, BookOpen } from "lucide-react";
 import { useState } from "react";
 
@@ -45,6 +46,8 @@ function ManagerPage() {
             <div className="text-xs text-muted-foreground">موافقات السرد</div>
           </Link>
         </div>
+
+        <div className="mb-6"><LateSardList /></div>
 
         {/* Halaqat quick view */}
         <section className="glass-card rounded-2xl p-6 mb-6">

@@ -8,6 +8,7 @@ import {
 import { getOperationalDayKey } from "@/lib/operational-date";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
+import { LateSardList, ActiveSardList } from "@/components/SardLists";
 import { Bell, MessageCircle, TrendingUp, UserX, Send, Zap, Clock } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
@@ -192,32 +193,36 @@ function AdminPage() {
         )}
 
         {tab === "sard" && (
-          <div className="glass-card rounded-2xl p-6">
-            <h2 className="text-xl font-bold mb-2 text-primary">طلاب في انتظار إعادة السرد</h2>
-            <p className="text-xs text-muted-foreground mb-4">يحق للإداري السماح بإعادة السرد فوراً دون انتظار يومين.</p>
-            {scheduled.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">لا يوجد</p>
-            ) : (
-              <div className="space-y-2">
-                {scheduled.map((q) => {
-                  const s = students.find((x) => x.id === q.studentId);
-                  const h = halaqat.find((x) => x.id === q.halaqaId);
-                  if (!s || !h) return null;
-                  return (
-                    <div key={q.id} className="flex items-center justify-between p-3 rounded-lg bg-warning/5 border border-warning/20">
-                      <div>
-                        <div className="font-bold">{s.name}</div>
-                        <div className="text-xs text-muted-foreground mt-1">{h.name} · {weekLabel(q.week)}</div>
+          <div className="space-y-4">
+            <ActiveSardList />
+            <LateSardList />
+            <div className="glass-card rounded-2xl p-6">
+              <h2 className="text-lg font-bold mb-2 text-primary">طلاب في انتظار إعادة السرد بعد رسوب</h2>
+              <p className="text-xs text-muted-foreground mb-4">يحق للإداري السماح بإعادة السرد فوراً دون انتظار يومين.</p>
+              {scheduled.length === 0 ? (
+                <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد</p>
+              ) : (
+                <div className="space-y-2">
+                  {scheduled.map((q) => {
+                    const s = students.find((x) => x.id === q.studentId);
+                    const h = halaqat.find((x) => x.id === q.halaqaId);
+                    if (!s || !h) return null;
+                    return (
+                      <div key={q.id} className="flex items-center justify-between p-3 rounded-lg bg-warning/5 border border-warning/20">
+                        <div>
+                          <div className="font-bold">{s.name}</div>
+                          <div className="text-xs text-muted-foreground mt-1">{h.name} · {weekLabel(q.week)}</div>
+                        </div>
+                        <button onClick={() => forceImmediate(q.id, s.name)}
+                          className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/20 text-warning border border-warning/30 font-bold text-sm">
+                          <Zap className="w-4 h-4" /> الإعادة الآن
+                        </button>
                       </div>
-                      <button onClick={() => forceImmediate(q.id, s.name)}
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/20 text-warning border border-warning/30 font-bold text-sm">
-                        <Zap className="w-4 h-4" /> الإعادة الآن
-                      </button>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         )}
 

@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { loadSardQueue, loadStudents, loadHalaqat, updateSardItem, pushNotification } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
+import { LateSardList, ActiveSardList } from "@/components/SardLists";
 import { Eye, Check, BookOpen, Zap, Clock } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { useState } from "react";
@@ -60,6 +61,9 @@ function SupervisorPage() {
             ))}
           </div>
         </section>
+
+        <div className="mb-6"><ActiveSardList /></div>
+        <div className="mb-6"><LateSardList /></div>
 
         {/* Awaiting approval for 3rd attempt */}
         <section className="glass-card rounded-2xl p-6 mb-6">
