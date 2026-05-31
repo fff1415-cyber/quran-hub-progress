@@ -62,6 +62,9 @@ function SupervisorPage() {
           </div>
         </section>
 
+        <div className="mb-6"><ActiveSardList /></div>
+        <div className="mb-6"><LateSardList /></div>
+
         {/* Awaiting approval for 3rd attempt */}
         <section className="glass-card rounded-2xl p-6 mb-6">
           <h2 className="text-lg font-bold text-primary mb-4">طلبات الموافقة على محاولة ثالثة ({awaiting.length})</h2>
