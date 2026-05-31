@@ -2,7 +2,7 @@
 // so data shows on any device. Uses localStorage as instant cache.
 import { supabase } from "@/integrations/supabase/client";
 import type { Student, Halaqa } from "./mock-data";
-import { HALAQAT, ROLE_ACCOUNTS, saveStudents, saveHalaqat } from "./mock-data";
+import { ROLE_ACCOUNTS, saveStudents, saveHalaqat } from "./mock-data";
 
 interface CloudStudentRow {
   id: string;
