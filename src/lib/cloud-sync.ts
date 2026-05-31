@@ -59,7 +59,7 @@ function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
   };
 }
 
-let seeded = false;
+
 
 /** Pull latest students/halaqat from Cloud → cache to localStorage. No auto-seeding. */
 export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: Halaqa[] } | null> {
