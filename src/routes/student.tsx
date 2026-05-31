@@ -47,17 +47,26 @@ function StudentPage() {
     if (!s) return null;
     const h = halaqat.find((x) => x.id === s.halaqaId)!;
     const overall = studentOverallPercentage(s.id, h.isTalqeen, grades);
-    let absences = 0, lates = 0;
+    let absences = 0, lates = 0, excused = 0, memorizedCount = 0;
     Object.values(grades[s.id] || {}).forEach((w) => {
       DAYS.forEach((d) => {
-        if (w.days[d.key]?.attendance === "absent") absences++;
-        if (w.days[d.key]?.attendance === "late") lates++;
+        const e = w.days[d.key];
+        if (!e) return;
+        if (e.attendance === "absent") absences++;
+        if (e.attendance === "late") lates++;
+        if (e.attendance === "excused") excused++;
+        if (e.hifz === "half" || e.hifz === "one" || e.hifz === "two") memorizedCount++;
       });
     });
+    // Find today's status across any week that recorded it
     const todayKey = getOperationalDayKey();
-    const currentWeek = 1;
-    const todayStatus = grades[s.id]?.[currentWeek]?.days[todayKey]?.attendance || "";
-    return { s, h, overall, absences, lates, todayStatus };
+    let todayStatus = "";
+    const weeks = Object.values(grades[s.id] || {});
+    for (let i = weeks.length - 1; i >= 0; i--) {
+      const att = weeks[i].days[todayKey]?.attendance;
+      if (att) { todayStatus = att; break; }
+    }
+    return { s, h, overall, absences, lates, excused, memorizedCount, todayStatus };
   }, [selectedId, students, halaqat, grades]);
 
   return (
