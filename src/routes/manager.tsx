@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { loadSardQueue, loadStudents, loadHalaqat } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
+import { LateSardList } from "@/components/SardLists";
 import { Crown, AlertTriangle, Settings, Shield, BookOpen } from "lucide-react";
 import { useState } from "react";
 
