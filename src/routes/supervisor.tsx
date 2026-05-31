@@ -2,6 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { loadSardQueue, loadStudents, loadHalaqat, updateSardItem, pushNotification } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
+import { LateSardList, ActiveSardList } from "@/components/SardLists";
 import { Eye, Check, BookOpen, Zap, Clock } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { useState } from "react";
