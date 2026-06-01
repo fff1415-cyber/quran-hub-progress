@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
-import { authenticateByCode, authenticateByNationalId } from "@/lib/mock-data";
+import { loginByCode, loginByNationalId } from "@/lib/secure-data.functions";
+import { setToken } from "@/lib/cloud-sync";
 import { BookOpen, Shield, UserCheck, GraduationCap, Mic, Eye } from "lucide-react";
 import { toast, Toaster } from "sonner";
 
@@ -12,33 +13,42 @@ function LoginPage() {
   const navigate = useNavigate();
   const [mode, setMode] = useState<LoginMode>("staff");
   const [value, setValue] = useState("");
+  const [busy, setBusy] = useState(false);
 
-  const submit = () => {
+  const submit = async () => {
     if (!value.trim()) { toast.error("أدخل الرمز / رقم الهوية"); return; }
-    if (mode === "staff") {
-      const auth = authenticateByCode(value);
-      if (!auth) { toast.error("رمز العضوية غير صحيح"); return; }
-      sessionStorage.setItem("qs_role", auth.role);
-      sessionStorage.setItem("qs_name", auth.name);
-      if (auth.halaqaId) sessionStorage.setItem("qs_halaqa", String(auth.halaqaId));
-      else sessionStorage.removeItem("qs_halaqa");
+    setBusy(true);
+    try {
+      if (mode === "staff") {
+        const auth = await loginByCode({ data: { code: value.trim() } });
+        setToken(auth.token);
+        sessionStorage.setItem("qs_role", auth.role);
+        sessionStorage.setItem("qs_name", auth.name);
+        if (auth.halaqaId) sessionStorage.setItem("qs_halaqa", String(auth.halaqaId));
+        else sessionStorage.removeItem("qs_halaqa");
 
-      switch (auth.role) {
-        case "manager": navigate({ to: "/manager" }); break;
-        case "secretary": navigate({ to: "/secretary" }); break;
-        case "supervisor": navigate({ to: "/supervisor" }); break;
-        case "musammi": navigate({ to: "/musammi" }); break;
-        case "teacher":
-        case "assistant":
-          navigate({ to: "/teacher", search: { h: auth.halaqaId! } });
-          break;
+        switch (auth.role) {
+          case "manager": navigate({ to: "/manager" }); break;
+          case "secretary": navigate({ to: "/secretary" }); break;
+          case "supervisor": navigate({ to: "/supervisor" }); break;
+          case "musammi": navigate({ to: "/musammi" }); break;
+          case "teacher":
+          case "assistant":
+            navigate({ to: "/teacher", search: { h: auth.halaqaId! } });
+            break;
+        }
+      } else {
+        const student = await loginByNationalId({ data: { nationalId: value.trim() } });
+        setToken(student.token);
+        sessionStorage.setItem("qs_role", "student");
+        sessionStorage.setItem("qs_student", student.studentId);
+        navigate({ to: "/student", search: { s: student.studentId } });
       }
-    } else {
-      const student = authenticateByNationalId(value);
-      if (!student) { toast.error("رقم الهوية غير مسجل"); return; }
-      sessionStorage.setItem("qs_role", "student");
-      sessionStorage.setItem("qs_student", student.id);
-      navigate({ to: "/student", search: { s: student.id } });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "تعذّر تسجيل الدخول";
+      toast.error(msg);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -86,7 +96,7 @@ function LoginPage() {
             type={mode === "staff" ? "password" : "text"}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && submit()}
+            onKeyDown={(e) => e.key === "Enter" && !busy && submit()}
             placeholder={mode === "staff" ? "••••" : "10 أرقام"}
             maxLength={mode === "staff" ? 6 : 10}
             inputMode="numeric"
@@ -96,9 +106,10 @@ function LoginPage() {
 
         <button
           onClick={submit}
-          className="w-full py-4 rounded-xl gold-gradient text-primary-foreground font-bold text-lg hover:scale-[1.02] transition-transform gold-glow"
+          disabled={busy}
+          className="w-full py-4 rounded-xl gold-gradient text-primary-foreground font-bold text-lg hover:scale-[1.02] transition-transform gold-glow disabled:opacity-60"
         >
-          دخول
+          {busy ? "..." : "دخول"}
         </button>
 
         <div className="mt-6 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
