@@ -314,37 +314,6 @@ export function emptyWeek(): WeekRecord {
   return { days, testMuraja: false, testRabt: false, sard: false };
 }
 
-// ---- Auth lookup ----
-export interface AuthResult {
-  role: Role;
-  name: string;
-  halaqaId?: number;
-}
-
-export function authenticateByCode(code: string): AuthResult | null {
-  const trimmed = code.trim();
-  if (!trimmed) return null;
-
-  // global roles
-  const acc = ROLE_ACCOUNTS.find((a) => a.code === trimmed);
-  if (acc) return { role: acc.role, name: acc.name };
-
-  // halaqa teachers / assistants
-  const halaqat = loadHalaqat();
-  for (const h of halaqat) {
-    if (h.teacherCode && h.teacherCode === trimmed) {
-      return { role: "teacher", name: h.teacherName, halaqaId: h.id };
-    }
-    if (h.assistantCode && h.assistantCode === trimmed) {
-      return { role: "assistant", name: h.assistantName, halaqaId: h.id };
-    }
-  }
-  return null;
-}
-
-export function authenticateByNationalId(nid: string): Student | null {
-  const trimmed = nid.trim();
-  if (!trimmed) return null;
-  const students = loadStudents();
-  return students.find((s) => s.nationalId === trimmed) || null;
-}
+// Auth lookups moved to server functions — see src/lib/secure-data.functions.ts
+// (loginByCode, loginByNationalId). Credentials are no longer readable
+// from the browser; do not add client-side authenticate* helpers here.

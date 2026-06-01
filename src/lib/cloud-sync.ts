@@ -1,15 +1,40 @@
-// Cloud sync layer: persists students/halaqat/role_accounts to Supabase
-// so data shows on any device. Uses localStorage as instant cache.
+// Cloud sync layer — sensitive operations are proxied through server functions
+// in `secure-data.functions.ts`. Non-sensitive columns are read directly via
+// the anon Supabase client (RLS + column grants restrict what is visible).
 import { supabase } from "@/integrations/supabase/client";
 import type { Student, Halaqa } from "./mock-data";
-import { ROLE_ACCOUNTS, saveStudents, saveHalaqat } from "./mock-data";
+import { saveStudents, saveHalaqat } from "./mock-data";
+import {
+  secureListStudents,
+  secureListHalaqatFull,
+  secureUpsertStudents,
+  securePatchStudent,
+  secureDeleteStudent,
+  secureUpsertHalaqat,
+  secureDeleteHalaqa,
+  secureListRoleAccounts,
+  secureUpsertRoleAccount,
+  secureDeleteRoleAccount,
+} from "./secure-data.functions";
+
+const TOKEN_KEY = "qs_token";
+export function getToken(): string | null {
+  if (typeof window === "undefined") return null;
+  return sessionStorage.getItem(TOKEN_KEY);
+}
+export function setToken(t: string) {
+  if (typeof window !== "undefined") sessionStorage.setItem(TOKEN_KEY, t);
+}
+export function clearToken() {
+  if (typeof window !== "undefined") sessionStorage.removeItem(TOKEN_KEY);
+}
 
 interface CloudStudentRow {
   id: string;
   name: string;
   halaqa_id: number;
-  national_id: string;
-  parent_phone: string;
+  national_id?: string;
+  parent_phone?: string;
   level: string;
   level_type: string;
   assigned_to: string | null;
@@ -21,66 +46,93 @@ interface CloudHalaqaRow {
   name: string;
   is_talqeen: boolean;
   teacher_name: string;
-  teacher_code: string;
+  teacher_code?: string;
   assistant_name: string;
-  assistant_code: string;
+  assistant_code?: string;
 }
 
-function studentToRow(s: Student): CloudStudentRow {
-  return {
-    id: s.id, name: s.name, halaqa_id: s.halaqaId,
-    national_id: s.nationalId, parent_phone: s.parentPhone,
-    level: s.level, level_type: s.levelType,
-    assigned_to: s.assignedTo ?? null,
-    memorized: s.memorized ?? null,
-  };
-}
 function rowToStudent(r: CloudStudentRow): Student {
   return {
-    id: r.id, name: r.name, halaqaId: r.halaqa_id,
-    nationalId: r.national_id, parentPhone: r.parent_phone,
-    level: r.level, levelType: (r.level_type === "silver" ? "silver" : "gold") as "gold" | "silver",
+    id: r.id,
+    name: r.name,
+    halaqaId: r.halaqa_id,
+    nationalId: r.national_id ?? "",
+    parentPhone: r.parent_phone ?? "",
+    level: r.level,
+    levelType: (r.level_type === "silver" ? "silver" : "gold"),
     assignedTo: (r.assigned_to as "teacher" | "assistant" | undefined) ?? undefined,
     memorized: r.memorized ?? undefined,
   };
 }
-function halaqaToRow(h: Halaqa): CloudHalaqaRow {
-  return {
-    id: h.id, name: h.name, is_talqeen: h.isTalqeen,
-    teacher_name: h.teacherName, teacher_code: h.teacherCode,
-    assistant_name: h.assistantName, assistant_code: h.assistantCode,
-  };
-}
 function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
   return {
-    id: r.id, name: r.name, isTalqeen: r.is_talqeen,
-    teacherName: r.teacher_name, teacherCode: r.teacher_code,
-    assistantName: r.assistant_name, assistantCode: r.assistant_code,
+    id: r.id,
+    name: r.name,
+    isTalqeen: r.is_talqeen,
+    teacherName: r.teacher_name,
+    teacherCode: r.teacher_code ?? "",
+    assistantName: r.assistant_name,
+    assistantCode: r.assistant_code ?? "",
+  };
+}
+function studentToRow(s: Student): CloudStudentRow {
+  return {
+    id: s.id,
+    name: s.name,
+    halaqa_id: s.halaqaId,
+    national_id: s.nationalId,
+    parent_phone: s.parentPhone,
+    level: s.level,
+    level_type: s.levelType,
+    assigned_to: s.assignedTo ?? null,
+    memorized: s.memorized ?? null,
+  };
+}
+function halaqaToRow(h: Halaqa): CloudHalaqaRow {
+  return {
+    id: h.id,
+    name: h.name,
+    is_talqeen: h.isTalqeen,
+    teacher_name: h.teacherName,
+    teacher_code: h.teacherCode,
+    assistant_name: h.assistantName,
+    assistant_code: h.assistantCode,
   };
 }
 
-
-
-/** Pull latest students/halaqat from Cloud → cache to localStorage. No auto-seeding. */
+/**
+ * Pull latest students/halaqat. If a staff token is present, fetch full rows
+ * (including national_id / parent_phone / teacher codes). Otherwise fetch only
+ * the public columns allowed by column-level GRANTs.
+ */
 export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: Halaqa[] } | null> {
   try {
-    const [hRes, sRes] = await Promise.all([
-      supabase.from("halaqat").select("*").order("id"),
-      supabase.from("students").select("*").order("name"),
-    ]);
-    if (hRes.error) throw hRes.error;
-    if (sRes.error) throw sRes.error;
+    const token = getToken();
+    let halaqat: Halaqa[];
+    let students: Student[];
 
-    const halaqat = (hRes.data || []).map(rowToHalaqa);
-    const students = (sRes.data || []).map(rowToStudent);
-
-    // Seed role_accounts once (staff only — manager/supervisor/secretary/musammi)
-    const ra = await supabase.from("role_accounts").select("code").limit(1);
-    if (!ra.error && (ra.data || []).length === 0) {
-      await supabase.from("role_accounts").upsert(
-        ROLE_ACCOUNTS.map((a) => ({ role: a.role, name: a.name, code: a.code, permissions: [] })),
-        { onConflict: "code" }
-      );
+    if (token) {
+      const [h, s] = await Promise.all([
+        secureListHalaqatFull({ data: { token } }),
+        secureListStudents({ data: { token } }),
+      ]);
+      halaqat = (h as CloudHalaqaRow[]).map(rowToHalaqa);
+      students = (s as CloudStudentRow[]).map(rowToStudent);
+    } else {
+      const [hRes, sRes] = await Promise.all([
+        supabase
+          .from("halaqat")
+          .select("id, name, is_talqeen, teacher_name, assistant_name")
+          .order("id"),
+        supabase
+          .from("students")
+          .select("id, name, halaqa_id, level, level_type, assigned_to, memorized")
+          .order("name"),
+      ]);
+      if (hRes.error) throw hRes.error;
+      if (sRes.error) throw sRes.error;
+      halaqat = (hRes.data ?? []).map(rowToHalaqa);
+      students = (sRes.data ?? []).map(rowToStudent);
     }
 
     saveHalaqat(halaqat);
@@ -92,22 +144,21 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
   }
 }
 
-/** Upsert students to Cloud + local cache. */
-export async function pushStudents(students: Student[]) {
-  saveStudents(students);
-  const rows = students.map(studentToRow);
-  if (rows.length === 0) return;
-  const { error } = await supabase.from("students").upsert(rows, { onConflict: "id" });
-  if (error) console.error("pushStudents:", error);
+// ---- Mutations (all server-side via signed token) ----
+function tokenOrThrow(): string {
+  const t = getToken();
+  if (!t) throw new Error("الجلسة منتهية — أعد تسجيل الدخول");
+  return t;
 }
 
-/** Update a single student (partial). */
+export async function pushStudents(students: Student[]) {
+  saveStudents(students);
+  if (students.length === 0) return;
+  await secureUpsertStudents({ data: { token: tokenOrThrow(), students: students.map(studentToRow) } });
+}
+
 export async function patchStudent(id: string, patch: Partial<Student>) {
-  const row: {
-    name?: string; halaqa_id?: number; national_id?: string;
-    parent_phone?: string; level?: string; level_type?: string;
-    assigned_to?: string | null; memorized?: string | null;
-  } = {};
+  const row: Record<string, unknown> = {};
   if (patch.name !== undefined) row.name = patch.name;
   if (patch.halaqaId !== undefined) row.halaqa_id = patch.halaqaId;
   if (patch.nationalId !== undefined) row.national_id = patch.nationalId;
@@ -116,29 +167,24 @@ export async function patchStudent(id: string, patch: Partial<Student>) {
   if (patch.levelType !== undefined) row.level_type = patch.levelType;
   if ("assignedTo" in patch) row.assigned_to = patch.assignedTo ?? null;
   if ("memorized" in patch) row.memorized = patch.memorized ?? null;
-  const { error } = await supabase.from("students").update(row).eq("id", id);
-  if (error) console.error("patchStudent:", error);
+  await securePatchStudent({ data: { token: tokenOrThrow(), id, patch: row as never } });
 }
 
-/** Delete a student from Cloud + cache. */
 export async function deleteStudent(id: string) {
-  const { error } = await supabase.from("students").delete().eq("id", id);
-  if (error) console.error("deleteStudent:", error);
+  await secureDeleteStudent({ data: { token: tokenOrThrow(), id } });
 }
 
-/** Upsert halaqat to Cloud. */
 export async function pushHalaqat(halaqat: Halaqa[]) {
   saveHalaqat(halaqat);
-  const { error } = await supabase.from("halaqat").upsert(halaqat.map(halaqaToRow), { onConflict: "id" });
-  if (error) console.error("pushHalaqat:", error);
+  if (halaqat.length === 0) return;
+  await secureUpsertHalaqat({ data: { token: tokenOrThrow(), halaqat: halaqat.map(halaqaToRow) } });
 }
 
 export async function deleteHalaqa(id: number) {
-  const { error } = await supabase.from("halaqat").delete().eq("id", id);
-  if (error) console.error("deleteHalaqa:", error);
+  await secureDeleteHalaqa({ data: { token: tokenOrThrow(), id } });
 }
 
-// ---- Role accounts (used by manager permissions UI) ----
+// ---- Role accounts (manager-only) ----
 export interface CloudRoleAccount {
   id: string;
   role: string;
@@ -148,17 +194,25 @@ export interface CloudRoleAccount {
 }
 
 export async function loadRoleAccountsCloud(): Promise<CloudRoleAccount[]> {
-  const { data, error } = await supabase.from("role_accounts").select("*").order("created_at");
-  if (error) { console.error(error); return []; }
-  return (data || []) as CloudRoleAccount[];
+  try {
+    const rows = await secureListRoleAccounts({ data: { token: tokenOrThrow() } });
+    return (rows ?? []) as CloudRoleAccount[];
+  } catch (e) {
+    console.error(e);
+    return [];
+  }
 }
 
-export async function upsertRoleAccount(acc: { id?: string; role: string; name: string; code: string; permissions: string[] }) {
-  const { error } = await supabase.from("role_accounts").upsert(acc, { onConflict: "code" });
-  if (error) console.error("upsertRoleAccount:", error);
+export async function upsertRoleAccount(acc: {
+  id?: string;
+  role: string;
+  name: string;
+  code: string;
+  permissions: string[];
+}) {
+  await secureUpsertRoleAccount({ data: { token: tokenOrThrow(), account: acc } });
 }
 
 export async function deleteRoleAccount(id: string) {
-  const { error } = await supabase.from("role_accounts").delete().eq("id", id);
-  if (error) console.error("deleteRoleAccount:", error);
+  await secureDeleteRoleAccount({ data: { token: tokenOrThrow(), id } });
 }
