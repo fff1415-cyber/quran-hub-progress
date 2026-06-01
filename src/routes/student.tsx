@@ -2,8 +2,9 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, loadGrades, studentOverallPercentage, DAYS,
-  authenticateByNationalId,
 } from "@/lib/mock-data";
+import { loginByNationalId } from "@/lib/secure-data.functions";
+import { setToken } from "@/lib/cloud-sync";
 import { getOperationalDayKey } from "@/lib/operational-date";
 import { AppHeader } from "@/components/AppHeader";
 import { Trophy, BookOpen, IdCard, X, CheckCircle2, Clock, AlertCircle, UserCheck } from "lucide-react";
@@ -34,11 +35,15 @@ function StudentPage() {
     .sort((a, b) => b.pct - a.pct)
     .slice(0, 15), [students, halaqat, grades]);
 
-  const submit = () => {
+  const submit = async () => {
     if (!nid.trim()) { toast.error("أدخل رقم الهوية"); return; }
-    const s = authenticateByNationalId(nid);
-    if (!s) { toast.error("رقم الهوية غير مسجل"); return; }
-    setSelectedId(s.id);
+    try {
+      const res = await loginByNationalId({ data: { nationalId: nid.trim() } });
+      setToken(res.token);
+      setSelectedId(res.studentId);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "رقم الهوية غير مسجل");
+    }
   };
 
   const data = useMemo(() => {
