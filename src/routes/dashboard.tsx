@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import {
   loadHalaqat, saveHalaqat, loadStudents, saveStudents, type Halaqa, type Student,
 } from "@/lib/mock-data";
-import { toCsvUrl, parseCsv, normalizeRows } from "@/lib/google-sheets";
+import { toCsvUrl, parseCsv, normalizeRows, normalizeArabic } from "@/lib/google-sheets";
 import { AppHeader } from "@/components/AppHeader";
 import { Plus, Trash2, Users, BookOpen, Key, Settings as SettingsIcon, FileSpreadsheet, Download, Loader2 } from "lucide-react";
 import { Toaster, toast } from "sonner";
@@ -84,32 +84,33 @@ function ImportTab() {
     }
   };
 
-  const applyImport = () => {
-    const halaqat = loadHalaqat();
-    const existingStudents = loadStudents();
-    const halaqatByName = new Map(halaqat.map((h) => [h.name.trim(), h]));
-    const nextHalaqat = [...halaqat];
-    let nextId = Math.max(0, ...halaqat.map((h) => h.id)) + 1;
+  // Computed preview-time matching of halaqat (used to warn before import)
+  const halaqatCurrent = useMemo(() => loadHalaqat(), [preview]);
+  const halaqatByNorm = useMemo(
+    () => new Map(halaqatCurrent.map((h) => [normalizeArabic(h.name), h])),
+    [halaqatCurrent],
+  );
+  const unmatched = useMemo(() => {
+    const set = new Map<string, number>();
+    for (const r of preview) {
+      if (!r.halaqaName) continue;
+      if (!halaqatByNorm.get(normalizeArabic(r.halaqaName))) {
+        set.set(r.halaqaName, (set.get(r.halaqaName) || 0) + 1);
+      }
+    }
+    return Array.from(set.entries()); // [name, count][]
+  }, [preview, halaqatByNorm]);
 
-    // Build student updates by nationalId
+  const applyImport = () => {
+    const existingStudents = loadStudents();
     const studentsByNid = new Map(existingStudents.map((s) => [s.nationalId, s]));
     const updated: Student[] = [...existingStudents];
 
-    let added = 0, updatedCount = 0, newHalaqat = 0;
+    let added = 0, updatedCount = 0, skipped = 0;
     for (const row of preview) {
-      let halaqa = halaqatByName.get(row.halaqaName);
-      if (!halaqa) {
-        halaqa = {
-          id: nextId++,
-          name: row.halaqaName,
-          isTalqeen: row.halaqaName.includes("تلقين"),
-          teacherName: "—", teacherCode: "",
-          assistantName: "—", assistantCode: "",
-        };
-        nextHalaqat.push(halaqa);
-        halaqatByName.set(row.halaqaName, halaqa);
-        newHalaqat++;
-      }
+      const halaqa = halaqatByNorm.get(normalizeArabic(row.halaqaName));
+      if (!halaqa) { skipped++; continue; } // halaqat are manual — skip if not found
+
       const existing = studentsByNid.get(row.nationalId);
       if (existing) {
         const idx = updated.findIndex((s) => s.id === existing.id);
@@ -137,13 +138,10 @@ function ImportTab() {
         added++;
       }
     }
-    saveHalaqat(nextHalaqat);
     saveStudents(updated);
-    void import("@/lib/cloud-sync").then(async (m) => {
-      await m.pushHalaqat(nextHalaqat);
-      await m.pushStudents(updated);
-    });
-    toast.success(`تم: +${added} طالب جديد، تحديث ${updatedCount}، +${newHalaqat} حلقة — محفوظ في السحابة`);
+    void import("@/lib/cloud-sync").then((m) => m.pushStudents(updated));
+    const msg = `تم: +${added} جديد · تحديث ${updatedCount}` + (skipped ? ` · تم تجاهل ${skipped} (حلقة غير موجودة)` : "");
+    if (skipped) toast.warning(msg); else toast.success(msg);
     setPreview([]);
     setUrl("");
   };
