@@ -154,8 +154,19 @@ function ImportTab() {
         </h3>
         <p className="text-xs text-muted-foreground mb-4">
           1. افتح ملف Google Sheets الخاص بك ← مشاركة ← أي شخص لديه الرابط (قارئ).<br />
-          2. الأعمدة المطلوبة بالترتيب: <span className="text-primary font-bold">اسم الطالب | اسم الحلقة | رقم الهوية | رقم الجوال | المستوى | نوع المستوى (ذهبي/فضي)</span>.
+          2. الأعمدة المطلوبة بالترتيب: <span className="text-primary font-bold">اسم الطالب | اسم الحلقة | رقم الهوية | رقم الجوال | المستوى | نوع المستوى (ذهبي/فضي)</span>.<br />
+          3. <span className="text-primary">اسم الحلقة يجب أن يطابق حلقة موجودة مسبقاً</span> (يتم إنشاء الحلقات والمعلمين يدوياً من تبويب «الحلقات»).
         </p>
+        {halaqatCurrent.length > 0 && (
+          <details className="mb-3 text-xs">
+            <summary className="cursor-pointer text-primary">أسماء الحلقات الموجودة ({halaqatCurrent.length}) — انسخ منها</summary>
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {halaqatCurrent.map((h) => (
+                <span key={h.id} className="px-2 py-1 rounded bg-secondary/50 border border-border font-mono">{h.name}</span>
+              ))}
+            </div>
+          </details>
+        )}
         <div className="flex gap-2">
           <input
             className="flex-1 px-3 py-2 rounded-lg bg-input border border-border"
@@ -172,6 +183,22 @@ function ImportTab() {
         </div>
         {error && <p className="text-sm text-destructive mt-3">{error}</p>}
       </div>
+
+      {preview.length > 0 && unmatched.length > 0 && (
+        <div className="rounded-2xl p-5 border border-warning/40 bg-warning/10">
+          <h3 className="font-bold text-warning mb-2">⚠️ حلقات في الملف غير مسجلة في النظام</h3>
+          <p className="text-xs text-muted-foreground mb-3">
+            هؤلاء الطلاب سيتم تجاهلهم. أضف الحلقات يدوياً من تبويب «الحلقات» ثم أعد الاستيراد، أو صحّح أسماء الحلقات في الشيت لتطابق الأسماء أعلاه.
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {unmatched.map(([name, count]) => (
+              <span key={name} className="px-2 py-1 rounded bg-background border border-warning/40 text-xs">
+                <span className="font-bold">{name}</span> <span className="text-muted-foreground">({count} طالب)</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
       {preview.length > 0 && (
         <div className="glass-card rounded-2xl p-5">
