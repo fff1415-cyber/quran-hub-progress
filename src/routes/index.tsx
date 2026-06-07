@@ -2,8 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { loginByCode, loginByNationalId } from "@/lib/secure-data.functions";
 import { setToken } from "@/lib/cloud-sync";
-import { Shield, UserCheck, GraduationCap, Mic, Eye } from "lucide-react";
-import logo from "@/assets/shtaiwi-logo.png.asset.json";
+import { BookOpen, Shield, UserCheck, GraduationCap, Mic, Eye } from "lucide-react";
 import { toast, Toaster } from "sonner";
 
 export const Route = createFileRoute("/")({ component: LoginPage });
@@ -60,8 +59,8 @@ function LoginPage() {
 
       <div className="glass-card rounded-3xl p-8 md:p-12 w-full max-w-xl relative z-10 gold-glow">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-28 h-28 rounded-2xl bg-card border border-primary/15 mb-4 gold-glow p-2">
-            <img src={logo.url} alt="شعار مجمع الشتيوي" className="w-full h-full object-contain" />
+          <div className="inline-flex items-center justify-center w-20 h-20 rounded-2xl gold-gradient mb-4 gold-glow">
+            <BookOpen className="w-10 h-10 text-primary-foreground" />
           </div>
           <h1 className="display text-3xl md:text-4xl font-bold gold-text mb-2">
             مجمع حلقات الشتيوي
