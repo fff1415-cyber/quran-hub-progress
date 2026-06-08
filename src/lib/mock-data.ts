@@ -122,6 +122,8 @@ const KEY_GRADES = "qshatawi_grades_v2";
 const KEY_NOTIFICATIONS = "qshatawi_notifications_v2";
 const KEY_SARD_QUEUE = "qshatawi_sard_queue_v2";
 const KEY_SARD_HISTORY = "qshatawi_sard_history_v2";
+const KEY_MESSAGE_TEMPLATES = "qshatawi_message_templates_v2";
+const KEY_LATE_PERMISSIONS = "qshatawi_late_permissions_v2";
 
 export function loadStudents(): Student[] {
   if (typeof window === "undefined") return [];
@@ -147,7 +149,7 @@ export function saveGrades(g: GradesStore) { localStorage.setItem(KEY_GRADES, JS
 export interface Notification {
   id: string;
   message: string;
-  type: "sard" | "absence" | "info";
+  type: "sard" | "absence" | "late" | "info";
   createdAt: string;
   read: boolean;
 }
@@ -160,6 +162,47 @@ export function pushNotification(n: Omit<Notification, "id" | "createdAt" | "rea
   const list = loadNotifications();
   list.unshift({ ...n, id: `n-${Date.now()}-${Math.random()}`, createdAt: new Date().toISOString(), read: false });
   localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.slice(0, 200)));
+}
+export function saveNotifications(list: Notification[]) {
+  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.slice(0, 200)));
+}
+
+// ---- WhatsApp message templates ----
+export type MessageTemplateKey = "absence" | "late" | "sard_pass" | "sard_fail";
+export const DEFAULT_MESSAGE_TEMPLATES: Record<MessageTemplateKey, string> = {
+  absence: "السلام عليكم، نُعلمكم بغياب الطالب {student} عن حلقة {halaqa} اليوم.",
+  late: "السلام عليكم، نُعلمكم بأن الطالب {student} حضر متأخراً وتم منحه إذن الدخول لحلقة {halaqa}.",
+  sard_pass: "السلام عليكم، نبارك لكم اجتياز الطالب {student} للسرد في {week} بنسبة {percent}%.",
+  sard_fail: "السلام عليكم، نُعلمكم بأن الطالب {student} لم يجتز السرد في {week} بنسبة {percent}%، وسيتم اتخاذ الإجراء المناسب.",
+};
+export function loadMessageTemplates(): Record<MessageTemplateKey, string> {
+  if (typeof window === "undefined") return DEFAULT_MESSAGE_TEMPLATES;
+  const raw = localStorage.getItem(KEY_MESSAGE_TEMPLATES);
+  return { ...DEFAULT_MESSAGE_TEMPLATES, ...(raw ? JSON.parse(raw) : {}) };
+}
+export function saveMessageTemplates(t: Record<MessageTemplateKey, string>) {
+  localStorage.setItem(KEY_MESSAGE_TEMPLATES, JSON.stringify(t));
+}
+export function formatMessage(template: string, values: Record<string, string | number | undefined>): string {
+  return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
+}
+
+// ---- Late entry permissions ----
+export interface LatePermission {
+  id: string;
+  studentId: string;
+  halaqaId: number;
+  grantedBy: string;
+  grantedAt: string;
+  date: string;
+}
+export function loadLatePermissions(): LatePermission[] {
+  if (typeof window === "undefined") return [];
+  const raw = localStorage.getItem(KEY_LATE_PERMISSIONS);
+  return raw ? JSON.parse(raw) : [];
+}
+export function saveLatePermissions(list: LatePermission[]) {
+  localStorage.setItem(KEY_LATE_PERMISSIONS, JSON.stringify(list.slice(0, 1000)));
 }
 
 // ---- Sard Queue & History ----
