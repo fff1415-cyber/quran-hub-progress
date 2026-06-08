@@ -315,6 +315,9 @@ export function pushSardHistory(h: SardHistoryItem) {
   list.unshift(h);
   localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list.slice(0, 500)));
 }
+export function saveSardHistory(list: SardHistoryItem[]) {
+  localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list.slice(0, 500)));
+}
 
 // ---- Scoring ----
 export const HIFZ_SCORES: Record<HifzValue, number> = { "": 0, half: 15, one: 20, two: 25 };
