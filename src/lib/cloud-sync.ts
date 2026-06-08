@@ -140,12 +140,14 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
     if (token) {
       const stateRows = await secureListAppState({ data: { token } }) as { key: string; value: unknown }[];
       const state = new Map(stateRows.map((row) => [row.key, row.value]));
+      sessionStorage.setItem("qs_syncing", "1");
       if (state.has("grades")) saveGrades(state.get("grades") as GradesStore);
       if (state.has("sard_queue")) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
       if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
       if (state.has("notifications")) saveNotifications(state.get("notifications") as Notification[]);
       if (state.has("message_templates")) saveMessageTemplates(state.get("message_templates") as Record<MessageTemplateKey, string>);
       if (state.has("late_permissions")) saveLatePermissions(state.get("late_permissions") as LatePermission[]);
+      sessionStorage.removeItem("qs_syncing");
     }
 
     saveHalaqat(halaqat);
