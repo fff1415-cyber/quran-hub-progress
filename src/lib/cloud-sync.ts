@@ -2,8 +2,8 @@
 // in `secure-data.functions.ts`. Non-sensitive columns are read directly via
 // the anon Supabase client (RLS + column grants restrict what is visible).
 import { supabase } from "@/integrations/supabase/client";
-import type { Student, Halaqa } from "./mock-data";
-import { saveStudents, saveHalaqat } from "./mock-data";
+import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, Notification, SardHistoryItem, SardQueueItem, Student } from "./mock-data";
+import { saveGrades, saveHalaqat, saveLatePermissions, saveMessageTemplates, saveNotifications, saveSardHistory, saveSardQueue, saveStudents } from "./mock-data";
 import {
   secureListStudents,
   secureListHalaqatFull,
@@ -15,6 +15,8 @@ import {
   secureListRoleAccounts,
   secureUpsertRoleAccount,
   secureDeleteRoleAccount,
+  secureListAppState,
+  secureSetAppState,
 } from "./secure-data.functions";
 
 const TOKEN_KEY = "qs_token";
@@ -135,6 +137,19 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       students = (sRes.data ?? []).map(rowToStudent);
     }
 
+    if (token) {
+      const stateRows = await secureListAppState({ data: { token } }) as { key: string; value: unknown }[];
+      const state = new Map(stateRows.map((row) => [row.key, row.value]));
+      sessionStorage.setItem("qs_syncing", "1");
+      if (state.has("grades")) saveGrades(state.get("grades") as GradesStore);
+      if (state.has("sard_queue")) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
+      if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
+      if (state.has("notifications")) saveNotifications(state.get("notifications") as Notification[]);
+      if (state.has("message_templates")) saveMessageTemplates(state.get("message_templates") as Record<MessageTemplateKey, string>);
+      if (state.has("late_permissions")) saveLatePermissions(state.get("late_permissions") as LatePermission[]);
+      sessionStorage.removeItem("qs_syncing");
+    }
+
     saveHalaqat(halaqat);
     saveStudents(students);
     return { students, halaqat };
@@ -215,4 +230,8 @@ export async function upsertRoleAccount(acc: {
 
 export async function deleteRoleAccount(id: string) {
   await secureDeleteRoleAccount({ data: { token: tokenOrThrow(), id } });
+}
+
+export async function pushAppState(key: "grades" | "sard_queue" | "sard_history" | "notifications" | "message_templates" | "late_permissions", value: unknown) {
+  await secureSetAppState({ data: { token: tokenOrThrow(), key, value } });
 }

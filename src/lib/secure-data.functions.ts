@@ -68,6 +68,15 @@ function requireManagerOrSecretary(p: TokenPayload | null): TokenPayload {
   return p;
 }
 
+const AppStateKey = z.enum([
+  "grades",
+  "sard_queue",
+  "sard_history",
+  "notifications",
+  "message_templates",
+  "late_permissions",
+]);
+
 // ---------- LOGIN ----------
 export const loginByCode = createServerFn({ method: "POST" })
   .inputValidator((d) => z.object({ code: z.string().min(1).max(32) }).parse(d))
@@ -168,7 +177,7 @@ export const secureUpsertStudents = createServerFn({ method: "POST" })
     z.object({ token: z.string(), students: z.array(StudentRow).max(2000) }).parse(d),
   )
   .handler(async ({ data }) => {
-    requireStaff(verify(data.token));
+    requireManagerOrSecretary(verify(data.token));
     if (data.students.length === 0) return { ok: true };
     const { error } = await supabaseAdmin
       .from("students")
@@ -197,7 +206,7 @@ export const securePatchStudent = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }) => {
-    requireStaff(verify(data.token));
+    requireManagerOrSecretary(verify(data.token));
     const { error } = await supabaseAdmin
       .from("students")
       .update(data.patch)
@@ -243,7 +252,7 @@ export const secureUpsertHalaqat = createServerFn({ method: "POST" })
     z.object({ token: z.string(), halaqat: z.array(HalaqaRow).max(200) }).parse(d),
   )
   .handler(async ({ data }) => {
-    requireStaff(verify(data.token));
+    requireManager(verify(data.token));
     if (data.halaqat.length === 0) return { ok: true };
     const { error } = await supabaseAdmin
       .from("halaqat")
@@ -303,6 +312,31 @@ export const secureDeleteRoleAccount = createServerFn({ method: "POST" })
   .handler(async ({ data }) => {
     requireManager(verify(data.token));
     const { error } = await supabaseAdmin.from("role_accounts").delete().eq("id", data.id);
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
+
+// ---------- SHARED APP STATE ----------
+export const secureListAppState = createServerFn({ method: "POST" })
+  .inputValidator((d) => z.object({ token: z.string() }).parse(d))
+  .handler(async ({ data }) => {
+    requireStaff(verify(data.token));
+    const { data: rows, error } = await supabaseAdmin
+      .from("app_state")
+      .select("key, value");
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const secureSetAppState = createServerFn({ method: "POST" })
+  .inputValidator((d) =>
+    z.object({ token: z.string(), key: AppStateKey, value: z.unknown() }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    requireStaff(verify(data.token));
+    const { error } = await supabaseAdmin
+      .from("app_state")
+      .upsert({ key: data.key, value: data.value as never }, { onConflict: "key" });
     if (error) throw new Error(error.message);
     return { ok: true };
   });
