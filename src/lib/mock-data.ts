@@ -125,6 +125,11 @@ const KEY_SARD_HISTORY = "qshatawi_sard_history_v2";
 const KEY_MESSAGE_TEMPLATES = "qshatawi_message_templates_v2";
 const KEY_LATE_PERMISSIONS = "qshatawi_late_permissions_v2";
 
+function persistShared(key: "grades" | "sard_queue" | "sard_history" | "notifications" | "message_templates" | "late_permissions", value: unknown) {
+  if (typeof window === "undefined" || !sessionStorage.getItem("qs_token")) return;
+  void import("./cloud-sync").then((m) => m.pushAppState(key, value)).catch(() => undefined);
+}
+
 export function loadStudents(): Student[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY_STUDENTS);
@@ -144,7 +149,7 @@ export function loadGrades(): GradesStore {
   const raw = localStorage.getItem(KEY_GRADES);
   return raw ? JSON.parse(raw) : {};
 }
-export function saveGrades(g: GradesStore) { localStorage.setItem(KEY_GRADES, JSON.stringify(g)); }
+export function saveGrades(g: GradesStore) { localStorage.setItem(KEY_GRADES, JSON.stringify(g)); persistShared("grades", g); }
 
 export interface Notification {
   id: string;
@@ -162,9 +167,11 @@ export function pushNotification(n: Omit<Notification, "id" | "createdAt" | "rea
   const list = loadNotifications();
   list.unshift({ ...n, id: `n-${Date.now()}-${Math.random()}`, createdAt: new Date().toISOString(), read: false });
   localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.slice(0, 200)));
+  persistShared("notifications", list.slice(0, 200));
 }
 export function saveNotifications(list: Notification[]) {
   localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.slice(0, 200)));
+  persistShared("notifications", list.slice(0, 200));
 }
 
 // ---- WhatsApp message templates ----
