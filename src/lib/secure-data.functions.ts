@@ -336,7 +336,7 @@ export const secureSetAppState = createServerFn({ method: "POST" })
     requireStaff(verify(data.token));
     const { error } = await supabaseAdmin
       .from("app_state")
-      .upsert({ key: data.key, value: data.value }, { onConflict: "key" });
+      .upsert({ key: data.key, value: data.value as never }, { onConflict: "key" });
     if (error) throw new Error(error.message);
     return { ok: true };
   });
