@@ -109,7 +109,8 @@ function SecretaryPage() {
                   late: "bg-warning/15 text-warning border-warning/30",
                   excused: "bg-primary/15 text-primary border-primary/30",
                 };
-                const msg = encodeURIComponent(`السلام عليكم، نُعلمكم بأن الطالب ${s.name} ${labelMap[status]} اليوم عن حلقة ${h?.name || ""}.`);
+                const template = status === "late" ? templates.late : templates.absence;
+                const msg = encodeURIComponent(formatMessage(template, { student: s.name, halaqa: h?.name }));
                 return (
                   <div key={s.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
                     <div className="flex items-center gap-3">
@@ -129,6 +130,79 @@ function SecretaryPage() {
               })}
             </div>
           )}
+        </section>
+
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
+            <Plus className="w-5 h-5" /> إضافة طالب
+          </h2>
+          <div className="grid md:grid-cols-3 gap-2">
+            <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="اسم الطالب" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="رقم الهوية" value={form.nationalId} onChange={(e) => setForm({ ...form, nationalId: e.target.value })} />
+            <select className="px-3 py-2 rounded-lg bg-input border border-border" value={form.halaqaId} onChange={(e) => setForm({ ...form, halaqaId: Number(e.target.value) })}>
+              {halaqat.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
+            </select>
+            <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="جوال ولي الأمر" value={form.parentPhone} onChange={(e) => setForm({ ...form, parentPhone: e.target.value })} />
+            <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="المستوى" value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })} />
+            <select className="px-3 py-2 rounded-lg bg-input border border-border" value={form.levelType} onChange={(e) => setForm({ ...form, levelType: e.target.value as "gold" | "silver" })}>
+              <option value="gold">ذهبي</option><option value="silver">فضي</option>
+            </select>
+          </div>
+          <button onClick={addStudent} className="mt-3 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center gap-2">
+            <Plus className="w-4 h-4" /> إضافة الطالب
+          </button>
+        </section>
+
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-warning mb-4 flex items-center gap-2">
+            <AlertTriangle className="w-5 h-5" /> إذن دخول المتأخرين
+          </h2>
+          <div className="grid md:grid-cols-[1fr_auto] gap-2 mb-4">
+            <select id="late-student" className="px-3 py-2 rounded-lg bg-input border border-border">
+              {students.map((s) => <option key={s.id} value={s.id}>{s.name} — {halaqat.find((h) => h.id === s.halaqaId)?.name}</option>)}
+            </select>
+            <button onClick={() => grantLate((document.getElementById("late-student") as HTMLSelectElement)?.value)} className="px-4 py-2 rounded-lg bg-warning/20 text-warning border border-warning/30 font-bold">
+              منح الإذن
+            </button>
+          </div>
+          <div className="space-y-2">
+            {latePermissions.slice(0, 8).map((p) => {
+              const s = students.find((x) => x.id === p.studentId);
+              const h = halaqat.find((x) => x.id === p.halaqaId);
+              return <div key={p.id} className="p-3 rounded-lg bg-secondary/50 text-sm">{s?.name} · {h?.name} · أذن: {p.grantedBy}</div>;
+            })}
+          </div>
+        </section>
+
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2"><Clock className="w-5 h-5" /> قائمة طلاب السرد كاملة ({activeSard.length})</h2>
+          <div className="space-y-2">
+            {activeSard.length === 0 ? <p className="text-muted-foreground text-center py-6">لا يوجد طلاب في السرد</p> : activeSard.map((q) => {
+              const s = students.find((x) => x.id === q.studentId); const h = halaqat.find((x) => x.id === q.halaqaId);
+              return s && h ? <div key={q.id} className="p-3 rounded-lg bg-secondary/50 text-sm flex justify-between"><span>{s.name} · {h.name} · {weekLabel(q.week)}</span><span className="text-primary font-bold">{q.status}</span></div> : null;
+            })}
+          </div>
+        </section>
+
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-success mb-4 flex items-center gap-2"><CheckCircle2 className="w-5 h-5" /> المجتازون ({passedSard.length})</h2>
+          <div className="space-y-2">
+            {passedSard.length === 0 ? <p className="text-muted-foreground text-center py-6">لا يوجد مجتازون بعد</p> : passedSard.map((q) => {
+              const s = students.find((x) => x.id === q.studentId); const h = halaqat.find((x) => x.id === q.halaqaId);
+              const msg = encodeURIComponent(formatMessage(templates.sard_pass, { student: s?.name, halaqa: h?.name, week: weekLabel(q.week), percent: q.finalPercent ?? "" }));
+              return s && h ? <div key={q.id} className="flex items-center justify-between p-3 rounded-lg bg-success/10 border border-success/20"><span>{s.name} · {h.name} · {q.finalPercent}%</span><a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer" className="text-success font-bold text-sm flex items-center gap-1"><MessageCircle className="w-4 h-4" /> واتساب</a></div> : null;
+            })}
+          </div>
+        </section>
+
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-destructive mb-4 flex items-center gap-2"><RotateCcw className="w-5 h-5" /> الراسبون نهائياً ({finalFailed.length})</h2>
+          <div className="space-y-2">
+            {finalFailed.length === 0 ? <p className="text-muted-foreground text-center py-6">لا يوجد رسوب نهائي</p> : finalFailed.map((q) => {
+              const s = students.find((x) => x.id === q.studentId); const h = halaqat.find((x) => x.id === q.halaqaId);
+              return s && h ? <div key={q.id} className="flex items-center justify-between gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20"><span>{s.name} · {h.name} · {q.finalPercent}%</span><div className="flex gap-2"><button onClick={() => retryFinal(q.id)} className="px-3 py-1.5 rounded-lg bg-warning/20 text-warning text-sm font-bold">إعادة السرد</button><button onClick={() => repeatLevel(q.id)} className="px-3 py-1.5 rounded-lg bg-destructive/20 text-destructive text-sm font-bold">إعادة المستوى</button></div></div> : null;
+            })}
+          </div>
         </section>
 
         <section className="glass-card rounded-2xl p-6">

@@ -14,7 +14,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { to: "/", label: "الرئيسية", icon: Home, roles: [] },
   { to: "/manager", label: "لوحة المدير", icon: Crown, roles: ["manager"] },
-  { to: "/admin", label: "لوحة الإدارة", icon: Shield, roles: ["manager", "secretary"] },
+  { to: "/admin", label: "لوحة الإدارة", icon: Shield, roles: ["manager"] },
   { to: "/dashboard", label: "لوحة التحكم", icon: LayoutDashboard, roles: ["manager"] },
   { to: "/supervisor", label: "الإشراف التعليمي", icon: Eye, roles: ["manager", "supervisor"] },
   { to: "/secretary", label: "السكرتارية", icon: Users, roles: ["manager", "secretary"] },
