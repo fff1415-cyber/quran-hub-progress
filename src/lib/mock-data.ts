@@ -189,6 +189,7 @@ export function loadMessageTemplates(): Record<MessageTemplateKey, string> {
 }
 export function saveMessageTemplates(t: Record<MessageTemplateKey, string>) {
   localStorage.setItem(KEY_MESSAGE_TEMPLATES, JSON.stringify(t));
+  persistShared("message_templates", t);
 }
 export function formatMessage(template: string, values: Record<string, string | number | undefined>): string {
   return template.replace(/\{(\w+)\}/g, (_, key) => String(values[key] ?? ""));
@@ -210,6 +211,7 @@ export function loadLatePermissions(): LatePermission[] {
 }
 export function saveLatePermissions(list: LatePermission[]) {
   localStorage.setItem(KEY_LATE_PERMISSIONS, JSON.stringify(list.slice(0, 1000)));
+  persistShared("late_permissions", list.slice(0, 1000));
 }
 
 // ---- Sard Queue & History ----
@@ -242,6 +244,7 @@ export function loadSardQueue(): SardQueueItem[] {
 }
 export function saveSardQueue(q: SardQueueItem[]) {
   localStorage.setItem(KEY_SARD_QUEUE, JSON.stringify(q));
+  persistShared("sard_queue", q);
 }
 
 export function enqueueSard(studentId: string, halaqaId: number, week: number) {
@@ -321,9 +324,11 @@ export function pushSardHistory(h: SardHistoryItem) {
   const list = loadSardHistory();
   list.unshift(h);
   localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list.slice(0, 500)));
+  persistShared("sard_history", list.slice(0, 500));
 }
 export function saveSardHistory(list: SardHistoryItem[]) {
   localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list.slice(0, 500)));
+  persistShared("sard_history", list.slice(0, 500));
 }
 
 // ---- Scoring ----
