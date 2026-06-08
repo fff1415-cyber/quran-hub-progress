@@ -1,23 +1,29 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
-  loadHalaqat, loadStudents, loadGrades, loadSardQueue, updateSardItem, pushNotification,
-  type WeekRecord,
+  loadHalaqat, loadStudents, saveStudents, loadGrades, loadSardQueue, updateSardItem, pushNotification,
+  loadLatePermissions, saveLatePermissions, loadMessageTemplates, formatMessage,
+  type WeekRecord, type Student,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getOperationalDayKey } from "@/lib/operational-date";
 import { AppHeader } from "@/components/AppHeader";
-import { MessageCircle, UserX, Zap, Clipboard, Clock } from "lucide-react";
+import { MessageCircle, UserX, Zap, Clipboard, Clock, Plus, AlertTriangle, CheckCircle2, RotateCcw } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/secretary")({ component: SecretaryPage });
 
 function SecretaryPage() {
   const halaqat = loadHalaqat();
-  const students = loadStudents();
+  const [students, setStudents] = useState<Student[]>(() => loadStudents());
   const grades = loadGrades();
   const [queue, setQueue] = useState(() => loadSardQueue());
+  const [latePermissions, setLatePermissions] = useState(() => loadLatePermissions());
+  const [form, setForm] = useState<Omit<Student, "id">>({
+    name: "", halaqaId: halaqat[0]?.id || 1, nationalId: "", parentPhone: "", level: "1", levelType: "gold",
+  });
   const refresh = () => setQueue(loadSardQueue());
+  const templates = loadMessageTemplates();
 
   const todayKey = getOperationalDayKey();
   const today = useMemo(() => {
@@ -29,11 +35,46 @@ function SecretaryPage() {
   }, [students, grades, todayKey]);
 
   const scheduled = queue.filter((q) => q.status === "scheduled");
+  const activeSard = queue.filter((q) => !["passed", "final_failed", "level_repeat"].includes(q.status));
+  const passedSard = queue.filter((q) => q.status === "passed");
+  const finalFailed = queue.filter((q) => q.status === "final_failed");
+
+  const addStudent = async () => {
+    if (!form.name || !form.nationalId) { toast.error("الاسم ورقم الهوية مطلوبان"); return; }
+    const next = [...students, { id: `s-${Date.now()}`, ...form }];
+    setStudents(next); saveStudents(next);
+    try { await import("@/lib/cloud-sync").then((m) => m.pushStudents(next)); toast.success("تمت إضافة الطالب وحفظه"); }
+    catch { toast.error("تم الحفظ محلياً فقط — تحقق من الاتصال"); }
+    setForm({ ...form, name: "", nationalId: "", parentPhone: "" });
+  };
 
   const forceImmediate = (id: string, name: string) => {
     updateSardItem(id, { status: "pending", scheduledAt: new Date().toISOString() });
     pushNotification({ message: `سمح السكرتير بإعادة سرد فوري للطالب ${name}`, type: "sard" });
     toast.success("تم — يمكن للمسمّع البدء فوراً");
+    refresh();
+  };
+
+  const grantLate = (studentId: string) => {
+    const s = students.find((x) => x.id === studentId);
+    if (!s) return;
+    const h = halaqat.find((x) => x.id === s.halaqaId);
+    const grantedBy = sessionStorage.getItem("qs_name") || "السكرتير";
+    const next = [{ id: `late-${Date.now()}`, studentId: s.id, halaqaId: s.halaqaId, grantedBy, grantedAt: new Date().toISOString(), date: new Date().toISOString().slice(0, 10) }, ...latePermissions];
+    setLatePermissions(next); saveLatePermissions(next);
+    pushNotification({ message: `أذنت الإدارة بدخول الطالب ${s.name} متأخراً إلى ${h?.name || "الحلقة"}`, type: "late" });
+    toast.success("تم تسجيل إذن الدخول وإشعار المعلم");
+  };
+
+  const retryFinal = (id: string) => {
+    updateSardItem(id, { status: "pending", attempt: 1, scheduledAt: undefined, hifzErrors: 0, reviewErrors: [0, 0, 0, 0, 0] });
+    toast.success("تمت إعادة الطالب لقائمة السرد");
+    refresh();
+  };
+
+  const repeatLevel = (id: string) => {
+    updateSardItem(id, { status: "level_repeat" });
+    toast.success("تم تسجيل قرار إعادة المستوى");
     refresh();
   };
 
