@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { loginByCode, loginByNationalId } from "@/lib/secure-data.functions";
-import { setToken } from "@/lib/cloud-sync";
+import { setToken, syncFromCloud } from "@/lib/cloud-sync";
 import { Shield, UserCheck, GraduationCap, Mic, Eye } from "lucide-react";
 import logo from "@/assets/shtaiwi-logo.png.asset.json";
 import { toast, Toaster } from "sonner";
@@ -27,6 +27,7 @@ function LoginPage() {
         sessionStorage.setItem("qs_name", auth.name);
         if (auth.halaqaId) sessionStorage.setItem("qs_halaqa", String(auth.halaqaId));
         else sessionStorage.removeItem("qs_halaqa");
+        await syncFromCloud();
 
         switch (auth.role) {
           case "manager": navigate({ to: "/manager" }); break;
@@ -43,6 +44,7 @@ function LoginPage() {
         setToken(student.token);
         sessionStorage.setItem("qs_role", "student");
         sessionStorage.setItem("qs_student", student.studentId);
+        await syncFromCloud();
         navigate({ to: "/student", search: { s: student.studentId } });
       }
     } catch (e) {
