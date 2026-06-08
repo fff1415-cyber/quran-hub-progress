@@ -56,6 +56,11 @@ export interface SheetRow {
   phone: string;
   level: string;
   levelType: "gold" | "silver";
+  teacherName: string;
+  teacherCode: string;
+  assistantName: string;
+  assistantCode: string;
+  isTalqeen: boolean;
 }
 
 export function normalizeRows(rows: string[][]): SheetRow[] {
@@ -69,6 +74,11 @@ export function normalizeRows(rows: string[][]): SheetRow[] {
       phone: (r[3] || "").trim(),
       level: (r[4] || "").trim(),
       levelType: lt.includes("فض") ? "silver" : "gold",
+      teacherName: (r[6] || "").trim().replace(/\s+/g, " "),
+      teacherCode: (r[7] || "").trim(),
+      assistantName: (r[8] || "").trim().replace(/\s+/g, " "),
+      assistantCode: (r[9] || "").trim(),
+      isTalqeen: /تلقين|نعم|true|1/i.test((r[10] || "").trim()),
     } as SheetRow;
   }).filter((r) => r.name && r.nationalId);
 }
