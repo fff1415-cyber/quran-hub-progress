@@ -315,3 +315,28 @@ export const secureDeleteRoleAccount = createServerFn({ method: "POST" })
     if (error) throw new Error(error.message);
     return { ok: true };
   });
+
+// ---------- SHARED APP STATE ----------
+export const secureListAppState = createServerFn({ method: "POST" })
+  .inputValidator((d) => z.object({ token: z.string() }).parse(d))
+  .handler(async ({ data }) => {
+    requireStaff(verify(data.token));
+    const { data: rows, error } = await supabaseAdmin
+      .from("app_state")
+      .select("key, value");
+    if (error) throw new Error(error.message);
+    return rows ?? [];
+  });
+
+export const secureSetAppState = createServerFn({ method: "POST" })
+  .inputValidator((d) =>
+    z.object({ token: z.string(), key: AppStateKey, value: z.unknown() }).parse(d),
+  )
+  .handler(async ({ data }) => {
+    requireStaff(verify(data.token));
+    const { error } = await supabaseAdmin
+      .from("app_state")
+      .upsert({ key: data.key, value: data.value }, { onConflict: "key" });
+    if (error) throw new Error(error.message);
+    return { ok: true };
+  });
