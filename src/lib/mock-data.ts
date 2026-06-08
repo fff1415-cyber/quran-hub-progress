@@ -221,6 +221,7 @@ export type SardStatus =
   | "awaiting_supervisor" // failed twice, needs supervisor approval
   | "approved_third"     // supervisor approved 3rd attempt
   | "passed"
+  | "level_repeat"
   | "final_failed";      // failed third attempt -> manager page
 
 export interface SardQueueItem {
