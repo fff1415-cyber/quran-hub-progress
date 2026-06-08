@@ -101,15 +101,33 @@ function ImportTab() {
     return Array.from(set.entries()); // [name, count][]
   }, [preview, halaqatByNorm]);
 
-  const applyImport = () => {
+  const applyImport = async () => {
+    const halaqatByName = new Map(halaqatCurrent.map((h) => [normalizeArabic(h.name), h]));
+    const nextHalaqat = [...halaqatCurrent];
+    for (const row of preview) {
+      const key = normalizeArabic(row.halaqaName);
+      if (!row.halaqaName || halaqatByName.has(key)) continue;
+      const halaqa: Halaqa = {
+        id: Math.max(0, ...nextHalaqat.map((h) => h.id)) + 1,
+        name: row.halaqaName,
+        isTalqeen: row.isTalqeen,
+        teacherName: row.teacherName || "—",
+        teacherCode: row.teacherCode || "",
+        assistantName: row.assistantName || "—",
+        assistantCode: row.assistantCode || "",
+      };
+      nextHalaqat.push(halaqa);
+      halaqatByName.set(key, halaqa);
+    }
+
     const existingStudents = loadStudents();
     const studentsByNid = new Map(existingStudents.map((s) => [s.nationalId, s]));
     const updated: Student[] = [...existingStudents];
 
     let added = 0, updatedCount = 0, skipped = 0;
     for (const row of preview) {
-      const halaqa = halaqatByNorm.get(normalizeArabic(row.halaqaName));
-      if (!halaqa) { skipped++; continue; } // halaqat are manual — skip if not found
+      const halaqa = halaqatByName.get(normalizeArabic(row.halaqaName));
+      if (!halaqa) { skipped++; continue; }
 
       const existing = studentsByNid.get(row.nationalId);
       if (existing) {
@@ -138,9 +156,18 @@ function ImportTab() {
         added++;
       }
     }
+    saveHalaqat(nextHalaqat);
     saveStudents(updated);
-    void import("@/lib/cloud-sync").then((m) => m.pushStudents(updated));
-    const msg = `تم: +${added} جديد · تحديث ${updatedCount}` + (skipped ? ` · تم تجاهل ${skipped} (حلقة غير موجودة)` : "");
+    try {
+      const cloud = await import("@/lib/cloud-sync");
+      await cloud.pushHalaqat(nextHalaqat);
+      await cloud.pushStudents(updated);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "تعذّر الحفظ في السحابة");
+      return;
+    }
+    const createdHalaqat = nextHalaqat.length - halaqatCurrent.length;
+    const msg = `تم: +${added} طالب · تحديث ${updatedCount} · إنشاء ${createdHalaqat} حلقة` + (skipped ? ` · تم تجاهل ${skipped}` : "");
     if (skipped) toast.warning(msg); else toast.success(msg);
     setPreview([]);
     setUrl("");
@@ -154,8 +181,8 @@ function ImportTab() {
         </h3>
         <p className="text-xs text-muted-foreground mb-4">
           1. افتح ملف Google Sheets الخاص بك ← مشاركة ← أي شخص لديه الرابط (قارئ).<br />
-          2. الأعمدة المطلوبة بالترتيب: <span className="text-primary font-bold">اسم الطالب | اسم الحلقة | رقم الهوية | رقم الجوال | المستوى | نوع المستوى (ذهبي/فضي)</span>.<br />
-          3. <span className="text-primary">اسم الحلقة يجب أن يطابق حلقة موجودة مسبقاً</span> (يتم إنشاء الحلقات والمعلمين يدوياً من تبويب «الحلقات»).
+          2. الأعمدة المطلوبة: <span className="text-primary font-bold">اسم الطالب | اسم الحلقة | الهوية | الجوال | المستوى | ذهبي/فضي</span>.<br />
+          3. اختياري لإنشاء الحلقة تلقائياً: <span className="text-primary font-bold">اسم المعلم | رمز المعلم | اسم المساعد | رمز المساعد | تلقين</span>.
         </p>
         {halaqatCurrent.length > 0 && (
           <details className="mb-3 text-xs">
