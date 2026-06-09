@@ -2,14 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, loadGrades, loadNotifications, DAYS,
-  loadSardQueue, updateSardItem, pushNotification,
+  loadSardQueue, updateSardItem, pushNotification, dismissNotification,
   type WeekRecord,
 } from "@/lib/mock-data";
 import { getOperationalDayKey } from "@/lib/operational-date";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
 import { LateSardList, ActiveSardList } from "@/components/SardLists";
-import { Bell, MessageCircle, TrendingUp, UserX, Send, Zap, Clock } from "lucide-react";
+import { Bell, MessageCircle, TrendingUp, UserX, Send, Zap, Clock, Check } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
