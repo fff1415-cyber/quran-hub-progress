@@ -73,6 +73,9 @@ function TeacherPage() {
           </div>
         </div>
 
+        <HalaqaNotifications halaqaId={halaqa.id} />
+
+
         {!w ? (
           <WeeksGrid halaqaId={halaqa.id} canAssign={!isAssistant} />
         ) : (
