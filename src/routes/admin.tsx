@@ -236,18 +236,26 @@ function AdminPage() {
 
         {tab === "alerts" && (
           <div className="glass-card rounded-2xl p-6">
-            <h2 className="text-xl font-bold mb-4 text-primary">الإشعارات</h2>
-            {notifications.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">لا توجد إشعارات</p>
+            <h2 className="text-xl font-bold mb-2 text-primary">الإشعارات التي تحتاج إجراء</h2>
+            <p className="text-xs text-muted-foreground mb-4">اضغط ✓ بعد اتخاذ الإجراء لإخفاء الإشعار والانتقال للمربع المناسب.</p>
+            {unread.length === 0 ? (
+              <p className="text-muted-foreground text-center py-8">لا توجد إشعارات معلّقة</p>
             ) : (
               <div className="space-y-2">
-                {notifications.map((n) => (
+                {unread.map((n) => (
                   <div key={n.id} className="flex items-start gap-3 p-3 rounded-lg bg-secondary/50">
                     <Send className="w-4 h-4 text-primary mt-1" />
                     <div className="flex-1">
                       <div className="text-sm">{n.message}</div>
                       <div className="text-xs text-muted-foreground mt-1">{new Date(n.createdAt).toLocaleString("ar")}</div>
                     </div>
+                    <button
+                      onClick={() => { resolveNotif(n.id, n.actionTab); toast.success("تم"); }}
+                      aria-label="تم"
+                      className="p-2 rounded-lg bg-success/15 text-success border border-success/30 hover:bg-success/25"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
                   </div>
                 ))}
               </div>
