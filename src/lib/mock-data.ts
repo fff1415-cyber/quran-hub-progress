@@ -158,6 +158,8 @@ export interface Notification {
   type: "sard" | "absence" | "late" | "info";
   createdAt: string;
   read: boolean;
+  targetHalaqaId?: number; // route to a specific halaqa teacher
+  actionTab?: "today" | "sard" | "late" | "passed" | "failed"; // which box to open when acted on
 }
 export function loadNotifications(): Notification[] {
   if (typeof window === "undefined") return [];
@@ -173,6 +175,10 @@ export function pushNotification(n: Omit<Notification, "id" | "createdAt" | "rea
 export function saveNotifications(list: Notification[]) {
   localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.slice(0, 200)));
   persistShared("notifications", list.slice(0, 200));
+}
+export function dismissNotification(id: string) {
+  const list = loadNotifications().map((n) => (n.id === id ? { ...n, read: true } : n));
+  saveNotifications(list);
 }
 
 // ---- WhatsApp message templates ----

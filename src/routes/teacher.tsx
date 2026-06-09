@@ -3,12 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import {
   loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, DAYS,
-  weekPercentage, enqueueSard, HIFZ_LABELS,
+  weekPercentage, enqueueSard, HIFZ_LABELS, loadNotifications, dismissNotification,
   type WeekRecord, type DayEntry, type HifzValue, type Student,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
-import { ArrowRight, Check, CheckCircle2, ListChecks, Users, X } from "lucide-react";
+import { ArrowRight, Bell, Check, CheckCircle2, ListChecks, Users, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/teacher")({
@@ -72,6 +72,9 @@ function TeacherPage() {
             )}
           </div>
         </div>
+
+        <HalaqaNotifications halaqaId={halaqa.id} />
+
 
         {!w ? (
           <WeeksGrid halaqaId={halaqa.id} canAssign={!isAssistant} />
@@ -371,6 +374,39 @@ function Cbx({ checked, onChange }: { checked: boolean; onChange: (v: boolean) =
     >
       {checked && <Check className="w-4 h-4 text-primary-foreground" />}
     </button>
+  );
+}
+
+function HalaqaNotifications({ halaqaId }: { halaqaId: number }) {
+  const [items, setItems] = useState(() =>
+    loadNotifications().filter((n) => !n.read && n.targetHalaqaId === halaqaId)
+  );
+  if (items.length === 0) return null;
+  const dismiss = (id: string) => {
+    dismissNotification(id);
+    setItems(loadNotifications().filter((n) => !n.read && n.targetHalaqaId === halaqaId));
+  };
+  return (
+    <div className="glass-card rounded-2xl p-4 mb-6 border border-warning/30">
+      <div className="flex items-center gap-2 mb-3 text-warning font-bold">
+        <Bell className="w-4 h-4" />
+        إشعارات الحلقة ({items.length})
+      </div>
+      <div className="space-y-2">
+        {items.map((n) => (
+          <div key={n.id} className="flex items-start gap-2 p-2 rounded-lg bg-warning/10">
+            <div className="flex-1 text-sm">{n.message}</div>
+            <button
+              onClick={() => dismiss(n.id)}
+              aria-label="تم"
+              className="p-1.5 rounded-md bg-success/15 text-success border border-success/30"
+            >
+              <Check className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
   );
 }
 

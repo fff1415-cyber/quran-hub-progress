@@ -2,14 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, loadGrades, loadNotifications, DAYS,
-  loadSardQueue, updateSardItem, pushNotification,
+  loadSardQueue, updateSardItem, pushNotification, dismissNotification,
   type WeekRecord,
 } from "@/lib/mock-data";
 import { getOperationalDayKey } from "@/lib/operational-date";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
 import { LateSardList, ActiveSardList } from "@/components/SardLists";
-import { Bell, MessageCircle, TrendingUp, UserX, Send, Zap, Clock } from "lucide-react";
+import { Bell, MessageCircle, TrendingUp, UserX, Send, Zap, Clock, Check } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/admin")({ component: AdminPage });
@@ -18,9 +18,17 @@ function AdminPage() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
   const grades = loadGrades();
-  const notifications = loadNotifications();
+  const [notifications, setNotifications] = useState(() => loadNotifications());
   const [queue, setQueue] = useState(() => loadSardQueue());
   const [tab, setTab] = useState<"today" | "cumulative" | "progress" | "sard" | "alerts">("today");
+  const unread = notifications.filter((n) => !n.read);
+
+  const resolveNotif = (id: string, targetTab?: string) => {
+    dismissNotification(id);
+    setNotifications(loadNotifications());
+    if (targetTab === "sard" || targetTab === "today") setTab(targetTab as any);
+    else if (targetTab === "late") setTab("today");
+  };
 
   const todayKey = useMemo(() => getOperationalDayKey(), []);
   const scheduled = queue.filter((q) => q.status === "scheduled");
@@ -74,7 +82,7 @@ function AdminPage() {
     { id: "cumulative", label: "السجل التراكمي", icon: Bell, count: cumulativeAbsents.length },
     { id: "progress", label: "متابعة الربط والمراجعة", icon: TrendingUp },
     { id: "sard", label: "السرد المعلّق", icon: Clock, count: scheduled.length },
-    { id: "alerts", label: "الإشعارات", icon: Bell, count: notifications.filter((n) => !n.read).length },
+    { id: "alerts", label: "الإشعارات", icon: Bell, count: unread.length },
   ];
 
   return (
@@ -228,18 +236,26 @@ function AdminPage() {
 
         {tab === "alerts" && (
           <div className="glass-card rounded-2xl p-6">
-            <h2 className="text-xl font-bold mb-4 text-primary">الإشعارات</h2>
-            {notifications.length === 0 ? (
-              <p className="text-muted-foreground text-center py-8">لا توجد إشعارات</p>
+            <h2 className="text-xl font-bold mb-2 text-primary">الإشعارات التي تحتاج إجراء</h2>
+            <p className="text-xs text-muted-foreground mb-4">اضغط ✓ بعد اتخاذ الإجراء لإخفاء الإشعار والانتقال للمربع المناسب.</p>
+            {unread.length === 0 ? (
+              <p className="text-muted-foreground text-center py-8">لا توجد إشعارات معلّقة</p>
             ) : (
               <div className="space-y-2">
-                {notifications.map((n) => (
+                {unread.map((n) => (
                   <div key={n.id} className="flex items-start gap-3 p-3 rounded-lg bg-secondary/50">
                     <Send className="w-4 h-4 text-primary mt-1" />
                     <div className="flex-1">
                       <div className="text-sm">{n.message}</div>
                       <div className="text-xs text-muted-foreground mt-1">{new Date(n.createdAt).toLocaleString("ar")}</div>
                     </div>
+                    <button
+                      onClick={() => { resolveNotif(n.id, n.actionTab); toast.success("تم"); }}
+                      aria-label="تم"
+                      className="p-2 rounded-lg bg-success/15 text-success border border-success/30 hover:bg-success/25"
+                    >
+                      <Check className="w-4 h-4" />
+                    </button>
                   </div>
                 ))}
               </div>
