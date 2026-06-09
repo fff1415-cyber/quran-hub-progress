@@ -62,8 +62,14 @@ function SecretaryPage() {
     const grantedBy = sessionStorage.getItem("qs_name") || "السكرتير";
     const next = [{ id: `late-${Date.now()}`, studentId: s.id, halaqaId: s.halaqaId, grantedBy, grantedAt: new Date().toISOString(), date: new Date().toISOString().slice(0, 10) }, ...latePermissions];
     setLatePermissions(next); saveLatePermissions(next);
-    pushNotification({ message: `أذنت الإدارة بدخول الطالب ${s.name} متأخراً إلى ${h?.name || "الحلقة"}`, type: "late" });
-    toast.success("تم تسجيل إذن الدخول وإشعار المعلم");
+    // Notify the halaqa teacher specifically
+    pushNotification({
+      message: `تم منح الطالب ${s.name} إذن الدخول إلى ${h?.name || "الحلقة"} من قِبل ${grantedBy}`,
+      type: "late",
+      targetHalaqaId: s.halaqaId,
+      actionTab: "late",
+    });
+    toast.success("تم تسجيل إذن الدخول وإشعار معلم الحلقة");
   };
 
   const retryFinal = (id: string) => {
