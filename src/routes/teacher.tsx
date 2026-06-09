@@ -377,5 +377,38 @@ function Cbx({ checked, onChange }: { checked: boolean; onChange: (v: boolean) =
   );
 }
 
+function HalaqaNotifications({ halaqaId }: { halaqaId: number }) {
+  const [items, setItems] = useState(() =>
+    loadNotifications().filter((n) => !n.read && n.targetHalaqaId === halaqaId)
+  );
+  if (items.length === 0) return null;
+  const dismiss = (id: string) => {
+    dismissNotification(id);
+    setItems(loadNotifications().filter((n) => !n.read && n.targetHalaqaId === halaqaId));
+  };
+  return (
+    <div className="glass-card rounded-2xl p-4 mb-6 border border-warning/30">
+      <div className="flex items-center gap-2 mb-3 text-warning font-bold">
+        <Bell className="w-4 h-4" />
+        إشعارات الحلقة ({items.length})
+      </div>
+      <div className="space-y-2">
+        {items.map((n) => (
+          <div key={n.id} className="flex items-start gap-2 p-2 rounded-lg bg-warning/10">
+            <div className="flex-1 text-sm">{n.message}</div>
+            <button
+              onClick={() => dismiss(n.id)}
+              aria-label="تم"
+              className="p-1.5 rounded-md bg-success/15 text-success border border-success/30"
+            >
+              <Check className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // React import for React.Fragment
 import React from "react";
