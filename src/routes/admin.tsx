@@ -82,7 +82,7 @@ function AdminPage() {
     { id: "cumulative", label: "السجل التراكمي", icon: Bell, count: cumulativeAbsents.length },
     { id: "progress", label: "متابعة الربط والمراجعة", icon: TrendingUp },
     { id: "sard", label: "السرد المعلّق", icon: Clock, count: scheduled.length },
-    { id: "alerts", label: "الإشعارات", icon: Bell, count: notifications.filter((n) => !n.read).length },
+    { id: "alerts", label: "الإشعارات", icon: Bell, count: unread.length },
   ];
 
   return (
