@@ -18,9 +18,17 @@ function AdminPage() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
   const grades = loadGrades();
-  const notifications = loadNotifications();
+  const [notifications, setNotifications] = useState(() => loadNotifications());
   const [queue, setQueue] = useState(() => loadSardQueue());
   const [tab, setTab] = useState<"today" | "cumulative" | "progress" | "sard" | "alerts">("today");
+  const unread = notifications.filter((n) => !n.read);
+
+  const resolveNotif = (id: string, targetTab?: string) => {
+    dismissNotification(id);
+    setNotifications(loadNotifications());
+    if (targetTab === "sard" || targetTab === "today") setTab(targetTab as any);
+    else if (targetTab === "late") setTab("today");
+  };
 
   const todayKey = useMemo(() => getOperationalDayKey(), []);
   const scheduled = queue.filter((q) => q.status === "scheduled");
