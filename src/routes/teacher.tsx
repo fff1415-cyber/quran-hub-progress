@@ -3,12 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import {
   loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, DAYS,
-  weekPercentage, enqueueSard, HIFZ_LABELS,
+  weekPercentage, enqueueSard, HIFZ_LABELS, loadNotifications, dismissNotification,
   type WeekRecord, type DayEntry, type HifzValue, type Student,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
-import { ArrowRight, Check, CheckCircle2, ListChecks, Users, X } from "lucide-react";
+import { ArrowRight, Bell, Check, CheckCircle2, ListChecks, Users, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/teacher")({
