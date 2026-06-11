@@ -31,13 +31,23 @@ function SecretaryPage() {
   const me = sessionStorage.getItem("qs_name") || "السكرتير";
 
   const todayKey = getOperationalDayKey();
+  const ackedToday = useMemo(() => new Set(archive.filter((a) => a.date === todayISO).map((a) => `${a.studentId}|${a.type}`)), [archive, todayISO]);
   const today = useMemo(() => {
     const currentWeek = 1;
     return students.map((s) => {
       const w: WeekRecord | undefined = grades[s.id]?.[currentWeek];
-      return { s, status: (w?.days[todayKey]?.attendance || "") };
-    }).filter((x) => x.status && x.status !== "present");
-  }, [students, grades, todayKey]);
+      return { s, status: (w?.days[todayKey]?.attendance || "") as "absent" | "late" | "excused" | "present" | "" };
+    }).filter((x) => x.status && x.status !== "present" && !ackedToday.has(`${x.s.id}|${x.status}`));
+  }, [students, grades, todayKey, ackedToday]);
+
+  const absenceArchive = useMemo(() => archive.filter((a) => a.type === "absent"), [archive]);
+  const lateArchive = useMemo(() => archive.filter((a) => a.type === "late"), [archive]);
+
+  const ackToday = (s: Student, type: "absent" | "late" | "excused") => {
+    acknowledgeAttendance({ studentId: s.id, halaqaId: s.halaqaId, type, date: todayISO, dayKey: todayKey, acknowledgedBy: me });
+    setArchive(loadAttendanceArchive());
+    toast.success(type === "absent" ? "نُقل إلى سجل الغياب" : type === "late" ? "نُقل إلى سجل التأخر" : "تم");
+  };
 
   const scheduled = queue.filter((q) => q.status === "scheduled");
   const activeSard = queue.filter((q) => !["passed", "final_failed", "level_repeat"].includes(q.status));
