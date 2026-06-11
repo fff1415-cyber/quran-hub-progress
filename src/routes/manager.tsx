@@ -1,22 +1,42 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { loadSardQueue, loadStudents, loadHalaqat } from "@/lib/mock-data";
+import { useState } from "react";
+import {
+  loadSardQueue, loadStudents, loadHalaqat, loadAttendanceArchive,
+  loadMessageTemplates, saveMessageTemplates,
+  DEFAULT_MESSAGE_TEMPLATES, type MessageTemplateKey,
+} from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
 import { LateSardList } from "@/components/SardLists";
-import { Crown, AlertTriangle, Settings, Shield, BookOpen } from "lucide-react";
-import { useState } from "react";
+import { Crown, AlertTriangle, Settings, Shield, BookOpen, Archive, MessageSquare, Save, RotateCcw } from "lucide-react";
+import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/manager")({ component: ManagerPage });
+
+const TEMPLATE_LABELS: Record<MessageTemplateKey, { title: string; vars: string }> = {
+  absence:   { title: "رسالة الغياب", vars: "{student} {halaqa}" },
+  late:      { title: "رسالة التأخر / منح إذن الدخول", vars: "{student} {halaqa}" },
+  sard_pass: { title: "رسالة اجتياز السرد", vars: "{student} {halaqa} {week} {percent}" },
+  sard_fail: { title: "رسالة رسوب السرد", vars: "{student} {halaqa} {week} {percent}" },
+};
 
 function ManagerPage() {
   const [queue] = useState(() => loadSardQueue());
   const students = loadStudents();
   const halaqat = loadHalaqat();
+  const archive = loadAttendanceArchive();
+  const [templates, setTemplates] = useState(() => loadMessageTemplates());
 
   const failedFinal = queue.filter((q) => q.status === "final_failed");
+  const absenceArchive = archive.filter((a) => a.type === "absent");
+  const lateArchive = archive.filter((a) => a.type === "late");
+
+  const saveTpl = () => { saveMessageTemplates(templates); toast.success("تم حفظ الرسائل"); };
+  const resetTpl = (k: MessageTemplateKey) => setTemplates({ ...templates, [k]: DEFAULT_MESSAGE_TEMPLATES[k] });
 
   return (
     <div className="min-h-screen">
+      <Toaster position="top-center" richColors />
       <AppHeader title="لوحة المدير" subtitle="أ. فيصل الفوزان" />
       <main className="max-w-5xl mx-auto px-4 py-8">
         <div className="glass-card rounded-2xl p-6 mb-6 flex items-center gap-4">
@@ -62,6 +82,72 @@ function ManagerPage() {
               </Link>
             ))}
           </div>
+        </section>
+
+        {/* Absence archive */}
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-destructive mb-4 flex items-center gap-2">
+            <Archive className="w-5 h-5" /> سجل الغياب الإجمالي ({absenceArchive.length})
+          </h2>
+          {absenceArchive.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد سجل بعد</p>
+          ) : (
+            <div className="space-y-1 max-h-72 overflow-auto">
+              {absenceArchive.slice(0, 100).map((a) => {
+                const s = students.find((x) => x.id === a.studentId);
+                const h = halaqat.find((x) => x.id === a.halaqaId);
+                return <div key={a.id} className="p-2 rounded bg-destructive/5 text-sm flex justify-between"><span>{s?.name} · {h?.name}</span><span className="text-muted-foreground">{a.date}</span></div>;
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Late archive */}
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-warning mb-4 flex items-center gap-2">
+            <Archive className="w-5 h-5" /> سجل التأخر الإجمالي ({lateArchive.length})
+          </h2>
+          {lateArchive.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد سجل بعد</p>
+          ) : (
+            <div className="space-y-1 max-h-72 overflow-auto">
+              {lateArchive.slice(0, 100).map((a) => {
+                const s = students.find((x) => x.id === a.studentId);
+                const h = halaqat.find((x) => x.id === a.halaqaId);
+                return <div key={a.id} className="p-2 rounded bg-warning/5 text-sm flex justify-between"><span>{s?.name} · {h?.name}</span><span className="text-muted-foreground">{a.date}</span></div>;
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Message templates editor */}
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-primary mb-2 flex items-center gap-2">
+            <MessageSquare className="w-5 h-5" /> تحرير الرسائل المرسلة لأولياء الأمور
+          </h2>
+          <p className="text-xs text-muted-foreground mb-4">المتغيرات: <code className="text-primary">{"{student}"}</code> اسم الطالب · <code className="text-primary">{"{halaqa}"}</code> الحلقة · <code className="text-primary">{"{week}"}</code> الأسبوع · <code className="text-primary">{"{percent}"}</code> النسبة</p>
+          <div className="space-y-4">
+            {(Object.keys(TEMPLATE_LABELS) as MessageTemplateKey[]).map((k) => (
+              <div key={k} className="rounded-lg border border-border p-3 bg-secondary/30">
+                <div className="flex items-center justify-between mb-2">
+                  <div className="font-bold text-sm">{TEMPLATE_LABELS[k].title}</div>
+                  <button onClick={() => resetTpl(k)} className="text-xs text-muted-foreground hover:text-primary flex items-center gap-1">
+                    <RotateCcw className="w-3 h-3" /> استعادة الافتراضي
+                  </button>
+                </div>
+                <textarea
+                  value={templates[k]}
+                  onChange={(e) => setTemplates({ ...templates, [k]: e.target.value })}
+                  rows={3}
+                  className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm"
+                />
+                <div className="text-[10px] text-muted-foreground mt-1">المتغيرات المتاحة: {TEMPLATE_LABELS[k].vars}</div>
+              </div>
+            ))}
+          </div>
+          <button onClick={saveTpl} className="mt-4 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center gap-2">
+            <Save className="w-4 h-4" /> حفظ جميع الرسائل
+          </button>
         </section>
 
         {/* Final failed students */}
