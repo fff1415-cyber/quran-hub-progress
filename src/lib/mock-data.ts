@@ -221,6 +221,38 @@ export function saveLatePermissions(list: LatePermission[]) {
   persistShared("late_permissions", list.slice(0, 1000));
 }
 
+// ---- Acknowledged attendance archive (after secretary presses ✓ on today's row) ----
+export interface AttendanceArchiveItem {
+  id: string;
+  studentId: string;
+  halaqaId: number;
+  type: "absent" | "late" | "excused";
+  date: string;            // ISO yyyy-mm-dd
+  dayKey: string;          // sun/mon/..
+  acknowledgedAt: string;
+  acknowledgedBy: string;
+}
+const KEY_ATT_ARCHIVE = "qshatawi_att_archive_v1";
+export function loadAttendanceArchive(): AttendanceArchiveItem[] {
+  if (typeof window === "undefined") return [];
+  const raw = localStorage.getItem(KEY_ATT_ARCHIVE);
+  return raw ? JSON.parse(raw) : [];
+}
+export function saveAttendanceArchive(list: AttendanceArchiveItem[]) {
+  localStorage.setItem(KEY_ATT_ARCHIVE, JSON.stringify(list.slice(0, 2000)));
+}
+export function acknowledgeAttendance(item: Omit<AttendanceArchiveItem, "id" | "acknowledgedAt">) {
+  const list = loadAttendanceArchive();
+  // de-dup on student+date+type
+  const exists = list.some((x) => x.studentId === item.studentId && x.date === item.date && x.type === item.type);
+  if (exists) return;
+  list.unshift({ ...item, id: `att-${Date.now()}-${Math.random()}`, acknowledgedAt: new Date().toISOString() });
+  saveAttendanceArchive(list);
+}
+export function isAttendanceAcked(studentId: string, date: string, type: "absent" | "late" | "excused"): boolean {
+  return loadAttendanceArchive().some((x) => x.studentId === studentId && x.date === date && x.type === type);
+}
+
 // ---- Sard Queue & History ----
 export type SardStatus =
   | "pending"            // in queue, waiting for musammi
