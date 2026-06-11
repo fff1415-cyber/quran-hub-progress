@@ -3,7 +3,7 @@ import { loadSardQueue, loadStudents, loadHalaqat, updateSardItem, pushNotificat
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
 import { LateSardList, ActiveSardList } from "@/components/SardLists";
-import { Eye, Check, BookOpen, Zap, Clock } from "lucide-react";
+import { Eye, Check, BookOpen, Zap, Clock, CheckCircle2 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { useState } from "react";
 
@@ -17,6 +17,7 @@ function SupervisorPage() {
 
   const awaiting = queue.filter((q) => q.status === "awaiting_supervisor");
   const scheduled = queue.filter((q) => q.status === "scheduled");
+  const passedSard = queue.filter((q) => q.status === "passed");
 
   const approveThird = (id: string, name: string) => {
     updateSardItem(id, { status: "approved_third", attempt: 3, hifzErrors: 0, reviewErrors: [0, 0, 0, 0, 0] });
@@ -64,6 +65,33 @@ function SupervisorPage() {
 
         <div className="mb-6"><ActiveSardList /></div>
         <div className="mb-6"><LateSardList /></div>
+
+        {/* Students who completed the level sard (passed) */}
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-success mb-4 flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5" /> الطلاب الذين أنهوا سرد المستوى ({passedSard.length})
+          </h2>
+          {passedSard.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد مجتازون بعد</p>
+          ) : (
+            <div className="space-y-2 max-h-80 overflow-auto">
+              {passedSard.map((q) => {
+                const s = students.find((x) => x.id === q.studentId);
+                const h = halaqat.find((x) => x.id === q.halaqaId);
+                if (!s || !h) return null;
+                return (
+                  <div key={q.id} className="flex items-center justify-between p-3 rounded-lg bg-success/10 border border-success/20">
+                    <div>
+                      <div className="font-bold text-sm">{s.name}</div>
+                      <div className="text-xs text-muted-foreground">{h.name} · {weekLabel(q.week)}</div>
+                    </div>
+                    <span className="px-2 py-1 rounded bg-success/20 text-success text-xs font-bold">{q.finalPercent}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
         {/* Awaiting approval for 3rd attempt */}
         <section className="glass-card rounded-2xl p-6 mb-6">

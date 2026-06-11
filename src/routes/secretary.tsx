@@ -3,12 +3,13 @@ import { useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, saveStudents, loadGrades, loadSardQueue, updateSardItem, pushNotification,
   loadLatePermissions, saveLatePermissions, loadMessageTemplates, formatMessage,
+  loadAttendanceArchive, acknowledgeAttendance,
   type WeekRecord, type Student,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getOperationalDayKey } from "@/lib/operational-date";
 import { AppHeader } from "@/components/AppHeader";
-import { MessageCircle, UserX, Zap, Clipboard, Clock, Plus, AlertTriangle, CheckCircle2, RotateCcw } from "lucide-react";
+import { MessageCircle, UserX, Zap, Clipboard, Clock, Plus, AlertTriangle, CheckCircle2, RotateCcw, Check, Archive, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/secretary")({ component: SecretaryPage });
@@ -19,20 +20,34 @@ function SecretaryPage() {
   const grades = loadGrades();
   const [queue, setQueue] = useState(() => loadSardQueue());
   const [latePermissions, setLatePermissions] = useState(() => loadLatePermissions());
+  const [archive, setArchive] = useState(() => loadAttendanceArchive());
+  const [openLateHistory, setOpenLateHistory] = useState<string | null>(null);
   const [form, setForm] = useState<Omit<Student, "id">>({
     name: "", halaqaId: halaqat[0]?.id || 1, nationalId: "", parentPhone: "", level: "1", levelType: "gold",
   });
   const refresh = () => setQueue(loadSardQueue());
   const templates = loadMessageTemplates();
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const me = sessionStorage.getItem("qs_name") || "السكرتير";
 
   const todayKey = getOperationalDayKey();
+  const ackedToday = useMemo(() => new Set(archive.filter((a) => a.date === todayISO).map((a) => `${a.studentId}|${a.type}`)), [archive, todayISO]);
   const today = useMemo(() => {
     const currentWeek = 1;
     return students.map((s) => {
       const w: WeekRecord | undefined = grades[s.id]?.[currentWeek];
-      return { s, status: (w?.days[todayKey]?.attendance || "") };
-    }).filter((x) => x.status && x.status !== "present");
-  }, [students, grades, todayKey]);
+      return { s, status: (w?.days[todayKey]?.attendance || "") as "absent" | "late" | "excused" | "present" | "" };
+    }).filter((x) => x.status && x.status !== "present" && !ackedToday.has(`${x.s.id}|${x.status}`));
+  }, [students, grades, todayKey, ackedToday]);
+
+  const absenceArchive = useMemo(() => archive.filter((a) => a.type === "absent"), [archive]);
+  const lateArchive = useMemo(() => archive.filter((a) => a.type === "late"), [archive]);
+
+  const ackToday = (s: Student, type: "absent" | "late" | "excused") => {
+    acknowledgeAttendance({ studentId: s.id, halaqaId: s.halaqaId, type, date: todayISO, dayKey: todayKey, acknowledgedBy: me });
+    setArchive(loadAttendanceArchive());
+    toast.success(type === "absent" ? "نُقل إلى سجل الغياب" : type === "late" ? "نُقل إلى سجل التأخر" : "تم");
+  };
 
   const scheduled = queue.filter((q) => q.status === "scheduled");
   const activeSard = queue.filter((q) => !["passed", "final_failed", "level_repeat"].includes(q.status));
@@ -126,13 +141,55 @@ function SecretaryPage() {
                         <div className="text-xs text-muted-foreground">{h?.name}</div>
                       </div>
                     </div>
-                    <a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer"
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-success/20 text-success border border-success/30 text-sm font-bold">
-                      <MessageCircle className="w-4 h-4" />
-                      واتساب
-                    </a>
+                    <div className="flex items-center gap-2">
+                      <a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer"
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-success/20 text-success border border-success/30 text-sm font-bold">
+                        <MessageCircle className="w-4 h-4" />
+                        واتساب
+                      </a>
+                      <button onClick={() => ackToday(s, status as "absent" | "late" | "excused")} title="نقل إلى السجل"
+                        className="p-2 rounded-lg bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25">
+                        <Check className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* ----- Absence archive ----- */}
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-destructive mb-4 flex items-center gap-2">
+            <Archive className="w-5 h-5" /> سجل الغياب ({absenceArchive.length})
+          </h2>
+          {absenceArchive.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد سجل بعد</p>
+          ) : (
+            <div className="space-y-1 max-h-80 overflow-auto">
+              {absenceArchive.slice(0, 50).map((a) => {
+                const s = students.find((x) => x.id === a.studentId);
+                const h = halaqat.find((x) => x.id === a.halaqaId);
+                return <div key={a.id} className="p-2 rounded bg-destructive/5 text-sm flex justify-between"><span>{s?.name} · {h?.name}</span><span className="text-muted-foreground">{a.date}</span></div>;
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* ----- Late archive ----- */}
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-warning mb-4 flex items-center gap-2">
+            <Archive className="w-5 h-5" /> سجل التأخر ({lateArchive.length})
+          </h2>
+          {lateArchive.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد سجل بعد</p>
+          ) : (
+            <div className="space-y-1 max-h-80 overflow-auto">
+              {lateArchive.slice(0, 50).map((a) => {
+                const s = students.find((x) => x.id === a.studentId);
+                const h = halaqat.find((x) => x.id === a.halaqaId);
+                return <div key={a.id} className="p-2 rounded bg-warning/5 text-sm flex justify-between"><span>{s?.name} · {h?.name}</span><span className="text-muted-foreground">{a.date}</span></div>;
               })}
             </div>
           )}
@@ -163,19 +220,43 @@ function SecretaryPage() {
           <h2 className="text-lg font-bold text-warning mb-4 flex items-center gap-2">
             <AlertTriangle className="w-5 h-5" /> إذن دخول المتأخرين
           </h2>
-          <div className="grid md:grid-cols-[1fr_auto] gap-2 mb-4">
-            <select id="late-student" className="px-3 py-2 rounded-lg bg-input border border-border">
-              {students.map((s) => <option key={s.id} value={s.id}>{s.name} — {halaqat.find((h) => h.id === s.halaqaId)?.name}</option>)}
-            </select>
-            <button onClick={() => grantLate((document.getElementById("late-student") as HTMLSelectElement)?.value)} className="px-4 py-2 rounded-lg bg-warning/20 text-warning border border-warning/30 font-bold">
-              منح الإذن
-            </button>
-          </div>
-          <div className="space-y-2">
-            {latePermissions.slice(0, 8).map((p) => {
-              const s = students.find((x) => x.id === p.studentId);
-              const h = halaqat.find((x) => x.id === p.halaqaId);
-              return <div key={p.id} className="p-3 rounded-lg bg-secondary/50 text-sm">{s?.name} · {h?.name} · أذن: {p.grantedBy}</div>;
+          <p className="text-xs text-muted-foreground mb-3">اضغط على اسم الطالب لعرض سجل تأخراته ثم منح الإذن.</p>
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            {students.map((s) => {
+              const h = halaqat.find((x) => x.id === s.halaqaId);
+              const hist = latePermissions.filter((p) => p.studentId === s.id);
+              const open = openLateHistory === s.id;
+              return (
+                <div key={s.id} className="rounded-lg border border-border bg-secondary/30">
+                  <button onClick={() => setOpenLateHistory(open ? null : s.id)}
+                    className="w-full p-3 text-right flex items-center justify-between hover:bg-primary/5">
+                    <div>
+                      <div className="font-medium text-sm">{s.name}</div>
+                      <div className="text-xs text-muted-foreground">{h?.name}</div>
+                    </div>
+                    <span className="px-2 py-1 rounded bg-warning/15 text-warning text-xs font-bold">{hist.length} تأخر</span>
+                  </button>
+                  {open && (
+                    <div className="border-t border-border p-3 bg-background/40 space-y-2">
+                      <div className="text-xs font-bold text-muted-foreground">سجل التأخر:</div>
+                      {hist.length === 0 ? (
+                        <div className="text-xs text-muted-foreground">لا يوجد تأخر سابق</div>
+                      ) : (
+                        <ul className="text-xs space-y-1 max-h-32 overflow-auto">
+                          {hist.map((p) => <li key={p.id} className="flex justify-between"><span>{p.date}</span><span className="text-muted-foreground">أذن: {p.grantedBy}</span></li>)}
+                        </ul>
+                      )}
+                      <button onClick={() => { grantLate(s.id); setLatePermissions(loadLatePermissions()); setOpenLateHistory(null); }}
+                        className="w-full px-3 py-2 rounded-lg bg-warning/20 text-warning border border-warning/30 font-bold text-sm flex items-center justify-center gap-1">
+                        <Check className="w-4 h-4" /> منح إذن الدخول الآن
+                      </button>
+                      <button onClick={() => setOpenLateHistory(null)} className="w-full text-xs text-muted-foreground flex items-center justify-center gap-1">
+                        <X className="w-3 h-3" /> إغلاق
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
             })}
           </div>
         </section>
