@@ -20,11 +20,15 @@ function SecretaryPage() {
   const grades = loadGrades();
   const [queue, setQueue] = useState(() => loadSardQueue());
   const [latePermissions, setLatePermissions] = useState(() => loadLatePermissions());
+  const [archive, setArchive] = useState(() => loadAttendanceArchive());
+  const [openLateHistory, setOpenLateHistory] = useState<string | null>(null);
   const [form, setForm] = useState<Omit<Student, "id">>({
     name: "", halaqaId: halaqat[0]?.id || 1, nationalId: "", parentPhone: "", level: "1", levelType: "gold",
   });
   const refresh = () => setQueue(loadSardQueue());
   const templates = loadMessageTemplates();
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const me = sessionStorage.getItem("qs_name") || "السكرتير";
 
   const todayKey = getOperationalDayKey();
   const today = useMemo(() => {
