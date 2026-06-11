@@ -3,7 +3,7 @@ import { loadSardQueue, loadStudents, loadHalaqat, updateSardItem, pushNotificat
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
 import { LateSardList, ActiveSardList } from "@/components/SardLists";
-import { Eye, Check, BookOpen, Zap, Clock } from "lucide-react";
+import { Eye, Check, BookOpen, Zap, Clock, CheckCircle2 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { useState } from "react";
 
