@@ -17,6 +17,7 @@ function SupervisorPage() {
 
   const awaiting = queue.filter((q) => q.status === "awaiting_supervisor");
   const scheduled = queue.filter((q) => q.status === "scheduled");
+  const passedSard = queue.filter((q) => q.status === "passed");
 
   const approveThird = (id: string, name: string) => {
     updateSardItem(id, { status: "approved_third", attempt: 3, hifzErrors: 0, reviewErrors: [0, 0, 0, 0, 0] });
