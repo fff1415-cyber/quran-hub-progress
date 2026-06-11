@@ -3,12 +3,13 @@ import { useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, saveStudents, loadGrades, loadSardQueue, updateSardItem, pushNotification,
   loadLatePermissions, saveLatePermissions, loadMessageTemplates, formatMessage,
+  loadAttendanceArchive, acknowledgeAttendance,
   type WeekRecord, type Student,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getOperationalDayKey } from "@/lib/operational-date";
 import { AppHeader } from "@/components/AppHeader";
-import { MessageCircle, UserX, Zap, Clipboard, Clock, Plus, AlertTriangle, CheckCircle2, RotateCcw } from "lucide-react";
+import { MessageCircle, UserX, Zap, Clipboard, Clock, Plus, AlertTriangle, CheckCircle2, RotateCcw, Check, Archive, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/secretary")({ component: SecretaryPage });
