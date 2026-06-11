@@ -141,13 +141,55 @@ function SecretaryPage() {
                         <div className="text-xs text-muted-foreground">{h?.name}</div>
                       </div>
                     </div>
-                    <a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer"
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-success/20 text-success border border-success/30 text-sm font-bold">
-                      <MessageCircle className="w-4 h-4" />
-                      واتساب
-                    </a>
+                    <div className="flex items-center gap-2">
+                      <a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer"
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-success/20 text-success border border-success/30 text-sm font-bold">
+                        <MessageCircle className="w-4 h-4" />
+                        واتساب
+                      </a>
+                      <button onClick={() => ackToday(s, status as "absent" | "late" | "excused")} title="نقل إلى السجل"
+                        className="p-2 rounded-lg bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25">
+                        <Check className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                 );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* ----- Absence archive ----- */}
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-destructive mb-4 flex items-center gap-2">
+            <Archive className="w-5 h-5" /> سجل الغياب ({absenceArchive.length})
+          </h2>
+          {absenceArchive.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد سجل بعد</p>
+          ) : (
+            <div className="space-y-1 max-h-80 overflow-auto">
+              {absenceArchive.slice(0, 50).map((a) => {
+                const s = students.find((x) => x.id === a.studentId);
+                const h = halaqat.find((x) => x.id === a.halaqaId);
+                return <div key={a.id} className="p-2 rounded bg-destructive/5 text-sm flex justify-between"><span>{s?.name} · {h?.name}</span><span className="text-muted-foreground">{a.date}</span></div>;
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* ----- Late archive ----- */}
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-warning mb-4 flex items-center gap-2">
+            <Archive className="w-5 h-5" /> سجل التأخر ({lateArchive.length})
+          </h2>
+          {lateArchive.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد سجل بعد</p>
+          ) : (
+            <div className="space-y-1 max-h-80 overflow-auto">
+              {lateArchive.slice(0, 50).map((a) => {
+                const s = students.find((x) => x.id === a.studentId);
+                const h = halaqat.find((x) => x.id === a.halaqaId);
+                return <div key={a.id} className="p-2 rounded bg-warning/5 text-sm flex justify-between"><span>{s?.name} · {h?.name}</span><span className="text-muted-foreground">{a.date}</span></div>;
               })}
             </div>
           )}
