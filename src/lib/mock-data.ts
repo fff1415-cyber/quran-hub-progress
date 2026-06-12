@@ -188,6 +188,10 @@ export function dismissNotification(id: string) {
   const list = loadNotifications().map((n) => (n.id === id ? { ...n, read: true } : n));
   saveNotifications(list);
 }
+export function updateNotification(id: string, patch: Partial<Notification>) {
+  const list = loadNotifications().map((n) => (n.id === id ? { ...n, ...patch } : n));
+  saveNotifications(list);
+}
 
 // ---- WhatsApp message templates ----
 export type MessageTemplateKey = "absence" | "late" | "sard_pass" | "sard_fail";
