@@ -350,11 +350,43 @@ function WeekTable({ halaqaId, weekNum, isTalqeen, viewerRole }: { halaqaId: num
                     {pct}%
                   </span>
                 </td>
+                <td className="p-1 text-center">
+                  <button
+                    onClick={() => { setTransferFor(s); setTransferReason(""); }}
+                    title="إرسال للإدارة"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-warning/15 text-warning border border-warning/40 hover:bg-warning/25 text-xs"
+                  >
+                    <Send className="w-3.5 h-3.5" /> إرسال
+                  </button>
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      )}
+      {transferFor && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="glass-card rounded-2xl max-w-md w-full p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-bold text-warning flex items-center gap-2"><Send className="w-5 h-5" /> إرسال للإدارة</h3>
+              <button onClick={() => setTransferFor(null)} className="p-1.5 hover:bg-secondary rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <p className="text-sm mb-2">الطالب: <span className="font-bold">{transferFor.name}</span></p>
+            <p className="text-xs text-muted-foreground mb-3">اكتب سبب التحويل للمدير. سيُرفق تقرير كامل عن أداء الطالب تلقائياً.</p>
+            <textarea
+              value={transferReason}
+              onChange={(e) => setTransferReason(e.target.value)}
+              rows={4}
+              placeholder="السبب..."
+              className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm"
+            />
+            <div className="flex gap-2 mt-4">
+              <button onClick={submitTransfer} className="flex-1 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold">إرسال</button>
+              <button onClick={() => setTransferFor(null)} className="px-4 py-2 rounded-lg border border-border">إلغاء</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
