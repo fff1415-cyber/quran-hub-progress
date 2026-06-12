@@ -82,6 +82,95 @@ function ManagerPage() {
 
         <div className="mb-6"><LateSardList /></div>
 
+        {/* Pending transfers from teachers */}
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-warning mb-3 flex items-center gap-2">
+            <Send className="w-5 h-5" /> تحويلات من المعلمين ({pendingTransfers.length})
+          </h2>
+          {pendingTransfers.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6 text-sm">لا توجد تحويلات معلّقة</p>
+          ) : (
+            <div className="space-y-3">
+              {pendingTransfers.map((n) => {
+                const td = n.transferData!;
+                const s = students.find((x) => x.id === td.studentId);
+                const h = halaqat.find((x) => x.id === td.halaqaId);
+                const st = studentStats(td.studentId, grades);
+                return (
+                  <div key={n.id} className="rounded-xl border border-warning/30 bg-warning/5 p-4">
+                    <div className="flex items-start justify-between flex-wrap gap-2 mb-2">
+                      <div>
+                        <div className="font-bold flex items-center gap-2 flex-wrap">
+                          {s?.name || "—"}
+                          {s && (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.levelType === "gold" ? "gold-gradient text-primary-foreground" : "bg-muted"}`}>
+                              {s.levelType === "gold" ? "ذهبي" : "فضي"} · مستوى {s.level}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{h?.name} · {weekLabel(td.week)} · من: {td.fromName}</div>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">{new Date(n.createdAt).toLocaleString("ar")}</div>
+                    </div>
+                    <div className="rounded-lg bg-background/40 border border-border p-2 mb-3 text-sm">
+                      <span className="text-xs text-muted-foreground">السبب: </span>{td.reason}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3 text-center text-xs">
+                      <Stat label="غياب" value={st.absentCount} tone="destructive" />
+                      <Stat label="تأخر" value={st.lateCount} tone="warning" />
+                      <Stat label="استئذان" value={st.excusedCount} tone="primary" />
+                      <Stat label="حفظ" value={st.hifzCount} tone="success" />
+                      <Stat label="مراجعة ✓" value={st.murajaPass} tone="success" />
+                      <Stat label="مراجعة ✗" value={st.murajaFail} tone="destructive" />
+                      <Stat label="ربط ✓" value={st.rabtPass} tone="success" />
+                      <Stat label="ربط ✗" value={st.rabtFail} tone="destructive" />
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <button onClick={() => resolveTransfer(n, "to_secretary")} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-primary/15 text-primary border border-primary/30 text-sm font-bold">
+                        <UserCog className="w-4 h-4" /> تحويل للسكرتير
+                      </button>
+                      <button onClick={() => resolveTransfer(n, "to_supervisor")} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-primary/15 text-primary border border-primary/30 text-sm font-bold">
+                        <UserCheck className="w-4 h-4" /> تحويل للمشرف العلمي
+                      </button>
+                      <button onClick={() => resolveTransfer(n, "struggling")} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-destructive/15 text-destructive border border-destructive/30 text-sm font-bold">
+                        <CheckCircle2 className="w-4 h-4" /> إنهاء (متعثر)
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Struggling students */}
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-destructive mb-3 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5" /> الطلاب المتعثرون ({struggling.length})
+          </h2>
+          {struggling.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد متعثرون</p>
+          ) : (
+            <div className="space-y-1">
+              {struggling.map((n) => {
+                const td = n.transferData!;
+                const s = students.find((x) => x.id === td.studentId);
+                const h = halaqat.find((x) => x.id === td.halaqaId);
+                return (
+                  <div key={n.id} className="p-2 rounded bg-destructive/5 text-sm flex justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium">{s?.name}</span>
+                      {s && <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.levelType === "gold" ? "gold-gradient text-primary-foreground" : "bg-muted"}`}>{s.levelType === "gold" ? "ذهبي" : "فضي"} {s.level}</span>}
+                      <span className="text-xs text-muted-foreground">{h?.name}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">{td.reason}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
         {/* Halaqat quick view */}
         <section className="glass-card rounded-2xl p-6 mb-6">
           <h2 className="text-lg font-bold text-primary mb-3 flex items-center gap-2">
