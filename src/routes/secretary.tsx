@@ -22,6 +22,7 @@ function SecretaryPage() {
   const [latePermissions, setLatePermissions] = useState(() => loadLatePermissions());
   const [archive, setArchive] = useState(() => loadAttendanceArchive());
   const [openLateHistory, setOpenLateHistory] = useState<string | null>(null);
+  const [lateSearch, setLateSearch] = useState("");
   const [form, setForm] = useState<Omit<Student, "id">>({
     name: "", halaqaId: halaqat[0]?.id || 1, nationalId: "", parentPhone: "", level: "1", levelType: "gold",
   });
