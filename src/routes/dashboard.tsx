@@ -1,11 +1,12 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   loadHalaqat, saveHalaqat, loadStudents, saveStudents, type Halaqa, type Student,
 } from "@/lib/mock-data";
 import { toCsvUrl, parseCsv, normalizeRows, normalizeArabic } from "@/lib/google-sheets";
+import { loadRoleAccountsCloud, upsertRoleAccount, deleteRoleAccount, type CloudRoleAccount } from "@/lib/cloud-sync";
 import { AppHeader } from "@/components/AppHeader";
-import { Plus, Trash2, Users, BookOpen, Key, Settings as SettingsIcon, FileSpreadsheet, Download, Loader2 } from "lucide-react";
+import { Plus, Trash2, Users, BookOpen, Key, Settings as SettingsIcon, FileSpreadsheet, Download, Loader2, Save } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/dashboard")({ component: DashboardPage });
