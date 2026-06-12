@@ -155,11 +155,19 @@ export function saveGrades(g: GradesStore) { localStorage.setItem(KEY_GRADES, JS
 export interface Notification {
   id: string;
   message: string;
-  type: "sard" | "absence" | "late" | "info";
+  type: "sard" | "absence" | "late" | "info" | "transfer";
   createdAt: string;
   read: boolean;
-  targetHalaqaId?: number; // route to a specific halaqa teacher
-  actionTab?: "today" | "sard" | "late" | "passed" | "failed"; // which box to open when acted on
+  targetHalaqaId?: number;
+  actionTab?: "today" | "sard" | "late" | "passed" | "failed" | "transfers";
+  transferData?: {
+    studentId: string;
+    halaqaId: number;
+    week: number;
+    reason: string;
+    fromName: string;
+  };
+  transferStatus?: "pending" | "to_secretary" | "to_supervisor" | "struggling" | "closed";
 }
 export function loadNotifications(): Notification[] {
   if (typeof window === "undefined") return [];
