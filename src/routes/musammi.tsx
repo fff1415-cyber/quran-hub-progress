@@ -144,7 +144,7 @@ function SardEvaluator({
     setReviewErrors(next);
   };
 
-  const submit = () => {
+  const submit = async () => {
     pushSardHistory({
       id: `sh-${Date.now()}`,
       studentId: item.studentId,
