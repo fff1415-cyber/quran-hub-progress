@@ -222,8 +222,14 @@ function SecretaryPage() {
             <AlertTriangle className="w-5 h-5" /> إذن دخول المتأخرين
           </h2>
           <p className="text-xs text-muted-foreground mb-3">اضغط على اسم الطالب لعرض سجل تأخراته ثم منح الإذن.</p>
+          <input
+            value={lateSearch}
+            onChange={(e) => setLateSearch(e.target.value)}
+            placeholder="بحث باسم الطالب..."
+            className="w-full mb-3 px-3 py-2 rounded-lg bg-input border border-border text-sm"
+          />
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {students.map((s) => {
+            {students.filter((s) => !lateSearch.trim() || s.name.includes(lateSearch.trim())).map((s) => {
               const h = halaqat.find((x) => x.id === s.halaqaId);
               const hist = latePermissions.filter((p) => p.studentId === s.id);
               const open = openLateHistory === s.id;
