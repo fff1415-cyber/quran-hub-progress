@@ -266,6 +266,7 @@ function WeekTable({ halaqaId, weekNum, isTalqeen, viewerRole }: { halaqaId: num
             <th className="p-2 border-r border-border">اختبار ربط</th>
             <th className="p-2 border-r border-border">السرد</th>
             <th className="p-2 border-r border-border text-primary">النسبة</th>
+            <th className="p-2 border-r border-border text-warning">إرسال للإدارة</th>
           </tr>
           <tr className="bg-secondary/30 text-xs text-muted-foreground">
             <th className="sticky right-0 bg-secondary"></th>
