@@ -289,6 +289,7 @@ function WeekTable({ halaqaId, weekNum, isTalqeen, viewerRole }: { halaqaId: num
             <th></th>
             <th></th>
             <th></th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
