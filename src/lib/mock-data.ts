@@ -416,6 +416,42 @@ export function studentOverallPercentage(studentId: string, isTalqeen: boolean, 
   return Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
 }
 
+export interface StudentStats {
+  hifzCount: number;       // total hifz entries (not blank)
+  lateCount: number;
+  absentCount: number;
+  excusedCount: number;
+  murajaPass: number;
+  murajaFail: number;
+  rabtPass: number;
+  rabtFail: number;
+  weeksRecorded: number;
+}
+export function studentStats(studentId: string, grades: GradesStore): StudentStats {
+  const stats: StudentStats = {
+    hifzCount: 0, lateCount: 0, absentCount: 0, excusedCount: 0,
+    murajaPass: 0, murajaFail: 0, rabtPass: 0, rabtFail: 0, weeksRecorded: 0,
+  };
+  const weeks = grades[studentId];
+  if (!weeks) return stats;
+  Object.values(weeks).forEach((w) => {
+    stats.weeksRecorded++;
+    DAYS.forEach((d) => {
+      const e = w.days[d.key];
+      if (!e) return;
+      if (e.attendance === "late") stats.lateCount++;
+      else if (e.attendance === "absent") stats.absentCount++;
+      else if (e.attendance === "excused") stats.excusedCount++;
+      if (e.hifz && e.hifz !== "") stats.hifzCount++;
+      if (e.rabt === "pass") stats.rabtPass++;
+      else if (e.rabt === "fail") stats.rabtFail++;
+      if (e.muraja === "pass") stats.murajaPass++;
+      else if (e.muraja === "fail") stats.murajaFail++;
+    });
+  });
+  return stats;
+}
+
 export function emptyWeek(): WeekRecord {
   const days: Record<string, DayEntry> = {};
   DAYS.forEach((d) => {
