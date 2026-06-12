@@ -453,25 +453,111 @@ function CodesTab() {
         </table>
         </div>
       </div>
-      <div className="glass-card rounded-2xl p-5">
-        <h3 className="font-bold mb-3 text-primary">رموز الإدارة العليا (ثابتة في النظام)</h3>
-        <div className="grid sm:grid-cols-2 gap-2 text-sm">
-          <Row label="المدير — أ. فيصل الفوزان" code="1414" />
-          <Row label="السكرتير — أ. أحمد العمر" code="4141" />
-          <Row label="الإشراف التعليمي — أ. محمد البرادي" code="5522" />
-          <Row label="المسمّع — أ. يزيد الخضير" code="0011" />
-          <Row label="المسمّع — أ. عبدالله الدبيخي" code="0022" />
-        </div>
-      </div>
+      <RoleAccountsManager />
     </div>
   );
 }
 
-function Row({ label, code }: { label: string; code: string }) {
+function RoleAccountsManager() {
+  const [rows, setRows] = useState<CloudRoleAccount[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [form, setForm] = useState<{ role: string; name: string; code: string }>({ role: "musammi", name: "", code: "" });
+
+  const reload = async () => {
+    setLoading(true);
+    try { setRows(await loadRoleAccountsCloud()); } finally { setLoading(false); }
+  };
+  useEffect(() => { void reload(); }, []);
+
+  const roleLabel = (r: string) => ({
+    manager: "المدير", secretary: "السكرتير", supervisor: "الإشراف التعليمي", musammi: "المسمّع",
+  } as Record<string, string>)[r] || r;
+
+  const update = (id: string, patch: Partial<CloudRoleAccount>) => {
+    setRows((cur) => cur.map((r) => (r.id === id ? { ...r, ...patch } : r)));
+  };
+  const saveRow = async (r: CloudRoleAccount) => {
+    if (!r.name.trim() || !r.code.trim()) { toast.error("الاسم والرمز مطلوبان"); return; }
+    try {
+      await upsertRoleAccount({ id: r.id, role: r.role, name: r.name.trim(), code: r.code.trim(), permissions: r.permissions || [] });
+      toast.success("تم الحفظ");
+      void reload();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "فشل الحفظ"); }
+  };
+  const removeRow = async (id: string) => {
+    if (!confirm("حذف هذا الحساب؟")) return;
+    try { await deleteRoleAccount(id); toast.success("تم الحذف"); void reload(); }
+    catch (e) { toast.error(e instanceof Error ? e.message : "فشل الحذف"); }
+  };
+  const addRow = async () => {
+    if (!form.name.trim() || !form.code.trim()) { toast.error("أكمل البيانات"); return; }
+    try {
+      await upsertRoleAccount({ role: form.role, name: form.name.trim(), code: form.code.trim(), permissions: [] });
+      toast.success("تمت الإضافة");
+      setForm({ role: "musammi", name: "", code: "" });
+      void reload();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "فشل الإضافة"); }
+  };
+
   return (
-    <div className="flex items-center justify-between p-2 rounded-lg bg-secondary/50">
-      <span>{label}</span>
-      <span className="font-mono text-primary font-bold">{code}</span>
+    <div className="glass-card rounded-2xl p-5">
+      <h3 className="font-bold mb-3 text-primary">رموز الإدارة والمشرفين</h3>
+      <p className="text-xs text-muted-foreground mb-4">يمكن للمدير إضافة مشرفين/مسمّعين وتعديل أسمائهم ورموزهم.</p>
+
+      {/* Add form */}
+      <div className="grid md:grid-cols-4 gap-2 mb-4 p-3 rounded-lg bg-secondary/30 border border-border">
+        <select className="px-3 py-2 rounded-lg bg-input border border-border" value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value })}>
+          <option value="manager">مدير</option>
+          <option value="secretary">سكرتير</option>
+          <option value="supervisor">مشرف تعليمي</option>
+          <option value="musammi">مسمّع</option>
+        </select>
+        <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="الاسم" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        <input className="px-3 py-2 rounded-lg bg-input border border-border font-mono" placeholder="الرمز" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
+        <button onClick={addRow} className="px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center justify-center gap-2">
+          <Plus className="w-4 h-4" /> إضافة
+        </button>
+      </div>
+
+      {loading ? (
+        <p className="text-center text-sm text-muted-foreground py-4 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> جاري التحميل...</p>
+      ) : rows.length === 0 ? (
+        <p className="text-center text-sm text-muted-foreground py-4">لا توجد حسابات بعد — أضف أول مشرف من الأعلى.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm min-w-[600px]">
+            <thead><tr className="text-right text-muted-foreground border-b border-border">
+              <th className="p-2">الدور</th>
+              <th className="p-2">الاسم</th>
+              <th className="p-2">الرمز</th>
+              <th className="p-2"></th>
+            </tr></thead>
+            <tbody>
+              {rows.map((r) => (
+                <tr key={r.id} className="border-b border-border/30">
+                  <td className="p-2">
+                    <select className="px-2 py-1 rounded bg-input border border-border" value={r.role} onChange={(e) => update(r.id, { role: e.target.value })}>
+                      <option value="manager">مدير</option>
+                      <option value="secretary">سكرتير</option>
+                      <option value="supervisor">مشرف تعليمي</option>
+                      <option value="musammi">مسمّع</option>
+                    </select>
+                    <div className="text-[10px] text-muted-foreground mt-1">{roleLabel(r.role)}</div>
+                  </td>
+                  <td className="p-2"><input className="px-2 py-1 rounded bg-input border border-border w-full" value={r.name} onChange={(e) => update(r.id, { name: e.target.value })} /></td>
+                  <td className="p-2"><input className="px-2 py-1 rounded bg-input border border-border font-mono text-primary text-center w-28" value={r.code} onChange={(e) => update(r.id, { code: e.target.value })} /></td>
+                  <td className="p-2">
+                    <div className="flex gap-1">
+                      <button onClick={() => saveRow(r)} title="حفظ" className="p-1.5 rounded bg-primary/15 text-primary border border-primary/30"><Save className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => removeRow(r.id)} title="حذف" className="p-1.5 rounded bg-destructive/15 text-destructive border border-destructive/30"><Trash2 className="w-3.5 h-3.5" /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
