@@ -303,7 +303,16 @@ function SecretaryPage() {
           <div className="space-y-2">
             {finalFailed.length === 0 ? <p className="text-muted-foreground text-center py-6">لا يوجد رسوب نهائي</p> : finalFailed.map((q) => {
               const s = students.find((x) => x.id === q.studentId); const h = halaqat.find((x) => x.id === q.halaqaId);
-              return s && h ? <div key={q.id} className="flex items-center justify-between gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20"><span>{s.name} · {h.name} · {q.finalPercent}%</span><div className="flex gap-2"><button onClick={() => retryFinal(q.id)} className="px-3 py-1.5 rounded-lg bg-warning/20 text-warning text-sm font-bold">إعادة السرد</button><button onClick={() => repeatLevel(q.id)} className="px-3 py-1.5 rounded-lg bg-destructive/20 text-destructive text-sm font-bold">إعادة المستوى</button></div></div> : null;
+              return s && h ? (
+                <div key={q.id} className="flex items-center justify-between gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium">{s.name}</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.levelType === "gold" ? "gold-gradient text-primary-foreground" : "bg-muted"}`}>{s.levelType === "gold" ? "ذهبي" : "فضي"} · مستوى {s.level}</span>
+                    <span className="text-xs text-muted-foreground">{h.name} · {q.finalPercent}%</span>
+                  </div>
+                  <div className="flex gap-2"><button onClick={() => retryFinal(q.id)} className="px-3 py-1.5 rounded-lg bg-warning/20 text-warning text-sm font-bold">إعادة السرد</button><button onClick={() => repeatLevel(q.id)} className="px-3 py-1.5 rounded-lg bg-destructive/20 text-destructive text-sm font-bold">إعادة المستوى</button></div>
+                </div>
+              ) : null;
             })}
           </div>
         </section>
