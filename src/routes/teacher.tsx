@@ -184,6 +184,31 @@ function WeekTable({ halaqaId, weekNum, isTalqeen, viewerRole }: { halaqaId: num
     ? allStudents.filter((s) => s.assignedTo !== "teacher")
     : allStudents.filter((s) => s.assignedTo !== "assistant");
   const [grades, setGrades] = useState(() => loadGrades());
+  const [transferFor, setTransferFor] = useState<Student | null>(null);
+  const [transferReason, setTransferReason] = useState("");
+  const senderName = typeof window !== "undefined" ? (sessionStorage.getItem("qs_name") || "المعلم") : "المعلم";
+
+  const submitTransfer = () => {
+    if (!transferFor) return;
+    const reason = transferReason.trim();
+    if (!reason) { toast.error("اكتب سبب التحويل"); return; }
+    pushNotification({
+      message: `تحويل من ${senderName}: الطالب ${transferFor.name} — ${reason}`,
+      type: "transfer",
+      actionTab: "transfers",
+      transferData: {
+        studentId: transferFor.id,
+        halaqaId: transferFor.halaqaId,
+        week: weekNum,
+        reason,
+        fromName: senderName,
+      },
+      transferStatus: "pending",
+    });
+    toast.success("تم إرسال الطالب للإدارة");
+    setTransferFor(null);
+    setTransferReason("");
+  };
 
   useEffect(() => {
     let changed = false;
