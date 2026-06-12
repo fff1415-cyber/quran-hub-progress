@@ -155,11 +155,19 @@ export function saveGrades(g: GradesStore) { localStorage.setItem(KEY_GRADES, JS
 export interface Notification {
   id: string;
   message: string;
-  type: "sard" | "absence" | "late" | "info";
+  type: "sard" | "absence" | "late" | "info" | "transfer";
   createdAt: string;
   read: boolean;
-  targetHalaqaId?: number; // route to a specific halaqa teacher
-  actionTab?: "today" | "sard" | "late" | "passed" | "failed"; // which box to open when acted on
+  targetHalaqaId?: number;
+  actionTab?: "today" | "sard" | "late" | "passed" | "failed" | "transfers";
+  transferData?: {
+    studentId: string;
+    halaqaId: number;
+    week: number;
+    reason: string;
+    fromName: string;
+  };
+  transferStatus?: "pending" | "to_secretary" | "to_supervisor" | "struggling" | "closed";
 }
 export function loadNotifications(): Notification[] {
   if (typeof window === "undefined") return [];
@@ -178,6 +186,10 @@ export function saveNotifications(list: Notification[]) {
 }
 export function dismissNotification(id: string) {
   const list = loadNotifications().map((n) => (n.id === id ? { ...n, read: true } : n));
+  saveNotifications(list);
+}
+export function updateNotification(id: string, patch: Partial<Notification>) {
+  const list = loadNotifications().map((n) => (n.id === id ? { ...n, ...patch } : n));
   saveNotifications(list);
 }
 
@@ -402,6 +414,42 @@ export function studentOverallPercentage(studentId: string, isTalqeen: boolean, 
   const arr = Object.values(weeks).map((w) => weekPercentage(w, isTalqeen));
   if (arr.length === 0) return 0;
   return Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
+}
+
+export interface StudentStats {
+  hifzCount: number;       // total hifz entries (not blank)
+  lateCount: number;
+  absentCount: number;
+  excusedCount: number;
+  murajaPass: number;
+  murajaFail: number;
+  rabtPass: number;
+  rabtFail: number;
+  weeksRecorded: number;
+}
+export function studentStats(studentId: string, grades: GradesStore): StudentStats {
+  const stats: StudentStats = {
+    hifzCount: 0, lateCount: 0, absentCount: 0, excusedCount: 0,
+    murajaPass: 0, murajaFail: 0, rabtPass: 0, rabtFail: 0, weeksRecorded: 0,
+  };
+  const weeks = grades[studentId];
+  if (!weeks) return stats;
+  Object.values(weeks).forEach((w) => {
+    stats.weeksRecorded++;
+    DAYS.forEach((d) => {
+      const e = w.days[d.key];
+      if (!e) return;
+      if (e.attendance === "late") stats.lateCount++;
+      else if (e.attendance === "absent") stats.absentCount++;
+      else if (e.attendance === "excused") stats.excusedCount++;
+      if (e.hifz) stats.hifzCount++;
+      if (e.rabt === "pass") stats.rabtPass++;
+      else if (e.rabt === "fail") stats.rabtFail++;
+      if (e.muraja === "pass") stats.murajaPass++;
+      else if (e.muraja === "fail") stats.murajaFail++;
+    });
+  });
+  return stats;
 }
 
 export function emptyWeek(): WeekRecord {

@@ -2,13 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   loadSardQueue, loadStudents, loadHalaqat, loadAttendanceArchive,
-  loadMessageTemplates, saveMessageTemplates,
-  DEFAULT_MESSAGE_TEMPLATES, type MessageTemplateKey,
+  loadMessageTemplates, saveMessageTemplates, loadNotifications, updateNotification,
+  loadGrades, studentStats,
+  DEFAULT_MESSAGE_TEMPLATES, type MessageTemplateKey, type Notification,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
 import { LateSardList } from "@/components/SardLists";
-import { Crown, AlertTriangle, Settings, Shield, BookOpen, Archive, MessageSquare, Save, RotateCcw } from "lucide-react";
+import { Crown, AlertTriangle, Settings, Shield, BookOpen, Archive, MessageSquare, Save, RotateCcw, Send, UserCheck, UserCog, CheckCircle2, AlertCircle } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/manager")({ component: ManagerPage });
@@ -25,11 +26,23 @@ function ManagerPage() {
   const students = loadStudents();
   const halaqat = loadHalaqat();
   const archive = loadAttendanceArchive();
+  const grades = loadGrades();
   const [templates, setTemplates] = useState(() => loadMessageTemplates());
+  const [notifs, setNotifs] = useState(() => loadNotifications());
 
   const failedFinal = queue.filter((q) => q.status === "final_failed");
   const absenceArchive = archive.filter((a) => a.type === "absent");
   const lateArchive = archive.filter((a) => a.type === "late");
+  const pendingTransfers = notifs.filter((n) => n.type === "transfer" && (n.transferStatus === "pending" || !n.transferStatus));
+  const struggling = notifs.filter((n) => n.type === "transfer" && n.transferStatus === "struggling");
+
+  const refreshNotifs = () => setNotifs(loadNotifications());
+  const resolveTransfer = (n: Notification, status: "to_secretary" | "to_supervisor" | "struggling") => {
+    updateNotification(n.id, { transferStatus: status, read: status !== "struggling" });
+    const map = { to_secretary: "تم التحويل للسكرتير", to_supervisor: "تم التحويل للمشرف العلمي", struggling: "تم النقل لقائمة المتعثرين" };
+    toast.success(map[status]);
+    refreshNotifs();
+  };
 
   const saveTpl = () => { saveMessageTemplates(templates); toast.success("تم حفظ الرسائل"); };
   const resetTpl = (k: MessageTemplateKey) => setTemplates({ ...templates, [k]: DEFAULT_MESSAGE_TEMPLATES[k] });
@@ -68,6 +81,95 @@ function ManagerPage() {
         </div>
 
         <div className="mb-6"><LateSardList /></div>
+
+        {/* Pending transfers from teachers */}
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-warning mb-3 flex items-center gap-2">
+            <Send className="w-5 h-5" /> تحويلات من المعلمين ({pendingTransfers.length})
+          </h2>
+          {pendingTransfers.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6 text-sm">لا توجد تحويلات معلّقة</p>
+          ) : (
+            <div className="space-y-3">
+              {pendingTransfers.map((n) => {
+                const td = n.transferData!;
+                const s = students.find((x) => x.id === td.studentId);
+                const h = halaqat.find((x) => x.id === td.halaqaId);
+                const st = studentStats(td.studentId, grades);
+                return (
+                  <div key={n.id} className="rounded-xl border border-warning/30 bg-warning/5 p-4">
+                    <div className="flex items-start justify-between flex-wrap gap-2 mb-2">
+                      <div>
+                        <div className="font-bold flex items-center gap-2 flex-wrap">
+                          {s?.name || "—"}
+                          {s && (
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.levelType === "gold" ? "gold-gradient text-primary-foreground" : "bg-muted"}`}>
+                              {s.levelType === "gold" ? "ذهبي" : "فضي"} · مستوى {s.level}
+                            </span>
+                          )}
+                        </div>
+                        <div className="text-xs text-muted-foreground mt-0.5">{h?.name} · {weekLabel(td.week)} · من: {td.fromName}</div>
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">{new Date(n.createdAt).toLocaleString("ar")}</div>
+                    </div>
+                    <div className="rounded-lg bg-background/40 border border-border p-2 mb-3 text-sm">
+                      <span className="text-xs text-muted-foreground">السبب: </span>{td.reason}
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3 text-center text-xs">
+                      <Stat label="غياب" value={st.absentCount} tone="destructive" />
+                      <Stat label="تأخر" value={st.lateCount} tone="warning" />
+                      <Stat label="استئذان" value={st.excusedCount} tone="primary" />
+                      <Stat label="حفظ" value={st.hifzCount} tone="success" />
+                      <Stat label="مراجعة ✓" value={st.murajaPass} tone="success" />
+                      <Stat label="مراجعة ✗" value={st.murajaFail} tone="destructive" />
+                      <Stat label="ربط ✓" value={st.rabtPass} tone="success" />
+                      <Stat label="ربط ✗" value={st.rabtFail} tone="destructive" />
+                    </div>
+                    <div className="flex gap-2 flex-wrap">
+                      <button onClick={() => resolveTransfer(n, "to_secretary")} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-primary/15 text-primary border border-primary/30 text-sm font-bold">
+                        <UserCog className="w-4 h-4" /> تحويل للسكرتير
+                      </button>
+                      <button onClick={() => resolveTransfer(n, "to_supervisor")} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-primary/15 text-primary border border-primary/30 text-sm font-bold">
+                        <UserCheck className="w-4 h-4" /> تحويل للمشرف العلمي
+                      </button>
+                      <button onClick={() => resolveTransfer(n, "struggling")} className="flex items-center gap-1 px-3 py-2 rounded-lg bg-destructive/15 text-destructive border border-destructive/30 text-sm font-bold">
+                        <CheckCircle2 className="w-4 h-4" /> إنهاء (متعثر)
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
+
+        {/* Struggling students */}
+        <section className="glass-card rounded-2xl p-6 mb-6">
+          <h2 className="text-lg font-bold text-destructive mb-3 flex items-center gap-2">
+            <AlertCircle className="w-5 h-5" /> الطلاب المتعثرون ({struggling.length})
+          </h2>
+          {struggling.length === 0 ? (
+            <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد متعثرون</p>
+          ) : (
+            <div className="space-y-1">
+              {struggling.map((n) => {
+                const td = n.transferData!;
+                const s = students.find((x) => x.id === td.studentId);
+                const h = halaqat.find((x) => x.id === td.halaqaId);
+                return (
+                  <div key={n.id} className="p-2 rounded bg-destructive/5 text-sm flex justify-between flex-wrap gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="font-medium">{s?.name}</span>
+                      {s && <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.levelType === "gold" ? "gold-gradient text-primary-foreground" : "bg-muted"}`}>{s.levelType === "gold" ? "ذهبي" : "فضي"} {s.level}</span>}
+                      <span className="text-xs text-muted-foreground">{h?.name}</span>
+                    </div>
+                    <span className="text-xs text-muted-foreground">{td.reason}</span>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </section>
 
         {/* Halaqat quick view */}
         <section className="glass-card rounded-2xl p-6 mb-6">
@@ -182,6 +284,21 @@ function ManagerPage() {
           )}
         </section>
       </main>
+    </div>
+  );
+}
+
+function Stat({ label, value, tone }: { label: string; value: number; tone: "destructive" | "warning" | "primary" | "success" }) {
+  const colors: Record<string, string> = {
+    destructive: "bg-destructive/10 text-destructive border-destructive/30",
+    warning: "bg-warning/10 text-warning border-warning/30",
+    primary: "bg-primary/10 text-primary border-primary/30",
+    success: "bg-success/10 text-success border-success/30",
+  };
+  return (
+    <div className={`rounded-lg border p-2 ${colors[tone]}`}>
+      <div className="text-base font-bold">{value}</div>
+      <div className="text-[10px] opacity-80">{label}</div>
     </div>
   );
 }

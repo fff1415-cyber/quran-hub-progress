@@ -144,7 +144,7 @@ function SardEvaluator({
     setReviewErrors(next);
   };
 
-  const submit = () => {
+  const submit = async () => {
     pushSardHistory({
       id: `sh-${Date.now()}`,
       studentId: item.studentId,
@@ -160,8 +160,25 @@ function SardEvaluator({
 
     if (passed) {
       updateSardItem(item.id, { status: "passed", finalPercent: percent });
-      pushNotification({ message: `الطالب ${studentName} اجتاز السرد بنسبة ${percent}%`, type: "sard" });
-      toast.success(`الطالب اجتاز بنسبة ${percent}%`);
+      // Auto level-up: increment numeric level
+      try {
+        const { loadStudents, saveStudents } = await import("@/lib/mock-data");
+        const all = loadStudents();
+        const idx = all.findIndex((s) => s.id === item.studentId);
+        let newLevel = level;
+        if (idx >= 0) {
+          const n = parseInt(level, 10);
+          newLevel = isNaN(n) ? level : String(n + 1);
+          all[idx] = { ...all[idx], level: newLevel };
+          saveStudents(all);
+          void import("@/lib/cloud-sync").then((m) => m.patchStudent(item.studentId, { level: newLevel }));
+        }
+        pushNotification({ message: `الطالب ${studentName} اجتاز السرد بنسبة ${percent}% وانتقل إلى المستوى ${newLevel}`, type: "sard" });
+        toast.success(`اجتاز بنسبة ${percent}% — انتقل للمستوى ${newLevel}`);
+      } catch {
+        pushNotification({ message: `الطالب ${studentName} اجتاز السرد بنسبة ${percent}%`, type: "sard" });
+        toast.success(`الطالب اجتاز بنسبة ${percent}%`);
+      }
     } else if (item.attempt === 1) {
       const next = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
       updateSardItem(item.id, {

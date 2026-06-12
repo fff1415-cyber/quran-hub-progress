@@ -22,6 +22,7 @@ function SecretaryPage() {
   const [latePermissions, setLatePermissions] = useState(() => loadLatePermissions());
   const [archive, setArchive] = useState(() => loadAttendanceArchive());
   const [openLateHistory, setOpenLateHistory] = useState<string | null>(null);
+  const [lateSearch, setLateSearch] = useState("");
   const [form, setForm] = useState<Omit<Student, "id">>({
     name: "", halaqaId: halaqat[0]?.id || 1, nationalId: "", parentPhone: "", level: "1", levelType: "gold",
   });
@@ -221,8 +222,14 @@ function SecretaryPage() {
             <AlertTriangle className="w-5 h-5" /> إذن دخول المتأخرين
           </h2>
           <p className="text-xs text-muted-foreground mb-3">اضغط على اسم الطالب لعرض سجل تأخراته ثم منح الإذن.</p>
+          <input
+            value={lateSearch}
+            onChange={(e) => setLateSearch(e.target.value)}
+            placeholder="بحث باسم الطالب..."
+            className="w-full mb-3 px-3 py-2 rounded-lg bg-input border border-border text-sm"
+          />
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {students.map((s) => {
+            {students.filter((s) => !lateSearch.trim() || s.name.includes(lateSearch.trim())).map((s) => {
               const h = halaqat.find((x) => x.id === s.halaqaId);
               const hist = latePermissions.filter((p) => p.studentId === s.id);
               const open = openLateHistory === s.id;
@@ -277,7 +284,16 @@ function SecretaryPage() {
             {passedSard.length === 0 ? <p className="text-muted-foreground text-center py-6">لا يوجد مجتازون بعد</p> : passedSard.map((q) => {
               const s = students.find((x) => x.id === q.studentId); const h = halaqat.find((x) => x.id === q.halaqaId);
               const msg = encodeURIComponent(formatMessage(templates.sard_pass, { student: s?.name, halaqa: h?.name, week: weekLabel(q.week), percent: q.finalPercent ?? "" }));
-              return s && h ? <div key={q.id} className="flex items-center justify-between p-3 rounded-lg bg-success/10 border border-success/20"><span>{s.name} · {h.name} · {q.finalPercent}%</span><a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer" className="text-success font-bold text-sm flex items-center gap-1"><MessageCircle className="w-4 h-4" /> واتساب</a></div> : null;
+              return s && h ? (
+                <div key={q.id} className="flex items-center justify-between p-3 rounded-lg bg-success/10 border border-success/20">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium">{s.name}</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.levelType === "gold" ? "gold-gradient text-primary-foreground" : "bg-muted"}`}>{s.levelType === "gold" ? "ذهبي" : "فضي"} · مستوى {s.level}</span>
+                    <span className="text-xs text-muted-foreground">{h.name} · {q.finalPercent}%</span>
+                  </div>
+                  <a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer" className="text-success font-bold text-sm flex items-center gap-1"><MessageCircle className="w-4 h-4" /> واتساب</a>
+                </div>
+              ) : null;
             })}
           </div>
         </section>
@@ -287,7 +303,16 @@ function SecretaryPage() {
           <div className="space-y-2">
             {finalFailed.length === 0 ? <p className="text-muted-foreground text-center py-6">لا يوجد رسوب نهائي</p> : finalFailed.map((q) => {
               const s = students.find((x) => x.id === q.studentId); const h = halaqat.find((x) => x.id === q.halaqaId);
-              return s && h ? <div key={q.id} className="flex items-center justify-between gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20"><span>{s.name} · {h.name} · {q.finalPercent}%</span><div className="flex gap-2"><button onClick={() => retryFinal(q.id)} className="px-3 py-1.5 rounded-lg bg-warning/20 text-warning text-sm font-bold">إعادة السرد</button><button onClick={() => repeatLevel(q.id)} className="px-3 py-1.5 rounded-lg bg-destructive/20 text-destructive text-sm font-bold">إعادة المستوى</button></div></div> : null;
+              return s && h ? (
+                <div key={q.id} className="flex items-center justify-between gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 flex-wrap">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-medium">{s.name}</span>
+                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.levelType === "gold" ? "gold-gradient text-primary-foreground" : "bg-muted"}`}>{s.levelType === "gold" ? "ذهبي" : "فضي"} · مستوى {s.level}</span>
+                    <span className="text-xs text-muted-foreground">{h.name} · {q.finalPercent}%</span>
+                  </div>
+                  <div className="flex gap-2"><button onClick={() => retryFinal(q.id)} className="px-3 py-1.5 rounded-lg bg-warning/20 text-warning text-sm font-bold">إعادة السرد</button><button onClick={() => repeatLevel(q.id)} className="px-3 py-1.5 rounded-lg bg-destructive/20 text-destructive text-sm font-bold">إعادة المستوى</button></div>
+                </div>
+              ) : null;
             })}
           </div>
         </section>

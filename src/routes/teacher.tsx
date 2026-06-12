@@ -3,12 +3,12 @@ import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import {
   loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, DAYS,
-  weekPercentage, enqueueSard, HIFZ_LABELS, loadNotifications, dismissNotification,
+  weekPercentage, enqueueSard, HIFZ_LABELS, loadNotifications, dismissNotification, pushNotification,
   type WeekRecord, type DayEntry, type HifzValue, type Student,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
-import { ArrowRight, Bell, Check, CheckCircle2, ListChecks, Users, X } from "lucide-react";
+import { ArrowRight, Bell, Check, CheckCircle2, ListChecks, Send, Users, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/teacher")({
@@ -184,6 +184,31 @@ function WeekTable({ halaqaId, weekNum, isTalqeen, viewerRole }: { halaqaId: num
     ? allStudents.filter((s) => s.assignedTo !== "teacher")
     : allStudents.filter((s) => s.assignedTo !== "assistant");
   const [grades, setGrades] = useState(() => loadGrades());
+  const [transferFor, setTransferFor] = useState<Student | null>(null);
+  const [transferReason, setTransferReason] = useState("");
+  const senderName = typeof window !== "undefined" ? (sessionStorage.getItem("qs_name") || "المعلم") : "المعلم";
+
+  const submitTransfer = () => {
+    if (!transferFor) return;
+    const reason = transferReason.trim();
+    if (!reason) { toast.error("اكتب سبب التحويل"); return; }
+    pushNotification({
+      message: `تحويل من ${senderName}: الطالب ${transferFor.name} — ${reason}`,
+      type: "transfer",
+      actionTab: "transfers",
+      transferData: {
+        studentId: transferFor.id,
+        halaqaId: transferFor.halaqaId,
+        week: weekNum,
+        reason,
+        fromName: senderName,
+      },
+      transferStatus: "pending",
+    });
+    toast.success("تم إرسال الطالب للإدارة");
+    setTransferFor(null);
+    setTransferReason("");
+  };
 
   useEffect(() => {
     let changed = false;
@@ -241,6 +266,7 @@ function WeekTable({ halaqaId, weekNum, isTalqeen, viewerRole }: { halaqaId: num
             <th className="p-2 border-r border-border">اختبار ربط</th>
             <th className="p-2 border-r border-border">السرد</th>
             <th className="p-2 border-r border-border text-primary">النسبة</th>
+            <th className="p-2 border-r border-border text-warning">إرسال للإدارة</th>
           </tr>
           <tr className="bg-secondary/30 text-xs text-muted-foreground">
             <th className="sticky right-0 bg-secondary"></th>
@@ -260,6 +286,7 @@ function WeekTable({ halaqaId, weekNum, isTalqeen, viewerRole }: { halaqaId: num
               )
             )}
             {!isTalqeen && <th></th>}
+            <th></th>
             <th></th>
             <th></th>
             <th></th>
@@ -323,11 +350,43 @@ function WeekTable({ halaqaId, weekNum, isTalqeen, viewerRole }: { halaqaId: num
                     {pct}%
                   </span>
                 </td>
+                <td className="p-1 text-center">
+                  <button
+                    onClick={() => { setTransferFor(s); setTransferReason(""); }}
+                    title="إرسال للإدارة"
+                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-warning/15 text-warning border border-warning/40 hover:bg-warning/25 text-xs"
+                  >
+                    <Send className="w-3.5 h-3.5" /> إرسال
+                  </button>
+                </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+      )}
+      {transferFor && (
+        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="glass-card rounded-2xl max-w-md w-full p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-lg font-bold text-warning flex items-center gap-2"><Send className="w-5 h-5" /> إرسال للإدارة</h3>
+              <button onClick={() => setTransferFor(null)} className="p-1.5 hover:bg-secondary rounded-lg"><X className="w-4 h-4" /></button>
+            </div>
+            <p className="text-sm mb-2">الطالب: <span className="font-bold">{transferFor.name}</span></p>
+            <p className="text-xs text-muted-foreground mb-3">اكتب سبب التحويل للمدير. سيُرفق تقرير كامل عن أداء الطالب تلقائياً.</p>
+            <textarea
+              value={transferReason}
+              onChange={(e) => setTransferReason(e.target.value)}
+              rows={4}
+              placeholder="السبب..."
+              className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm"
+            />
+            <div className="flex gap-2 mt-4">
+              <button onClick={submitTransfer} className="flex-1 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold">إرسال</button>
+              <button onClick={() => setTransferFor(null)} className="px-4 py-2 rounded-lg border border-border">إلغاء</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );
