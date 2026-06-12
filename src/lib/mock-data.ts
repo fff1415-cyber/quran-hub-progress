@@ -442,7 +442,7 @@ export function studentStats(studentId: string, grades: GradesStore): StudentSta
       if (e.attendance === "late") stats.lateCount++;
       else if (e.attendance === "absent") stats.absentCount++;
       else if (e.attendance === "excused") stats.excusedCount++;
-      if (e.hifz && e.hifz !== "") stats.hifzCount++;
+      if (e.hifz) stats.hifzCount++;
       if (e.rabt === "pass") stats.rabtPass++;
       else if (e.rabt === "fail") stats.rabtFail++;
       if (e.muraja === "pass") stats.murajaPass++;
