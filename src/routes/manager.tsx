@@ -2,13 +2,14 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
 import {
   loadSardQueue, loadStudents, loadHalaqat, loadAttendanceArchive,
-  loadMessageTemplates, saveMessageTemplates,
-  DEFAULT_MESSAGE_TEMPLATES, type MessageTemplateKey,
+  loadMessageTemplates, saveMessageTemplates, loadNotifications, updateNotification,
+  loadGrades, studentStats,
+  DEFAULT_MESSAGE_TEMPLATES, type MessageTemplateKey, type Notification,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
 import { LateSardList } from "@/components/SardLists";
-import { Crown, AlertTriangle, Settings, Shield, BookOpen, Archive, MessageSquare, Save, RotateCcw } from "lucide-react";
+import { Crown, AlertTriangle, Settings, Shield, BookOpen, Archive, MessageSquare, Save, RotateCcw, Send, UserCheck, UserCog, CheckCircle2, AlertCircle } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/manager")({ component: ManagerPage });
