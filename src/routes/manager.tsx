@@ -26,11 +26,23 @@ function ManagerPage() {
   const students = loadStudents();
   const halaqat = loadHalaqat();
   const archive = loadAttendanceArchive();
+  const grades = loadGrades();
   const [templates, setTemplates] = useState(() => loadMessageTemplates());
+  const [notifs, setNotifs] = useState(() => loadNotifications());
 
   const failedFinal = queue.filter((q) => q.status === "final_failed");
   const absenceArchive = archive.filter((a) => a.type === "absent");
   const lateArchive = archive.filter((a) => a.type === "late");
+  const pendingTransfers = notifs.filter((n) => n.type === "transfer" && (n.transferStatus === "pending" || !n.transferStatus));
+  const struggling = notifs.filter((n) => n.type === "transfer" && n.transferStatus === "struggling");
+
+  const refreshNotifs = () => setNotifs(loadNotifications());
+  const resolveTransfer = (n: Notification, status: "to_secretary" | "to_supervisor" | "struggling") => {
+    updateNotification(n.id, { transferStatus: status, read: status !== "struggling" });
+    const map = { to_secretary: "تم التحويل للسكرتير", to_supervisor: "تم التحويل للمشرف العلمي", struggling: "تم النقل لقائمة المتعثرين" };
+    toast.success(map[status]);
+    refreshNotifs();
+  };
 
   const saveTpl = () => { saveMessageTemplates(templates); toast.success("تم حفظ الرسائل"); };
   const resetTpl = (k: MessageTemplateKey) => setTemplates({ ...templates, [k]: DEFAULT_MESSAGE_TEMPLATES[k] });
