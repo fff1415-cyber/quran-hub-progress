@@ -9,6 +9,7 @@ import {
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getOperationalDayKey } from "@/lib/operational-date";
 import { AppHeader } from "@/components/AppHeader";
+import { GradesExport } from "@/components/GradesExport";
 import { MessageCircle, UserX, Zap, Clipboard, Clock, Plus, AlertTriangle, CheckCircle2, RotateCcw, Check, Archive, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
