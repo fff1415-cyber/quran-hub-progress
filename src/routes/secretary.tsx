@@ -116,6 +116,8 @@ function SecretaryPage() {
           </div>
         </div>
 
+        <GradesExport />
+
         <section className="glass-card rounded-2xl p-6 mb-6">
           <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
             <UserX className="w-5 h-5" /> غياب اليوم ({today.length})
