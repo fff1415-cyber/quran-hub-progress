@@ -9,6 +9,7 @@ import {
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
 import { LateSardList } from "@/components/SardLists";
+import { GradesExport } from "@/components/GradesExport";
 import { Crown, AlertTriangle, Settings, Shield, BookOpen, Archive, MessageSquare, Save, RotateCcw, Send, UserCheck, UserCog, CheckCircle2, AlertCircle } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
