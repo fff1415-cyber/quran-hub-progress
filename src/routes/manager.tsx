@@ -82,6 +82,7 @@ function ManagerPage() {
         </div>
 
         <div className="mb-6"><LateSardList /></div>
+        <GradesExport />
 
         {/* Pending transfers from teachers */}
         <section className="glass-card rounded-2xl p-6 mb-6">
