@@ -9,6 +9,7 @@ import {
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getOperationalDayKey } from "@/lib/operational-date";
 import { AppHeader } from "@/components/AppHeader";
+import { GradesExport } from "@/components/GradesExport";
 import { MessageCircle, UserX, Zap, Clipboard, Clock, Plus, AlertTriangle, CheckCircle2, RotateCcw, Check, Archive, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
@@ -114,6 +115,8 @@ function SecretaryPage() {
             <p className="text-sm text-muted-foreground">متابعة الغياب اليومي وإشعارات أولياء الأمور — يتجدد كل يوم الساعة 2 ظهراً</p>
           </div>
         </div>
+
+        <GradesExport />
 
         <section className="glass-card rounded-2xl p-6 mb-6">
           <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
