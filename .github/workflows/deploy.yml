@@ -24,13 +24,12 @@ jobs:
       - name: 🏗️ Build project
         run: bun run build
 
-      - name: 🚀 Sync files via FTP
+      - name: 🚀 Sync files via FTP to Hostinger
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
           server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: .output/public/
+          local-dir: ./dist/
           server-dir: ./public_html/
           port: 21
-          state-file-name: .ftp-deploy-sync-state.json
