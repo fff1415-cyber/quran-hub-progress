@@ -1,0 +1,9 @@
+RewriteEngine On
+RewriteBase /api/
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteRule ^ index.php [L]
+
+# Protect config.php from direct access
+<Files "config.php">
+  Require all denied
+</Files>

@@ -1,12 +1,11 @@
-// Cloud sync layer — sensitive operations are proxied through server functions
-// in `secure-data.functions.ts`. Non-sensitive columns are read directly via
-// the anon Supabase client (RLS + column grants restrict what is visible).
-import { supabase } from "@/integrations/supabase/client";
+// Cloud sync layer — all data via Hostinger PHP API
 import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, Notification, SardHistoryItem, SardQueueItem, Student } from "./mock-data";
 import { saveGrades, saveHalaqat, saveLatePermissions, saveMessageTemplates, saveNotifications, saveSardHistory, saveSardQueue, saveStudents } from "./mock-data";
 import {
   secureListStudents,
   secureListHalaqatFull,
+  listPublicStudents,
+  listPublicHalaqat,
   secureUpsertStudents,
   securePatchStudent,
   secureDeleteStudent,
@@ -46,7 +45,7 @@ interface CloudStudentRow {
 interface CloudHalaqaRow {
   id: number;
   name: string;
-  is_talqeen: boolean;
+  is_talqeen: boolean | number;
   teacher_name: string;
   teacher_code?: string;
   assistant_name: string;
@@ -61,7 +60,7 @@ function rowToStudent(r: CloudStudentRow): Student {
     nationalId: r.national_id ?? "",
     parentPhone: r.parent_phone ?? "",
     level: r.level,
-    levelType: (r.level_type === "silver" ? "silver" : "gold"),
+    levelType: r.level_type === "silver" ? "silver" : "gold",
     assignedTo: (r.assigned_to as "teacher" | "assistant" | undefined) ?? undefined,
     memorized: r.memorized ?? undefined,
   };
@@ -70,7 +69,7 @@ function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
   return {
     id: r.id,
     name: r.name,
-    isTalqeen: r.is_talqeen,
+    isTalqeen: Boolean(r.is_talqeen),
     teacherName: r.teacher_name,
     teacherCode: r.teacher_code ?? "",
     assistantName: r.assistant_name,
@@ -102,11 +101,6 @@ function halaqaToRow(h: Halaqa): CloudHalaqaRow {
   };
 }
 
-/**
- * Pull latest students/halaqat. If a staff token is present, fetch full rows
- * (including national_id / parent_phone / teacher codes). Otherwise fetch only
- * the public columns allowed by column-level GRANTs.
- */
 export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: Halaqa[] } | null> {
   try {
     const token = getToken();
@@ -121,24 +115,13 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       halaqat = (h as CloudHalaqaRow[]).map(rowToHalaqa);
       students = (s as CloudStudentRow[]).map(rowToStudent);
     } else {
-      const [hRes, sRes] = await Promise.all([
-        supabase
-          .from("halaqat")
-          .select("id, name, is_talqeen, teacher_name, assistant_name")
-          .order("id"),
-        supabase
-          .from("students")
-          .select("id, name, halaqa_id, level, level_type, assigned_to, memorized")
-          .order("name"),
-      ]);
-      if (hRes.error) throw hRes.error;
-      if (sRes.error) throw sRes.error;
-      halaqat = (hRes.data ?? []).map(rowToHalaqa);
-      students = (sRes.data ?? []).map(rowToStudent);
+      const [h, s] = await Promise.all([listPublicHalaqat(), listPublicStudents()]);
+      halaqat = (h as CloudHalaqaRow[]).map(rowToHalaqa);
+      students = (s as CloudStudentRow[]).map(rowToStudent);
     }
 
     if (token) {
-      const stateRows = await secureListAppState({ data: { token } }) as { key: string; value: unknown }[];
+      const stateRows = await secureListAppState({ data: { token } });
       const state = new Map(stateRows.map((row) => [row.key, row.value]));
       sessionStorage.setItem("qs_syncing", "1");
       if (state.has("grades")) saveGrades(state.get("grades") as GradesStore);
@@ -159,7 +142,6 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
   }
 }
 
-// ---- Mutations (all server-side via signed token) ----
 function tokenOrThrow(): string {
   const t = getToken();
   if (!t) throw new Error("الجلسة منتهية — أعد تسجيل الدخول");
@@ -182,7 +164,7 @@ export async function patchStudent(id: string, patch: Partial<Student>) {
   if (patch.levelType !== undefined) row.level_type = patch.levelType;
   if ("assignedTo" in patch) row.assigned_to = patch.assignedTo ?? null;
   if ("memorized" in patch) row.memorized = patch.memorized ?? null;
-  await securePatchStudent({ data: { token: tokenOrThrow(), id, patch: row as never } });
+  await securePatchStudent({ data: { token: tokenOrThrow(), id, patch: row } });
 }
 
 export async function deleteStudent(id: string) {
@@ -199,7 +181,6 @@ export async function deleteHalaqa(id: number) {
   await secureDeleteHalaqa({ data: { token: tokenOrThrow(), id } });
 }
 
-// ---- Role accounts (manager-only) ----
 export interface CloudRoleAccount {
   id: string;
   role: string;
@@ -232,6 +213,9 @@ export async function deleteRoleAccount(id: string) {
   await secureDeleteRoleAccount({ data: { token: tokenOrThrow(), id } });
 }
 
-export async function pushAppState(key: "grades" | "sard_queue" | "sard_history" | "notifications" | "message_templates" | "late_permissions", value: unknown) {
+export async function pushAppState(
+  key: "grades" | "sard_queue" | "sard_history" | "notifications" | "message_templates" | "late_permissions",
+  value: unknown,
+) {
   await secureSetAppState({ data: { token: tokenOrThrow(), key, value } });
 }
