@@ -22,6 +22,9 @@ function LoginPage() {
     try {
       if (mode === "staff") {
         const auth = await loginByCode({ data: { code: value.trim() } });
+        if (!auth.token || !auth.role) {
+          throw new Error("فشل تسجيل الدخول — تحقق من إعدادات API على الخادم");
+        }
         setToken(auth.token);
         sessionStorage.setItem("qs_role", auth.role);
         sessionStorage.setItem("qs_name", auth.name);

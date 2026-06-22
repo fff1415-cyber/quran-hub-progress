@@ -36,6 +36,8 @@ jobs:
           server-dir: ./
           port: 21
           state-name: .ftp-deploy-frontend-state.json
+          include: |
+            **/.htaccess
 
       - name: Sync PHP API to Hostinger
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
@@ -47,3 +49,7 @@ jobs:
           server-dir: ./api/
           port: 21
           state-name: .ftp-deploy-api-state.json
+          exclude: |
+            **/config.php
+          include: |
+            **/.htaccess

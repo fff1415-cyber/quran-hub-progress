@@ -22,7 +22,16 @@ async function apiFetch<T>(
       ...headers,
     },
   });
-  const body = await res.json().catch(() => ({}));
+  const text = await res.text();
+  let body: unknown = {};
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      throw new Error("استجابة غير صالحة من الخادم — تحقق من مجلد api/ وملف .htaccess");
+    }
+  }
   if (!res.ok) {
     throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
   }
