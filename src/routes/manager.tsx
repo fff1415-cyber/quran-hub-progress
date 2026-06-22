@@ -59,7 +59,7 @@ function ManagerPage() {
           </div>
           <div className="flex-1">
             <h1 className="display text-2xl gold-text">لوحة المدير</h1>
-            <p className="text-sm text-muted-foreground">إدارة عليا — متابعة الحالات الخاصة وكل الحلقات</p>
+            <p className="text-sm text-muted-foreground">إدارة عليا — متابعة الحالات الخاصة والحلقات</p>
           </div>
         </div>
 
