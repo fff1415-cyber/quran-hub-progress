@@ -6,7 +6,8 @@ function apiUrl(path: string): string {
   if (!API_BASE) {
     throw new Error("VITE_API_URL is not configured");
   }
-  return `${API_BASE}/api${path}`;
+  const p = path.startsWith("/") ? path : `/${path}`;
+  return `${API_BASE}/api/r.php?path=${encodeURIComponent(p)}`;
 }
 
 async function apiFetch<T>(
