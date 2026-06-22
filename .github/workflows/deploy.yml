@@ -33,8 +33,9 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./dist/client/
-          server-dir: /public_html/
+          server-dir: ./
           port: 21
+          state-name: .ftp-deploy-frontend-state.json
 
       - name: Sync PHP API to Hostinger
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
@@ -43,5 +44,6 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./api/
-          server-dir: /public_html/api/
+          server-dir: ./api/
           port: 21
+          state-name: .ftp-deploy-api-state.json

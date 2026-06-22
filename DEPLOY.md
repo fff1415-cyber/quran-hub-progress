@@ -4,7 +4,8 @@
 
 | Secret | Value |
 |---|---|
-| `FTP_SERVER` | `ftp.yourdomain.com` |
+| `FTP_SERVER` | Hostname أو IP من hPanel → FTP Accounts |
+| `server-dir` | `./` (جذر FTP = `public_html` على Hostinger) |
 | `FTP_USERNAME` | FTP user |
 | `FTP_PASSWORD` | FTP password |
 | `VITE_API_URL` | `https://yourdomain.com` |
