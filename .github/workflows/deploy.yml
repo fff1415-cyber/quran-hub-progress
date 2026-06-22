@@ -26,6 +26,9 @@ jobs:
         env:
           VITE_API_URL: ${{ secrets.VITE_API_URL }}
 
+      - name: Write deploy marker
+        run: echo "${{ github.sha }}" > dist/client/deploy-sha.txt
+
       - name: Sync frontend to Hostinger
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
         with:
@@ -33,9 +36,9 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./dist/client/
-          server-dir: ./
+          server-dir: ${{ secrets.FTP_SERVER_DIR }}
           port: 21
-          state-name: .ftp-deploy-frontend-state.json
+          state-name: .ftp-deploy-frontend-v3-state.json
 
       - name: Sync PHP API to Hostinger
         uses: SamKirkland/FTP-Deploy-Action@v4.3.4
@@ -44,8 +47,22 @@ jobs:
           username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
           local-dir: ./api/
-          server-dir: ./api/
+          server-dir: ${{ secrets.FTP_API_DIR }}
           port: 21
-          state-name: .ftp-deploy-api-v2-state.json
+          state-name: .ftp-deploy-api-v3-state.json
           exclude: |
             **/config.php
+
+      - name: Verify live deploy
+        run: |
+          for i in 1 2 3 4 5 6; do
+            LIVE=$(curl -fsS "https://msht.io/deploy-sha.txt" || true)
+            if [ "$LIVE" = "${{ github.sha }}" ]; then
+              echo "Deploy verified on msht.io"
+              exit 0
+            fi
+            echo "Attempt $i: deploy-sha.txt='$LIVE'"
+            sleep 15
+          done
+          echo "Deploy did not reach msht.io. Set GitHub secret FTP_SERVER_DIR to your site root (e.g. /domains/msht.io/public_html/)."
+          exit 1

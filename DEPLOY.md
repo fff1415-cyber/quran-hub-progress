@@ -5,9 +5,10 @@
 | Secret | Value |
 |---|---|
 | `FTP_SERVER` | Hostname أو IP من hPanel → FTP Accounts |
-| `server-dir` | `./` (جذر FTP = `public_html` على Hostinger) |
 | `FTP_USERNAME` | FTP user |
 | `FTP_PASSWORD` | FTP password |
+| `FTP_SERVER_DIR` | جذر الموقع، مثل `/domains/msht.io/public_html/` |
+| `FTP_API_DIR` | مجلد API، مثل `/domains/msht.io/public_html/api/` |
 | `VITE_API_URL` | `https://yourdomain.com` |
 
 ## Server setup (once)
