@@ -1,77 +1,110 @@
-import React from 'react';
-import { Link, useNavigate } from '@tanstack/react-router';
-import { useAuth } from '../integrations/supabase'; // مسار افتراضي لإدارة الجلسة في مشروعك
-import { Button } from './ui/button';
-import { LogOut, User, Menu } from 'lucide-react';
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from './ui/dropdown-menu';
+import { Link, useRouter } from "@tanstack/react-router";
+import { useState } from "react";
+import { ArrowRight, LogOut, Menu, Shield, Crown, Users, BookOpen, Mic, Eye, GraduationCap, LayoutDashboard, Home } from "lucide-react";
+import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import logo from "@/assets/shtaiwi-logo.png.asset.json";
 
-export const AppHeader: React.FC = () => {
-  const navigate = useNavigate();
-  // يمكنك تفعيل سطر useAuth إذا كنت تستخدم نظام تسجيل الدخول عبر السقيفة العلوية
-  // const { session, signOut } = useAuth(); 
+interface NavItem {
+  to: string;
+  label: string;
+  icon: React.ElementType;
+  roles: string[]; // empty = all
+}
 
-  // الرابط المباشر الجديد والواضح للشعار
-  const logoUrl = "https://i.postimg.cc/1tT7gNZz/Whats-App-Image-2026-02-02-at-1-09-00-PM.png";
+const NAV: NavItem[] = [
+  { to: "/", label: "الرئيسية", icon: Home, roles: [] },
+  { to: "/manager", label: "لوحة المدير", icon: Crown, roles: ["manager"] },
+  { to: "/admin", label: "لوحة الإدارة", icon: Shield, roles: ["manager"] },
+  { to: "/dashboard", label: "لوحة التحكم", icon: LayoutDashboard, roles: ["manager"] },
+  { to: "/supervisor", label: "الإشراف التعليمي", icon: Eye, roles: ["manager", "supervisor"] },
+  { to: "/secretary", label: "السكرتارية", icon: Users, roles: ["manager", "secretary"] },
+  { to: "/musammi", label: "المسمّع", icon: Mic, roles: ["manager", "musammi"] },
+  { to: "/teacher", label: "حلقتي", icon: BookOpen, roles: ["manager", "teacher", "assistant"] },
+  { to: "/student", label: "صفحة الطالب", icon: GraduationCap, roles: ["student"] },
+];
 
-  const handleLogout = async () => {
-    // كود تسجيل الخروج الافتراضي للمنصة
-    try {
-      // await signOut();
-      navigate({ to: '/login' });
-    } catch (error) {
-      console.error('Error logging out:', error);
+export function AppHeader({ title, subtitle }: { title: string; subtitle?: string }) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const role = typeof window !== "undefined" ? sessionStorage.getItem("qs_role") || "" : "";
+  const name = typeof window !== "undefined" ? sessionStorage.getItem("qs_name") || "" : "";
+
+  const items = NAV.filter((n) => n.roles.length === 0 || n.roles.includes(role));
+
+  const goBack = () => {
+    if (typeof window !== "undefined" && window.history.length > 1) {
+      router.history.back();
+    } else {
+      router.navigate({ to: "/" });
     }
   };
 
   return (
-    <header className="sticky top-0 z-50 w-full border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
-      <div className="container flex h-16 items-center justify-between px-4 mx-auto">
-        
-        {/* قسم الشعار واسم الموقع (الجانب الأيمن/الأيسر حسب اتجاه الموقع) */}
-        <Link to="/" className="flex items-center gap-3 font-bold text-xl text-primary transition-opacity hover:opacity-90">
-          <img 
-            src={logoUrl} 
-            alt="شعار مجمع القرآن الكريم" 
-            className="h-11 w-auto object-contain max-w-[160px] transition-transform hover:scale-105" 
-            onError={(e) => {
-              (e.target as HTMLImageElement).src = "/placeholder.svg";
-            }}
-          />
-          <span className="hidden md:inline-block font-bold text-base text-neutral-800 dark:text-neutral-200 tracking-tight font-serif">
-            منصة حلقات القرآن الكريم
-          </span>
-        </Link>
+    <header className="border-b border-primary/15 backdrop-blur-sm sticky top-0 z-40 bg-background/85">
+      <div className="max-w-7xl mx-auto px-3 sm:px-4 py-2.5 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <Sheet open={open} onOpenChange={setOpen}>
+            <SheetTrigger asChild>
+              <button aria-label="القائمة" className="p-2 rounded-lg hover:bg-primary/10 border border-transparent hover:border-primary/30">
+                <Menu className="w-5 h-5 text-primary" />
+              </button>
+            </SheetTrigger>
+            <SheetContent side="right" className="w-[280px] bg-background border-l border-primary/15">
+              <SheetHeader>
+                <SheetTitle className="flex items-center gap-3">
+                  <img src={logo.url} alt="شعار المجمع" className="w-12 h-12 object-contain" />
+                  <div className="text-right">
+                    <div className="display gold-text text-base font-bold">مجمع الشتيوي</div>
+                    {name && <div className="text-xs text-muted-foreground font-normal">{name}</div>}
+                  </div>
+                </SheetTitle>
+              </SheetHeader>
+              <nav className="mt-6 space-y-1">
+                {items.map((item) => {
+                  const Icon = item.icon;
+                  return (
+                    <Link
+                      key={item.to}
+                      to={item.to}
+                      onClick={() => setOpen(false)}
+                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm hover:bg-primary/10 hover:text-primary border border-transparent hover:border-primary/30"
+                    >
+                      <Icon className="w-4 h-4 text-primary" />
+                      <span>{item.label}</span>
+                    </Link>
+                  );
+                })}
+                <Link
+                  to="/"
+                  onClick={() => { sessionStorage.clear(); setOpen(false); }}
+                  className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm hover:bg-destructive/15 text-destructive border border-transparent hover:border-destructive/30 mt-4"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>تسجيل الخروج</span>
+                </Link>
+              </nav>
+            </SheetContent>
+          </Sheet>
 
-        {/* أزرار التحكم والقوائم العلوية المحمية لمستخدمي النظام */}
-        <div className="flex items-center gap-4">
-          
-          {/* قائمة تفاعلية للمستخدم (Dropdown Menu من مكونات shadcn/ui) */}
-          <DropdownMenu dir="rtl">
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative h-9 w-9 rounded-full border bg-muted">
-                <User className="h-5 w-5 text-muted-foreground" />
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 mt-1">
-              <DropdownMenuItem onClick={() => navigate({ to: '/dashboard' })} className="cursor-pointer gap-2 justify-start text-right">
-                <User className="h-4 w-4" />
-                <span>لوحة التحكم</span>
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={handleLogout} className="cursor-pointer gap-2 justify-start text-destructive text-right">
-                <LogOut className="h-4 w-4" />
-                <span>تسجيل الخروج</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          {/* زر استجابة إضافي للشاشات الصغيرة للموبايل */}
-          <Button variant="ghost" size="icon" className="md:hidden">
-            <Menu className="h-5 w-5" />
-          </Button>
-
+          <button
+            onClick={goBack}
+            aria-label="رجوع"
+            className="p-2 rounded-lg hover:bg-primary/10 border border-transparent hover:border-primary/30"
+          >
+            <ArrowRight className="w-5 h-5 text-primary" />
+          </button>
         </div>
 
+        <Link to="/" className="flex items-center gap-2 sm:gap-3 group flex-1 justify-center sm:justify-start">
+          <img src={logo.url} alt="شعار المجمع" className="w-10 h-10 sm:w-11 sm:h-11 object-contain" />
+          <div className="text-right">
+            <div className="display text-base sm:text-lg font-bold gold-text leading-tight">مجمع الشتيوي</div>
+            {subtitle && <div className="text-[11px] text-muted-foreground leading-tight">{subtitle}</div>}
+          </div>
+        </Link>
+
+        <div className="hidden md:block text-sm text-muted-foreground truncate max-w-[40%]">{title}</div>
       </div>
     </header>
   );
-};
+}
