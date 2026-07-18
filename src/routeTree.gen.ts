@@ -16,6 +16,7 @@ import { Route as SecretaryRouteImport } from './routes/secretary'
 import { Route as MusammiRouteImport } from './routes/musammi'
 import { Route as ManagerRouteImport } from './routes/manager'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as DailyOperationsRouteImport } from './routes/daily-operations'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -54,6 +55,11 @@ const DashboardRoute = DashboardRouteImport.update({
   path: '/dashboard',
   getParentRoute: () => rootRouteImport,
 } as any)
+const DailyOperationsRoute = DailyOperationsRouteImport.update({
+  id: '/daily-operations',
+  path: '/daily-operations',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
@@ -69,6 +75,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
+  '/daily-operations': typeof DailyOperationsRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
   '/secretary': typeof SecretaryRoute
@@ -80,6 +87,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
+  '/daily-operations': typeof DailyOperationsRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
   '/secretary': typeof SecretaryRoute
@@ -92,6 +100,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/dashboard': typeof DashboardRoute
+  '/daily-operations': typeof DailyOperationsRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
   '/secretary': typeof SecretaryRoute
@@ -105,6 +114,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/dashboard'
+    | '/daily-operations'
     | '/manager'
     | '/musammi'
     | '/secretary'
@@ -116,6 +126,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/dashboard'
+    | '/daily-operations'
     | '/manager'
     | '/musammi'
     | '/secretary'
@@ -127,6 +138,7 @@ export interface FileRouteTypes {
     | '/'
     | '/admin'
     | '/dashboard'
+    | '/daily-operations'
     | '/manager'
     | '/musammi'
     | '/secretary'
@@ -139,6 +151,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   DashboardRoute: typeof DashboardRoute
+  DailyOperationsRoute: typeof DailyOperationsRoute
   ManagerRoute: typeof ManagerRoute
   MusammiRoute: typeof MusammiRoute
   SecretaryRoute: typeof SecretaryRoute
@@ -198,6 +211,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof DashboardRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/daily-operations': {
+      id: '/daily-operations'
+      path: '/daily-operations'
+      fullPath: '/daily-operations'
+      preLoaderRoute: typeof DailyOperationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/admin': {
       id: '/admin'
       path: '/admin'
@@ -219,6 +239,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   DashboardRoute: DashboardRoute,
+  DailyOperationsRoute: DailyOperationsRoute,
   ManagerRoute: ManagerRoute,
   MusammiRoute: MusammiRoute,
   SecretaryRoute: SecretaryRoute,

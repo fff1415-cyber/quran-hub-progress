@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, saveStudents, loadGrades, loadSardQueue, updateSardItem, pushNotification,
@@ -110,9 +110,12 @@ function SecretaryPage() {
           <div className="w-14 h-14 rounded-2xl gold-gradient flex items-center justify-center">
             <Clipboard className="w-7 h-7 text-primary-foreground" />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="display text-2xl gold-text">لوحة السكرتير</h1>
             <p className="text-sm text-muted-foreground">متابعة الغياب اليومي وإشعارات أولياء الأمور — يتجدد كل يوم الساعة 2 ظهراً</p>
+            <Link to="/daily-operations" className="inline-block mt-2 text-xs text-primary font-bold hover:underline">
+              ← فتح المتابعة اليومية (واجهة سريعة)
+            </Link>
           </div>
         </div>
 

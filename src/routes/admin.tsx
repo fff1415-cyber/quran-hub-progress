@@ -93,8 +93,11 @@ function AdminPage() {
         <div className="glass-card rounded-2xl p-6 mb-6">
           <h1 className="display text-3xl gold-text mb-1">لوحة الإداري</h1>
           <p className="text-muted-foreground text-sm">إدارة الغياب والمتابعة والإشعارات</p>
-          <div className="mt-4">
-            <Link to="/dashboard" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg gold-gradient text-primary-foreground text-sm font-bold">
+          <div className="mt-4 flex flex-wrap gap-2">
+            <Link to="/daily-operations" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg gold-gradient text-primary-foreground text-sm font-bold">
+              المتابعة اليومية
+            </Link>
+            <Link to="/dashboard" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg border border-primary/30 text-primary text-sm font-bold hover:bg-primary/10">
               فتح لوحة التحكم الكاملة
             </Link>
           </div>

@@ -1,6 +1,6 @@
 import { Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
-import { ArrowRight, LogOut, Menu, Shield, Crown, Users, BookOpen, Mic, Eye, GraduationCap, LayoutDashboard, Home } from "lucide-react";
+import { ArrowRight, LogOut, Menu, Shield, Crown, Users, BookOpen, Mic, Eye, GraduationCap, LayoutDashboard, Home, ClipboardList } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import logo from "@/assets/shtaiwi-logo.png.asset.json";
 
@@ -15,6 +15,7 @@ const NAV: NavItem[] = [
   { to: "/", label: "الرئيسية", icon: Home, roles: [] },
   { to: "/manager", label: "لوحة المدير", icon: Crown, roles: ["manager"] },
   { to: "/admin", label: "لوحة الإدارة", icon: Shield, roles: ["manager"] },
+  { to: "/daily-operations", label: "المتابعة اليومية", icon: ClipboardList, roles: ["manager", "secretary"] },
   { to: "/dashboard", label: "لوحة التحكم", icon: LayoutDashboard, roles: ["manager"] },
   { to: "/supervisor", label: "الإشراف التعليمي", icon: Eye, roles: ["manager", "supervisor"] },
   { to: "/secretary", label: "السكرتارية", icon: Users, roles: ["manager", "secretary"] },
