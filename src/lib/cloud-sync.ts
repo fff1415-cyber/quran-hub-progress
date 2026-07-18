@@ -149,9 +149,12 @@ function tokenOrThrow(): string {
 }
 
 export async function pushStudents(students: Student[]) {
-  saveStudents(students);
-  if (students.length === 0) return;
+  if (students.length === 0) {
+    saveStudents(students);
+    return;
+  }
   await secureUpsertStudents({ data: { token: tokenOrThrow(), students: students.map(studentToRow) } });
+  saveStudents(students);
 }
 
 export async function patchStudent(id: string, patch: Partial<Student>) {
@@ -172,9 +175,12 @@ export async function deleteStudent(id: string) {
 }
 
 export async function pushHalaqat(halaqat: Halaqa[]) {
-  saveHalaqat(halaqat);
-  if (halaqat.length === 0) return;
+  if (halaqat.length === 0) {
+    saveHalaqat(halaqat);
+    return;
+  }
   await secureUpsertHalaqat({ data: { token: tokenOrThrow(), halaqat: halaqat.map(halaqaToRow) } });
+  saveHalaqat(halaqat);
 }
 
 export async function deleteHalaqa(id: number) {
@@ -190,13 +196,8 @@ export interface CloudRoleAccount {
 }
 
 export async function loadRoleAccountsCloud(): Promise<CloudRoleAccount[]> {
-  try {
-    const rows = await secureListRoleAccounts({ data: { token: tokenOrThrow() } });
-    return (rows ?? []) as CloudRoleAccount[];
-  } catch (e) {
-    console.error(e);
-    return [];
-  }
+  const rows = await secureListRoleAccounts({ data: { token: tokenOrThrow() } });
+  return (rows ?? []) as CloudRoleAccount[];
 }
 
 export async function upsertRoleAccount(acc: {

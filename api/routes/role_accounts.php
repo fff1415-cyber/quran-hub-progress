@@ -19,7 +19,19 @@ function handle_upsert_role_account(): void
     $input = json_input();
     $acc = $input['account'] ?? [];
     if (!is_array($acc)) {
-        error_response('Invalid account');
+        error_response('بيانات الحساب غير صالحة');
+    }
+
+    $role = trim((string) ($acc['role'] ?? ''));
+    $name = trim((string) ($acc['name'] ?? ''));
+    $code = trim((string) ($acc['code'] ?? ''));
+    if ($role === '' || $name === '' || $code === '') {
+        error_response('الاسم والرمز والدور مطلوبة');
+    }
+
+    $allowedRoles = ['manager', 'secretary', 'supervisor', 'musammi'];
+    if (!in_array($role, $allowedRoles, true)) {
+        error_response('دور غير صالح');
     }
 
     $id = $acc['id'] ?? new_uuid();
@@ -33,15 +45,22 @@ function handle_upsert_role_account(): void
               name = VALUES(name),
               code = VALUES(code),
               permissions = VALUES(permissions)';
-    $pdo->prepare($sql)->execute([
-        ':id' => $id,
-        ':role' => $acc['role'],
-        ':name' => $acc['name'],
-        ':code' => $acc['code'],
-        ':permissions' => $permissions,
-    ]);
+    try {
+        $pdo->prepare($sql)->execute([
+            ':id' => $id,
+            ':role' => $role,
+            ':name' => $name,
+            ':code' => $code,
+            ':permissions' => $permissions,
+        ]);
+    } catch (PDOException $e) {
+        if ((int) $e->getCode() === 23000) {
+            error_response('الرمز مستخدم مسبقاً — اختر رمزاً مختلفاً', 409);
+        }
+        error_response('فشل حفظ الحساب في قاعدة البيانات', 500);
+    }
 
-    json_response(['ok' => true]);
+    json_response(['ok' => true, 'id' => $id]);
 }
 
 function handle_delete_role_account(): void

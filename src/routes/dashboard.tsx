@@ -4,7 +4,7 @@ import {
   loadHalaqat, saveHalaqat, loadStudents, saveStudents, type Halaqa, type Student,
 } from "@/lib/mock-data";
 import { toCsvUrl, parseCsv, normalizeRows, normalizeArabic } from "@/lib/google-sheets";
-import { loadRoleAccountsCloud, upsertRoleAccount, deleteRoleAccount, type CloudRoleAccount } from "@/lib/cloud-sync";
+import { loadRoleAccountsCloud, upsertRoleAccount, deleteRoleAccount, pushHalaqat, deleteHalaqa, pushStudents, deleteStudent, type CloudRoleAccount } from "@/lib/cloud-sync";
 import { AppHeader } from "@/components/AppHeader";
 import { Plus, Trash2, Users, BookOpen, Key, Settings as SettingsIcon, FileSpreadsheet, Download, Loader2, Save } from "lucide-react";
 import { Toaster, toast } from "sonner";
@@ -276,22 +276,42 @@ function ImportTab() {
 
 function HalaqatTab() {
   const [halaqat, setHalaqat] = useState<Halaqa[]>(() => loadHalaqat());
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<Omit<Halaqa, "id">>({
     name: "", isTalqeen: false,
     teacherName: "", teacherCode: "",
     assistantName: "", assistantCode: "",
   });
 
-  const add = () => {
-    if (!form.name) { toast.error("أكمل البيانات"); return; }
+  const add = async () => {
+    if (!form.name.trim()) { toast.error("أكمل البيانات"); return; }
     const next: Halaqa[] = [...halaqat, { id: Math.max(0, ...halaqat.map((h) => h.id)) + 1, ...form }];
-    setHalaqat(next); saveHalaqat(next);
-    setForm({ name: "", isTalqeen: false, teacherName: "", teacherCode: "", assistantName: "", assistantCode: "" });
-    toast.success("تمت إضافة الحلقة");
+    setSaving(true);
+    try {
+      await pushHalaqat(next);
+      setHalaqat(next);
+      setForm({ name: "", isTalqeen: false, teacherName: "", teacherCode: "", assistantName: "", assistantCode: "" });
+      toast.success("تمت إضافة الحلقة وحفظها في قاعدة البيانات");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل حفظ الحلقة");
+    } finally {
+      setSaving(false);
+    }
   };
-  const del = (id: number) => {
+  const del = async (id: number) => {
+    if (!confirm("حذف هذه الحلقة؟")) return;
     const next = halaqat.filter((h) => h.id !== id);
-    setHalaqat(next); saveHalaqat(next);
+    setSaving(true);
+    try {
+      await deleteHalaqa(id);
+      saveHalaqat(next);
+      setHalaqat(next);
+      toast.success("تم حذف الحلقة");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل حذف الحلقة");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -304,8 +324,8 @@ function HalaqatTab() {
           <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="رمز المعلم" value={form.teacherCode} onChange={(e) => setForm({ ...form, teacherCode: e.target.value })} />
           <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="اسم المساعد" value={form.assistantName} onChange={(e) => setForm({ ...form, assistantName: e.target.value })} />
           <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="رمز المساعد" value={form.assistantCode} onChange={(e) => setForm({ ...form, assistantCode: e.target.value })} />
-          <button onClick={add} className="px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center justify-center gap-2">
-            <Plus className="w-4 h-4" /> إضافة
+          <button onClick={add} disabled={saving} className="px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center justify-center gap-2 disabled:opacity-60">
+            {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} إضافة
           </button>
         </div>
         <label className="flex items-center gap-2 mt-3 text-sm">
@@ -327,7 +347,7 @@ function HalaqatTab() {
                   {h.isTalqeen && " · تلقين"}
                 </div>
               </div>
-              <button onClick={() => del(h.id)} className="p-2 rounded-lg hover:bg-destructive/20 text-destructive">
+              <button onClick={() => del(h.id)} disabled={saving} className="p-2 rounded-lg hover:bg-destructive/20 text-destructive disabled:opacity-50">
                 <Trash2 className="w-4 h-4" />
               </button>
             </div>
@@ -340,6 +360,7 @@ function HalaqatTab() {
 
 function StudentsTab() {
   const [students, setStudents] = useState<Student[]>(() => loadStudents());
+  const [saving, setSaving] = useState(false);
   const [q, setQ] = useState("");
   const halaqat = loadHalaqat();
   const [form, setForm] = useState<Omit<Student, "id">>({
@@ -352,18 +373,35 @@ function StudentsTab() {
     return students.filter((s) => s.name.includes(q) || s.nationalId.includes(q));
   }, [students, q]);
 
-  const add = () => {
+  const add = async () => {
     if (!form.name || !form.nationalId) { toast.error("الاسم ورقم الهوية مطلوبان"); return; }
     const next: Student[] = [...students, { id: `s-${Date.now()}`, ...form }];
-    setStudents(next); saveStudents(next);
-    void import("@/lib/cloud-sync").then((m) => m.pushStudents(next));
-    toast.success("تمت الإضافة وحُفظت في السحابة");
-    setForm({ ...form, name: "", nationalId: "", parentPhone: "" });
+    setSaving(true);
+    try {
+      await pushStudents(next);
+      setStudents(next);
+      setForm({ ...form, name: "", nationalId: "", parentPhone: "" });
+      toast.success("تمت إضافة الطالب وحفظه في قاعدة البيانات");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل حفظ الطالب");
+    } finally {
+      setSaving(false);
+    }
   };
-  const del = (id: string) => {
+  const del = async (id: string) => {
+    if (!confirm("حذف هذا الطالب؟")) return;
     const next = students.filter((s) => s.id !== id);
-    setStudents(next); saveStudents(next);
-    void import("@/lib/cloud-sync").then((m) => m.deleteStudent(id));
+    setSaving(true);
+    try {
+      await deleteStudent(id);
+      saveStudents(next);
+      setStudents(next);
+      toast.success("تم حذف الطالب");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل حذف الطالب");
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -383,8 +421,8 @@ function StudentsTab() {
             <option value="silver">فضي</option>
           </select>
         </div>
-        <button onClick={add} className="mt-3 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center gap-2">
-          <Plus className="w-4 h-4" /> إضافة الطالب
+        <button onClick={add} disabled={saving} className="mt-3 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center gap-2 disabled:opacity-60">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} إضافة الطالب
         </button>
       </div>
 
@@ -421,15 +459,29 @@ function StudentsTab() {
 
 function CodesTab() {
   const [halaqat, setHalaqat] = useState<Halaqa[]>(() => loadHalaqat());
+  const [savingId, setSavingId] = useState<number | null>(null);
+
   const update = (id: number, patch: Partial<Halaqa>) => {
-    const next = halaqat.map((h) => h.id === id ? { ...h, ...patch } : h);
-    setHalaqat(next); saveHalaqat(next);
+    setHalaqat((cur) => cur.map((h) => h.id === id ? { ...h, ...patch } : h));
+  };
+
+  const saveRow = async (h: Halaqa) => {
+    setSavingId(h.id);
+    try {
+      await pushHalaqat(halaqat);
+      toast.success(`تم حفظ رموز حلقة «${h.name}»`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل حفظ الرموز");
+    } finally {
+      setSavingId(null);
+    }
   };
 
   return (
     <div className="space-y-4">
       <div className="glass-card rounded-2xl p-5">
         <h3 className="font-bold mb-3 text-primary">رموز المعلمين والمساعدين</h3>
+        <p className="text-xs text-muted-foreground mb-4">عدّل البيانات ثم اضغط «حفظ» لكل حلقة لإرسالها إلى قاعدة البيانات.</p>
         <div className="overflow-x-auto">
         <table className="w-full text-sm min-w-[700px]">
           <thead><tr className="text-right text-muted-foreground border-b border-border">
@@ -438,6 +490,7 @@ function CodesTab() {
             <th className="p-2">رمزه</th>
             <th className="p-2">اسم المساعد</th>
             <th className="p-2">رمزه</th>
+            <th className="p-2"></th>
           </tr></thead>
           <tbody>
             {halaqat.map((h) => (
@@ -447,6 +500,11 @@ function CodesTab() {
                 <td className="p-2"><input className="px-2 py-1 rounded bg-input border border-border font-mono text-primary text-center w-24" value={h.teacherCode} onChange={(e) => update(h.id, { teacherCode: e.target.value })} /></td>
                 <td className="p-2"><input className="px-2 py-1 rounded bg-input border border-border w-full" value={h.assistantName} onChange={(e) => update(h.id, { assistantName: e.target.value })} /></td>
                 <td className="p-2"><input className="px-2 py-1 rounded bg-input border border-border font-mono text-primary text-center w-24" value={h.assistantCode} onChange={(e) => update(h.id, { assistantCode: e.target.value })} /></td>
+                <td className="p-2">
+                  <button onClick={() => saveRow(h)} disabled={savingId === h.id} title="حفظ" className="p-1.5 rounded bg-primary/15 text-primary border border-primary/30 disabled:opacity-50">
+                    {savingId === h.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -461,11 +519,22 @@ function CodesTab() {
 function RoleAccountsManager() {
   const [rows, setRows] = useState<CloudRoleAccount[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [form, setForm] = useState<{ role: string; name: string; code: string }>({ role: "musammi", name: "", code: "" });
 
   const reload = async () => {
     setLoading(true);
-    try { setRows(await loadRoleAccountsCloud()); } finally { setLoading(false); }
+    setLoadError(null);
+    try {
+      setRows(await loadRoleAccountsCloud());
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "فشل تحميل الحسابات";
+      setLoadError(msg);
+      toast.error(msg);
+    } finally {
+      setLoading(false);
+    }
   };
   useEffect(() => { void reload(); }, []);
 
@@ -478,25 +547,34 @@ function RoleAccountsManager() {
   };
   const saveRow = async (r: CloudRoleAccount) => {
     if (!r.name.trim() || !r.code.trim()) { toast.error("الاسم والرمز مطلوبان"); return; }
+    setSaving(true);
     try {
       await upsertRoleAccount({ id: r.id, role: r.role, name: r.name.trim(), code: r.code.trim(), permissions: r.permissions || [] });
-      toast.success("تم الحفظ");
-      void reload();
+      toast.success("تم الحفظ في قاعدة البيانات");
+      await reload();
     } catch (e) { toast.error(e instanceof Error ? e.message : "فشل الحفظ"); }
+    finally { setSaving(false); }
   };
   const removeRow = async (id: string) => {
     if (!confirm("حذف هذا الحساب؟")) return;
-    try { await deleteRoleAccount(id); toast.success("تم الحذف"); void reload(); }
-    catch (e) { toast.error(e instanceof Error ? e.message : "فشل الحذف"); }
+    setSaving(true);
+    try {
+      await deleteRoleAccount(id);
+      toast.success("تم الحذف");
+      await reload();
+    } catch (e) { toast.error(e instanceof Error ? e.message : "فشل الحذف"); }
+    finally { setSaving(false); }
   };
   const addRow = async () => {
     if (!form.name.trim() || !form.code.trim()) { toast.error("أكمل البيانات"); return; }
+    setSaving(true);
     try {
       await upsertRoleAccount({ role: form.role, name: form.name.trim(), code: form.code.trim(), permissions: [] });
-      toast.success("تمت الإضافة");
+      toast.success("تمت الإضافة وحفظها في قاعدة البيانات");
       setForm({ role: "musammi", name: "", code: "" });
-      void reload();
+      await reload();
     } catch (e) { toast.error(e instanceof Error ? e.message : "فشل الإضافة"); }
+    finally { setSaving(false); }
   };
 
   return (
@@ -514,10 +592,17 @@ function RoleAccountsManager() {
         </select>
         <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="الاسم" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
         <input className="px-3 py-2 rounded-lg bg-input border border-border font-mono" placeholder="الرمز" value={form.code} onChange={(e) => setForm({ ...form, code: e.target.value })} />
-        <button onClick={addRow} className="px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center justify-center gap-2">
-          <Plus className="w-4 h-4" /> إضافة
+        <button onClick={addRow} disabled={saving} className="px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center justify-center gap-2 disabled:opacity-60">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Plus className="w-4 h-4" />} إضافة
         </button>
       </div>
+
+      {loadError && (
+        <div className="mb-4 p-3 rounded-lg border border-destructive/40 bg-destructive/10 text-sm text-destructive">
+          {loadError}
+          <button onClick={() => void reload()} className="mr-2 underline">إعادة المحاولة</button>
+        </div>
+      )}
 
       {loading ? (
         <p className="text-center text-sm text-muted-foreground py-4 flex items-center justify-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> جاري التحميل...</p>
@@ -548,8 +633,8 @@ function RoleAccountsManager() {
                   <td className="p-2"><input className="px-2 py-1 rounded bg-input border border-border font-mono text-primary text-center w-28" value={r.code} onChange={(e) => update(r.id, { code: e.target.value })} /></td>
                   <td className="p-2">
                     <div className="flex gap-1">
-                      <button onClick={() => saveRow(r)} title="حفظ" className="p-1.5 rounded bg-primary/15 text-primary border border-primary/30"><Save className="w-3.5 h-3.5" /></button>
-                      <button onClick={() => removeRow(r.id)} title="حذف" className="p-1.5 rounded bg-destructive/15 text-destructive border border-destructive/30"><Trash2 className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => saveRow(r)} disabled={saving} title="حفظ" className="p-1.5 rounded bg-primary/15 text-primary border border-primary/30 disabled:opacity-50"><Save className="w-3.5 h-3.5" /></button>
+                      <button onClick={() => removeRow(r.id)} disabled={saving} title="حذف" className="p-1.5 rounded bg-destructive/15 text-destructive border border-destructive/30 disabled:opacity-50"><Trash2 className="w-3.5 h-3.5" /></button>
                     </div>
                   </td>
                 </tr>

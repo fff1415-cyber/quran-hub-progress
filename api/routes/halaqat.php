@@ -40,16 +40,24 @@ function handle_upsert_halaqat(): void
               assistant_code = VALUES(assistant_code)';
     $stmt = $pdo->prepare($sql);
 
-    foreach ($halaqat as $h) {
-        $stmt->execute([
-            ':id' => (int) $h['id'],
-            ':name' => $h['name'],
-            ':is_talqeen' => !empty($h['is_talqeen']) ? 1 : 0,
-            ':teacher_name' => $h['teacher_name'] ?? '—',
-            ':teacher_code' => $h['teacher_code'] ?? '',
-            ':assistant_name' => $h['assistant_name'] ?? '—',
-            ':assistant_code' => $h['assistant_code'] ?? '',
-        ]);
+    try {
+        foreach ($halaqat as $h) {
+            $name = trim((string) ($h['name'] ?? ''));
+            if ($name === '') {
+                error_response('اسم الحلقة مطلوب');
+            }
+            $stmt->execute([
+                ':id' => (int) $h['id'],
+                ':name' => $name,
+                ':is_talqeen' => !empty($h['is_talqeen']) ? 1 : 0,
+                ':teacher_name' => trim((string) ($h['teacher_name'] ?? '')) ?: '—',
+                ':teacher_code' => trim((string) ($h['teacher_code'] ?? '')),
+                ':assistant_name' => trim((string) ($h['assistant_name'] ?? '')) ?: '—',
+                ':assistant_code' => trim((string) ($h['assistant_code'] ?? '')),
+            ]);
+        }
+    } catch (PDOException $e) {
+        error_response('فشل حفظ الحلقة في قاعدة البيانات', 500);
     }
 
     json_response(['ok' => true]);
