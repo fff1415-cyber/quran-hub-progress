@@ -145,6 +145,10 @@ function ManagerPage() {
           </div>
         </div>
 
+        <div className="mb-8 ring-2 ring-primary/25 rounded-2xl">
+          <SemesterSetupForm />
+        </div>
+
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3 mb-6">
           <Link to="/daily-operations" className="glass-card rounded-2xl p-5 hover:gold-glow hover:border-primary transition-all">
             <ClipboardList className="w-6 h-6 text-primary mb-2" />
@@ -408,8 +412,6 @@ function ManagerPage() {
 
           {/* ── Tab 3: System settings ── */}
           <TabsContent value="settings" className="space-y-6 mt-0">
-            <SemesterSetupForm />
-
             <section className="glass-card rounded-2xl p-6">
               <h2 className="text-lg font-bold text-primary mb-2 flex items-center gap-2">
                 <MessageSquare className="w-5 h-5" /> تحرير الرسائل المرسلة لأولياء الأمور
