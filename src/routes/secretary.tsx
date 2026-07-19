@@ -1,87 +1,132 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
-  loadHalaqat, loadStudents, saveStudents, loadGrades, loadSardQueue, updateSardItem, pushNotification,
+  loadHalaqat, loadStudents, loadGrades, loadSardQueue,
   loadLatePermissions, saveLatePermissions, loadMessageTemplates, formatMessage,
-  loadAttendanceArchive, acknowledgeAttendance,
-  type WeekRecord, type Student,
+  pushNotification, DAYS,
+  type WeekRecord, type Student, type GradesStore,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getOperationalDayKey } from "@/lib/operational-date";
 import { AppHeader } from "@/components/AppHeader";
 import { GradesExport } from "@/components/GradesExport";
-import { MessageCircle, UserX, Zap, Clipboard, Clock, Plus, AlertTriangle, CheckCircle2, RotateCcw, Check, Archive, X } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import {
+  Clipboard, MessageCircle, UserX, Clock, Mic, Search,
+  CheckCircle2, AlertTriangle, Check,
+} from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/secretary")({ component: SecretaryPage });
 
+type SecretaryTab = "attendance" | "sard";
+
+function matchesSearch(name: string, query: string): boolean {
+  const q = query.trim();
+  if (!q) return false;
+  return name.includes(q);
+}
+
+function totalLateCount(studentId: string, grades: GradesStore): number {
+  const weeks = grades[studentId] || {};
+  let count = 0;
+  for (const w of Object.values(weeks)) {
+    for (const d of DAYS) {
+      if (w.days[d.key]?.attendance === "late") count++;
+    }
+  }
+  return count;
+}
+
+function todayLabel(dayKey: string): string {
+  return DAYS.find((d) => d.key === dayKey)?.label ?? dayKey;
+}
+
+function whatsappAbsenceMessage(studentName: string, status: "absent" | "late", dayKey: string): string {
+  const statusWord = status === "absent" ? "غياب" : "تأخر";
+  const day = todayLabel(dayKey);
+  return `السلام عليكم، نُعلمكم بـ ${statusWord} الطالب ${studentName} ليوم ${day}.`;
+}
+
+function EmptySearchState() {
+  return (
+    <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+      <Search className="w-10 h-10 mb-3 opacity-30" />
+      <p className="text-sm">ابدأ بكتابة اسم الطالب للبحث...</p>
+    </div>
+  );
+}
+
+function TabBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <Badge variant="default" className="mr-1.5 h-5 min-w-5 justify-center px-1.5 text-[10px]">
+      {count}
+    </Badge>
+  );
+}
+
 function SecretaryPage() {
   const halaqat = loadHalaqat();
-  const [students, setStudents] = useState<Student[]>(() => loadStudents());
+  const students = loadStudents();
   const grades = loadGrades();
-  const [queue, setQueue] = useState(() => loadSardQueue());
-  const [latePermissions, setLatePermissions] = useState(() => loadLatePermissions());
-  const [archive, setArchive] = useState(() => loadAttendanceArchive());
-  const [openLateHistory, setOpenLateHistory] = useState<string | null>(null);
-  const [lateSearch, setLateSearch] = useState("");
-  const [form, setForm] = useState<Omit<Student, "id">>({
-    name: "", halaqaId: halaqat[0]?.id || 1, nationalId: "", parentPhone: "", level: "1", levelType: "gold",
-  });
-  const refresh = () => setQueue(loadSardQueue());
   const templates = loadMessageTemplates();
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const me = sessionStorage.getItem("qs_name") || "السكرتير";
+  const [queue] = useState(() => loadSardQueue());
+  const [latePermissions, setLatePermissions] = useState(() => loadLatePermissions());
+  const [tab, setTab] = useState<SecretaryTab>("attendance");
+  const [lateSearch, setLateSearch] = useState("");
 
   const todayKey = getOperationalDayKey();
-  const ackedToday = useMemo(() => new Set(archive.filter((a) => a.date === todayISO).map((a) => `${a.studentId}|${a.type}`)), [archive, todayISO]);
-  const today = useMemo(() => {
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const me = typeof window !== "undefined" ? sessionStorage.getItem("qs_name") || "السكرتير" : "السكرتير";
+
+  const todayAbsentOrLate = useMemo(() => {
     const currentWeek = 1;
-    return students.map((s) => {
-      const w: WeekRecord | undefined = grades[s.id]?.[currentWeek];
-      return { s, status: (w?.days[todayKey]?.attendance || "") as "absent" | "late" | "excused" | "present" | "" };
-    }).filter((x) => x.status && x.status !== "present" && !ackedToday.has(`${x.s.id}|${x.status}`));
-  }, [students, grades, todayKey, ackedToday]);
+    return students
+      .map((s) => {
+        const w: WeekRecord | undefined = grades[s.id]?.[currentWeek];
+        const status = (w?.days[todayKey]?.attendance || "") as "absent" | "late" | "";
+        return { s, status };
+      })
+      .filter((x): x is { s: Student; status: "absent" | "late" } =>
+        x.status === "absent" || x.status === "late",
+      );
+  }, [students, grades, todayKey]);
 
-  const absenceArchive = useMemo(() => archive.filter((a) => a.type === "absent"), [archive]);
-  const lateArchive = useMemo(() => archive.filter((a) => a.type === "late"), [archive]);
+  const passedSard = useMemo(() => queue.filter((q) => q.status === "passed"), [queue]);
+  const finalFailed = useMemo(() => queue.filter((q) => q.status === "final_failed"), [queue]);
 
-  const ackToday = (s: Student, type: "absent" | "late" | "excused") => {
-    acknowledgeAttendance({ studentId: s.id, halaqaId: s.halaqaId, type, date: todayISO, dayKey: todayKey, acknowledgedBy: me });
-    setArchive(loadAttendanceArchive());
-    toast.success(type === "absent" ? "نُقل إلى سجل الغياب" : type === "late" ? "نُقل إلى سجل التأخر" : "تم");
-  };
-
-  const scheduled = queue.filter((q) => q.status === "scheduled");
-  const activeSard = queue.filter((q) => !["passed", "final_failed", "level_repeat"].includes(q.status));
-  const passedSard = queue.filter((q) => q.status === "passed");
-  const finalFailed = queue.filter((q) => q.status === "final_failed");
-
-  const addStudent = async () => {
-    if (!form.name || !form.nationalId) { toast.error("الاسم ورقم الهوية مطلوبان"); return; }
-    const next = [...students, { id: `s-${Date.now()}`, ...form }];
-    setStudents(next); saveStudents(next);
-    try { await import("@/lib/cloud-sync").then((m) => m.pushStudents(next)); toast.success("تمت إضافة الطالب وحفظه"); }
-    catch { toast.error("تم الحفظ محلياً فقط — تحقق من الاتصال"); }
-    setForm({ ...form, name: "", nationalId: "", parentPhone: "" });
-  };
-
-  const forceImmediate = (id: string, name: string) => {
-    updateSardItem(id, { status: "pending", scheduledAt: new Date().toISOString() });
-    pushNotification({ message: `سمح السكرتير بإعادة سرد فوري للطالب ${name}`, type: "sard" });
-    toast.success("تم — يمكن للمسمّع البدء فوراً");
-    refresh();
-  };
+  const filteredLateStudents = useMemo(() => {
+    const q = lateSearch.trim();
+    if (!q) return [];
+    return students.filter((s) => matchesSearch(s.name, q));
+  }, [students, lateSearch]);
 
   const grantLate = (studentId: string) => {
     const s = students.find((x) => x.id === studentId);
     if (!s) return;
     const h = halaqat.find((x) => x.id === s.halaqaId);
-    const grantedBy = sessionStorage.getItem("qs_name") || "السكرتير";
-    const next = [{ id: `late-${Date.now()}`, studentId: s.id, halaqaId: s.halaqaId, grantedBy, grantedAt: new Date().toISOString(), date: new Date().toISOString().slice(0, 10) }, ...latePermissions];
-    setLatePermissions(next); saveLatePermissions(next);
-    // Notify the halaqa teacher specifically
+    const hasToday = latePermissions.some((p) => p.studentId === studentId && p.date === todayISO);
+    if (hasToday) {
+      toast.info("تم منح إذن الدخول لهذا الطالب اليوم مسبقاً");
+      return;
+    }
+    const next = [{
+      id: `late-${Date.now()}`,
+      studentId: s.id,
+      halaqaId: s.halaqaId,
+      grantedBy: me,
+      grantedAt: new Date().toISOString(),
+      date: todayISO,
+    }, ...latePermissions];
+    setLatePermissions(next);
+    saveLatePermissions(next);
     pushNotification({
-      message: `تم منح الطالب ${s.name} إذن الدخول إلى ${h?.name || "الحلقة"} من قِبل ${grantedBy}`,
+      message: `تم منح الطالب ${s.name} إذن الدخول إلى ${h?.name || "الحلقة"} من قِبل ${me}`,
       type: "late",
       targetHalaqaId: s.halaqaId,
       actionTab: "late",
@@ -89,269 +134,271 @@ function SecretaryPage() {
     toast.success("تم تسجيل إذن الدخول وإشعار معلم الحلقة");
   };
 
-  const retryFinal = (id: string) => {
-    updateSardItem(id, { status: "pending", attempt: 1, scheduledAt: undefined, hifzErrors: 0, reviewErrors: [0, 0, 0, 0, 0] });
-    toast.success("تمت إعادة الطالب لقائمة السرد");
-    refresh();
+  const handleTabChange = (value: string) => {
+    setTab(value as SecretaryTab);
+    setLateSearch("");
   };
 
-  const repeatLevel = (id: string) => {
-    updateSardItem(id, { status: "level_repeat" });
-    toast.success("تم تسجيل قرار إعادة المستوى");
-    refresh();
-  };
+  const attendanceTabCount = todayAbsentOrLate.length;
 
   return (
     <div className="min-h-screen">
       <Toaster position="top-center" richColors />
-      <AppHeader title="لوحة السكرتير" subtitle="أ. أحمد العمر" />
-      <main className="max-w-6xl mx-auto px-4 py-8">
-        <div className="glass-card rounded-2xl p-6 mb-6 flex items-center gap-4">
-          <div className="w-14 h-14 rounded-2xl gold-gradient flex items-center justify-center">
-            <Clipboard className="w-7 h-7 text-primary-foreground" />
-          </div>
-          <div className="flex-1">
-            <h1 className="display text-2xl gold-text">لوحة السكرتير</h1>
-            <p className="text-sm text-muted-foreground">متابعة الغياب اليومي وإشعارات أولياء الأمور — يتجدد كل يوم الساعة 2 ظهراً</p>
-            <Link to="/daily-operations" className="inline-block mt-2 text-xs text-primary font-bold hover:underline">
-              ← فتح المتابعة اليومية (واجهة سريعة)
-            </Link>
-          </div>
-        </div>
+      <AppHeader title="لوحة السكرتير" subtitle={me} />
+      <main className="max-w-5xl mx-auto px-4 py-8 space-y-6">
+        <Card className="glass-card border-primary/15 shadow-none">
+          <CardHeader className="flex flex-row items-center gap-4 pb-2">
+            <div className="w-12 h-12 rounded-xl gold-gradient flex items-center justify-center shrink-0">
+              <Clipboard className="w-6 h-6 text-primary-foreground" />
+            </div>
+            <div className="flex-1">
+              <CardTitle className="display text-xl gold-text">لوحة السكرتير</CardTitle>
+              <CardDescription>
+                متابعة الغياب والتأخر والسرد — يتجدد اليوم الساعة 2 ظهراً
+              </CardDescription>
+              <Link to="/daily-operations" className="inline-block mt-1 text-xs text-primary font-bold hover:underline">
+                ← المتابعة اليومية (واجهة سريعة)
+              </Link>
+            </div>
+          </CardHeader>
+        </Card>
 
         <GradesExport />
 
-        <section className="glass-card rounded-2xl p-6 mb-6">
-          <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
-            <UserX className="w-5 h-5" /> غياب اليوم ({today.length})
-          </h2>
-          {today.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">لا توجد حالات غياب أو تأخر اليوم</p>
-          ) : (
-            <div className="space-y-2">
-              {today.map(({ s, status }) => {
-                const h = halaqat.find((x) => x.id === s.halaqaId);
-                const labelMap: Record<string, string> = { absent: "غائب", late: "متأخر", excused: "مستأذن" };
-                const colorMap: Record<string, string> = {
-                  absent: "bg-destructive/15 text-destructive border-destructive/30",
-                  late: "bg-warning/15 text-warning border-warning/30",
-                  excused: "bg-primary/15 text-primary border-primary/30",
-                };
-                const template = status === "late" ? templates.late : templates.absence;
-                const msg = encodeURIComponent(formatMessage(template, { student: s.name, halaqa: h?.name }));
-                return (
-                  <div key={s.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
-                    <div className="flex items-center gap-3">
-                      <span className={`px-2 py-1 rounded text-xs font-bold border ${colorMap[status]}`}>{labelMap[status]}</span>
-                      <div>
-                        <div className="font-medium">{s.name}</div>
-                        <div className="text-xs text-muted-foreground">{h?.name}</div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer"
-                        className="flex items-center gap-2 px-3 py-2 rounded-lg bg-success/20 text-success border border-success/30 text-sm font-bold">
-                        <MessageCircle className="w-4 h-4" />
-                        واتساب
-                      </a>
-                      <button onClick={() => ackToday(s, status as "absent" | "late" | "excused")} title="نقل إلى السجل"
-                        className="p-2 rounded-lg bg-primary/15 text-primary border border-primary/30 hover:bg-primary/25">
-                        <Check className="w-4 h-4" />
-                      </button>
-                    </div>
+        <Tabs value={tab} onValueChange={handleTabChange} dir="rtl">
+          <TabsList className="w-full h-auto flex gap-1 p-1.5 bg-secondary/50 border border-border rounded-xl">
+            <TabsTrigger
+              value="attendance"
+              className="flex-1 gap-1.5 py-2.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md"
+            >
+              <UserX className="w-4 h-4" />
+              الغياب والتأخير
+              <TabBadge count={attendanceTabCount} />
+            </TabsTrigger>
+            <TabsTrigger
+              value="sard"
+              className="flex-1 gap-1.5 py-2.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-md"
+            >
+              <Mic className="w-4 h-4" />
+              السرد
+              <TabBadge count={passedSard.length + finalFailed.length} />
+            </TabsTrigger>
+          </TabsList>
+
+          {/* ── Tab 1: Attendance & late ── */}
+          <TabsContent value="attendance" className="space-y-6 mt-6">
+            <Card className="glass-card border-primary/15 shadow-none">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2 text-primary">
+                  <UserX className="w-5 h-5" />
+                  غياب وتأخر اليوم
+                  <TabBadge count={todayAbsentOrLate.length} />
+                </CardTitle>
+                <CardDescription>
+                  طلاب حالتهم اليوم ({todayLabel(todayKey)}) — غائب أو متأخر
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                {todayAbsentOrLate.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8 text-sm">لا يوجد غياب أو تأخر اليوم</p>
+                ) : (
+                  <div className="space-y-2">
+                    {todayAbsentOrLate.map(({ s, status }) => {
+                      const h = halaqat.find((x) => x.id === s.halaqaId);
+                      const isAbsent = status === "absent";
+                      const msg = encodeURIComponent(whatsappAbsenceMessage(s.name, status, todayKey));
+                      return (
+                        <div key={s.id} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-secondary/50 flex-wrap">
+                          <div className="flex items-center gap-3">
+                            <Badge
+                              variant={isAbsent ? "destructive" : "secondary"}
+                              className={isAbsent ? "" : "bg-warning/20 text-warning border-warning/30"}
+                            >
+                              {isAbsent ? "غائب" : "متأخر"}
+                            </Badge>
+                            <div>
+                              <div className="font-medium">{s.name}</div>
+                              <div className="text-xs text-muted-foreground">{h?.name}</div>
+                            </div>
+                          </div>
+                          <Button asChild variant="outline" size="sm"
+                            className="bg-success/10 text-success border-success/30 hover:bg-success/20 hover:text-success">
+                            <a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer">
+                              <MessageCircle className="w-4 h-4" />
+                              واتساب ولي الأمر
+                            </a>
+                          </Button>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+                )}
+              </CardContent>
+            </Card>
 
-        {/* ----- Absence archive ----- */}
-        <section className="glass-card rounded-2xl p-6 mb-6">
-          <h2 className="text-lg font-bold text-destructive mb-4 flex items-center gap-2">
-            <Archive className="w-5 h-5" /> سجل الغياب ({absenceArchive.length})
-          </h2>
-          {absenceArchive.length === 0 ? (
-            <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد سجل بعد</p>
-          ) : (
-            <div className="space-y-1 max-h-80 overflow-auto">
-              {absenceArchive.slice(0, 50).map((a) => {
-                const s = students.find((x) => x.id === a.studentId);
-                const h = halaqat.find((x) => x.id === a.halaqaId);
-                return <div key={a.id} className="p-2 rounded bg-destructive/5 text-sm flex justify-between"><span>{s?.name} · {h?.name}</span><span className="text-muted-foreground">{a.date}</span></div>;
-              })}
-            </div>
-          )}
-        </section>
-
-        {/* ----- Late archive ----- */}
-        <section className="glass-card rounded-2xl p-6 mb-6">
-          <h2 className="text-lg font-bold text-warning mb-4 flex items-center gap-2">
-            <Archive className="w-5 h-5" /> سجل التأخر ({lateArchive.length})
-          </h2>
-          {lateArchive.length === 0 ? (
-            <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد سجل بعد</p>
-          ) : (
-            <div className="space-y-1 max-h-80 overflow-auto">
-              {lateArchive.slice(0, 50).map((a) => {
-                const s = students.find((x) => x.id === a.studentId);
-                const h = halaqat.find((x) => x.id === a.halaqaId);
-                return <div key={a.id} className="p-2 rounded bg-warning/5 text-sm flex justify-between"><span>{s?.name} · {h?.name}</span><span className="text-muted-foreground">{a.date}</span></div>;
-              })}
-            </div>
-          )}
-        </section>
-
-        <section className="glass-card rounded-2xl p-6 mb-6">
-          <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
-            <Plus className="w-5 h-5" /> إضافة طالب
-          </h2>
-          <div className="grid md:grid-cols-3 gap-2">
-            <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="اسم الطالب" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="رقم الهوية" value={form.nationalId} onChange={(e) => setForm({ ...form, nationalId: e.target.value })} />
-            <select className="px-3 py-2 rounded-lg bg-input border border-border" value={form.halaqaId} onChange={(e) => setForm({ ...form, halaqaId: Number(e.target.value) })}>
-              {halaqat.map((h) => <option key={h.id} value={h.id}>{h.name}</option>)}
-            </select>
-            <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="جوال ولي الأمر" value={form.parentPhone} onChange={(e) => setForm({ ...form, parentPhone: e.target.value })} />
-            <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="المستوى" value={form.level} onChange={(e) => setForm({ ...form, level: e.target.value })} />
-            <select className="px-3 py-2 rounded-lg bg-input border border-border" value={form.levelType} onChange={(e) => setForm({ ...form, levelType: e.target.value as "gold" | "silver" })}>
-              <option value="gold">ذهبي</option><option value="silver">فضي</option>
-            </select>
-          </div>
-          <button onClick={addStudent} className="mt-3 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center gap-2">
-            <Plus className="w-4 h-4" /> إضافة الطالب
-          </button>
-        </section>
-
-        <section className="glass-card rounded-2xl p-6 mb-6">
-          <h2 className="text-lg font-bold text-warning mb-4 flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5" /> إذن دخول المتأخرين
-          </h2>
-          <p className="text-xs text-muted-foreground mb-3">اضغط على اسم الطالب لعرض سجل تأخراته ثم منح الإذن.</p>
-          <input
-            value={lateSearch}
-            onChange={(e) => setLateSearch(e.target.value)}
-            placeholder="بحث باسم الطالب..."
-            className="w-full mb-3 px-3 py-2 rounded-lg bg-input border border-border text-sm"
-          />
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {students.filter((s) => !lateSearch.trim() || s.name.includes(lateSearch.trim())).map((s) => {
-              const h = halaqat.find((x) => x.id === s.halaqaId);
-              const hist = latePermissions.filter((p) => p.studentId === s.id);
-              const open = openLateHistory === s.id;
-              return (
-                <div key={s.id} className="rounded-lg border border-border bg-secondary/30">
-                  <button onClick={() => setOpenLateHistory(open ? null : s.id)}
-                    className="w-full p-3 text-right flex items-center justify-between hover:bg-primary/5">
-                    <div>
-                      <div className="font-medium text-sm">{s.name}</div>
-                      <div className="text-xs text-muted-foreground">{h?.name}</div>
-                    </div>
-                    <span className="px-2 py-1 rounded bg-warning/15 text-warning text-xs font-bold">{hist.length} تأخر</span>
-                  </button>
-                  {open && (
-                    <div className="border-t border-border p-3 bg-background/40 space-y-2">
-                      <div className="text-xs font-bold text-muted-foreground">سجل التأخر:</div>
-                      {hist.length === 0 ? (
-                        <div className="text-xs text-muted-foreground">لا يوجد تأخر سابق</div>
-                      ) : (
-                        <ul className="text-xs space-y-1 max-h-32 overflow-auto">
-                          {hist.map((p) => <li key={p.id} className="flex justify-between"><span>{p.date}</span><span className="text-muted-foreground">أذن: {p.grantedBy}</span></li>)}
-                        </ul>
-                      )}
-                      <button onClick={() => { grantLate(s.id); setLatePermissions(loadLatePermissions()); setOpenLateHistory(null); }}
-                        className="w-full px-3 py-2 rounded-lg bg-warning/20 text-warning border border-warning/30 font-bold text-sm flex items-center justify-center gap-1">
-                        <Check className="w-4 h-4" /> منح إذن الدخول الآن
-                      </button>
-                      <button onClick={() => setOpenLateHistory(null)} className="w-full text-xs text-muted-foreground flex items-center justify-center gap-1">
-                        <X className="w-3 h-3" /> إغلاق
-                      </button>
-                    </div>
-                  )}
+            <Card className="glass-card border-primary/15 shadow-none">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2 text-warning">
+                  <Clock className="w-5 h-5" />
+                  إذن الدخول والبحث
+                </CardTitle>
+                <CardDescription>ابحث عن الطالب لمنحه إذن دخول فوراً</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="relative">
+                  <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    value={lateSearch}
+                    onChange={(e) => setLateSearch(e.target.value)}
+                    placeholder="ابحث باسم الطالب..."
+                    className="pr-10 py-5"
+                  />
                 </div>
-              );
-            })}
-          </div>
-        </section>
 
-        <section className="glass-card rounded-2xl p-6 mb-6">
-          <h2 className="text-lg font-bold text-primary mb-4 flex items-center gap-2"><Clock className="w-5 h-5" /> قائمة طلاب السرد كاملة ({activeSard.length})</h2>
-          <div className="space-y-2">
-            {activeSard.length === 0 ? <p className="text-muted-foreground text-center py-6">لا يوجد طلاب في السرد</p> : activeSard.map((q) => {
-              const s = students.find((x) => x.id === q.studentId); const h = halaqat.find((x) => x.id === q.halaqaId);
-              return s && h ? <div key={q.id} className="p-3 rounded-lg bg-secondary/50 text-sm flex justify-between"><span>{s.name} · {h.name} · {weekLabel(q.week)}</span><span className="text-primary font-bold">{q.status}</span></div> : null;
-            })}
-          </div>
-        </section>
-
-        <section className="glass-card rounded-2xl p-6 mb-6">
-          <h2 className="text-lg font-bold text-success mb-4 flex items-center gap-2"><CheckCircle2 className="w-5 h-5" /> المجتازون ({passedSard.length})</h2>
-          <div className="space-y-2">
-            {passedSard.length === 0 ? <p className="text-muted-foreground text-center py-6">لا يوجد مجتازون بعد</p> : passedSard.map((q) => {
-              const s = students.find((x) => x.id === q.studentId); const h = halaqat.find((x) => x.id === q.halaqaId);
-              const msg = encodeURIComponent(formatMessage(templates.sard_pass, { student: s?.name, halaqa: h?.name, week: weekLabel(q.week), percent: q.finalPercent ?? "" }));
-              return s && h ? (
-                <div key={q.id} className="flex items-center justify-between p-3 rounded-lg bg-success/10 border border-success/20">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium">{s.name}</span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.levelType === "gold" ? "gold-gradient text-primary-foreground" : "bg-muted"}`}>{s.levelType === "gold" ? "ذهبي" : "فضي"} · مستوى {s.level}</span>
-                    <span className="text-xs text-muted-foreground">{h.name} · {q.finalPercent}%</span>
+                {!lateSearch.trim() ? (
+                  <EmptySearchState />
+                ) : filteredLateStudents.length === 0 ? (
+                  <p className="text-center text-muted-foreground py-12 text-sm">
+                    لا توجد نتائج لـ «{lateSearch.trim()}»
+                  </p>
+                ) : (
+                  <div className="grid sm:grid-cols-2 gap-3">
+                    {filteredLateStudents.map((s) => {
+                      const h = halaqat.find((x) => x.id === s.halaqaId);
+                      const lateTotal = totalLateCount(s.id, grades);
+                      const grantedToday = latePermissions.some((p) => p.studentId === s.id && p.date === todayISO);
+                      return (
+                        <Card key={s.id} className="border-border bg-secondary/30 shadow-none">
+                          <CardContent className="p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="font-bold">{s.name}</div>
+                                <div className="text-xs text-muted-foreground mt-0.5">{h?.name}</div>
+                              </div>
+                              <Badge variant="secondary" className="bg-warning/15 text-warning border-warning/30 shrink-0">
+                                {lateTotal} تأخر
+                              </Badge>
+                            </div>
+                            <p className="text-xs text-muted-foreground">
+                              إجمالي مرات التأخر المسجّلة: <span className="font-bold text-warning">{lateTotal}</span>
+                            </p>
+                            {grantedToday ? (
+                              <div className="flex items-center gap-1.5 text-xs text-success font-bold">
+                                <CheckCircle2 className="w-4 h-4" />
+                                مُمنَح إذن الدخول اليوم
+                              </div>
+                            ) : (
+                              <Button
+                                type="button"
+                                onClick={() => grantLate(s.id)}
+                                className="w-full bg-warning/20 text-warning border border-warning/30 hover:bg-warning/30"
+                                variant="outline"
+                              >
+                                <Check className="w-4 h-4" />
+                                منح إذن الدخول الآن
+                              </Button>
+                            )}
+                          </CardContent>
+                        </Card>
+                      );
+                    })}
                   </div>
-                  <a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer" className="text-success font-bold text-sm flex items-center gap-1"><MessageCircle className="w-4 h-4" /> واتساب</a>
-                </div>
-              ) : null;
-            })}
-          </div>
-        </section>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
 
-        <section className="glass-card rounded-2xl p-6 mb-6">
-          <h2 className="text-lg font-bold text-destructive mb-4 flex items-center gap-2"><RotateCcw className="w-5 h-5" /> الراسبون نهائياً ({finalFailed.length})</h2>
-          <div className="space-y-2">
-            {finalFailed.length === 0 ? <p className="text-muted-foreground text-center py-6">لا يوجد رسوب نهائي</p> : finalFailed.map((q) => {
-              const s = students.find((x) => x.id === q.studentId); const h = halaqat.find((x) => x.id === q.halaqaId);
-              return s && h ? (
-                <div key={q.id} className="flex items-center justify-between gap-2 p-3 rounded-lg bg-destructive/10 border border-destructive/20 flex-wrap">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium">{s.name}</span>
-                    <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.levelType === "gold" ? "gold-gradient text-primary-foreground" : "bg-muted"}`}>{s.levelType === "gold" ? "ذهبي" : "فضي"} · مستوى {s.level}</span>
-                    <span className="text-xs text-muted-foreground">{h.name} · {q.finalPercent}%</span>
+          {/* ── Tab 2: Sard results ── */}
+          <TabsContent value="sard" className="space-y-6 mt-6">
+            <Card className="glass-card border-primary/15 shadow-none">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2 text-success">
+                  <CheckCircle2 className="w-5 h-5" />
+                  المجتازون
+                  <TabBadge count={passedSard.length} />
+                </CardTitle>
+                <CardDescription>طلاب أنهوا التسميع واجتازوا بنجاح</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {passedSard.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8 text-sm">لا يوجد مجتازون بعد</p>
+                ) : (
+                  <div className="space-y-2">
+                    {passedSard.map((q) => {
+                      const s = students.find((x) => x.id === q.studentId);
+                      const h = halaqat.find((x) => x.id === q.halaqaId);
+                      if (!s || !h) return null;
+                      const msg = encodeURIComponent(formatMessage(templates.sard_pass, {
+                        student: s.name, halaqa: h.name, week: weekLabel(q.week), percent: q.finalPercent ?? "",
+                      }));
+                      return (
+                        <div key={q.id} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-success/10 border border-success/20 flex-wrap">
+                          <div>
+                            <div className="font-medium">{s.name}</div>
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {h.name} · {weekLabel(q.week)} · {q.finalPercent != null ? `${q.finalPercent}%` : "—"}
+                            </div>
+                          </div>
+                          <Button asChild variant="outline" size="sm"
+                            className="bg-success/10 text-success border-success/30 hover:bg-success/20 hover:text-success shrink-0">
+                            <a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer">
+                              <MessageCircle className="w-4 h-4" />
+                              واتساب
+                            </a>
+                          </Button>
+                        </div>
+                      );
+                    })}
                   </div>
-                  <div className="flex gap-2"><button onClick={() => retryFinal(q.id)} className="px-3 py-1.5 rounded-lg bg-warning/20 text-warning text-sm font-bold">إعادة السرد</button><button onClick={() => repeatLevel(q.id)} className="px-3 py-1.5 rounded-lg bg-destructive/20 text-destructive text-sm font-bold">إعادة المستوى</button></div>
-                </div>
-              ) : null;
-            })}
-          </div>
-        </section>
+                )}
+              </CardContent>
+            </Card>
 
-        <section className="glass-card rounded-2xl p-6">
-          <h2 className="text-lg font-bold text-primary mb-2 flex items-center gap-2">
-            <Clock className="w-5 h-5" /> طلاب في انتظار إعادة السرد ({scheduled.length})
-          </h2>
-          <p className="text-xs text-muted-foreground mb-4">يحق لك السماح بإعادة السرد فوراً دون انتظار يومين.</p>
-          {scheduled.length === 0 ? (
-            <p className="text-muted-foreground text-center py-8">لا يوجد</p>
-          ) : (
-            <div className="space-y-2">
-              {scheduled.map((q) => {
-                const s = students.find((x) => x.id === q.studentId);
-                const h = halaqat.find((x) => x.id === q.halaqaId);
-                if (!s || !h) return null;
-                return (
-                  <div key={q.id} className="flex items-center justify-between p-3 rounded-lg bg-warning/5 border border-warning/20">
-                    <div>
-                      <div className="font-bold">{s.name}</div>
-                      <div className="text-xs text-muted-foreground mt-1">{h.name} · {weekLabel(q.week)}</div>
-                    </div>
-                    <button onClick={() => forceImmediate(q.id, s.name)}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/20 text-warning border border-warning/30 font-bold text-sm">
-                      <Zap className="w-4 h-4" /> الإعادة الآن
-                    </button>
+            <Card className="glass-card border-primary/15 shadow-none">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2 text-destructive">
+                  <AlertTriangle className="w-5 h-5" />
+                  الراسبون نهائياً
+                  <TabBadge count={finalFailed.length} />
+                </CardTitle>
+                <CardDescription>طلاب استنفدوا المحاولات — تواصل مع ولي الأمر</CardDescription>
+              </CardHeader>
+              <CardContent>
+                {finalFailed.length === 0 ? (
+                  <p className="text-muted-foreground text-center py-8 text-sm">لا يوجد رسوب نهائي</p>
+                ) : (
+                  <div className="space-y-2">
+                    {finalFailed.map((q) => {
+                      const s = students.find((x) => x.id === q.studentId);
+                      const h = halaqat.find((x) => x.id === q.halaqaId);
+                      if (!s || !h) return null;
+                      const msg = encodeURIComponent(formatMessage(templates.sard_fail, {
+                        student: s.name, halaqa: h.name, week: weekLabel(q.week), percent: q.finalPercent ?? "",
+                      }));
+                      return (
+                        <div key={q.id} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-destructive/10 border border-destructive/20 flex-wrap">
+                          <div>
+                            <div className="font-medium">{s.name}</div>
+                            <div className="text-xs text-muted-foreground mt-0.5">
+                              {h.name} · {weekLabel(q.week)} · {q.finalPercent != null ? `${q.finalPercent}%` : "—"}
+                            </div>
+                          </div>
+                          <Button asChild variant="outline" size="sm"
+                            className="bg-success/10 text-success border-success/30 hover:bg-success/20 hover:text-success shrink-0">
+                            <a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer">
+                              <MessageCircle className="w-4 h-4" />
+                              تواصل مع ولي الأمر
+                            </a>
+                          </Button>
+                        </div>
+                      );
+                    })}
                   </div>
-                );
-              })}
-            </div>
-          )}
-        </section>
+                )}
+              </CardContent>
+            </Card>
+          </TabsContent>
+        </Tabs>
       </main>
     </div>
   );
