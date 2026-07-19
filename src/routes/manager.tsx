@@ -8,6 +8,7 @@ import {
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AppHeader } from "@/components/AppHeader";
+import { SemesterSetupForm } from "@/components/SemesterSetupForm";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -406,7 +407,9 @@ function ManagerPage() {
           </TabsContent>
 
           {/* ── Tab 3: System settings ── */}
-          <TabsContent value="settings" className="mt-0">
+          <TabsContent value="settings" className="space-y-6 mt-0">
+            <SemesterSetupForm />
+
             <section className="glass-card rounded-2xl p-6">
               <h2 className="text-lg font-bold text-primary mb-2 flex items-center gap-2">
                 <MessageSquare className="w-5 h-5" /> تحرير الرسائل المرسلة لأولياء الأمور

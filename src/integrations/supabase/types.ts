@@ -131,6 +131,74 @@ export type Database = {
         }
         Relationships: []
       }
+      semesters: {
+        Row: {
+          id: string
+          name: string
+          start_date: string
+          weeks_count: number
+          working_days: number[]
+          excluded_dates: string[]
+          is_active: boolean
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          name: string
+          start_date: string
+          weeks_count: number
+          working_days?: number[]
+          excluded_dates?: string[]
+          is_active?: boolean
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          name?: string
+          start_date?: string
+          weeks_count?: number
+          working_days?: number[]
+          excluded_dates?: string[]
+          is_active?: boolean
+          created_at?: string
+        }
+        Relationships: []
+      }
+      academic_weeks: {
+        Row: {
+          id: string
+          semester_id: string
+          week_number: number
+          start_date: string
+          end_date: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          semester_id: string
+          week_number: number
+          start_date: string
+          end_date: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          semester_id?: string
+          week_number?: number
+          start_date?: string
+          end_date?: string
+          created_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "academic_weeks_semester_id_fkey"
+            columns: ["semester_id"]
+            isOneToOne: false
+            referencedRelation: "semesters"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Views: {
       [_ in never]: never
