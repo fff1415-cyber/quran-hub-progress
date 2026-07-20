@@ -160,3 +160,37 @@ export async function secureSetAppState({ data }: { data: { token: string; key: 
     body: JSON.stringify({ key: data.key, value: data.value }),
   });
 }
+
+// ---------- ACADEMIC CALENDAR (SEMESTERS) ----------
+export async function secureListSemesters({ data }: { data: { token: string } }) {
+  return apiFetch<unknown[]>("/semesters", { method: "GET", auth: data.token });
+}
+
+export async function secureGetActiveSemester({ data }: { data: { token: string } }) {
+  return apiFetch<{ semester: unknown; weeks: unknown[] }>("/semesters/active", {
+    method: "GET",
+    auth: data.token,
+  });
+}
+
+export async function secureCreateSemester({
+  data,
+}: {
+  data: {
+    token: string;
+    semester: {
+      name: string;
+      start_date: string;
+      weeks_count: number;
+      working_days: number[];
+      excluded_dates: string[];
+    };
+    weeks: { week_number: number; start_date: string; end_date: string }[];
+  };
+}) {
+  return apiFetch<{ ok: boolean; id: string; weeks_count: number }>("/semesters", {
+    method: "POST",
+    auth: data.token,
+    body: JSON.stringify({ semester: data.semester, weeks: data.weeks }),
+  });
+}

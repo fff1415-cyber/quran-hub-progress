@@ -9,55 +9,20 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as TeacherRouteImport } from './routes/teacher'
-import { Route as SupervisorRouteImport } from './routes/supervisor'
-import { Route as StudentRouteImport } from './routes/student'
-import { Route as SecretaryRouteImport } from './routes/secretary'
-import { Route as MusammiRouteImport } from './routes/musammi'
-import { Route as ManagerRouteImport } from './routes/manager'
-import { Route as DashboardRouteImport } from './routes/dashboard'
-import { Route as DailyOperationsRouteImport } from './routes/daily-operations'
-import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as AdminRouteImport } from './routes/admin'
+import { Route as DailyOperationsRouteImport } from './routes/daily-operations'
+import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as ManagerRouteImport } from './routes/manager'
+import { Route as MusammiRouteImport } from './routes/musammi'
+import { Route as SecretaryRouteImport } from './routes/secretary'
+import { Route as StudentRouteImport } from './routes/student'
+import { Route as SupervisorRouteImport } from './routes/supervisor'
+import { Route as TeacherRouteImport } from './routes/teacher'
 
-const TeacherRoute = TeacherRouteImport.update({
-  id: '/teacher',
-  path: '/teacher',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SupervisorRoute = SupervisorRouteImport.update({
-  id: '/supervisor',
-  path: '/supervisor',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const StudentRoute = StudentRouteImport.update({
-  id: '/student',
-  path: '/student',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SecretaryRoute = SecretaryRouteImport.update({
-  id: '/secretary',
-  path: '/secretary',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MusammiRoute = MusammiRouteImport.update({
-  id: '/musammi',
-  path: '/musammi',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ManagerRoute = ManagerRouteImport.update({
-  id: '/manager',
-  path: '/manager',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DashboardRoute = DashboardRouteImport.update({
-  id: '/dashboard',
-  path: '/dashboard',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const DailyOperationsRoute = DailyOperationsRouteImport.update({
-  id: '/daily-operations',
-  path: '/daily-operations',
+const IndexRoute = IndexRouteImport.update({
+  id: '/',
+  path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -65,17 +30,52 @@ const AdminRoute = AdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => rootRouteImport,
 } as any)
-const IndexRoute = IndexRouteImport.update({
-  id: '/',
-  path: '/',
+const DailyOperationsRoute = DailyOperationsRouteImport.update({
+  id: '/daily-operations',
+  path: '/daily-operations',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const DashboardRoute = DashboardRouteImport.update({
+  id: '/dashboard',
+  path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ManagerRoute = ManagerRouteImport.update({
+  id: '/manager',
+  path: '/manager',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MusammiRoute = MusammiRouteImport.update({
+  id: '/musammi',
+  path: '/musammi',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SecretaryRoute = SecretaryRouteImport.update({
+  id: '/secretary',
+  path: '/secretary',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const StudentRoute = StudentRouteImport.update({
+  id: '/student',
+  path: '/student',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SupervisorRoute = SupervisorRouteImport.update({
+  id: '/supervisor',
+  path: '/supervisor',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TeacherRoute = TeacherRouteImport.update({
+  id: '/teacher',
+  path: '/teacher',
   getParentRoute: () => rootRouteImport,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
-  '/dashboard': typeof DashboardRoute
   '/daily-operations': typeof DailyOperationsRoute
+  '/dashboard': typeof DashboardRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
   '/secretary': typeof SecretaryRoute
@@ -86,8 +86,8 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
-  '/dashboard': typeof DashboardRoute
   '/daily-operations': typeof DailyOperationsRoute
+  '/dashboard': typeof DashboardRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
   '/secretary': typeof SecretaryRoute
@@ -99,8 +99,8 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
-  '/dashboard': typeof DashboardRoute
   '/daily-operations': typeof DailyOperationsRoute
+  '/dashboard': typeof DashboardRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
   '/secretary': typeof SecretaryRoute
@@ -113,8 +113,8 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/admin'
-    | '/dashboard'
     | '/daily-operations'
+    | '/dashboard'
     | '/manager'
     | '/musammi'
     | '/secretary'
@@ -125,8 +125,8 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/admin'
-    | '/dashboard'
     | '/daily-operations'
+    | '/dashboard'
     | '/manager'
     | '/musammi'
     | '/secretary'
@@ -137,8 +137,8 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/admin'
-    | '/dashboard'
     | '/daily-operations'
+    | '/dashboard'
     | '/manager'
     | '/musammi'
     | '/secretary'
@@ -150,8 +150,8 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
-  DashboardRoute: typeof DashboardRoute
   DailyOperationsRoute: typeof DailyOperationsRoute
+  DashboardRoute: typeof DashboardRoute
   ManagerRoute: typeof ManagerRoute
   MusammiRoute: typeof MusammiRoute
   SecretaryRoute: typeof SecretaryRoute
@@ -162,60 +162,11 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/teacher': {
-      id: '/teacher'
-      path: '/teacher'
-      fullPath: '/teacher'
-      preLoaderRoute: typeof TeacherRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/supervisor': {
-      id: '/supervisor'
-      path: '/supervisor'
-      fullPath: '/supervisor'
-      preLoaderRoute: typeof SupervisorRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/student': {
-      id: '/student'
-      path: '/student'
-      fullPath: '/student'
-      preLoaderRoute: typeof StudentRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/secretary': {
-      id: '/secretary'
-      path: '/secretary'
-      fullPath: '/secretary'
-      preLoaderRoute: typeof SecretaryRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/musammi': {
-      id: '/musammi'
-      path: '/musammi'
-      fullPath: '/musammi'
-      preLoaderRoute: typeof MusammiRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/manager': {
-      id: '/manager'
-      path: '/manager'
-      fullPath: '/manager'
-      preLoaderRoute: typeof ManagerRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/dashboard': {
-      id: '/dashboard'
-      path: '/dashboard'
-      fullPath: '/dashboard'
-      preLoaderRoute: typeof DashboardRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/daily-operations': {
-      id: '/daily-operations'
-      path: '/daily-operations'
-      fullPath: '/daily-operations'
-      preLoaderRoute: typeof DailyOperationsRouteImport
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -225,11 +176,60 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexRouteImport
+    '/daily-operations': {
+      id: '/daily-operations'
+      path: '/daily-operations'
+      fullPath: '/daily-operations'
+      preLoaderRoute: typeof DailyOperationsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/dashboard': {
+      id: '/dashboard'
+      path: '/dashboard'
+      fullPath: '/dashboard'
+      preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/manager': {
+      id: '/manager'
+      path: '/manager'
+      fullPath: '/manager'
+      preLoaderRoute: typeof ManagerRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/musammi': {
+      id: '/musammi'
+      path: '/musammi'
+      fullPath: '/musammi'
+      preLoaderRoute: typeof MusammiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/secretary': {
+      id: '/secretary'
+      path: '/secretary'
+      fullPath: '/secretary'
+      preLoaderRoute: typeof SecretaryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/student': {
+      id: '/student'
+      path: '/student'
+      fullPath: '/student'
+      preLoaderRoute: typeof StudentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/supervisor': {
+      id: '/supervisor'
+      path: '/supervisor'
+      fullPath: '/supervisor'
+      preLoaderRoute: typeof SupervisorRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/teacher': {
+      id: '/teacher'
+      path: '/teacher'
+      fullPath: '/teacher'
+      preLoaderRoute: typeof TeacherRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -238,8 +238,8 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
-  DashboardRoute: DashboardRoute,
   DailyOperationsRoute: DailyOperationsRoute,
+  DashboardRoute: DashboardRoute,
   ManagerRoute: ManagerRoute,
   MusammiRoute: MusammiRoute,
   SecretaryRoute: SecretaryRoute,

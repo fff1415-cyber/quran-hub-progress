@@ -1,5 +1,9 @@
 RewriteEngine On
 RewriteBase /api/
+
+# Health check — /api/health → health.php (بدون المرور بـ index.php)
+RewriteRule ^health/?$ health.php [L]
+
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteRule ^ index.php [L]
 

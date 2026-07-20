@@ -19,6 +19,9 @@ if (!file_exists($configPath)) {
     exit;
 }
 
+require_once __DIR__ . '/bootstrap.php';
+api_register_error_handlers();
+
 require_once $configPath;
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';

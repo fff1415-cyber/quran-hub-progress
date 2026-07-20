@@ -7,9 +7,15 @@ require_once __DIR__ . '/students.php';
 require_once __DIR__ . '/halaqat.php';
 require_once __DIR__ . '/role_accounts.php';
 require_once __DIR__ . '/app_state.php';
+require_once __DIR__ . '/semesters.php';
+require_once __DIR__ . '/health.php';
 
 function route_request(string $method, string $path): void
 {
+    if ($path === '/health' && $method === 'GET') {
+        handle_health_check();
+        return;
+    }
     if ($method === 'POST' && $path === '/login/code') {
         handle_login_by_code();
         return;
@@ -72,6 +78,18 @@ function route_request(string $method, string $path): void
     }
     if ($path === '/app-state' && $method === 'POST') {
         handle_set_app_state();
+        return;
+    }
+    if ($path === '/semesters' && $method === 'GET') {
+        handle_list_semesters();
+        return;
+    }
+    if ($path === '/semesters/active' && $method === 'GET') {
+        handle_get_active_semester();
+        return;
+    }
+    if ($path === '/semesters' && $method === 'POST') {
+        handle_create_semester();
         return;
     }
 

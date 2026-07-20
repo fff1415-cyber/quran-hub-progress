@@ -5,7 +5,8 @@ import {
   formatDateArabic,
   type GeneratedAcademicWeek,
 } from "@/lib/calendar-generator";
-import { supabase } from "@/integrations/supabase/client";
+import { getToken } from "@/lib/cloud-sync";
+import { secureCreateSemester } from "@/lib/secure-data.functions";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -121,53 +122,31 @@ export function SemesterSetupForm() {
 
     setSaving(true);
     try {
-      const { error: deactivateError } = await supabase
-        .from("semesters")
-        .update({ is_active: false })
-        .eq("is_active", true);
+      const token = getToken();
+      if (!token) throw new Error("الجلسة منتهية — أعد تسجيل الدخول");
 
-      if (deactivateError) throw deactivateError;
-
-      const { data: semester, error: semesterError } = await supabase
-        .from("semesters")
-        .insert({
-          name: name.trim(),
-          start_date: startDate,
-          weeks_count: weeksCount,
-          working_days: workingDays,
-          excluded_dates: sortedExcluded,
-          is_active: true,
-        })
-        .select("id")
-        .single();
-
-      if (semesterError || !semester) throw semesterError ?? new Error("فشل حفظ الفصل الدراسي");
-
-      const weekRows = weeks.map((w) => ({
-        semester_id: semester.id,
-        week_number: w.weekNumber,
-        start_date: w.startDate,
-        end_date: w.endDate,
-      }));
-
-      const { error: weeksError } = await supabase
-        .from("academic_weeks")
-        .insert(weekRows);
-
-      if (weeksError) {
-        await supabase.from("semesters").delete().eq("id", semester.id);
-        throw weeksError;
-      }
+      await secureCreateSemester({
+        data: {
+          token,
+          semester: {
+            name: name.trim(),
+            start_date: startDate,
+            weeks_count: weeksCount,
+            working_days: workingDays,
+            excluded_dates: sortedExcluded,
+          },
+          weeks: weeks.map((w) => ({
+            week_number: w.weekNumber,
+            start_date: w.startDate,
+            end_date: w.endDate,
+          })),
+        },
+      });
 
       setPreview(weeks);
       toast.success(`تم اعتماد الفصل «${name.trim()}» مع ${weeks.length} أسبوعاً`);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "فشل اعتماد الفصل الدراسي";
-      if (msg.includes("Missing Supabase")) {
-        toast.error("إعدادات Supabase غير مكتملة — تحقق من متغيرات البيئة");
-      } else {
-        toast.error(msg);
-      }
+      toast.error(e instanceof Error ? e.message : "فشل اعتماد الفصل الدراسي");
     } finally {
       setSaving(false);
     }

@@ -10,25 +10,36 @@ function handle_login_by_code(): void
         error_response('رمز العضوية مطلوب');
     }
 
-    $pdo = db();
-
-    $stmt = $pdo->prepare('SELECT role, name, code FROM role_accounts WHERE code = ? LIMIT 1');
-    $stmt->execute([$code]);
-    $ra = $stmt->fetch();
-    if ($ra) {
-        json_response([
-            'token' => generate_token(['role' => $ra['role'], 'name' => $ra['name']]),
-            'role' => $ra['role'],
-            'name' => $ra['name'],
-            'halaqaId' => null,
-        ]);
+    try {
+        $pdo = db();
+    } catch (PDOException) {
+        error_response('تعذّر الاتصال بقاعدة البيانات — راجع إعدادات api/config.php على Hostinger', 503);
     }
 
-    $stmt = $pdo->prepare(
-        'SELECT id, teacher_name, teacher_code, assistant_name, assistant_code
-         FROM halaqat WHERE teacher_code = ? OR assistant_code = ? LIMIT 1'
-    );
-    $stmt->execute([$code, $code]);
+    try {
+        $stmt = $pdo->prepare('SELECT role, name, code FROM role_accounts WHERE code = ? LIMIT 1');
+        $stmt->execute([$code]);
+        $ra = $stmt->fetch();
+        if ($ra) {
+            json_response([
+                'token' => generate_token(['role' => $ra['role'], 'name' => $ra['name']]),
+                'role' => $ra['role'],
+                'name' => $ra['name'],
+                'halaqaId' => null,
+            ]);
+        }
+
+        $stmt = $pdo->prepare(
+            'SELECT id, teacher_name, teacher_code, assistant_name, assistant_code
+             FROM halaqat WHERE teacher_code = ? OR assistant_code = ? LIMIT 1'
+        );
+        $stmt->execute([$code, $code]);
+    } catch (PDOException $e) {
+        if (str_contains($e->getMessage(), 'role_accounts')) {
+            error_response('جدول role_accounts غير موجود — نفّذ database/schema.sql في phpMyAdmin', 503);
+        }
+        error_response('خطأ في قاعدة البيانات أثناء تسجيل الدخول', 500);
+    }
     $h = $stmt->fetch();
     if ($h) {
         if ($h['teacher_code'] === $code) {
