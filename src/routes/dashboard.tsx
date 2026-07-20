@@ -31,7 +31,7 @@ function DashboardPage() {
         <div className="glass-card rounded-2xl p-6 mb-6">
           <h1 className="display text-3xl gold-text">لوحة التحكم الكاملة</h1>
           <p className="text-sm text-muted-foreground mt-1">إدارة كل عناصر المجمع وقاعدة البيانات</p>
-          <Link to="/admin" className="text-xs text-primary mt-2 inline-block">← العودة للوحة الإداري</Link>
+          <Link to="/manager" search={{ tab: "overview" }} className="text-xs text-primary mt-2 inline-block">← العودة للوحة المدير</Link>
         </div>
 
         <div className="flex flex-wrap gap-2 mb-6">
