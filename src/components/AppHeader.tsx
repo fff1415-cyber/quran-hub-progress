@@ -2,9 +2,11 @@ import { Link, useRouter } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   ArrowRight, LogOut, Menu, Crown, Users, BookOpen, Mic, Eye, GraduationCap,
-  LayoutDashboard, Home, ClipboardList,
+  LayoutDashboard, Home, ClipboardList, ChevronDown,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { cn } from "@/lib/utils";
 import { loadHalaqat } from "@/lib/mock-data";
 import logo from "@/assets/shtaiwi-logo.png.asset.json";
 
@@ -31,11 +33,13 @@ const NAV: NavItem[] = [
 const MANAGER_CROSS_LINKS: NavItem[] = [
   { to: "/secretary", label: "لوحة السكرتير", icon: ClipboardList, roles: ["manager"] },
   { to: "/supervisor", label: "لوحة المشرف التعليمي", icon: Eye, roles: ["manager"] },
+  { to: "/musammi", label: "لوحة المسمّع", icon: Mic, roles: ["manager"] },
 ];
 
 export function AppHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [halaqatOpen, setHalaqatOpen] = useState(false);
   const role = typeof window !== "undefined" ? sessionStorage.getItem("qs_role") || "" : "";
   const name = typeof window !== "undefined" ? sessionStorage.getItem("qs_name") || "" : "";
   const isManager = role === "manager";
@@ -111,24 +115,28 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
                       );
                     })}
 
-                    <div className="pt-4 pb-1 px-3 text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
-                      إدارة الحلقات
-                    </div>
-                    <p className="px-3 pb-2 text-[11px] text-muted-foreground leading-relaxed">
-                      افتح التحضير والسرد لأي حلقة بصلاحيات المعلم الكاملة
-                    </p>
-                    {halaqat.map((hl) => (
-                      <Link
-                        key={`halaqa-${hl.id}`}
-                        to="/teacher"
-                        search={{ h: hl.id }}
-                        onClick={() => setOpen(false)}
-                        className={navLinkClass}
-                      >
-                        <BookOpen className="w-4 h-4 text-primary shrink-0" />
-                        <span className="truncate">{hl.name}</span>
-                      </Link>
-                    ))}
+                    <Collapsible open={halaqatOpen} onOpenChange={setHalaqatOpen} className="pt-2">
+                      <CollapsibleTrigger className={cn(navLinkClass, "w-full justify-between")}>
+                        <span className="flex items-center gap-3">
+                          <BookOpen className="w-4 h-4 text-primary shrink-0" />
+                          إدارة الحلقات
+                        </span>
+                        <ChevronDown className={cn("w-4 h-4 text-muted-foreground shrink-0 transition-transform", halaqatOpen && "rotate-180")} />
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="mr-3 mt-1 space-y-0.5 border-r-2 border-primary/15 pr-2">
+                        {halaqat.map((hl) => (
+                          <Link
+                            key={`halaqa-${hl.id}`}
+                            to="/teacher"
+                            search={{ h: hl.id }}
+                            onClick={() => setOpen(false)}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary truncate"
+                          >
+                            {hl.name}
+                          </Link>
+                        ))}
+                      </CollapsibleContent>
+                    </Collapsible>
                   </>
                 )}
 
