@@ -7,6 +7,8 @@ import {
 } from "@/lib/calendar-generator";
 import { getToken } from "@/lib/cloud-sync";
 import { secureCreateSemester } from "@/lib/secure-data.functions";
+import { clearCalendarCache, fetchActiveCalendar } from "@/lib/academic-context";
+import { resetGradesForNewSemester } from "@/lib/mock-data";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -125,7 +127,7 @@ export function SemesterSetupForm() {
       const token = getToken();
       if (!token) throw new Error("الجلسة منتهية — أعد تسجيل الدخول");
 
-      await secureCreateSemester({
+      const result = await secureCreateSemester({
         data: {
           token,
           semester: {
@@ -143,8 +145,18 @@ export function SemesterSetupForm() {
         },
       });
 
+      clearCalendarCache();
+      resetGradesForNewSemester(result.id);
+      await fetchActiveCalendar(true);
+      try {
+        const { pushAppState } = await import("@/lib/cloud-sync");
+        await pushAppState("grades", {});
+      } catch {
+        /* local reset applied */
+      }
+
       setPreview(weeks);
-      toast.success(`تم اعتماد الفصل «${name.trim()}» مع ${weeks.length} أسبوعاً`);
+      toast.success(`تم اعتماد الفصل «${name.trim()}» — بدء فصل جديد (${result.weeks_count} أسبوعاً)`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "فشل اعتماد الفصل الدراسي");
     } finally {

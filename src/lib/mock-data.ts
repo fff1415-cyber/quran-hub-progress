@@ -119,6 +119,7 @@ export const DAYS = [
 const KEY_STUDENTS = "qshatawi_students_v2";
 const KEY_HALAQAT = "qshatawi_halaqat_v2";
 const KEY_GRADES = "qshatawi_grades_v2";
+const KEY_GRADES_SEMESTER = "qshatawi_grades_semester_id";
 const KEY_NOTIFICATIONS = "qshatawi_notifications_v2";
 const KEY_SARD_QUEUE = "qshatawi_sard_queue_v2";
 const KEY_SARD_HISTORY = "qshatawi_sard_history_v2";
@@ -151,6 +152,35 @@ export function loadGrades(): GradesStore {
   return raw ? JSON.parse(raw) : {};
 }
 export function saveGrades(g: GradesStore) { localStorage.setItem(KEY_GRADES, JSON.stringify(g)); persistShared("grades", g); }
+
+export function getGradesSemesterId(): string | null {
+  if (typeof window === "undefined") return null;
+  return localStorage.getItem(KEY_GRADES_SEMESTER);
+}
+
+export function setGradesSemesterId(id: string | null) {
+  if (typeof window === "undefined") return;
+  if (id) localStorage.setItem(KEY_GRADES_SEMESTER, id);
+  else localStorage.removeItem(KEY_GRADES_SEMESTER);
+}
+
+/** Clear grades when a new academic semester becomes active. */
+export function resetGradesForNewSemester(semesterId: string | null) {
+  saveGrades({});
+  setGradesSemesterId(semesterId);
+}
+
+/** Returns true if grades were reset due to semester change. */
+export function ensureGradesSemester(semesterId: string | null): boolean {
+  if (!semesterId) return false;
+  const current = getGradesSemesterId();
+  if (current && current !== semesterId) {
+    resetGradesForNewSemester(semesterId);
+    return true;
+  }
+  if (!current) setGradesSemesterId(semesterId);
+  return false;
+}
 
 export interface Notification {
   id: string;

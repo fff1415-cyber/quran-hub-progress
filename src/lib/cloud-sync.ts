@@ -1,6 +1,6 @@
 // Cloud sync layer — all data via Hostinger PHP API
 import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, Notification, SardHistoryItem, SardQueueItem, Student } from "./mock-data";
-import { saveGrades, saveHalaqat, saveLatePermissions, saveMessageTemplates, saveNotifications, saveSardHistory, saveSardQueue, saveStudents } from "./mock-data";
+import { saveGrades, saveHalaqat, saveLatePermissions, saveMessageTemplates, saveNotifications, saveSardHistory, saveSardQueue, saveStudents, ensureGradesSemester } from "./mock-data";
 import {
   secureListStudents,
   secureListHalaqatFull,
@@ -17,6 +17,7 @@ import {
   secureListAppState,
   secureSetAppState,
 } from "./secure-data.functions";
+import { fetchActiveCalendar } from "./academic-context";
 
 const TOKEN_KEY = "qs_token";
 export function getToken(): string | null {
@@ -121,16 +122,27 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
     }
 
     if (token) {
+      const calendar = await fetchActiveCalendar(true);
+      const semesterReset = ensureGradesSemester(calendar.semester?.id ?? null);
+
       const stateRows = await secureListAppState({ data: { token } });
       const state = new Map(stateRows.map((row) => [row.key, row.value]));
       sessionStorage.setItem("qs_syncing", "1");
-      if (state.has("grades")) saveGrades(state.get("grades") as GradesStore);
+      if (!semesterReset && state.has("grades")) saveGrades(state.get("grades") as GradesStore);
       if (state.has("sard_queue")) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
       if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
       if (state.has("notifications")) saveNotifications(state.get("notifications") as Notification[]);
       if (state.has("message_templates")) saveMessageTemplates(state.get("message_templates") as Record<MessageTemplateKey, string>);
       if (state.has("late_permissions")) saveLatePermissions(state.get("late_permissions") as LatePermission[]);
       sessionStorage.removeItem("qs_syncing");
+
+      if (semesterReset) {
+        try {
+          await secureSetAppState({ data: { token, key: "grades", value: {} } });
+        } catch {
+          /* local reset is enough */
+        }
+      }
     }
 
     saveHalaqat(halaqat);

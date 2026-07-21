@@ -17,3 +17,9 @@ export function getOperationalDayKey(now: Date = new Date()): string {
   if (d.getHours() < 14) d.setDate(d.getDate() - 1);
   return DAY_KEYS[d.getDay()] || "sun";
 }
+
+export function isoDateToDayKey(iso: string): string {
+  const [y, m, day] = iso.split("-").map(Number);
+  const d = new Date(y, m - 1, day);
+  return DAY_KEYS[d.getDay()] || "sun";
+}
