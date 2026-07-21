@@ -1,4 +1,4 @@
-import { getOperationalDate, getOperationalDayKey, isoDateToDayKey } from "@/lib/operational-date";
+import { getCalendarIsoDate, getCalendarDayKey, isoDateToDayKey } from "@/lib/operational-date";
 import { getToken } from "@/lib/cloud-sync";
 import { secureGetActiveSemester } from "@/lib/secure-data.functions";
 import { weekLabel } from "@/lib/arabic-numbers";
@@ -26,7 +26,7 @@ export interface AcademicCalendar {
   operationalDate: string;
 }
 
-const CACHE_KEY = "qs_active_calendar_v1";
+const CACHE_KEY = "qs_active_calendar_v2";
 const FALLBACK_WEEKS = 18;
 
 function parseSemester(raw: unknown): ActiveSemester | null {
@@ -85,8 +85,8 @@ export function buildAcademicCalendar(
   weeks: AcademicWeekRow[],
   now: Date = new Date(),
 ): AcademicCalendar {
-  const operationalDate = getOperationalDate(now);
-  const currentDayKey = getOperationalDayKey(now);
+  const operationalDate = getCalendarIsoDate(now);
+  const currentDayKey = getCalendarDayKey(now);
 
   let resolvedWeeks = weeks;
   if (resolvedWeeks.length === 0) {
@@ -125,10 +125,22 @@ export function loadCachedCalendar(): AcademicCalendar | null {
   }
 }
 
+/** Recompute week/day fields from cached semester data (always fresh local clock). */
+function refreshCalendarNow(calendar: AcademicCalendar, now: Date = new Date()): AcademicCalendar {
+  const operationalDate = getCalendarIsoDate(now);
+  const currentDayKey = getCalendarDayKey(now);
+  const currentWeekNumber = resolveWeekForDate(calendar.weeks, operationalDate);
+  return { ...calendar, operationalDate, currentDayKey, currentWeekNumber };
+}
+
 export async function fetchActiveCalendar(force = false): Promise<AcademicCalendar> {
   if (!force) {
     const cached = loadCachedCalendar();
-    if (cached) return cached;
+    if (cached) {
+      const fresh = refreshCalendarNow(cached);
+      cacheActiveCalendar(fresh);
+      return fresh;
+    }
   }
 
   const token = getToken();

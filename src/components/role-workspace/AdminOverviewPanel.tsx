@@ -1,10 +1,11 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, loadGrades, loadNotifications, DAYS,
   loadSardQueue, updateSardItem, pushNotification, dismissNotification,
   type WeekRecord,
 } from "@/lib/mock-data";
-import { getOperationalDayKey } from "@/lib/operational-date";
+import { getCalendarDayKey } from "@/lib/operational-date";
+import { fetchActiveCalendar } from "@/lib/academic-context";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { LateSardList, ActiveSardList } from "@/components/SardLists";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
@@ -19,7 +20,12 @@ export function AdminOverviewPanel() {
   const [notifications, setNotifications] = useState(() => loadNotifications());
   const [queue, setQueue] = useState(() => loadSardQueue());
   const [tab, setTab] = useState<"today" | "cumulative" | "progress" | "sard" | "alerts">("today");
+  const [currentWeek, setCurrentWeek] = useState(1);
   const unread = notifications.filter((n) => !n.read);
+
+  useEffect(() => {
+    fetchActiveCalendar().then((cal) => setCurrentWeek(cal.currentWeekNumber)).catch(() => {});
+  }, []);
 
   const resolveNotif = (id: string, targetTab?: string) => {
     dismissNotification(id);
@@ -28,7 +34,7 @@ export function AdminOverviewPanel() {
     else if (targetTab === "late") setTab("today");
   };
 
-  const todayKey = useMemo(() => getOperationalDayKey(), []);
+  const todayKey = getCalendarDayKey();
   const scheduled = queue.filter((q) => q.status === "scheduled");
 
   const forceImmediate = (id: string, name: string) => {
@@ -39,12 +45,11 @@ export function AdminOverviewPanel() {
   };
 
   const todayAbsents = useMemo(() => {
-    const currentWeek = 1;
     return students.filter((s) => {
       const w: WeekRecord | undefined = grades[s.id]?.[currentWeek];
       return w?.days[todayKey]?.attendance === "absent";
     });
-  }, [students, grades, todayKey]);
+  }, [students, grades, todayKey, currentWeek]);
 
   const cumulativeAbsents = useMemo(() => {
     const map: Record<string, number> = {};

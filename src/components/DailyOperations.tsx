@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, loadGrades, loadSardQueue, updateSardItem, pushNotification,
   loadLatePermissions, saveLatePermissions, loadMessageTemplates, formatMessage,
@@ -6,7 +6,8 @@ import {
   type WeekRecord, type Student, type SardQueueItem,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
-import { getOperationalDayKey } from "@/lib/operational-date";
+import { getCalendarDayKey, getCalendarIsoDate } from "@/lib/operational-date";
+import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -47,9 +48,15 @@ export function DailyOperations() {
   const [students] = useState<Student[]>(() => loadStudents());
   const grades = loadGrades();
   const templates = loadMessageTemplates();
-  const todayISO = new Date().toISOString().slice(0, 10);
-  const todayKey = getOperationalDayKey();
+  const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
+  const todayISO = calendar?.operationalDate ?? getCalendarIsoDate();
+  const todayKey = calendar?.currentDayKey ?? getCalendarDayKey();
+  const currentWeek = calendar?.currentWeekNumber ?? 1;
   const me = typeof window !== "undefined" ? sessionStorage.getItem("qs_name") || "الإداري" : "الإداري";
+
+  useEffect(() => {
+    fetchActiveCalendar().then(setCalendar).catch(() => {});
+  }, []);
 
   const [tab, setTab] = useState<OpsTab>("absence");
   const [search, setSearch] = useState("");
@@ -67,13 +74,12 @@ export function DailyOperations() {
   );
 
   const todayAttendance = useMemo(() => {
-    const currentWeek = 1;
     return students.map((s) => {
       const w: WeekRecord | undefined = grades[s.id]?.[currentWeek];
       const status = (w?.days[todayKey]?.attendance || "") as "absent" | "late" | "excused" | "present" | "";
       return { s, status };
     }).filter((x) => x.status && x.status !== "present" && !ackedToday.has(`${x.s.id}|${x.status}`));
-  }, [students, grades, todayKey, ackedToday]);
+  }, [students, grades, todayKey, ackedToday, currentWeek]);
 
   const absenceArchive = useMemo(() => archive.filter((a) => a.type === "absent"), [archive]);
 

@@ -1,14 +1,19 @@
 import { Link, useRouter } from "@tanstack/react-router";
-import { useState } from "react";
-import { ArrowRight, LogOut, Menu, Crown, Users, BookOpen, Mic, Eye, GraduationCap, LayoutDashboard, Home } from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  ArrowRight, LogOut, Menu, Crown, Users, BookOpen, Mic, Eye, GraduationCap,
+  LayoutDashboard, Home, ClipboardList,
+} from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
+import { loadHalaqat } from "@/lib/mock-data";
 import logo from "@/assets/shtaiwi-logo.png.asset.json";
 
 interface NavItem {
   to: string;
   label: string;
   icon: React.ElementType;
-  roles: string[]; // empty = all
+  roles: string[];
+  search?: Record<string, unknown>;
 }
 
 const NAV: NavItem[] = [
@@ -22,13 +27,21 @@ const NAV: NavItem[] = [
   { to: "/student", label: "صفحة الطالب", icon: GraduationCap, roles: ["student"] },
 ];
 
+/** Manager-only shortcuts to other role dashboards. */
+const MANAGER_CROSS_LINKS: NavItem[] = [
+  { to: "/secretary", label: "لوحة السكرتير", icon: ClipboardList, roles: ["manager"] },
+  { to: "/supervisor", label: "لوحة المشرف التعليمي", icon: Eye, roles: ["manager"] },
+];
+
 export function AppHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const role = typeof window !== "undefined" ? sessionStorage.getItem("qs_role") || "" : "";
   const name = typeof window !== "undefined" ? sessionStorage.getItem("qs_name") || "" : "";
+  const isManager = role === "manager";
 
   const items = NAV.filter((n) => n.roles.length === 0 || n.roles.includes(role));
+  const halaqat = useMemo(() => (isManager ? loadHalaqat() : []), [isManager]);
 
   const goBack = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -37,6 +50,9 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
       router.navigate({ to: "/" });
     }
   };
+
+  const navLinkClass =
+    "flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm hover:bg-primary/10 hover:text-primary border border-transparent hover:border-primary/30";
 
   return (
     <header className="border-b border-primary/15 backdrop-blur-sm sticky top-0 z-40 bg-background/85">
@@ -48,7 +64,7 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
                 <Menu className="w-5 h-5 text-primary" />
               </button>
             </SheetTrigger>
-            <SheetContent side="right" className="w-[280px] bg-background border-l border-primary/15">
+            <SheetContent side="right" className="w-[300px] bg-background border-l border-primary/15 overflow-y-auto">
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-3">
                   <img src={logo.url} alt="شعار المجمع" className="w-12 h-12 object-contain" />
@@ -65,14 +81,57 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
                     <Link
                       key={item.to}
                       to={item.to}
+                      search={item.search}
                       onClick={() => setOpen(false)}
-                      className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm hover:bg-primary/10 hover:text-primary border border-transparent hover:border-primary/30"
+                      className={navLinkClass}
                     >
-                      <Icon className="w-4 h-4 text-primary" />
+                      <Icon className="w-4 h-4 text-primary shrink-0" />
                       <span>{item.label}</span>
                     </Link>
                   );
                 })}
+
+                {isManager && (
+                  <>
+                    <div className="pt-4 pb-1 px-3 text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
+                      واجهات الإدارة
+                    </div>
+                    {MANAGER_CROSS_LINKS.map((item) => {
+                      const Icon = item.icon;
+                      return (
+                        <Link
+                          key={`mgr-${item.to}`}
+                          to={item.to}
+                          onClick={() => setOpen(false)}
+                          className={navLinkClass}
+                        >
+                          <Icon className="w-4 h-4 text-primary shrink-0" />
+                          <span>{item.label}</span>
+                        </Link>
+                      );
+                    })}
+
+                    <div className="pt-4 pb-1 px-3 text-[11px] font-bold text-muted-foreground uppercase tracking-wide">
+                      إدارة الحلقات
+                    </div>
+                    <p className="px-3 pb-2 text-[11px] text-muted-foreground leading-relaxed">
+                      افتح التحضير والسرد لأي حلقة بصلاحيات المعلم الكاملة
+                    </p>
+                    {halaqat.map((hl) => (
+                      <Link
+                        key={`halaqa-${hl.id}`}
+                        to="/teacher"
+                        search={{ h: hl.id }}
+                        onClick={() => setOpen(false)}
+                        className={navLinkClass}
+                      >
+                        <BookOpen className="w-4 h-4 text-primary shrink-0" />
+                        <span className="truncate">{hl.name}</span>
+                      </Link>
+                    ))}
+                  </>
+                )}
+
                 <Link
                   to="/"
                   onClick={() => { sessionStorage.clear(); setOpen(false); }}

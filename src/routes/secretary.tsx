@@ -1,7 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
-import { loadGrades, loadStudents, loadSardQueue } from "@/lib/mock-data";
-import { getOperationalDayKey } from "@/lib/operational-date";
+import { useEffect, useMemo, useState } from "react";
+import { loadGrades, loadStudents, loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
+import { getCalendarDayKey } from "@/lib/operational-date";
+import { fetchActiveCalendar } from "@/lib/academic-context";
 import { getSessionName } from "@/lib/session-role";
 import { AppHeader } from "@/components/AppHeader";
 import { GradesExport } from "@/components/GradesExport";
@@ -11,7 +12,8 @@ import {
   SecretaryLatePermitPanel,
   SecretarySardPanel,
 } from "@/components/role-workspace/RoleSections";
-import { Clipboard, UserX, Clock, Mic } from "lucide-react";
+import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTransfersPanel";
+import { Clipboard, UserX, Clock, Mic, Send } from "lucide-react";
 import { Toaster } from "sonner";
 import type { WeekRecord } from "@/lib/mock-data";
 
@@ -28,22 +30,35 @@ function SecretaryPage() {
   const name = getSessionName("السكرتير");
   const students = loadStudents();
   const grades = loadGrades();
-  const todayKey = getOperationalDayKey();
+  const todayKey = getCalendarDayKey();
+  const [currentWeek, setCurrentWeek] = useState(1);
   const [queue] = useState(() => loadSardQueue());
 
+  useEffect(() => {
+    fetchActiveCalendar().then((cal) => setCurrentWeek(cal.currentWeekNumber)).catch(() => {});
+  }, []);
+
   const todayCount = useMemo(() => {
-    const currentWeek = 1;
     return students.filter((s) => {
       const w: WeekRecord | undefined = grades[s.id]?.[currentWeek];
       const status = w?.days[todayKey]?.attendance;
       return status === "absent" || status === "late";
     }).length;
-  }, [students, grades, todayKey]);
+  }, [students, grades, todayKey, currentWeek]);
 
   const passedSard = useMemo(() => queue.filter((q) => q.status === "passed"), [queue]);
   const finalFailed = useMemo(() => queue.filter((q) => q.status === "final_failed"), [queue]);
+  const forwardedTransfers = countTransfersForRole("secretary");
 
   const tabs: RoleTab[] = [
+    {
+      id: "transfers",
+      label: "التحويلات",
+      icon: Send,
+      perm: "view_attendance",
+      badge: forwardedTransfers,
+      content: <ForwardedTransfersPanel role="secretary" />,
+    },
     {
       id: "attendance",
       label: "الغياب والتأخر",

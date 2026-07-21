@@ -190,14 +190,34 @@ export interface Notification {
   read: boolean;
   targetHalaqaId?: number;
   actionTab?: "today" | "sard" | "late" | "passed" | "failed" | "transfers";
+  /** Role inbox for transfer notifications forwarded from manager. */
+  targetRole?: "manager" | "secretary" | "supervisor";
   transferData?: {
     studentId: string;
     halaqaId: number;
     week: number;
     reason: string;
     fromName: string;
+    forwardedBy?: string;
   };
   transferStatus?: "pending" | "to_secretary" | "to_supervisor" | "struggling" | "closed";
+}
+
+export type TransferTargetRole = "manager" | "secretary" | "supervisor";
+
+/** Transfers routed to a role inbox (from manager forward or teacher → manager). */
+export function loadTransfersForRole(role: TransferTargetRole): Notification[] {
+  return loadNotifications().filter((n) => {
+    if (n.type !== "transfer" || n.read) return false;
+    if (role === "manager") {
+      return (n.transferStatus === "pending" || !n.transferStatus) && !n.targetRole;
+    }
+    return n.targetRole === role && n.transferStatus !== "closed";
+  });
+}
+
+export function countTransfersForRole(role: TransferTargetRole): number {
+  return loadTransfersForRole(role).length;
 }
 export function loadNotifications(): Notification[] {
   if (typeof window === "undefined") return [];

@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   loadHalaqat, loadStudents, loadGrades, loadSardQueue,
@@ -7,7 +7,8 @@ import {
   type WeekRecord, type Student, type GradesStore,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
-import { getOperationalDayKey } from "@/lib/operational-date";
+import { getCalendarDayKey, getCalendarIsoDate } from "@/lib/operational-date";
+import { fetchActiveCalendar } from "@/lib/academic-context";
 import { getSessionName } from "@/lib/session-role";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
@@ -46,10 +47,14 @@ export function SecretaryAttendancePanel() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
   const grades = loadGrades();
-  const todayKey = getOperationalDayKey();
+  const [currentWeek, setCurrentWeek] = useState(1);
+  const todayKey = getCalendarDayKey();
+
+  useEffect(() => {
+    fetchActiveCalendar().then((cal) => setCurrentWeek(cal.currentWeekNumber)).catch(() => {});
+  }, []);
 
   const todayAbsentOrLate = useMemo(() => {
-    const currentWeek = 1;
     return students
       .map((s) => {
         const w: WeekRecord | undefined = grades[s.id]?.[currentWeek];
@@ -59,7 +64,7 @@ export function SecretaryAttendancePanel() {
       .filter((x): x is { s: Student; status: "absent" | "late" } =>
         x.status === "absent" || x.status === "late",
       );
-  }, [students, grades, todayKey]);
+  }, [students, grades, todayKey, currentWeek]);
 
   return (
     <Card className="glass-card border-primary/15 shadow-none">
@@ -111,7 +116,7 @@ export function SecretaryLatePermitPanel() {
   const grades = loadGrades();
   const [latePermissions, setLatePermissions] = useState(() => loadLatePermissions());
   const [search, setSearch] = useState("");
-  const todayISO = new Date().toISOString().slice(0, 10);
+  const todayISO = getCalendarIsoDate();
   const me = getSessionName("السكرتير");
 
   const filtered = useMemo(() => {

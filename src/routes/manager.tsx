@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
-  loadSardQueue, loadNotifications, loadAttendanceArchive,
+  loadSardQueue, loadNotifications, loadAttendanceArchive, countTransfersForRole,
 } from "@/lib/mock-data";
 import { getSessionName } from "@/lib/session-role";
 import { AppHeader } from "@/components/AppHeader";
@@ -33,10 +33,7 @@ function ManagerPage() {
   const archive = loadAttendanceArchive();
   const [notifs] = useState(() => loadNotifications());
 
-  const pendingTransfers = useMemo(
-    () => notifs.filter((n) => n.type === "transfer" && (n.transferStatus === "pending" || !n.transferStatus)),
-    [notifs],
-  );
+  const pendingTransfers = countTransfersForRole("manager");
   const struggling = useMemo(
     () => notifs.filter((n) => n.type === "transfer" && n.transferStatus === "struggling"),
     [notifs],

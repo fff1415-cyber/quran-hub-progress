@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { loadSardQueue } from "@/lib/mock-data";
+import { loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
 import { getSessionName } from "@/lib/session-role";
 import { AppHeader } from "@/components/AppHeader";
 import { LateSardList, ActiveSardList } from "@/components/SardLists";
@@ -11,7 +11,8 @@ import {
   SupervisorForceRetryPanel,
   SupervisorPassedPanel,
 } from "@/components/role-workspace/RoleSections";
-import { Eye, BookOpen, Mic, CheckCircle2, Zap, Award } from "lucide-react";
+import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTransfersPanel";
+import { Eye, BookOpen, Mic, CheckCircle2, Zap, Award, Send } from "lucide-react";
 import { Toaster } from "sonner";
 
 export const Route = createFileRoute("/supervisor")({
@@ -30,8 +31,17 @@ function SupervisorPage() {
   const awaiting = useMemo(() => queue.filter((q) => q.status === "awaiting_supervisor"), [queue]);
   const scheduled = useMemo(() => queue.filter((q) => q.status === "scheduled"), [queue]);
   const passed = useMemo(() => queue.filter((q) => q.status === "passed"), [queue]);
+  const forwardedTransfers = countTransfersForRole("supervisor");
 
   const tabs: RoleTab[] = [
+    {
+      id: "transfers",
+      label: "التحويلات",
+      icon: Send,
+      perm: "view_attendance",
+      badge: forwardedTransfers,
+      content: <ForwardedTransfersPanel role="supervisor" />,
+    },
     {
       id: "halaqat",
       label: "الحلقات",

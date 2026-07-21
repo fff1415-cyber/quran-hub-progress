@@ -64,7 +64,9 @@ function TeacherPage() {
   }, [w]);
 
   const isAssistant = role === "assistant";
-  const elevated = role === "manager" || role === "secretary" || role === "supervisor";
+  const isManager = role === "manager";
+  const elevated = isManager || role === "secretary" || role === "supervisor";
+  const roleLabel = isAssistant ? "مساعد" : isManager ? "مدير" : elevated ? "مشرف" : "معلم";
 
   const handleWeekChange = (weekNum: number) => {
     setSelectedWeek(weekNum);
@@ -87,7 +89,7 @@ function TeacherPage() {
   return (
     <div className="min-h-screen">
       <Toaster position="top-center" richColors />
-      <AppHeader title={halaqa.name} subtitle={isAssistant ? "مساعد" : elevated ? "مشرف" : "معلم"} />
+      <AppHeader title={halaqa.name} subtitle={roleLabel} />
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="glass-card rounded-2xl p-6 mb-6">
           <div className="flex items-center justify-between flex-wrap gap-3">
@@ -95,7 +97,7 @@ function TeacherPage() {
               <div className="text-2xl display gold-text">مرحباً {name || ""}</div>
               <div className="text-sm text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
                 <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-bold">
-                  {isAssistant ? "مساعد" : elevated ? "صلاحية كاملة" : "معلم"}
+                  {isManager ? "صلاحيات معلم كاملة" : isAssistant ? "مساعد" : elevated ? "صلاحية كاملة" : "معلم"}
                 </span>
                 {halaqa.name}
                 {calendar?.semester && (

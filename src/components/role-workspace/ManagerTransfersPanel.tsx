@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   loadSardQueue, loadStudents, loadHalaqat, loadGrades, loadNotifications, updateNotification,
-  studentStats, pushNotification, type Notification,
+  studentStats, pushNotification, loadTransfersForRole, type Notification,
 } from "@/lib/mock-data";
+import { getSessionName } from "@/lib/session-role";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
 import {
@@ -45,7 +46,7 @@ export function ManagerTransfersPanel() {
 
   const failedFinal = useMemo(() => queue.filter((q) => q.status === "final_failed"), [queue]);
   const pendingTransfers = useMemo(
-    () => notifs.filter((n) => n.type === "transfer" && (n.transferStatus === "pending" || !n.transferStatus)),
+    () => loadTransfersForRole("manager"),
     [notifs],
   );
   const struggling = useMemo(
@@ -58,6 +59,7 @@ export function ManagerTransfersPanel() {
     const td = n.transferData;
     const student = students.find((x) => x.id === td.studentId);
     const halaqa = halaqat.find((x) => x.id === td.halaqaId);
+    const managerName = getSessionName("المدير");
     const patch = { transferStatus: status, read: status !== "struggling" } as const;
 
     setProcessingId(n.id);
@@ -66,10 +68,18 @@ export function ManagerTransfersPanel() {
     try {
       updateNotification(n.id, patch);
       if (status === "to_secretary" || status === "to_supervisor") {
+        const targetRole = status === "to_secretary" ? "secretary" : "supervisor";
         const targetLabel = status === "to_secretary" ? "السكرتير" : "المشرف العلمي";
         pushNotification({
           message: `تحويل من المدير: الطالب ${student?.name || "—"} (${halaqa?.name || "—"}) → ${targetLabel} — ${td.reason}`,
-          type: "info",
+          type: "transfer",
+          targetRole,
+          transferStatus: "pending",
+          actionTab: "transfers",
+          transferData: {
+            ...td,
+            forwardedBy: managerName,
+          },
         });
       }
       toast.success(TRANSFER_TOAST[status]);
