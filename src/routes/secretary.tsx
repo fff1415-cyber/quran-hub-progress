@@ -13,7 +13,8 @@ import {
   SecretarySardPanel,
 } from "@/components/role-workspace/RoleSections";
 import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTransfersPanel";
-import { Clipboard, UserX, Clock, Mic, Send } from "lucide-react";
+import { PlanStudentLookup } from "@/components/plans/SupervisorPlansPanel";
+import { Clipboard, UserX, Clock, Mic, Send, GraduationCap } from "lucide-react";
 import { Toaster } from "sonner";
 import type { WeekRecord } from "@/lib/mock-data";
 
@@ -51,6 +52,13 @@ function SecretaryPage() {
   const forwardedTransfers = countTransfersForRole("secretary");
 
   const tabs: RoleTab[] = [
+    {
+      id: "plans",
+      label: "الخطط التراكمية",
+      icon: GraduationCap,
+      perm: "view_attendance",
+      content: <PlanStudentLookup readOnly />,
+    },
     {
       id: "transfers",
       label: "التحويلات",

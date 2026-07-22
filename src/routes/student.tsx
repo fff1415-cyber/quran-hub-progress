@@ -1,13 +1,16 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, loadGrades, studentOverallPercentage, DAYS,
 } from "@/lib/mock-data";
 import { loginByNationalId } from "@/lib/secure-data.functions";
 import { setToken } from "@/lib/cloud-sync";
-import { getOperationalDayKey } from "@/lib/operational-date";
+import { getCalendarDayKey } from "@/lib/operational-date";
+import { fetchStudentPlanSheet } from "@/lib/plans-service";
+import type { StudentPlanSheetData } from "@/lib/plan-types";
+import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { AppHeader } from "@/components/AppHeader";
-import { Trophy, BookOpen, IdCard, X, CheckCircle2, Clock, AlertCircle, UserCheck } from "lucide-react";
+import { Trophy, BookOpen, IdCard, X, CheckCircle2, Clock, AlertCircle, UserCheck, GraduationCap } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/student")({ component: StudentPage });
@@ -18,6 +21,8 @@ function StudentPage() {
   const grades = loadGrades();
   const [nid, setNid] = useState("");
   const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [planData, setPlanData] = useState<StudentPlanSheetData | null>(null);
+  const [planLoading, setPlanLoading] = useState(false);
 
   const halaqaStats = useMemo(() => halaqat.map((h) => {
     const hs = students.filter((s) => s.halaqaId === h.id);
@@ -64,7 +69,7 @@ function StudentPage() {
       });
     });
     // Find today's status across any week that recorded it
-    const todayKey = getOperationalDayKey();
+    const todayKey = getCalendarDayKey();
     let todayStatus = "";
     const weeks = Object.values(grades[s.id] || {});
     for (let i = weeks.length - 1; i >= 0; i--) {
@@ -73,6 +78,20 @@ function StudentPage() {
     }
     return { s, h, overall, absences, lates, excused, memorizedCount, todayStatus };
   }, [selectedId, students, halaqat, grades]);
+
+  useEffect(() => {
+    if (!selectedId) {
+      setPlanData(null);
+      return;
+    }
+    let cancelled = false;
+    setPlanLoading(true);
+    fetchStudentPlanSheet(selectedId)
+      .then((d) => { if (!cancelled) setPlanData(d); })
+      .catch(() => { if (!cancelled) setPlanData(null); })
+      .finally(() => { if (!cancelled) setPlanLoading(false); });
+    return () => { cancelled = true; };
+  }, [selectedId]);
 
   return (
     <div className="min-h-screen">
@@ -159,6 +178,18 @@ function StudentPage() {
                 <Stat label="مرات التأخر" value={String(data.lates)} />
                 <Stat label="مرات الاستئذان" value={String(data.excused)} />
               </div>
+
+              <section className="mt-6 pt-6 border-t border-border">
+                <h4 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
+                  <GraduationCap className="w-5 h-5" /> ورقة الإنجاز التراكمية
+                </h4>
+                <StudentPlanSheet
+                  data={planData ?? { assignment: null, plan: null, segments: [], completions: [] }}
+                  studentName={data.s.name}
+                  readOnly
+                  loading={planLoading}
+                />
+              </section>
             </div>
           )}
         </section>

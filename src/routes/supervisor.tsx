@@ -12,7 +12,8 @@ import {
   SupervisorPassedPanel,
 } from "@/components/role-workspace/RoleSections";
 import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTransfersPanel";
-import { Eye, BookOpen, Mic, CheckCircle2, Zap, Award, Send } from "lucide-react";
+import { SupervisorPlansPanel } from "@/components/plans/SupervisorPlansPanel";
+import { Eye, BookOpen, Mic, CheckCircle2, Zap, Award, Send, GraduationCap } from "lucide-react";
 import { Toaster } from "sonner";
 
 export const Route = createFileRoute("/supervisor")({
@@ -34,6 +35,13 @@ function SupervisorPage() {
   const forwardedTransfers = countTransfersForRole("supervisor");
 
   const tabs: RoleTab[] = [
+    {
+      id: "plans",
+      label: "الخطط التعليمية",
+      icon: GraduationCap,
+      roles: ["supervisor"],
+      content: <SupervisorPlansPanel />,
+    },
     {
       id: "transfers",
       label: "التحويلات",

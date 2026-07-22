@@ -8,6 +8,7 @@ require_once __DIR__ . '/halaqat.php';
 require_once __DIR__ . '/role_accounts.php';
 require_once __DIR__ . '/app_state.php';
 require_once __DIR__ . '/semesters.php';
+require_once __DIR__ . '/plans.php';
 require_once __DIR__ . '/health.php';
 
 function route_request(string $method, string $path): void
@@ -90,6 +91,34 @@ function route_request(string $method, string $path): void
     }
     if ($path === '/semesters' && $method === 'POST') {
         handle_create_semester();
+        return;
+    }
+    if ($path === '/plans' && $method === 'GET') {
+        handle_list_plans();
+        return;
+    }
+    if ($path === '/plans/detail' && $method === 'GET') {
+        handle_plan_detail();
+        return;
+    }
+    if ($path === '/plans/student-sheet' && $method === 'GET') {
+        handle_student_plan_sheet();
+        return;
+    }
+    if ($path === '/plans/import' && $method === 'POST') {
+        handle_import_plans();
+        return;
+    }
+    if ($path === '/plans/assign' && $method === 'POST') {
+        handle_assign_plan();
+        return;
+    }
+    if ($path === '/plans/assignment' && $method === 'PATCH') {
+        handle_patch_assignment();
+        return;
+    }
+    if ($path === '/plans/apply-input' && $method === 'POST') {
+        handle_apply_plan_input();
         return;
     }
 

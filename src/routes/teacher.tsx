@@ -3,9 +3,9 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
   loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, DAYS,
-  weekPercentage, enqueueSard, HIFZ_LABELS, loadNotifications, dismissNotification, pushNotification,
+  weekPercentage, enqueueSard, loadNotifications, dismissNotification, pushNotification,
   ensureGradesSemester,
-  type WeekRecord, type DayEntry, type HifzValue, type Student,
+  type WeekRecord, type DayEntry, type Student,
 } from "@/lib/mock-data";
 import {
   fetchActiveCalendar,
@@ -20,8 +20,16 @@ import { AppHeader } from "@/components/AppHeader";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Bell, Check, CheckCircle2, Loader2, Send, Users, X } from "lucide-react";
+import { Bell, Check, CheckCircle2, ClipboardList, Loader2, Send, Users, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
+import { applyPlanInput, fetchStudentPlanSheet } from "@/lib/plans-service";
+import type { PlanTaskType, StudentPlanSheetData, TapValue } from "@/lib/plan-types";
+import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
+import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
+import { AttSelect } from "@/components/plans/TeacherGradeInputs";
+import {
+  Dialog, DialogContent, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/teacher")({
   validateSearch: z.object({ h: z.number().optional(), w: z.number().optional() }),
@@ -209,6 +217,10 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const [transferFor, setTransferFor] = useState<Student | null>(null);
   const [transferReason, setTransferReason] = useState("");
   const [showAssign, setShowAssign] = useState(false);
+  const [planStudentIds, setPlanStudentIds] = useState<Set<string>>(new Set());
+  const [planSheetStudent, setPlanSheetStudent] = useState<Student | null>(null);
+  const [planSheetData, setPlanSheetData] = useState<StudentPlanSheetData | null>(null);
+  const [planSheetLoading, setPlanSheetLoading] = useState(false);
   const senderName = typeof window !== "undefined" ? (sessionStorage.getItem("qs_name") || "المعلم") : "المعلم";
 
   const selectableWeeks = useMemo(() => getSelectableWeeks(calendar), [calendar]);
@@ -263,6 +275,56 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     if (changed) { setGrades(g); saveGrades(g); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [weekNum, halaqaId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const withPlan = new Set<string>();
+      await Promise.all(
+        students.map(async (s) => {
+          try {
+            const sheet = await fetchStudentPlanSheet(s.id);
+            if (sheet.assignment?.status === "active") withPlan.add(s.id);
+          } catch {
+            /* ignore */
+          }
+        }),
+      );
+      if (!cancelled) setPlanStudentIds(withPlan);
+    })();
+    return () => { cancelled = true; };
+  }, [students]);
+
+  const openPlanSheet = async (s: Student) => {
+    setPlanSheetStudent(s);
+    setPlanSheetLoading(true);
+    try {
+      setPlanSheetData(await fetchStudentPlanSheet(s.id));
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل تحميل الخطة");
+    } finally {
+      setPlanSheetLoading(false);
+    }
+  };
+
+  const handlePlanTap = async (s: Student, dayKey: string, task: PlanTaskType, tap: TapValue) => {
+    if (task === "hifz") {
+      updateDay(s.id, dayKey, { hifz: tap });
+    } else if (task === "rabt") {
+      updateDay(s.id, dayKey, { rabt: "pass" });
+    } else {
+      updateDay(s.id, dayKey, { muraja: "pass" });
+    }
+    try {
+      const segs = await applyPlanInput(s.id, task, tap, senderName);
+      toast.success(`تم تسجيل ${segs.length} مقطع — ${task === "hifz" ? "حفظ" : task === "rabt" ? "ربط" : "مراجعة"}`);
+      if (planSheetStudent?.id === s.id) {
+        setPlanSheetData(await fetchStudentPlanSheet(s.id));
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل تحديث الخطة");
+    }
+  };
 
   const update = (studentId: string, fn: (w: WeekRecord) => WeekRecord) => {
     const g = { ...grades };
@@ -394,11 +456,19 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
             return (
               <tr key={s.id} className="border-b border-border/50 hover:bg-accent/30">
                 <td className="p-2 sticky right-0 bg-card font-medium">
-                  <div className="flex flex-col">
+                  <div className="flex flex-col gap-1">
                     <span>{s.name}</span>
                     {s.assignedTo === "assistant" && viewerRole === "teacher" && (
                       <span className="text-[10px] text-muted-foreground">مع المساعد</span>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => void openPlanSheet(s)}
+                      className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline w-fit"
+                    >
+                      <ClipboardList className="w-3 h-3" />
+                      {planStudentIds.has(s.id) ? "الخطة" : "عرض الخطة"}
+                    </button>
                   </div>
                 </td>
                 {visibleDays.map((d) => {
@@ -418,13 +488,40 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                         <AttSelect value={e.attendance} onChange={(v) => updateDay(s.id, d.key, { attendance: v })} />
                       </td>
                       <td className={dayCellClass(d.key)}>
-                        <HifzSelect value={e.hifz} onChange={(v) => updateDay(s.id, d.key, { hifz: v })} />
+                        <PlanAwareTaskCell
+                          student={s}
+                          task="hifz"
+                          hasPlan={planStudentIds.has(s.id)}
+                          hifzValue={e.hifz}
+                          passFailValue=""
+                          onHifzChange={(v) => updateDay(s.id, d.key, { hifz: v })}
+                          onPassFailChange={() => {}}
+                          onPlanTap={(tap) => void handlePlanTap(s, d.key, "hifz", tap)}
+                        />
                       </td>
                       <td className={dayCellClass(d.key)}>
-                        <PassFail value={e.rabt} onChange={(v) => updateDay(s.id, d.key, { rabt: v })} />
+                        <PlanAwareTaskCell
+                          student={s}
+                          task="rabt"
+                          hasPlan={planStudentIds.has(s.id)}
+                          hifzValue=""
+                          passFailValue={e.rabt}
+                          onHifzChange={() => {}}
+                          onPassFailChange={(v) => updateDay(s.id, d.key, { rabt: v })}
+                          onPlanTap={(tap) => void handlePlanTap(s, d.key, "rabt", tap)}
+                        />
                       </td>
                       <td className={dayCellClass(d.key)}>
-                        <PassFail value={e.muraja} onChange={(v) => updateDay(s.id, d.key, { muraja: v })} />
+                        <PlanAwareTaskCell
+                          student={s}
+                          task="muraja"
+                          hasPlan={planStudentIds.has(s.id)}
+                          hifzValue=""
+                          passFailValue={e.muraja}
+                          onHifzChange={() => {}}
+                          onPassFailChange={(v) => updateDay(s.id, d.key, { muraja: v })}
+                          onPlanTap={(tap) => void handlePlanTap(s, d.key, "muraja", tap)}
+                        />
                       </td>
                     </React.Fragment>
                   );
@@ -463,6 +560,22 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
       {showAssign && <AssignmentDialog halaqaId={halaqaId} onClose={() => setShowAssign(false)} />}
 
+      <Dialog open={!!planSheetStudent} onOpenChange={(o) => !o && setPlanSheetStudent(null)}>
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>ورقة الإنجاز التراكمية</DialogTitle>
+          </DialogHeader>
+          {planSheetStudent && (
+            <StudentPlanSheet
+              data={planSheetData ?? { assignment: null, plan: null, segments: [], completions: [] }}
+              studentName={planSheetStudent.name}
+              readOnly
+              loading={planSheetLoading}
+            />
+          )}
+        </DialogContent>
+      </Dialog>
+
       {transferFor && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="glass-card rounded-2xl max-w-md w-full p-5">
@@ -490,36 +603,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   );
 }
 
-function AttSelect({ value, onChange, talqeen }: { value: string; onChange: (v: DayEntry["attendance"]) => void; talqeen?: boolean }) {
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value as DayEntry["attendance"])} className="w-full bg-input border border-border rounded px-1 py-1 text-xs">
-      <option value="">—</option>
-      <option value="present">حاضر</option>
-      {!talqeen && <option value="late">متأخر</option>}
-      {!talqeen && <option value="excused">مستأذن</option>}
-      <option value="absent">غائب</option>
-    </select>
-  );
-}
-function HifzSelect({ value, onChange }: { value: HifzValue; onChange: (v: HifzValue) => void }) {
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value as HifzValue)} className="w-full bg-input border border-border rounded px-1 py-1 text-xs font-bold">
-      <option value="">{HIFZ_LABELS[""]}</option>
-      <option value="half">{HIFZ_LABELS["half"]}</option>
-      <option value="one">{HIFZ_LABELS["one"]}</option>
-      <option value="two">{HIFZ_LABELS["two"]}</option>
-    </select>
-  );
-}
-function PassFail({ value, onChange }: { value: string; onChange: (v: DayEntry["rabt"]) => void }) {
-  return (
-    <select value={value} onChange={(e) => onChange(e.target.value as DayEntry["rabt"])} className="w-full bg-input border border-border rounded px-1 py-1 text-xs">
-      <option value="">—</option>
-      <option value="pass">مجتاز</option>
-      <option value="fail">راسب</option>
-    </select>
-  );
-}
 function Cbx({ checked, onChange }: { checked: boolean; onChange: (v: boolean) => void }) {
   return (
     <button
