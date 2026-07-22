@@ -4,12 +4,14 @@
 
 | Secret | Value |
 |---|---|
-| `FTP_SERVER` | Hostname أو IP من hPanel → FTP Accounts |
-| `FTP_USERNAME` | FTP user |
-| `FTP_PASSWORD` | FTP password |
+| `FTP_SERVER` | **IP السيرفر** من hPanel → SSH أو FTP (لا تستخدم الدomain خلف Cloudflare) |
+| `FTP_USERNAME` | اسم مستخدم SSH/FTP (مثل `u112851217`) |
+| `FTP_PASSWORD` | كلمة مرور SSH/FTP |
 | `FTP_SERVER_DIR` | جذر الموقع، مثل `/domains/msht.io/public_html/` |
 | `FTP_API_DIR` | مجلد API، مثل `/domains/msht.io/public_html/api/` |
 | `VITE_API_URL` | `https://yourdomain.com` |
+
+النشر يستخدم **SFTP على المنفذ 65002** (Hostinger shared hosting). فعّل SSH من hPanel → Advanced → SSH Access.
 
 ## Server setup (once)
 

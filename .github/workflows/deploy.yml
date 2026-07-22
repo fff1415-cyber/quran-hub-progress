@@ -1,4 +1,4 @@
-name: Deploy to Hostinger FTP
+name: Deploy to Hostinger
 
 on:
   push:
@@ -29,29 +29,31 @@ jobs:
       - name: Write deploy marker
         run: echo "${{ github.sha }}" > dist/client/deploy-sha.txt
 
-      - name: Sync frontend to Hostinger
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      - name: Sync frontend to Hostinger (SFTP)
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
+          server: ${{ secrets.FTP_SERVER }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./dist/client/
-          server-dir: ${{ secrets.FTP_SERVER_DIR }}
-          port: 21
-          state-name: .ftp-deploy-frontend-v3-state.json
+          port: 65002
+          local_path: ./dist/client/
+          remote_path: ${{ secrets.FTP_SERVER_DIR }}
+          sftp_only: true
+          sftpArgs: -o ConnectTimeout=60 -o StrictHostKeyChecking=no
+          rsyncArgs: --delete
 
-      - name: Sync PHP API to Hostinger
-        uses: SamKirkland/FTP-Deploy-Action@v4.3.4
+      - name: Sync PHP API to Hostinger (SFTP)
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
         with:
-          server: ${{ secrets.FTP_SERVER }}
           username: ${{ secrets.FTP_USERNAME }}
+          server: ${{ secrets.FTP_SERVER }}
           password: ${{ secrets.FTP_PASSWORD }}
-          local-dir: ./api/
-          server-dir: ${{ secrets.FTP_API_DIR }}
-          port: 21
-          state-name: .ftp-deploy-api-v3-state.json
-          exclude: |
-            **/config.php
+          port: 65002
+          local_path: ./api/
+          remote_path: ${{ secrets.FTP_API_DIR }}
+          sftp_only: true
+          sftpArgs: -o ConnectTimeout=60 -o StrictHostKeyChecking=no
+          rsyncArgs: --exclude=config.php
 
       - name: Verify live deploy
         run: |
@@ -64,5 +66,5 @@ jobs:
             echo "Attempt $i: deploy-sha.txt='$LIVE'"
             sleep 15
           done
-          echo "Deploy did not reach msht.io. Set GitHub secret FTP_SERVER_DIR to your site root (e.g. /domains/msht.io/public_html/)."
+          echo "Deploy did not reach msht.io. Check FTP_SERVER (use server IP), FTP_SERVER_DIR, and SSH access in hPanel."
           exit 1
