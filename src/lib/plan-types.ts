@@ -26,6 +26,8 @@ export interface StudentPlanAssignment {
   student_id: string;
   plan_id: string;
   start_segment_index: number;
+  plan_start_date?: string | null;
+  start_muraja_segment?: number | null;
   status: AssignmentStatus;
   assigned_by: string;
   assigned_at?: string;

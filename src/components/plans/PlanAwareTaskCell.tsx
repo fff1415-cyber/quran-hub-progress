@@ -1,6 +1,5 @@
-import type { PlanTaskType, TapValue } from "@/lib/plan-types";
+import type { PlanTaskType } from "@/lib/plan-types";
 import type { HifzValue, Student } from "@/lib/mock-data";
-import { QuickTapInput } from "@/components/plans/QuickTapInput";
 import { HifzSelect, PassFail } from "@/components/plans/TeacherGradeInputs";
 
 interface PlanAwareTaskCellProps {
@@ -11,7 +10,8 @@ interface PlanAwareTaskCellProps {
   passFailValue: string;
   onHifzChange: (v: HifzValue) => void;
   onPassFailChange: (v: "pass" | "fail" | "") => void;
-  onPlanTap: (tap: TapValue) => void;
+  onPlanHifzChange?: (v: HifzValue) => void;
+  onPlanPassFailChange?: (v: "pass" | "fail" | "") => void;
   disabled?: boolean;
 }
 
@@ -23,16 +23,32 @@ export function PlanAwareTaskCell({
   passFailValue,
   onHifzChange,
   onPassFailChange,
-  onPlanTap,
+  onPlanHifzChange,
+  onPlanPassFailChange,
   disabled,
 }: PlanAwareTaskCellProps) {
   if (hasPlan) {
+    if (task === "hifz") {
+      return (
+        <HifzSelect
+          value={hifzValue}
+          goldOnly={student.levelType === "gold"}
+          disabled={disabled}
+          onChange={(v) => {
+            onHifzChange(v);
+            if (v) onPlanHifzChange?.(v);
+          }}
+        />
+      );
+    }
     return (
-      <QuickTapInput
-        track={student.levelType}
-        task={task}
+      <PassFail
+        value={passFailValue as "pass" | "fail" | ""}
         disabled={disabled}
-        onTap={onPlanTap}
+        onChange={(v) => {
+          onPassFailChange(v);
+          if (v === "pass") onPlanPassFailChange?.(v);
+        }}
       />
     );
   }

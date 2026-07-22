@@ -11,7 +11,7 @@ import type {
   PlanTaskType,
   TapValue,
 } from "@/lib/plan-types";
-import { nextSegmentsToApply, segmentsForTap } from "@/lib/plan-translator";
+import { nextSegmentsToApply, nextSegmentForTask, segmentsForTap } from "@/lib/plan-translator";
 import { getCalendarIsoDate } from "@/lib/operational-date";
 
 const KEY_PLANS = "qshatawi_education_plans_v1";
@@ -100,6 +100,7 @@ export function localAssignPlan(
   planId: string,
   startSegment: number,
   assignedBy: string,
+  options?: { plan_start_date?: string; start_muraja_segment?: number | null },
 ): void {
   const list = read<StudentPlanAssignment[]>(KEY_ASSIGNMENTS, []);
   const next = list.map((a) =>
@@ -112,6 +113,8 @@ export function localAssignPlan(
     student_id: studentId,
     plan_id: planId,
     start_segment_index: Math.max(1, startSegment),
+    plan_start_date: options?.plan_start_date ?? null,
+    start_muraja_segment: options?.start_muraja_segment ?? null,
     status: "active",
     assigned_by: assignedBy,
     assigned_at: new Date().toISOString(),
@@ -178,23 +181,36 @@ export function localApplyInput(
     throw new Error("الطالب غير مربوط بخطة نشطة");
   }
   const track = sheet.plan.track;
-  if (segmentsForTap(track, tap) < 1) {
-    throw new Error("هذا الإدخال غير متاح لمسار الطالب");
-  }
-
   const indexes = sheet.segments.map((s) => s.segment_index);
-  const done = sheet.completions.filter((c) => c.task_type === taskType).map((c) => c.segment_index);
-  const toApply = nextSegmentsToApply(
-    track,
-    tap,
-    sheet.assignment.start_segment_index,
-    indexes,
-    done,
-  );
+
+  let toApply: number[] = [];
+  if (taskType === "hifz") {
+    if (segmentsForTap(track, tap) < 1) {
+      throw new Error("هذا الإدخال غير متاح لمسار الطالب");
+    }
+    const done = sheet.completions.filter((c) => c.task_type === "hifz").map((c) => c.segment_index);
+    toApply = nextSegmentsToApply(
+      track,
+      tap,
+      sheet.assignment.start_segment_index,
+      indexes,
+      done,
+    );
+  } else {
+    const next = nextSegmentForTask(
+      taskType,
+      sheet.assignment,
+      sheet.plan,
+      indexes,
+      sheet.completions,
+    );
+    toApply = next !== null ? [next] : [];
+  }
   if (toApply.length === 0) throw new Error("لا توجد مقاطع متبقية");
 
   const allComp = read<StoredCompletion[]>(KEY_COMPLETIONS, []);
   for (const seg of toApply) {
+    const compDate = taskType === "hifz" ? completedAt : getCalendarIsoDate();
     const idx = allComp.findIndex(
       (c) =>
         c.student_id === studentId &&
@@ -207,7 +223,7 @@ export function localApplyInput(
       plan_id: sheet.plan!.id,
       segment_index: seg,
       task_type: taskType,
-      completed_at: completedAt,
+      completed_at: compDate,
       recorded_by: recordedBy,
     };
     if (idx >= 0) allComp[idx] = row;

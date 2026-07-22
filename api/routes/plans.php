@@ -212,6 +212,100 @@ function handle_import_plans(): void
     json_response(['ok' => true, 'plans_imported' => $imported, 'segments_imported' => $segmentsTotal]);
 }
 
+function plans_plan_phase(int $levelNumber): int
+{
+    return $levelNumber % 1000;
+}
+
+function assignment_row(array $row): array
+{
+    return [
+        'id' => $row['id'],
+        'student_id' => $row['student_id'],
+        'plan_id' => $row['plan_id'],
+        'start_segment_index' => (int) $row['start_segment_index'],
+        'plan_start_date' => $row['plan_start_date'] ?? null,
+        'start_muraja_segment' => isset($row['start_muraja_segment']) && $row['start_muraja_segment'] !== null
+            ? (int) $row['start_muraja_segment'] : null,
+        'status' => $row['status'],
+        'assigned_by' => $row['assigned_by'],
+        'assigned_at' => $row['assigned_at'] ?? null,
+        'frozen_at' => $row['frozen_at'] ?? null,
+    ];
+}
+
+/** Next segment index to complete for a task (single segment). */
+function plans_next_segment_for_task(
+    string $taskType,
+    int $startHifz,
+    ?int $startMuraja,
+    int $planLevel,
+    array $allSegs,
+    array $hifzDone,
+    array $taskDone,
+): ?int {
+    $phase = plans_plan_phase($planLevel);
+    $ordered = array_values(array_filter($allSegs, static fn ($s) => $s >= $startHifz));
+    sort($ordered);
+
+    if ($taskType === 'hifz') {
+        foreach ($ordered as $seg) {
+            if (!in_array($seg, $taskDone, true)) {
+                return $seg;
+            }
+        }
+        return null;
+    }
+
+    if ($taskType === 'muraja' && $phase === 1) {
+        $start = $startMuraja ?? $startHifz;
+        $murOrdered = array_values(array_filter($allSegs, static fn ($s) => $s >= $start));
+        sort($murOrdered);
+        foreach ($murOrdered as $seg) {
+            if (!in_array($seg, $taskDone, true)) {
+                return $seg;
+            }
+        }
+        return null;
+    }
+
+    foreach ($ordered as $seg) {
+        if (!in_array($seg, $hifzDone, true)) {
+            continue;
+        }
+        if (!in_array($seg, $taskDone, true)) {
+            return $seg;
+        }
+    }
+    return null;
+}
+
+/** Segments to apply for hifz quick-tap. */
+function plans_next_hifz_segments_for_tap(
+    string $track,
+    string $tap,
+    int $startHifz,
+    array $allSegs,
+    array $hifzDone,
+): array {
+    $count = plans_segments_for_tap($track, $tap);
+    if ($count < 1) {
+        return [];
+    }
+    $ordered = array_values(array_filter($allSegs, static fn ($s) => $s >= $startHifz));
+    sort($ordered);
+    $next = [];
+    foreach ($ordered as $seg) {
+        if (!in_array($seg, $hifzDone, true)) {
+            $next[] = $seg;
+            if (count($next) >= $count) {
+                break;
+            }
+        }
+    }
+    return $next;
+}
+
 function handle_assign_plan(): void
 {
     $auth = require_auth();
@@ -220,20 +314,39 @@ function handle_assign_plan(): void
     $studentId = trim((string) ($input['student_id'] ?? ''));
     $planId = trim((string) ($input['plan_id'] ?? ''));
     $startSegment = max(1, (int) ($input['start_segment_index'] ?? 1));
+    $startMuraja = isset($input['start_muraja_segment']) ? max(1, (int) $input['start_muraja_segment']) : null;
+    $planStartDate = trim((string) ($input['plan_start_date'] ?? ''));
     if ($studentId === '' || $planId === '') {
         error_response('student_id و plan_id مطلوبان');
     }
     $pdo = db();
+    if (!plans_table_exists($pdo, 'education_plans')) {
+        error_response('نفّذ migrate-education-plans.sql على قاعدة البيانات أولاً', 503);
+    }
+
+    $planStmt = $pdo->prepare('SELECT level_number FROM education_plans WHERE id = ?');
+    $planStmt->execute([$planId]);
+    $planRow = $planStmt->fetch();
+    if (!$planRow) {
+        error_response('الخطة غير موجودة', 404);
+    }
+    if (plans_plan_phase((int) $planRow['level_number']) !== 1) {
+        $startMuraja = null;
+    }
+
     $pdo->prepare(
         "UPDATE student_plan_assignments SET status = 'transferred' WHERE student_id = ? AND status = 'active'"
     )->execute([$studentId]);
 
     $id = new_uuid();
     $name = (string) ($auth['name'] ?? 'المشرف');
+    $dateVal = $planStartDate !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $planStartDate) ? $planStartDate : null;
+
     $pdo->prepare(
-        'INSERT INTO student_plan_assignments (id, student_id, plan_id, start_segment_index, status, assigned_by)
-         VALUES (?, ?, ?, ?, \'active\', ?)'
-    )->execute([$id, $studentId, $planId, $startSegment, $name]);
+        'INSERT INTO student_plan_assignments
+         (id, student_id, plan_id, start_segment_index, plan_start_date, start_muraja_segment, status, assigned_by)
+         VALUES (?, ?, ?, ?, ?, ?, \'active\', ?)'
+    )->execute([$id, $studentId, $planId, $startSegment, $dateVal, $startMuraja, $name]);
 
     json_response(['ok' => true, 'assignment_id' => $id]);
 }
@@ -290,7 +403,8 @@ function handle_student_plan_sheet(): void
     }
 
     $assignStmt = $pdo->prepare(
-        'SELECT id, student_id, plan_id, start_segment_index, status, assigned_by, assigned_at, frozen_at
+        'SELECT id, student_id, plan_id, start_segment_index, plan_start_date, start_muraja_segment,
+                status, assigned_by, assigned_at, frozen_at
          FROM student_plan_assignments
          WHERE student_id = ? AND status IN (\'active\', \'frozen\')
          ORDER BY assigned_at DESC LIMIT 1'
@@ -322,16 +436,7 @@ function handle_student_plan_sheet(): void
     $compStmt->execute([$studentId, $planId]);
 
     json_response([
-        'assignment' => [
-            'id' => $assignment['id'],
-            'student_id' => $assignment['student_id'],
-            'plan_id' => $assignment['plan_id'],
-            'start_segment_index' => (int) $assignment['start_segment_index'],
-            'status' => $assignment['status'],
-            'assigned_by' => $assignment['assigned_by'],
-            'assigned_at' => $assignment['assigned_at'],
-            'frozen_at' => $assignment['frozen_at'],
-        ],
+        'assignment' => assignment_row($assignment),
         'plan' => $plan ? plan_row($plan) : null,
         'segments' => array_map('segment_row', $segStmt->fetchAll()),
         'completions' => array_map('completion_row', $compStmt->fetchAll()),
@@ -372,7 +477,7 @@ function handle_apply_plan_input(): void
     }
 
     $assignStmt = $pdo->prepare(
-        'SELECT spa.plan_id, spa.start_segment_index, ep.track
+        'SELECT spa.plan_id, spa.start_segment_index, spa.start_muraja_segment, ep.track, ep.level_number
          FROM student_plan_assignments spa
          JOIN education_plans ep ON ep.id = spa.plan_id
          WHERE spa.student_id = ? AND spa.status = \'active\'
@@ -385,37 +490,54 @@ function handle_apply_plan_input(): void
     }
 
     $track = (string) $assignment['track'];
-    $count = plans_segments_for_tap($track, $tap);
-    if ($count < 1) {
-        error_response('هذا الإدخال غير متاح لمسار الطالب');
-    }
-
     $planId = $assignment['plan_id'];
     $startSeg = (int) $assignment['start_segment_index'];
-
-    $compStmt = $pdo->prepare(
-        'SELECT segment_index FROM segment_completions
-         WHERE student_id = ? AND plan_id = ? AND task_type = ?'
-    );
-    $compStmt->execute([$studentId, $planId, $taskType]);
-    $done = array_map('intval', array_column($compStmt->fetchAll(), 'segment_index'));
+    $startMuraja = isset($assignment['start_muraja_segment']) && $assignment['start_muraja_segment'] !== null
+        ? (int) $assignment['start_muraja_segment'] : null;
+    $planLevel = (int) $assignment['level_number'];
 
     $segStmt = $pdo->prepare(
-        'SELECT segment_index FROM plan_segments
-         WHERE plan_id = ? AND segment_index >= ? ORDER BY segment_index'
+        'SELECT segment_index FROM plan_segments WHERE plan_id = ? ORDER BY segment_index'
     );
-    $segStmt->execute([$planId, $startSeg]);
+    $segStmt->execute([$planId]);
     $allSegs = array_map('intval', array_column($segStmt->fetchAll(), 'segment_index'));
 
-    $nextSegs = [];
-    foreach ($allSegs as $seg) {
-        if (!in_array($seg, $done, true)) {
-            $nextSegs[] = $seg;
-            if (count($nextSegs) >= $count) {
-                break;
-            }
+    $compStmt = $pdo->prepare(
+        'SELECT segment_index, task_type FROM segment_completions WHERE student_id = ? AND plan_id = ?'
+    );
+    $compStmt->execute([$studentId, $planId]);
+    $allComps = $compStmt->fetchAll();
+    $hifzDone = array_map('intval', array_column(
+        array_filter($allComps, static fn ($c) => $c['task_type'] === 'hifz'),
+        'segment_index',
+    ));
+    $taskDone = array_map('intval', array_column(
+        array_filter($allComps, static fn ($c) => $c['task_type'] === $taskType),
+        'segment_index',
+    ));
+
+    if ($taskType === 'hifz') {
+        $count = plans_segments_for_tap($track, $tap);
+        if ($count < 1) {
+            error_response('هذا الإدخال غير متاح لمسار الطالب');
         }
+        $nextSegs = plans_next_hifz_segments_for_tap($track, $tap, $startSeg, $allSegs, $hifzDone);
+    } else {
+        if ($tap !== 'one' && $tap !== 'half') {
+            error_response('ربط/مراجعة: مجتاز فقط');
+        }
+        $next = plans_next_segment_for_task(
+            $taskType,
+            $startSeg,
+            $startMuraja,
+            $planLevel,
+            $allSegs,
+            $hifzDone,
+            $taskDone,
+        );
+        $nextSegs = $next !== null ? [$next] : [];
     }
+
     if (count($nextSegs) === 0) {
         error_response('لا توجد مقاطع متبقية لهذه المهمة');
     }
@@ -428,7 +550,8 @@ function handle_apply_plan_input(): void
     );
     $applied = [];
     foreach ($nextSegs as $seg) {
-        $ins->execute([new_uuid(), $studentId, $planId, $seg, $taskType, $completedDate, $recorder]);
+        $compDate = $taskType === 'hifz' ? $completedDate : date('Y-m-d');
+        $ins->execute([new_uuid(), $studentId, $planId, $seg, $taskType, $compDate, $recorder]);
         $applied[] = $seg;
     }
 
@@ -436,6 +559,6 @@ function handle_apply_plan_input(): void
         'ok' => true,
         'applied_segments' => $applied,
         'task_type' => $taskType,
-        'completed_at' => $completedDate,
+        'completed_at' => $taskType === 'hifz' ? $completedDate : null,
     ]);
 }

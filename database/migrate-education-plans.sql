@@ -34,6 +34,8 @@ CREATE TABLE IF NOT EXISTS `student_plan_assignments` (
   `student_id` VARCHAR(50) NOT NULL,
   `plan_id` CHAR(36) NOT NULL,
   `start_segment_index` INT NOT NULL DEFAULT 1,
+  `plan_start_date` DATE NULL DEFAULT NULL,
+  `start_muraja_segment` INT NULL DEFAULT NULL,
   `status` ENUM('active', 'frozen', 'transferred') NOT NULL DEFAULT 'active',
   `assigned_by` VARCHAR(255) NOT NULL DEFAULT '',
   `assigned_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,

@@ -92,6 +92,7 @@ export async function assignStudentPlan(
   planId: string,
   startSegment: number,
   assignedBy: string,
+  options?: { plan_start_date?: string; start_muraja_segment?: number | null },
 ): Promise<void> {
   try {
     await planFetch("/plans/assign", {
@@ -100,10 +101,12 @@ export async function assignStudentPlan(
         student_id: studentId,
         plan_id: planId,
         start_segment_index: startSegment,
+        plan_start_date: options?.plan_start_date,
+        start_muraja_segment: options?.start_muraja_segment,
       }),
     });
   } catch {
-    localAssignPlan(studentId, planId, startSegment, assignedBy);
+    localAssignPlan(studentId, planId, startSegment, assignedBy, options);
   }
 }
 

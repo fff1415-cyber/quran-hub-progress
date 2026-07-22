@@ -46,7 +46,9 @@
 
 2. نفّذ [`migrate-education-plans.sql`](./migrate-education-plans.sql)
 
-3. تحقق: `https://msht.io/api/health.php` يجب أن يظهر `"education_plans_ready": true`
+3. إذا كانت الجداول موجودة مسبقاً: نفّذ [`migrate-plan-assignments-v2.sql`](./migrate-plan-assignments-v2.sql)
+
+4. تحقق: `https://msht.io/api/health.php` يجب أن يظهر `"education_plans_ready": true`
 
 
 

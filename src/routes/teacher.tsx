@@ -23,7 +23,7 @@ import {
 import { Bell, Check, CheckCircle2, ClipboardList, Loader2, Send, Users, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { applyPlanInput, fetchStudentPlanSheet } from "@/lib/plans-service";
-import type { PlanTaskType, StudentPlanSheetData, TapValue } from "@/lib/plan-types";
+import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
 import { AttSelect } from "@/components/plans/TeacherGradeInputs";
@@ -307,17 +307,32 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }
   };
 
-  const handlePlanTap = async (s: Student, dayKey: string, task: PlanTaskType, tap: TapValue) => {
-    if (task === "hifz") {
-      updateDay(s.id, dayKey, { hifz: tap });
-    } else if (task === "rabt") {
-      updateDay(s.id, dayKey, { rabt: "pass" });
-    } else {
-      updateDay(s.id, dayKey, { muraja: "pass" });
+  const handlePlanHifz = async (s: Student, dayKey: string, tap: TapValue) => {
+    if (!tap) return;
+    updateDay(s.id, dayKey, { hifz: tap });
+    try {
+      const segs = await applyPlanInput(s.id, "hifz", tap, senderName);
+      toast.success(`تم تسجيل ${segs.length} مقطع — حفظ`);
+      if (planSheetStudent?.id === s.id) {
+        setPlanSheetData(await fetchStudentPlanSheet(s.id));
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل تحديث الخطة");
     }
+  };
+
+  const handlePlanPassFail = async (
+    s: Student,
+    dayKey: string,
+    task: "rabt" | "muraja",
+    value: "pass" | "fail" | "",
+  ) => {
+    updateDay(s.id, dayKey, { [task]: value });
+    if (value !== "pass") return;
+    const tap: TapValue = s.levelType === "gold" ? "one" : "half";
     try {
       const segs = await applyPlanInput(s.id, task, tap, senderName);
-      toast.success(`تم تسجيل ${segs.length} مقطع — ${task === "hifz" ? "حفظ" : task === "rabt" ? "ربط" : "مراجعة"}`);
+      toast.success(`تم تسجيل ${segs.length} مقطع — ${task === "rabt" ? "ربط" : "مراجعة"}`);
       if (planSheetStudent?.id === s.id) {
         setPlanSheetData(await fetchStudentPlanSheet(s.id));
       }
@@ -496,7 +511,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           passFailValue=""
                           onHifzChange={(v) => updateDay(s.id, d.key, { hifz: v })}
                           onPassFailChange={() => {}}
-                          onPlanTap={(tap) => void handlePlanTap(s, d.key, "hifz", tap)}
+                          onPlanHifzChange={(v) => void handlePlanHifz(s, d.key, v)}
                         />
                       </td>
                       <td className={dayCellClass(d.key)}>
@@ -508,7 +523,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           passFailValue={e.rabt}
                           onHifzChange={() => {}}
                           onPassFailChange={(v) => updateDay(s.id, d.key, { rabt: v })}
-                          onPlanTap={(tap) => void handlePlanTap(s, d.key, "rabt", tap)}
+                          onPlanPassFailChange={(v) => void handlePlanPassFail(s, d.key, "rabt", v)}
                         />
                       </td>
                       <td className={dayCellClass(d.key)}>
@@ -520,7 +535,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           passFailValue={e.muraja}
                           onHifzChange={() => {}}
                           onPassFailChange={(v) => updateDay(s.id, d.key, { muraja: v })}
-                          onPlanTap={(tap) => void handlePlanTap(s, d.key, "muraja", tap)}
+                          onPlanPassFailChange={(v) => void handlePlanPassFail(s, d.key, "muraja", v)}
                         />
                       </td>
                     </React.Fragment>

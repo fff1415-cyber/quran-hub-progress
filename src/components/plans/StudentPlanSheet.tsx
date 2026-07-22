@@ -1,18 +1,15 @@
-import { useMemo, useState } from "react";
-import type { PlanTaskType, StudentPlanSheetData } from "@/lib/plan-types";
+import { useMemo } from "react";
+import type { StudentPlanSheetData } from "@/lib/plan-types";
 import {
   completionMap,
   computeDelayDays,
   findCurrentSegmentIndex,
   levelUnit,
-  taskLabel,
   trackLabel,
 } from "@/lib/plan-translator";
+import { arabicDayName } from "@/lib/plan-phase";
 import { cn } from "@/lib/utils";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Check, Loader2 } from "lucide-react";
-
-const TASKS: PlanTaskType[] = ["hifz", "rabt", "muraja"];
 
 interface StudentPlanSheetProps {
   data: StudentPlanSheetData;
@@ -29,8 +26,6 @@ export function StudentPlanSheet({
   loading,
   className,
 }: StudentPlanSheetProps) {
-  const [tab, setTab] = useState<PlanTaskType>("hifz");
-
   const { assignment, plan, segments, completions } = data;
 
   const compMap = useMemo(() => completionMap(completions), [completions]);
@@ -71,15 +66,17 @@ export function StudentPlanSheet({
   }
 
   const planLabel = `${trackLabel(plan.track)} · ${levelUnit(plan.track)} ${plan.level_number}`;
+  const visibleSegments = segments.filter((s) => s.segment_index >= assignment.start_segment_index);
 
   return (
     <div className={cn("space-y-4", className)}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           {studentName && <div className="font-bold text-lg text-primary">{studentName}</div>}
-          <div className="text-sm text-muted-foreground">{plan.title || planLabel}</div>
+          <div className="text-sm font-medium">{plan.title || planLabel}</div>
           <div className="text-xs text-muted-foreground mt-0.5">
-            {planLabel}
+            {trackLabel(plan.track)}
+            {assignment.plan_start_date && ` · بداية ${assignment.plan_start_date}`}
             {assignment.status === "frozen" && (
               <span className="mr-2 text-warning font-bold">· مجمدة</span>
             )}
@@ -97,71 +94,75 @@ export function StudentPlanSheet({
         </div>
       )}
 
-      <Tabs value={tab} onValueChange={(v) => setTab(v as PlanTaskType)} dir="rtl">
-        <TabsList className="w-full grid grid-cols-3">
-          {TASKS.map((t) => (
-            <TabsTrigger key={t} value={t}>
-              {taskLabel(t)}
-            </TabsTrigger>
-          ))}
-        </TabsList>
-        {TASKS.map((task) => (
-          <TabsContent key={task} value={task} className="mt-3">
-            <div className="overflow-x-auto rounded-xl border border-border">
-              <table className="w-full text-sm border-collapse min-w-[480px]">
-                <thead>
-                  <tr className="bg-secondary/50 text-xs">
-                    <th className="p-2 text-right w-12">#</th>
-                    <th className="p-2 text-right">الخطة</th>
-                    <th className="p-2 text-center w-36">الإنجاز</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {segments
-                    .filter((s) => s.segment_index >= assignment.start_segment_index)
-                    .map((seg) => {
-                      const planText =
-                        task === "hifz"
-                          ? seg.hifz_plan
-                          : task === "rabt"
-                            ? seg.rabt_plan
-                            : seg.muraja_plan;
-                      const date = compMap[`${seg.segment_index}:${task}`];
-                      const isCurrent = seg.segment_index === currentSeg && task === "hifz";
-                      return (
-                        <tr
-                          key={`${seg.segment_index}-${task}`}
-                          className={cn(
-                            "border-t border-border/50",
-                            isCurrent && "bg-warning/10",
-                            date && "bg-success/5",
-                          )}
-                        >
-                          <td className="p-2 font-mono text-muted-foreground">{seg.segment_index}</td>
-                          <td className="p-2 text-xs max-w-[240px] truncate" title={planText}>
-                            {planText || "—"}
-                          </td>
-                          <td className="p-2 text-center">
-                            {date ? (
-                              <span className="inline-flex items-center gap-1 text-success font-medium text-xs">
-                                <Check className="w-3.5 h-3.5 shrink-0" aria-hidden />
-                                {date}
-                              </span>
-                            ) : isCurrent && delayDays > 0 ? (
-                              <span className="text-warning text-xs font-bold">متأخر {delayDays}d</span>
-                            ) : (
-                              <span className="text-muted-foreground/40">—</span>
-                            )}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                </tbody>
-              </table>
-            </div>
-          </TabsContent>
-        ))}
-      </Tabs>
+      <div className="overflow-x-auto rounded-xl border border-border">
+        <table className="w-full text-sm border-collapse min-w-[720px]">
+          <thead>
+            <tr className="bg-secondary/50 text-xs">
+              <th className="p-2 text-right w-10">#</th>
+              <th className="p-2 text-center w-16">اليوم</th>
+              <th className="p-2 text-center w-24">التاريخ</th>
+              <th className="p-2 text-right">الخطة (حفظ)</th>
+              <th className="p-2 text-center w-12">✅</th>
+              <th className="p-2 text-right">الربط</th>
+              <th className="p-2 text-center w-12">✅</th>
+              <th className="p-2 text-right">المراجعة</th>
+              <th className="p-2 text-center w-12">✅</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleSegments.map((seg) => {
+              const hifzDate = compMap[`${seg.segment_index}:hifz`];
+              const rabtDone = !!compMap[`${seg.segment_index}:rabt`];
+              const murajaDone = !!compMap[`${seg.segment_index}:muraja`];
+              const isCurrent = seg.segment_index === currentSeg;
+              return (
+                <tr
+                  key={seg.segment_index}
+                  className={cn(
+                    "border-t border-border/50",
+                    isCurrent && "bg-warning/10",
+                    hifzDate && "bg-success/5",
+                  )}
+                >
+                  <td className="p-2 font-mono text-muted-foreground">{seg.segment_index}</td>
+                  <td className="p-2 text-center text-xs">{hifzDate ? arabicDayName(hifzDate) : "—"}</td>
+                  <td className="p-2 text-center text-xs font-mono">{hifzDate || "—"}</td>
+                  <td className="p-2 text-xs max-w-[180px] truncate" title={seg.hifz_plan}>
+                    {seg.hifz_plan || "—"}
+                  </td>
+                  <td className="p-2 text-center">
+                    {hifzDate ? (
+                      <Check className="w-4 h-4 text-success inline" aria-label="تم الحفظ" />
+                    ) : (
+                      <span className="text-muted-foreground/30">—</span>
+                    )}
+                  </td>
+                  <td className="p-2 text-xs max-w-[140px] truncate" title={seg.rabt_plan}>
+                    {seg.rabt_plan || "—"}
+                  </td>
+                  <td className="p-2 text-center">
+                    {rabtDone ? (
+                      <Check className="w-4 h-4 text-success inline" aria-label="تم الربط" />
+                    ) : (
+                      <span className="text-muted-foreground/30">—</span>
+                    )}
+                  </td>
+                  <td className="p-2 text-xs max-w-[140px] truncate" title={seg.muraja_plan}>
+                    {seg.muraja_plan || "—"}
+                  </td>
+                  <td className="p-2 text-center">
+                    {murajaDone ? (
+                      <Check className="w-4 h-4 text-success inline" aria-label="تمت المراجعة" />
+                    ) : (
+                      <span className="text-muted-foreground/30">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
 
       {readOnly && (
         <p className="text-[10px] text-muted-foreground text-center">عرض للقراءة فقط</p>

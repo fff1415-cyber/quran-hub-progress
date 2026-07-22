@@ -1,5 +1,6 @@
-import type { PlanTaskType, PlanTrack, TapValue } from "@/lib/plan-types";
+import type { PlanTaskType, PlanTrack, TapValue, SegmentCompletion, StudentPlanAssignment, EducationPlan } from "@/lib/plan-types";
 import { getCalendarIsoDate } from "@/lib/operational-date";
+import { phaseFromLevelNumber } from "@/lib/plan-phase";
 
 /** How many plan segments a quick-tap completes. */
 export function segmentsForTap(track: PlanTrack, tap: TapValue): number {
@@ -100,4 +101,45 @@ export function completionMap(
     map[`${c.segment_index}:${c.task_type}`] = c.completed_at;
   }
   return map;
+}
+
+/** Next single segment for rabt/muraja (or hifz pass-fail style). */
+export function nextSegmentForTask(
+  task: PlanTaskType,
+  assignment: StudentPlanAssignment,
+  plan: EducationPlan,
+  allSegmentIndexes: number[],
+  completions: SegmentCompletion[],
+): number | null {
+  const phase = phaseFromLevelNumber(plan.level_number);
+  const hifzDone = new Set(
+    completions.filter((c) => c.task_type === "hifz").map((c) => c.segment_index),
+  );
+  const taskDone = new Set(
+    completions.filter((c) => c.task_type === task).map((c) => c.segment_index),
+  );
+  const ordered = allSegmentIndexes
+    .filter((i) => i >= assignment.start_segment_index)
+    .sort((a, b) => a - b);
+
+  if (task === "hifz") {
+    for (const seg of ordered) {
+      if (!taskDone.has(seg)) return seg;
+    }
+    return null;
+  }
+
+  if (task === "muraja" && phase === 1) {
+    const start = assignment.start_muraja_segment ?? assignment.start_segment_index;
+    for (const seg of allSegmentIndexes.filter((i) => i >= start).sort((a, b) => a - b)) {
+      if (!taskDone.has(seg)) return seg;
+    }
+    return null;
+  }
+
+  for (const seg of ordered) {
+    if (!hifzDone.has(seg)) continue;
+    if (!taskDone.has(seg)) return seg;
+  }
+  return null;
 }
