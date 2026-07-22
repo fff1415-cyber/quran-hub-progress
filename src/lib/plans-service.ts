@@ -50,13 +50,19 @@ async function planFetch<T>(path: string, options: RequestInit = {}): Promise<T>
   return body as T;
 }
 
+function filterTrack(plans: EducationPlan[], track?: "gold" | "silver"): EducationPlan[] {
+  return track ? plans.filter((p) => p.track === track) : plans;
+}
+
 export async function fetchPlans(track?: "gold" | "silver"): Promise<EducationPlan[]> {
+  const local = filterTrack(localListPlans(), track);
   try {
     const q = track ? `?track=${track}` : "";
-    return await planFetch<EducationPlan[]>(`/plans${q}`);
+    const remote = await planFetch<EducationPlan[]>(`/plans${q}`);
+    if (remote.length > 0) return remote;
+    return local;
   } catch {
-    const local = localListPlans();
-    return track ? local.filter((p) => p.track === track) : local;
+    return local;
   }
 }
 
@@ -68,12 +74,16 @@ export async function fetchStudentPlanSheet(studentId: string): Promise<StudentP
   }
 }
 
-export async function importPlans(plans: ImportPlanPayload[]): Promise<{ plans_imported: number; segments_imported: number }> {
+export async function importPlans(plans: ImportPlanPayload[]): Promise<{
+  plans_imported: number;
+  segments_imported: number;
+  stored_locally?: boolean;
+}> {
   try {
     return await planFetch("/plans/import", { method: "POST", body: JSON.stringify({ plans }) });
   } catch {
     const r = localImportPlans(plans);
-    return { plans_imported: r.plans, segments_imported: r.segments };
+    return { plans_imported: r.plans, segments_imported: r.segments, stored_locally: true };
   }
 }
 

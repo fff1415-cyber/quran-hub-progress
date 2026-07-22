@@ -38,6 +38,18 @@
 
 
 
+## ترقية: الخطط التعليمية
+
+
+
+1. phpMyAdmin → **`u112851217_msht_io`** → **SQL**
+
+2. نفّذ [`migrate-education-plans.sql`](./migrate-education-plans.sql)
+
+3. تحقق: `https://msht.io/api/health.php` يجب أن يظهر `"education_plans_ready": true`
+
+
+
 ## تحقق
 
 

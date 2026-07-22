@@ -32,6 +32,14 @@ function handle_health_check(): void
         $missing = array_values(array_diff($required, $tables));
         $result['checks']['missing_tables'] = $missing;
 
+        $planTables = ['education_plans', 'plan_segments', 'student_plan_assignments', 'segment_completions'];
+        $missingPlans = array_values(array_diff($planTables, $tables));
+        $result['checks']['education_plans_ready'] = count($missingPlans) === 0;
+        if (count($missingPlans) > 0) {
+            $result['checks']['missing_plan_tables'] = $missingPlans;
+            $result['checks']['plans_hint'] = 'نفّذ database/migrate-education-plans.sql في phpMyAdmin';
+        }
+
         if (in_array('role_accounts', $tables, true)) {
             $count = (int) $pdo->query('SELECT COUNT(*) FROM role_accounts')->fetchColumn();
             $result['checks']['role_accounts_count'] = $count;

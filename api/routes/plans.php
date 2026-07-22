@@ -81,8 +81,7 @@ function handle_list_plans(): void
     plans_require_roles($auth, ['supervisor', 'secretary', 'teacher', 'assistant']);
     $pdo = db();
     if (!plans_table_exists($pdo, 'education_plans')) {
-        json_response([]);
-        return;
+        error_response('نفّذ migrate-education-plans.sql على قاعدة البيانات أولاً', 503);
     }
     $track = isset($_GET['track']) ? trim((string) $_GET['track']) : '';
     $sql = 'SELECT id, track, level_number, title, segment_count, created_at FROM education_plans';
@@ -287,8 +286,7 @@ function handle_student_plan_sheet(): void
 
     $pdo = db();
     if (!plans_table_exists($pdo, 'education_plans')) {
-        json_response(['assignment' => null, 'plan' => null, 'segments' => [], 'completions' => []]);
-        return;
+        error_response('نفّذ migrate-education-plans.sql على قاعدة البيانات أولاً', 503);
     }
 
     $assignStmt = $pdo->prepare(

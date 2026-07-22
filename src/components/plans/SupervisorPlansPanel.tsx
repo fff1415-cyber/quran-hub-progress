@@ -116,7 +116,14 @@ export function SupervisorPlansPanel() {
         return;
       }
       const res = await importPlans(parsed);
-      toast.success(`تم استيراد ${res.plans_imported} خطة (${res.segments_imported} مقطع)`);
+      if (res.stored_locally) {
+        toast.warning(
+          `تم استيراد ${res.plans_imported} خطة في المتصفح فقط — نفّذ migrate-education-plans.sql في phpMyAdmin ثم أعد الاستيراد`,
+          { duration: 8000 },
+        );
+      } else {
+        toast.success(`تم استيراد ${res.plans_imported} خطة (${res.segments_imported} مقطع)`);
+      }
       await refresh();
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "فشل الاستيراد");
@@ -173,7 +180,12 @@ export function SupervisorPlansPanel() {
               <Loader2 className="w-6 h-6 animate-spin" />
             </div>
           ) : plans.length === 0 ? (
-            <p className="text-center text-muted-foreground text-sm py-8">لا توجد خطط — استورد ملف Excel</p>
+            <div className="text-center text-muted-foreground text-sm py-8 space-y-2">
+              <p>لا توجد خطط — استورد ملف Excel</p>
+              <p className="text-xs text-warning">
+                إذا استوردت ولم تظهر: نفّذ <code className="font-mono">migrate-education-plans.sql</code> في phpMyAdmin ثم أعد الاستيراد
+              </p>
+            </div>
           ) : (
             <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-[360px] overflow-y-auto">
               {plans.map((p) => (
