@@ -60,6 +60,11 @@ function handle_health_check(): void
             $result['checks']['role_accounts_count'] = $count;
         }
 
+        $result['checks']['evaluation_settings_ready'] = in_array('evaluation_settings', $tables, true);
+        if (!in_array('evaluation_settings', $tables, true)) {
+            $result['checks']['evaluation_hint'] = 'نفّذ database/migrate-evaluation-settings.sql في phpMyAdmin';
+        }
+
         $result['ok'] = count($missing) === 0;
     } catch (Throwable $e) {
         $result['checks']['db_connect'] = 'failed';

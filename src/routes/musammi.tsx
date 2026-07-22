@@ -1,11 +1,21 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  loadHalaqat, loadStudents, loadSardQueue, saveSardQueue, updateSardItem,
+  loadHalaqat, loadStudents, loadSardQueue, updateSardItem,
   pushSardHistory, pushNotification,
   type SardQueueItem,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
+import { useEvaluationSettings } from "@/contexts/EvaluationSettingsContext";
+import {
+  computeEvaluation,
+  emptyReviewSegments,
+  maxAllowedMinutes,
+  normalizeReviewSegments,
+  parseMemorizedJuzCount,
+  reviewSegmentCount,
+} from "@/lib/evaluation-calculator";
+import type { SegmentTally } from "@/lib/evaluation-types";
 import { AppHeader } from "@/components/AppHeader";
 import { Mic, Minus, Plus, ArrowRight, Award, CheckCircle2, XCircle, Clock } from "lucide-react";
 import { Toaster, toast } from "sonner";
@@ -20,7 +30,6 @@ function MusammiPage() {
 
   const refresh = () => setQueue(loadSardQueue());
 
-  // Available for musammi: pending OR approved_third OR scheduled (if time passed)
   const visible = useMemo(() => {
     const now = Date.now();
     return queue.filter((q) => {
@@ -48,6 +57,7 @@ function MusammiPage() {
             studentName={activeStudent.name}
             level={activeStudent.level}
             levelType={activeStudent.levelType}
+            memorized={activeStudent.memorized}
             halaqaName={activeHalaqa.name}
             onDone={() => { setActiveId(null); refresh(); }}
           />
@@ -76,7 +86,7 @@ function MusammiPage() {
         {visible.length === 0 ? (
           <div className="glass-card rounded-2xl p-12 text-center">
             <p className="text-muted-foreground">لا يوجد طلاب محالين للسرد حالياً</p>
-            <p className="text-xs text-muted-foreground mt-2">سيظهرون هنا عندما يفعّل المعلم خانة "السرد"</p>
+            <p className="text-xs text-muted-foreground mt-2">سيظهرون هنا عندما يفعّل المعلم خانة &quot;السرد&quot;</p>
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
@@ -112,39 +122,77 @@ function MusammiPage() {
   );
 }
 
+function Counter({
+  label, value, onDec, onInc, failed, max,
+}: {
+  label: string; value: number; onDec: () => void; onInc: () => void; failed?: boolean; max?: number;
+}) {
+  return (
+    <div className="flex flex-col items-center gap-1">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-3">
+        <button type="button" onClick={onDec}
+          className="w-10 h-10 rounded-xl bg-success/20 border border-success/50 text-success hover:bg-success/30 flex items-center justify-center">
+          <Minus className="w-4 h-4" />
+        </button>
+        <div className={`text-3xl font-bold display ${failed ? "text-destructive" : ""}`}>{value}</div>
+        <button type="button" onClick={onInc} disabled={max !== undefined && value >= max}
+          className="w-10 h-10 rounded-xl bg-destructive/20 border border-destructive/50 text-destructive hover:bg-destructive/30 flex items-center justify-center disabled:opacity-40">
+          <Plus className="w-4 h-4" />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function SardEvaluator({
-  item, studentName, level, levelType, halaqaName, onDone,
+  item, studentName, level, levelType, memorized, halaqaName, onDone,
 }: {
   item: SardQueueItem;
   studentName: string;
   level: string;
   levelType: "gold" | "silver";
+  memorized?: string;
   halaqaName: string;
   onDone: () => void;
 }) {
+  const { settings } = useEvaluationSettings();
+  const juzCount = parseMemorizedJuzCount(memorized, level);
+  const segmentCount = reviewSegmentCount(juzCount, settings);
+  const maxMinutes = maxAllowedMinutes(juzCount, settings);
+
   const [hifzErrors, setHifzErrors] = useState(item.hifzErrors ?? 0);
-  const [reviewErrors, setReviewErrors] = useState<number[]>(item.reviewErrors ?? [0, 0, 0, 0, 0]);
+  const [hifzWarnings, setHifzWarnings] = useState(item.hifzWarnings ?? 0);
+  const [reviewSegments, setReviewSegments] = useState<SegmentTally[]>(() =>
+    normalizeReviewSegments(
+      item.reviewErrors?.map((errors, i) => ({
+        errors,
+        warnings: item.reviewWarnings?.[i] ?? 0,
+      })),
+      segmentCount,
+    ),
+  );
 
-  // Hifz: 45 base. err1: -5, err2: -5, err3: fail
-  const hifzScore = hifzErrors >= 3 ? 0 : Math.max(0, 45 - hifzErrors * 5);
-  const hifzFailed = hifzErrors >= 3;
+  useEffect(() => {
+    setReviewSegments((prev) => {
+      const normalized = normalizeReviewSegments(prev, segmentCount);
+      return normalized.length === prev.length ? prev : normalized;
+    });
+  }, [segmentCount]);
 
-  // Review: 50 base. each err -2, 3rd error in same segment => fail (segment max 5 marks)
-  const segmentFailed = reviewErrors.some((n) => n >= 3);
-  const reviewScore = segmentFailed ? 0 : Math.max(0, 50 - reviewErrors.reduce((a, b) => a + b, 0) * 2);
+  const result = computeEvaluation(hifzErrors, hifzWarnings, reviewSegments, settings);
+  const { hifzScore, reviewScore, totalScore, maxTotal, percent, hifzFailed, reviewFailed, passed, failed } = result;
 
-  const totalScore = hifzScore + reviewScore;
-  const percent = Math.round((totalScore / 95) * 100);
-  const failed = hifzFailed || segmentFailed || percent < 80;
-  const passed = !failed && percent >= 80;
-
-  const setReviewErr = (idx: number, val: number) => {
-    const next = [...reviewErrors];
-    next[idx] = Math.max(0, Math.min(5, val));
-    setReviewErrors(next);
+  const setSeg = (idx: number, patch: Partial<SegmentTally>) => {
+    setReviewSegments((segs) => segs.map((s, i) => (i === idx ? { ...s, ...patch } : s)));
   };
 
+  const resetReview = () => emptyReviewSegments(segmentCount);
+
   const submit = async () => {
+    const reviewErrors = reviewSegments.map((s) => s.errors);
+    const reviewWarnings = reviewSegments.map((s) => s.warnings);
+
     pushSardHistory({
       id: `sh-${Date.now()}`,
       studentId: item.studentId,
@@ -154,13 +202,14 @@ function SardEvaluator({
       result: passed ? "passed" : "failed",
       percent,
       hifzErrors,
+      hifzWarnings,
       reviewErrors,
+      reviewWarnings,
       at: new Date().toISOString(),
     });
 
     if (passed) {
       updateSardItem(item.id, { status: "passed", finalPercent: percent });
-      // Auto level-up: increment numeric level
       try {
         const { loadStudents, saveStudents } = await import("@/lib/mock-data");
         const all = loadStudents();
@@ -183,19 +232,24 @@ function SardEvaluator({
       const next = new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
       updateSardItem(item.id, {
         status: "scheduled", attempt: 2,
-        scheduledAt: next, hifzErrors: 0, reviewErrors: [0, 0, 0, 0, 0],
+        scheduledAt: next, hifzErrors: 0, hifzWarnings: 0,
+        reviewErrors: resetReview().map((s) => s.errors),
+        reviewWarnings: resetReview().map((s) => s.warnings),
       });
       pushNotification({ message: `الطالب ${studentName} رسب في المحاولة الأولى — إعادة بعد يومين`, type: "sard" });
       toast.error("راسب — تمت جدولة إعادة السرد بعد يومين");
     } else if (item.attempt === 2) {
       updateSardItem(item.id, {
         status: "awaiting_supervisor", attempt: 2,
-        hifzErrors, reviewErrors, finalPercent: percent,
+        hifzErrors, hifzWarnings, reviewErrors, reviewWarnings, finalPercent: percent,
       });
       pushNotification({ message: `الطالب ${studentName} يحتاج موافقة المشرف لإعادة السرد`, type: "sard" });
       toast.warning("ينتقل الطالب للإشراف التعليمي للموافقة على محاولة ثالثة");
     } else {
-      updateSardItem(item.id, { status: "final_failed", finalPercent: percent, hifzErrors, reviewErrors });
+      updateSardItem(item.id, {
+        status: "final_failed", finalPercent: percent,
+        hifzErrors, hifzWarnings, reviewErrors, reviewWarnings,
+      });
       pushNotification({ message: `الطالب ${studentName} رسب في المحاولة الثالثة — نقل إلى لوحة المدير`, type: "sard" });
       toast.error("رسوب نهائي — نقل إلى لوحة المدير");
     }
@@ -208,8 +262,11 @@ function SardEvaluator({
         <div>
           <h2 className="display text-2xl gold-text">{studentName}</h2>
           <p className="text-sm text-muted-foreground">{halaqaName} · {weekLabel(item.week)}</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            حفظ ≈ {juzCount} جزء · {segmentCount} مقاطع مراجعة · حد الوقت ≈ {maxMinutes} د
+          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="px-3 py-1.5 rounded-lg bg-secondary text-sm flex items-center gap-2">
             <Award className="w-4 h-4 text-primary" />
             المستوى {level}
@@ -225,74 +282,103 @@ function SardEvaluator({
         </div>
       </div>
 
-      {/* Hifz error counter */}
       <div className="p-5 rounded-2xl bg-secondary/30 border border-border">
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold">عداد أخطاء الحفظ <span className="text-xs text-muted-foreground">(من 45 درجة)</span></h3>
-          <div className={`text-2xl font-bold ${hifzFailed ? "text-destructive" : "gold-text"}`}>{hifzScore} / 45</div>
-        </div>
-        <div className="flex items-center justify-center gap-6">
-          <button onClick={() => setHifzErrors(Math.max(0, hifzErrors - 1))}
-            className="w-12 h-12 rounded-xl bg-success/20 border border-success/50 text-success hover:bg-success/30 flex items-center justify-center">
-            <Minus className="w-5 h-5" />
-          </button>
-          <div className="text-center">
-            <div className="text-5xl font-bold display">{hifzErrors}</div>
-            <div className="text-xs text-muted-foreground">أخطاء</div>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-bold">
+            اختبار الحفظ
+            <span className="text-xs text-muted-foreground mr-2">
+              (خطأ −{settings.error_deduction} · تنبيه −{settings.warning_deduction} · رسوب عند {settings.hifz_max_errors} أخطاء)
+            </span>
+          </h3>
+          <div className={`text-2xl font-bold ${hifzFailed ? "text-destructive" : "gold-text"}`}>
+            {hifzScore} / {settings.hifz_max_score}
           </div>
-          <button onClick={() => setHifzErrors(hifzErrors + 1)}
-            className="w-12 h-12 rounded-xl bg-destructive/20 border border-destructive/50 text-destructive hover:bg-destructive/30 flex items-center justify-center">
-            <Plus className="w-5 h-5" />
-          </button>
+        </div>
+        <div className="flex justify-center gap-12">
+          <Counter
+            label="أخطاء"
+            value={hifzErrors}
+            onDec={() => setHifzErrors(Math.max(0, hifzErrors - 1))}
+            onInc={() => setHifzErrors(hifzErrors + 1)}
+            failed={hifzFailed}
+          />
+          <Counter
+            label="تنبيهات"
+            value={hifzWarnings}
+            onDec={() => setHifzWarnings(Math.max(0, hifzWarnings - 1))}
+            onInc={() => setHifzWarnings(hifzWarnings + 1)}
+            max={settings.hifz_max_warnings}
+          />
         </div>
         {hifzFailed && (
-          <p className="text-center text-sm text-destructive mt-3 font-bold">رسوب في الحفظ — 3 أخطاء</p>
+          <p className="text-center text-sm text-destructive mt-3 font-bold">
+            رسوب في الحفظ — {settings.hifz_max_errors} أخطاء
+          </p>
         )}
       </div>
 
-      {/* Review test */}
       <div className="p-5 rounded-2xl bg-secondary/30 border border-border">
         <div className="flex items-center justify-between mb-3">
-          <h3 className="font-bold">اختبار المراجعة <span className="text-xs text-muted-foreground">(5 مقاطع، كل خطأ −2، الخطأ الثالث رسوب)</span></h3>
-          <div className={`text-2xl font-bold ${segmentFailed ? "text-destructive" : "gold-text"}`}>{reviewScore} / 50</div>
+          <h3 className="font-bold">
+            اختبار المراجعة
+            <span className="text-xs text-muted-foreground mr-2">
+              ({segmentCount} مقاطع · خطأ −{settings.review_error_deduction} · رسوب عند {settings.review_max_errors_per_segment} أخطاء/مقطع)
+            </span>
+          </h3>
+          <div className={`text-2xl font-bold ${reviewFailed ? "text-destructive" : "gold-text"}`}>
+            {reviewScore} / {settings.review_max_score}
+          </div>
         </div>
-        <div className="space-y-3">
-          {reviewErrors.map((errs, i) => {
-            const failed = errs >= 3;
+        <div className="space-y-4">
+          {reviewSegments.map((seg, i) => {
+            const segFailed = seg.errors >= settings.review_max_errors_per_segment;
             return (
-              <div key={i} className="flex items-center gap-3">
-                <span className="text-sm font-medium w-20">المقطع {i + 1}</span>
-                <div className="flex gap-1 flex-1">
+              <div key={i} className="rounded-lg border border-border/60 p-3 bg-input/30">
+                <div className="flex items-center justify-between mb-2">
+                  <span className="text-sm font-medium">المقطع {i + 1}</span>
+                  <span className={`text-xs font-bold ${segFailed ? "text-destructive" : "text-muted-foreground"}`}>
+                    {segFailed ? "راسب" : `${seg.errors} أخطاء · ${seg.warnings} تنبيهات`}
+                  </span>
+                </div>
+                <div className="flex gap-1 mb-2">
                   {[1, 2, 3, 4, 5].map((slot) => {
-                    const filled = errs >= slot;
+                    const filled = seg.errors >= slot;
                     return (
                       <button
                         key={slot}
-                        onClick={() => setReviewErr(i, filled && errs === slot ? slot - 1 : slot)}
+                        type="button"
+                        onClick={() => setSeg(i, {
+                          errors: filled && seg.errors === slot ? slot - 1 : slot,
+                        })}
                         className={`flex-1 h-8 rounded border transition-all ${
                           filled
-                            ? slot >= 3
+                            ? slot >= settings.review_max_errors_per_segment
                               ? "bg-destructive border-destructive"
                               : "bg-warning/40 border-warning"
                             : "border-border bg-input hover:border-primary/50"
                         }`}
                         title={`خطأ ${slot}`}
                       >
-                        {filled && <span className="text-xs text-foreground font-bold">{slot}</span>}
+                        {filled && <span className="text-xs font-bold">{slot}</span>}
                       </button>
                     );
                   })}
                 </div>
-                <span className={`text-xs font-bold w-16 text-left ${failed ? "text-destructive" : "text-muted-foreground"}`}>
-                  {failed ? "راسب" : `${errs} أخطاء`}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-muted-foreground w-12">تنبيه</span>
+                  <button type="button" onClick={() => setSeg(i, { warnings: Math.max(0, seg.warnings - 1) })}
+                    className="w-8 h-8 rounded bg-secondary text-xs">−</button>
+                  <span className="text-sm font-bold w-6 text-center">{seg.warnings}</span>
+                  <button type="button"
+                    onClick={() => setSeg(i, { warnings: Math.min(settings.review_max_warnings_per_segment, seg.warnings + 1) })}
+                    className="w-8 h-8 rounded bg-secondary text-xs">+</button>
+                </div>
               </div>
             );
           })}
         </div>
       </div>
 
-      {/* Summary */}
       <div className={`p-5 rounded-2xl border-2 ${passed ? "border-success bg-success/10" : failed ? "border-destructive bg-destructive/10" : "border-border bg-secondary/30"}`}>
         <div className="flex items-center justify-between mb-3">
           <h3 className="font-bold flex items-center gap-2">
@@ -304,7 +390,7 @@ function SardEvaluator({
           </div>
         </div>
         <div className="text-sm text-muted-foreground">
-          مجموع: {totalScore} / 95 · الاجتياز ≥ 80%
+          مجموع: {totalScore} / {maxTotal} · الاجتياز ≥ {settings.pass_percent}%
         </div>
         {failed && item.attempt === 1 && <p className="text-sm text-warning mt-2">سيُجدوَل اختبار ثانٍ بعد يومين تلقائياً.</p>}
         {failed && item.attempt === 2 && <p className="text-sm text-warning mt-2">سينتقل الطالب للإشراف التعليمي للموافقة على محاولة ثالثة.</p>}
@@ -312,6 +398,7 @@ function SardEvaluator({
       </div>
 
       <button
+        type="button"
         onClick={submit}
         className="w-full py-4 rounded-xl gold-gradient text-primary-foreground font-bold text-lg hover:scale-[1.01] transition-transform gold-glow"
       >

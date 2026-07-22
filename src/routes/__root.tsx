@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { useEffect } from "react";
 import { syncFromCloud } from "@/lib/cloud-sync";
+import { EvaluationSettingsProvider } from "@/contexts/EvaluationSettingsContext";
 
 import appCss from "../styles.css?url";
 
@@ -65,7 +66,9 @@ function RootComponent() {
   useEffect(() => { void syncFromCloud(); }, []);
   return (
     <QueryClientProvider client={queryClient}>
-      <Outlet />
+      <EvaluationSettingsProvider>
+        <Outlet />
+      </EvaluationSettingsProvider>
     </QueryClientProvider>
   );
 }

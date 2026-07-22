@@ -9,6 +9,7 @@ require_once __DIR__ . '/role_accounts.php';
 require_once __DIR__ . '/app_state.php';
 require_once __DIR__ . '/semesters.php';
 require_once __DIR__ . '/plans.php';
+require_once __DIR__ . '/evaluation_settings.php';
 require_once __DIR__ . '/health.php';
 
 function route_request(string $method, string $path): void
@@ -119,6 +120,14 @@ function route_request(string $method, string $path): void
     }
     if ($path === '/plans/apply-input' && $method === 'POST') {
         handle_apply_plan_input();
+        return;
+    }
+    if ($path === '/evaluation-settings' && $method === 'GET') {
+        handle_get_evaluation_settings();
+        return;
+    }
+    if ($path === '/evaluation-settings' && $method === 'PUT') {
+        handle_put_evaluation_settings();
         return;
     }
 

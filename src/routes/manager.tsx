@@ -12,8 +12,9 @@ import { AdminOverviewPanel } from "@/components/role-workspace/AdminOverviewPan
 import { ManagerTransfersPanel } from "@/components/role-workspace/ManagerTransfersPanel";
 import { ManagerRecordsPanel } from "@/components/role-workspace/ManagerRecordsPanel";
 import { ManagerSettingsPanel } from "@/components/role-workspace/ManagerSettingsPanel";
+import { ManagerEvaluationSettingsPanel } from "@/components/role-workspace/ManagerEvaluationSettingsPanel";
 import {
-  Crown, CalendarDays, ClipboardList, Send, BarChart3, FolderArchive, MessageSquare, LayoutDashboard,
+  Crown, CalendarDays, ClipboardList, Send, BarChart3, FolderArchive, MessageSquare, LayoutDashboard, Scale,
 } from "lucide-react";
 import { Toaster } from "sonner";
 
@@ -89,6 +90,13 @@ function ManagerPage() {
       roles: ["manager"],
       badge: absenceArchive.length + lateArchive.length,
       content: <ManagerRecordsPanel />,
+    },
+    {
+      id: "evaluation-settings",
+      label: "لائحة التقييم",
+      icon: Scale,
+      roles: ["manager"],
+      content: <ManagerEvaluationSettingsPanel />,
     },
     {
       id: "settings",

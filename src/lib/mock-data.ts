@@ -334,8 +334,10 @@ export interface SardQueueItem {
   status: SardStatus;
   scheduledAt?: string; // ISO date for next attempt
   createdAt: string;
-  hifzErrors?: number;       // for in-progress evaluation
-  reviewErrors?: number[];   // 5 segments
+  hifzErrors?: number;
+  hifzWarnings?: number;
+  reviewErrors?: number[];
+  reviewWarnings?: number[];
   finalPercent?: number;
 }
 
@@ -414,7 +416,9 @@ export interface SardHistoryItem {
   result: "passed" | "failed";
   percent: number;
   hifzErrors: number;
+  hifzWarnings?: number;
   reviewErrors: number[];
+  reviewWarnings?: number[];
   at: string;
 }
 export function loadSardHistory(): SardHistoryItem[] {
