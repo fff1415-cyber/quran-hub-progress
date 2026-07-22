@@ -29,6 +29,9 @@ require_once __DIR__ . '/routes/router.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $uri = (string) ($_GET['path'] ?? '/');
+if (($qi = strpos($uri, '?')) !== false) {
+    $uri = substr($uri, 0, $qi);
+}
 if ($uri === '' || $uri[0] !== '/') {
     $uri = '/' . $uri;
 }

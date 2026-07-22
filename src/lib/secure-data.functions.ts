@@ -6,8 +6,13 @@ function apiUrl(path: string): string {
   if (!API_BASE) {
     throw new Error("VITE_API_URL is not configured");
   }
-  const p = path.startsWith("/") ? path : `/${path}`;
-  return `${API_BASE}/api/r.php?path=${encodeURIComponent(p)}`;
+  const qIndex = path.indexOf("?");
+  const pathname = qIndex >= 0 ? path.slice(0, qIndex) : path;
+  const query = qIndex >= 0 ? path.slice(qIndex + 1) : "";
+  const p = pathname.startsWith("/") ? pathname : `/${pathname}`;
+  let url = `${API_BASE}/api/r.php?path=${encodeURIComponent(p)}`;
+  if (query) url += `&${query}`;
+  return url;
 }
 
 async function apiFetch<T>(
