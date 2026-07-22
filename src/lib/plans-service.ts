@@ -9,6 +9,7 @@ import { getToken } from "@/lib/cloud-sync";
 import {
   localApplyInput,
   localAssignPlan,
+  localClearPlansCache,
   localGetStudentSheet,
   localImportPlans,
   localListPlans,
@@ -55,14 +56,11 @@ function filterTrack(plans: EducationPlan[], track?: "gold" | "silver"): Educati
 }
 
 export async function fetchPlans(track?: "gold" | "silver"): Promise<EducationPlan[]> {
-  const local = filterTrack(localListPlans(), track);
   try {
     const q = track ? `?track=${track}` : "";
-    const remote = await planFetch<EducationPlan[]>(`/plans${q}`);
-    if (remote.length > 0) return remote;
-    return local;
+    return await planFetch<EducationPlan[]>(`/plans${q}`);
   } catch {
-    return local;
+    return filterTrack(localListPlans(), track);
   }
 }
 
@@ -80,7 +78,9 @@ export async function importPlans(plans: ImportPlanPayload[]): Promise<{
   stored_locally?: boolean;
 }> {
   try {
-    return await planFetch("/plans/import", { method: "POST", body: JSON.stringify({ plans }) });
+    const result = await planFetch("/plans/import", { method: "POST", body: JSON.stringify({ plans }) });
+    localClearPlansCache();
+    return result;
   } catch {
     const r = localImportPlans(plans);
     return { plans_imported: r.plans, segments_imported: r.segments, stored_locally: true };
@@ -105,6 +105,7 @@ export async function assignStudentPlan(
         start_muraja_segment: options?.start_muraja_segment,
       }),
     });
+    localClearPlansCache();
   } catch {
     localAssignPlan(studentId, planId, startSegment, assignedBy, options);
   }

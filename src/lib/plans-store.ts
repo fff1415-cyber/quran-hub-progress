@@ -240,3 +240,11 @@ export function localPlanDetail(planId: string): { plan: EducationPlan | null; s
     .sort((a, b) => a.segment_index - b.segment_index);
   return { plan, segments };
 }
+
+export function localClearPlansCache(): void {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(KEY_PLANS);
+  localStorage.removeItem(KEY_SEGMENTS);
+  localStorage.removeItem(KEY_ASSIGNMENTS);
+  localStorage.removeItem(KEY_COMPLETIONS);
+}
