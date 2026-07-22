@@ -54,7 +54,12 @@ export function localImportPlans(plans: ImportPlanPayload[]): { plans: number; s
 
   for (const p of plans) {
     const title =
-      p.title?.trim() || (p.track === "gold" ? `جزء ${p.level_number}` : `مرحلة ${p.level_number}`);
+      p.title?.trim() ||
+      (p.tier_name && p.phase_number
+        ? `${p.tier_name} — المرحلة ${p.phase_number}`
+        : p.track === "gold"
+          ? `جزء ${p.level_number}`
+          : `مرحلة ${p.level_number}`);
     let plan = existing.find((x) => x.track === p.track && x.level_number === p.level_number);
     if (!plan) {
       plan = {

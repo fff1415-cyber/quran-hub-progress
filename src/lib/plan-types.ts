@@ -49,6 +49,10 @@ export interface StudentPlanSheetData {
 export interface ImportPlanPayload {
   track: PlanTrack;
   level_number: number;
+  /** Institute tier, e.g. التأهيل */
+  tier_name?: string;
+  /** Phase within tier (column B in Excel) */
+  phase_number?: number;
   title?: string;
   segments: {
     segment_index?: number;

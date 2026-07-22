@@ -3,7 +3,7 @@ import { loadStudents, type Student } from "@/lib/mock-data";
 import { fetchPlans, fetchStudentPlanSheet, importPlans, assignStudentPlan, patchStudentAssignment } from "@/lib/plans-service";
 import type { EducationPlan, StudentPlanSheetData } from "@/lib/plan-types";
 import { parsePlansExcel } from "@/lib/plan-excel-import";
-import { trackLabel, levelUnit } from "@/lib/plan-translator";
+import { trackLabel } from "@/lib/plan-translator";
 import { getSessionName } from "@/lib/session-role";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { Button } from "@/components/ui/button";
@@ -112,7 +112,7 @@ export function SupervisorPlansPanel() {
       const buf = await file.arrayBuffer();
       const parsed = parsePlansExcel(buf);
       if (parsed.length === 0) {
-        toast.error("لم يُعثر على صفوف صالحة — تحقق من أعمدة Excel");
+        toast.error("لم يُعثر على صفوف صالحة — تحقق من الأعمدة: المسار، المرحلة (B)، المستوى (C)، المقطع، حفظ، ربط، مراجعة");
         return;
       }
       const res = await importPlans(parsed);
@@ -180,7 +180,7 @@ export function SupervisorPlansPanel() {
                 <div key={p.id} className="rounded-lg border border-border bg-secondary/30 p-3 flex flex-col gap-2">
                   <div className="font-bold text-sm">{p.title}</div>
                   <div className="text-xs text-muted-foreground">
-                    {trackLabel(p.track)} · {levelUnit(p.track)} {p.level_number} · {p.segment_count} مقطع
+                    {trackLabel(p.track)} · {p.segment_count} مقطع
                   </div>
                   <Button
                     type="button"
