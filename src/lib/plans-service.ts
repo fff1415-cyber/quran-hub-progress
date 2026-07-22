@@ -61,24 +61,40 @@ function isPlansDbUnavailableError(e: unknown): boolean {
   return (
     m.includes("migrate-education-plans") ||
     m.includes("جداول الخطط غير") ||
+    m.includes("جداول الربط تحتاج") ||
     m.includes("HTTP 503")
   );
+}
+
+function assertPlanLinkConfirmed(sheet: StudentPlanSheetData): void {
+  if (sheet.assignment && !sheet.plan) {
+    throw new Error("الربط موجود لكن الخطة غير موجودة على السيرفر — أعد استيراد Excel ثم الربط");
+  }
+  if (!sheet.assignment || !sheet.plan) {
+    throw new Error("لم يُؤكَّد الربط على السيرفر — حدّث الصفحة (Ctrl+F5) ثم أعد المحاولة");
+  }
 }
 
 export async function fetchPlans(track?: "gold" | "silver"): Promise<EducationPlan[]> {
   try {
     const q = track ? `?track=${track}` : "";
     return await planFetch<EducationPlan[]>(`/plans${q}`);
-  } catch {
-    return filterTrack(localListPlans(), track);
+  } catch (e) {
+    if (isPlansDbUnavailableError(e)) {
+      return filterTrack(localListPlans(), track);
+    }
+    throw e;
   }
 }
 
 export async function fetchStudentPlanSheet(studentId: string): Promise<StudentPlanSheetData> {
   try {
     return await planFetch<StudentPlanSheetData>(`/plans/student-sheet?student_id=${encodeURIComponent(studentId)}`);
-  } catch {
-    return localGetStudentSheet(studentId);
+  } catch (e) {
+    if (isPlansDbUnavailableError(e)) {
+      return localGetStudentSheet(studentId);
+    }
+    throw e;
   }
 }
 
@@ -91,9 +107,12 @@ export async function importPlans(plans: ImportPlanPayload[]): Promise<{
     const result = await planFetch("/plans/import", { method: "POST", body: JSON.stringify({ plans }) });
     localClearPlansCache();
     return result;
-  } catch {
-    const r = localImportPlans(plans);
-    return { plans_imported: r.plans, segments_imported: r.segments, stored_locally: true };
+  } catch (e) {
+    if (isPlansDbUnavailableError(e)) {
+      const r = localImportPlans(plans);
+      return { plans_imported: r.plans, segments_imported: r.segments, stored_locally: true };
+    }
+    throw e;
   }
 }
 
@@ -116,6 +135,8 @@ export async function assignStudentPlan(
       }),
     });
     localClearPlansCache();
+    const sheet = await fetchStudentPlanSheet(studentId);
+    assertPlanLinkConfirmed(sheet);
   } catch (e) {
     if (isPlansDbUnavailableError(e)) {
       localAssignPlan(studentId, planId, startSegment, assignedBy, options);

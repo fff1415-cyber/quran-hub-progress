@@ -60,7 +60,10 @@ export function StudentPlanSheet({
   if (!assignment || !plan) {
     return (
       <div className={cn("text-center py-12 text-muted-foreground text-sm", className)}>
-        {studentName ? `${studentName}: ` : ""}لم تُربَط بخطة تعليمية بعد
+        {studentName ? `${studentName}: ` : ""}
+        {assignment && !plan
+          ? "الربط موجود لكن الخطة غير موجودة على السيرفر — أعد استيراد Excel"
+          : "لم تُربَط بخطة تعليمية بعد"}
       </div>
     );
   }

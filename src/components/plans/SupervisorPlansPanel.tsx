@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { loadStudents, type Student } from "@/lib/mock-data";
+import { syncFromCloud } from "@/lib/cloud-sync";
 import { fetchPlans, fetchStudentPlanSheet, importPlans, assignStudentPlan, patchStudentAssignment } from "@/lib/plans-service";
 import type { EducationPlan, PlanTrack, StudentPlanSheetData } from "@/lib/plan-types";
 import { parsePlansExcel } from "@/lib/plan-excel-import";
@@ -14,7 +15,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { FileSpreadsheet, Link2, Loader2, Snowflake, Search } from "lucide-react";
 import { toast } from "sonner";
 
-export function PlanStudentLookup({ readOnly = false }: { readOnly?: boolean }) {
+export function PlanStudentLookup({ readOnly = false, refreshKey = 0 }: { readOnly?: boolean; refreshKey?: number }) {
   const [q, setQ] = useState("");
   const [sheet, setSheet] = useState<StudentPlanSheetData | null>(null);
   const [selected, setSelected] = useState<Student | null>(null);
@@ -37,6 +38,12 @@ export function PlanStudentLookup({ readOnly = false }: { readOnly?: boolean }) 
       setLoading(false);
     }
   }, []);
+
+  useEffect(() => {
+    if (refreshKey > 0 && selected) {
+      void openStudent(selected);
+    }
+  }, [refreshKey, selected, openStudent]);
 
   return (
     <Card className="glass-card border-primary/15 shadow-none">
@@ -94,9 +101,14 @@ export function SupervisorPlansPanel() {
   const [planStartDate, setPlanStartDate] = useState(getCalendarIsoDate());
   const [startHifz, setStartHifz] = useState("1");
   const [startMuraja, setStartMuraja] = useState("1");
+  const [lookupRefresh, setLookupRefresh] = useState(0);
+  const [studentsVersion, setStudentsVersion] = useState(0);
 
   const me = getSessionName("المشرف");
-  const students = loadStudents();
+
+  useEffect(() => {
+    void syncFromCloud().then(() => setStudentsVersion((v) => v + 1));
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -139,8 +151,8 @@ export function SupervisorPlansPanel() {
 
   const filteredStudents = useMemo(() => {
     if (studentQ.trim().length < 2) return [];
-    return students.filter((s) => s.name.includes(studentQ.trim())).slice(0, 10);
-  }, [students, studentQ]);
+    return loadStudents().filter((s) => s.name.includes(studentQ.trim())).slice(0, 10);
+  }, [studentQ, studentsVersion]);
 
   const filteredPlans = useMemo(() => {
     let list = plans;
@@ -172,6 +184,7 @@ export function SupervisorPlansPanel() {
         },
       );
       toast.success(`تم ربط ${selectedStudent.name} — ${selectedPlan.title}`);
+      setLookupRefresh((k) => k + 1);
       setSelectedStudent(null);
       setSelectedPlan(null);
       setStudentQ("");
@@ -351,7 +364,7 @@ export function SupervisorPlansPanel() {
         </CardContent>
       </Card>
 
-      <PlanStudentLookup readOnly />
+      <PlanStudentLookup readOnly refreshKey={lookupRefresh} />
     </div>
   );
 }

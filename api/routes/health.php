@@ -49,6 +49,10 @@ function handle_health_check(): void
             if (count($planCols) < 2) {
                 $result['checks']['plans_hint'] = 'نفّذ database/migrate-plan-assignments-v2.sql أو أعد محاولة الربط (يُحدَّث تلقائياً)';
             }
+            $result['checks']['education_plans_count'] = (int) $pdo->query('SELECT COUNT(*) FROM education_plans')->fetchColumn();
+            $result['checks']['active_plan_assignments_count'] = (int) $pdo->query(
+                "SELECT COUNT(*) FROM student_plan_assignments WHERE status = 'active'"
+            )->fetchColumn();
         }
 
         if (in_array('role_accounts', $tables, true)) {
