@@ -6,6 +6,7 @@ import {
   type WeekRecord, type Student, type SardQueueItem,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
+import { isSupervisorScheduledRetry } from "@/lib/sard-phased-flow";
 import { getCalendarDayKey, getCalendarIsoDate } from "@/lib/operational-date";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -91,11 +92,11 @@ export function DailyOperations() {
     return lateToday.filter((s) => !permittedToday.has(s.id));
   }, [todayAttendance, latePermissions, todayISO]);
 
-  const scheduled = useMemo(() => queue.filter((q) => q.status === "scheduled"), [queue]);
+  const scheduled = useMemo(() => queue.filter((q) => isSupervisorScheduledRetry(q)), [queue]);
   const activeSard = useMemo(() => {
     const now = Date.now();
     return queue.filter((q) => {
-      if (["passed", "final_failed", "level_repeat"].includes(q.status)) return false;
+      if (["passed", "final_failed", "level_repeat", "awaiting_review"].includes(q.status)) return false;
       if (q.status === "pending" || q.status === "approved_third" || q.status === "awaiting_supervisor") return true;
       if (q.status === "scheduled" && q.scheduledAt && new Date(q.scheduledAt).getTime() <= now) return true;
       return false;
@@ -177,7 +178,20 @@ export function DailyOperations() {
   };
 
   const retryFinal = (id: string) => {
-    updateSardItem(id, { status: "pending", attempt: 1, scheduledAt: undefined, hifzErrors: 0, reviewErrors: [0, 0, 0, 0, 0] });
+    updateSardItem(id, {
+      status: "pending",
+      attempt: 1,
+      phase: "full",
+      scheduledAt: undefined,
+      hifzErrors: 0,
+      hifzWarnings: 0,
+      reviewErrors: [0, 0, 0, 0, 0],
+      reviewWarnings: [0, 0, 0, 0, 0],
+      lockedHifzScore: undefined,
+      lockedHifzErrors: undefined,
+      lockedHifzWarnings: undefined,
+      reviewSegmentCount: undefined,
+    });
     toast.success("تمت إعادة الطالب لقائمة السرد");
     refreshQueue();
   };

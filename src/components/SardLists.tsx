@@ -4,6 +4,7 @@ import {
   type SardQueueItem,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
+import { isMusammiVisible } from "@/lib/sard-phased-flow";
 import { AlertTriangle, Mic } from "lucide-react";
 
 /** Late-sard list (>2 days pending). Auto-notifies manager once per item. */
@@ -62,14 +63,7 @@ export function ActiveSardList() {
   const students = loadStudents();
   const halaqat = loadHalaqat();
 
-  const visible = useMemo(() => {
-    const now = Date.now();
-    return queue.filter((q) => {
-      if (q.status === "pending" || q.status === "approved_third") return true;
-      if (q.status === "scheduled" && q.scheduledAt && new Date(q.scheduledAt).getTime() <= now) return true;
-      return false;
-    });
-  }, [queue]);
+  const visible = useMemo(() => queue.filter((q) => isMusammiVisible(q)), [queue]);
 
   return (
     <section className="glass-card rounded-2xl p-6">

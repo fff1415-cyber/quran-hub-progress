@@ -6,6 +6,7 @@ import {
   pushNotification, updateSardItem, DAYS,
   type WeekRecord, type Student, type GradesStore,
 } from "@/lib/mock-data";
+import { isSupervisorScheduledRetry } from "@/lib/sard-phased-flow";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getCalendarDayKey, getCalendarIsoDate } from "@/lib/operational-date";
 import { fetchActiveCalendar } from "@/lib/academic-context";
@@ -317,7 +318,19 @@ export function SupervisorApprovalsPanel() {
   const awaiting = queue.filter((q) => q.status === "awaiting_supervisor");
 
   const approveThird = (id: string, name: string) => {
-    updateSardItem(id, { status: "approved_third", attempt: 3, hifzErrors: 0, reviewErrors: [0, 0, 0, 0, 0] });
+    updateSardItem(id, {
+      status: "approved_third",
+      attempt: 3,
+      phase: "full",
+      hifzErrors: 0,
+      hifzWarnings: 0,
+      reviewErrors: [0, 0, 0, 0, 0],
+      reviewWarnings: [0, 0, 0, 0, 0],
+      lockedHifzScore: undefined,
+      lockedHifzErrors: undefined,
+      lockedHifzWarnings: undefined,
+      reviewSegmentCount: undefined,
+    });
     pushNotification({ message: `وافق المشرف على محاولة ثالثة — ${name}`, type: "sard" });
     toast.success("تمت الموافقة");
     refresh();
@@ -357,7 +370,7 @@ export function SupervisorForceRetryPanel() {
   const [queue, setQueue] = useState(() => loadSardQueue());
   const students = loadStudents();
   const halaqat = loadHalaqat();
-  const scheduled = queue.filter((q) => q.status === "scheduled");
+  const scheduled = queue.filter((q) => isSupervisorScheduledRetry(q));
 
   const forceImmediate = (id: string, name: string) => {
     updateSardItem(id, { status: "pending", scheduledAt: new Date().toISOString() });

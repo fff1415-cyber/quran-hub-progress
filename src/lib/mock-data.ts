@@ -317,13 +317,16 @@ export function isAttendanceAcked(studentId: string, date: string, type: "absent
 
 // ---- Sard Queue & History ----
 export type SardStatus =
-  | "pending"            // in queue, waiting for musammi
-  | "scheduled"          // failed once, scheduled for retry after 2 days
-  | "awaiting_supervisor" // failed twice, needs supervisor approval
-  | "approved_third"     // supervisor approved 3rd attempt
+  | "pending"            // full sard — waiting for musammi
+  | "scheduled"          // full sard retry after hifz fail (+2 days)
+  | "awaiting_review"    // hifz locked — review scheduled (+2 days), musammi only
+  | "awaiting_supervisor" // full sard failed twice — supervisor approval
+  | "approved_third"     // supervisor approved 3rd full attempt
   | "passed"
   | "level_repeat"
-  | "final_failed";      // failed third attempt -> manager page
+  | "final_failed";      // final merged grade below pass → manager
+
+export type SardPhase = "full" | "review_only";
 
 export interface SardQueueItem {
   id: string;
@@ -332,8 +335,13 @@ export interface SardQueueItem {
   week: number;
   attempt: 1 | 2 | 3;
   status: SardStatus;
-  scheduledAt?: string; // ISO date for next attempt
+  phase?: SardPhase;
+  scheduledAt?: string;
   createdAt: string;
+  lockedHifzScore?: number;
+  lockedHifzErrors?: number;
+  lockedHifzWarnings?: number;
+  reviewSegmentCount?: number;
   hifzErrors?: number;
   hifzWarnings?: number;
   reviewErrors?: number[];
@@ -354,13 +362,21 @@ export function saveSardQueue(q: SardQueueItem[]) {
 export function enqueueSard(studentId: string, halaqaId: number, week: number) {
   const queue = loadSardQueue();
   // Skip if already pending/scheduled/awaiting for same student-week
-  const existing = queue.find((q) => q.studentId === studentId && q.week === week && q.status !== "passed" && q.status !== "final_failed");
+  const existing = queue.find(
+    (q) =>
+      q.studentId === studentId &&
+      q.week === week &&
+      q.status !== "passed" &&
+      q.status !== "final_failed" &&
+      q.status !== "level_repeat",
+  );
   if (existing) return existing;
   const item: SardQueueItem = {
     id: `sq-${Date.now()}-${Math.random()}`,
     studentId, halaqaId, week,
     attempt: 1,
     status: "pending",
+    phase: "full",
     createdAt: new Date().toISOString(),
   };
   queue.unshift(item);
