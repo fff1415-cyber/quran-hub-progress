@@ -15,6 +15,19 @@
 
 **تحقق محلياً (FileZilla):** Host = IP، Port = `65002`، Protocol = SFTP، User = `u112851217`.
 
+## استكشاف أخطاء GitHub Actions
+
+إذا ظهر: `Frontend deploy failed (FTPS and SFTP)`:
+
+1. **FTP_SERVER** — يجب أن يكون **IP السيرفر** (أرقام فقط)، **ليس** `msht.io`  
+   → hPanel → **Advanced** → **SSH Access** → انسخ **Server IP**
+2. **FTP_PASSWORD** — كلمة مرور **الحساب الرئيسي** في Hostinger (نفس كلمة FTP)
+3. **SSH Access** — يجب أن يكون **مفعّلاً** من hPanel
+4. **FTP_USERNAME** — اسم المستخدم من SSH Access (مثل `u112851217`)، وليس حساب FTP فرعي
+5. بعد تصحيح الأسرار: GitHub → **Actions** → **Deploy to Hostinger** → **Run workflow**
+
+**اختبار سريع:** FileZilla → SFTP → Host = IP، Port = 65002. إذا فشل محلياً، الأسرار خاطئة قبل GitHub.
+
 ## Server setup (once)
 
 1. Create MySQL database — see [`database/README.md`](database/README.md)

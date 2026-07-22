@@ -34,6 +34,10 @@ jobs:
           check "${{ secrets.FTP_API_DIR }}" "FTP_API_DIR"
           check "${{ secrets.VITE_API_URL }}" "VITE_API_URL"
           if [ "$missing" -ne 0 ]; then exit 1; fi
+          host="${{ secrets.FTP_SERVER }}"
+          if echo "$host" | grep -qE '[A-Za-z]'; then
+            echo "::warning::FTP_SERVER='$host' looks like a domain name. Hostinger requires the **server IP** from hPanel → Advanced → SSH Access (e.g. 93.x.x.x)."
+          fi
           echo "All required secrets are present."
 
       - name: Resolve Hostinger paths
@@ -44,6 +48,9 @@ jobs:
           user="${user%%@*}"
           front="${{ secrets.FTP_SERVER_DIR }}"
           api="${{ secrets.FTP_API_DIR }}"
+          # Ensure leading slash for path join
+          [[ "$front" == /* ]] || front="/${front}"
+          [[ "$api" == /* ]] || api="/${api}"
           if [[ "$front" != /home/* ]]; then
             front="/home/${user}${front}"
           fi
@@ -62,21 +69,23 @@ jobs:
           set +e
           host="${{ secrets.FTP_SERVER }}"
           echo "Checking deploy ports on $host ..."
-          open=0
-          if nc -z -w 15 "$host" 21; then
-            echo "Port 21 (FTPS) is reachable."
-            open=1
-          else
-            echo "::warning::Port 21 not reachable from GitHub — will still try FTPS."
-          fi
-          if nc -z -w 15 "$host" "${SSH_PORT}"; then
+          sftp_ok=0
+          ftps_ok=0
+          if nc -z -w 20 "$host" "${SSH_PORT}"; then
             echo "Port ${SSH_PORT} (SFTP) is reachable."
-            open=1
+            sftp_ok=1
           else
-            echo "::warning::Port ${SSH_PORT} not reachable — SFTP fallback may fail. Use FTP_SERVER = IP from hPanel → SSH Access."
+            echo "::warning::Port ${SSH_PORT} not reachable — SFTP will likely fail. Use FTP_SERVER = IP from hPanel → SSH Access."
           fi
-          if [ "$open" -eq 0 ]; then
-            echo "::warning::Neither port responded to probe; continuing with FTPS deploy attempt anyway."
+          if nc -z -w 20 "$host" 21; then
+            echo "Port 21 (FTPS) is reachable."
+            ftps_ok=1
+          else
+            echo "::warning::Port 21 not reachable from GitHub — FTPS fallback may fail (common on Hostinger)."
+          fi
+          if [ "$sftp_ok" -eq 0 ] && [ "$ftps_ok" -eq 0 ]; then
+            echo "::error::Neither port 65002 nor 21 reachable. Fix FTP_SERVER (must be server IP, not msht.io) and enable SSH Access in hPanel."
+            exit 1
           fi
 
       - name: Setup Bun
@@ -95,7 +104,24 @@ jobs:
       - name: Write deploy marker
         run: echo "${{ github.sha }}" > dist/client/deploy-sha.txt
 
+      # Hostinger: SFTP on port 65002 is more reliable than FTPS from GitHub Actions
+      - name: Sync frontend (SFTP primary)
+        id: sftp_frontend
+        continue-on-error: true
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
+        with:
+          username: ${{ steps.paths.outputs.ssh_user }}
+          server: ${{ secrets.FTP_SERVER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ env.SSH_PORT }}
+          local_path: ./dist/client/
+          remote_path: ${{ steps.paths.outputs.frontend }}
+          sftp_only: true
+          sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
+          rsyncArgs: "--delete"
+
       - name: Sync frontend (FTPS fallback)
+        if: steps.sftp_frontend.outcome == 'failure'
         id: ftps_frontend
         continue-on-error: true
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -110,9 +136,20 @@ jobs:
           server-dir: ${{ secrets.FTP_SERVER_DIR }}
           state-name: .ftp-deploy-frontend-v4-state.json
 
-      - name: Sync frontend (SFTP)
-        if: steps.ftps_frontend.outcome == 'failure'
-        id: sftp_frontend
+      - name: Ensure frontend deployed
+        if: always() && steps.sftp_frontend.outcome == 'failure' && (steps.ftps_frontend.outcome == 'failure' || steps.ftps_frontend.outcome == 'skipped')
+        run: |
+          echo "Deploy results: SFTP=${{ steps.sftp_frontend.outcome }}, FTPS=${{ steps.ftps_frontend.outcome || 'skipped' }}"
+          echo "::error::Frontend deploy failed. Check GitHub Secrets:"
+          echo "  FTP_SERVER = server IP from hPanel → SSH Access (NOT msht.io)"
+          echo "  FTP_USERNAME = SSH username (e.g. u112851217)"
+          echo "  FTP_PASSWORD = main Hostinger account password"
+          echo "  FTP_SERVER_DIR = /domains/msht.io/public_html/"
+          echo "Enable SSH Access in hPanel → Advanced → SSH Access."
+          exit 1
+
+      - name: Sync PHP API (SFTP primary)
+        id: sftp_api
         continue-on-error: true
         uses: wlixcc/SFTP-Deploy-Action@v1.2.5
         with:
@@ -120,19 +157,14 @@ jobs:
           server: ${{ secrets.FTP_SERVER }}
           password: ${{ secrets.FTP_PASSWORD }}
           port: ${{ env.SSH_PORT }}
-          local_path: ./dist/client/
-          remote_path: ${{ steps.paths.outputs.frontend }}
+          local_path: ./api/
+          remote_path: ${{ steps.paths.outputs.api }}
           sftp_only: true
-          sftpArgs: "-o ConnectTimeout=60 -o StrictHostKeyChecking=no"
-          rsyncArgs: "--delete"
-
-      - name: Ensure frontend deployed
-        if: steps.ftps_frontend.outcome == 'failure' && steps.sftp_frontend.outcome == 'failure'
-        run: |
-          echo "::error::Frontend deploy failed (FTPS and SFTP). Check FTP_SERVER IP, FTP_PASSWORD, and hPanel SSH Access."
-          exit 1
+          sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
+          rsyncArgs: "--exclude=config.php"
 
       - name: Sync PHP API (FTPS fallback)
+        if: steps.sftp_api.outcome == 'failure'
         id: ftps_api
         continue-on-error: true
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -149,26 +181,11 @@ jobs:
           exclude: |
             **/config.php
 
-      - name: Sync PHP API (SFTP)
-        if: steps.ftps_api.outcome == 'failure'
-        id: sftp_api
-        continue-on-error: true
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
-        with:
-          username: ${{ steps.paths.outputs.ssh_user }}
-          server: ${{ secrets.FTP_SERVER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ env.SSH_PORT }}
-          local_path: ./api/
-          remote_path: ${{ steps.paths.outputs.api }}
-          sftp_only: true
-          sftpArgs: "-o ConnectTimeout=60 -o StrictHostKeyChecking=no"
-          rsyncArgs: "--exclude=config.php"
-
       - name: Ensure API deployed
-        if: steps.ftps_api.outcome == 'failure' && steps.sftp_api.outcome == 'failure'
+        if: always() && steps.sftp_api.outcome == 'failure' && (steps.ftps_api.outcome == 'failure' || steps.ftps_api.outcome == 'skipped')
         run: |
-          echo "::error::API deploy failed (FTPS and SFTP)."
+          echo "API deploy results: SFTP=${{ steps.sftp_api.outcome }}, FTPS=${{ steps.ftps_api.outcome || 'skipped' }}"
+          echo "::error::API deploy failed. Same FTP secrets as frontend — see Ensure frontend deployed step."
           exit 1
 
       - name: Verify live deploy
@@ -182,5 +199,5 @@ jobs:
             echo "Attempt $i: deploy-sha.txt='$LIVE' (expected ${{ github.sha }})"
             sleep 15
           done
-          echo "::error::Deploy did not reach msht.io. Check FTP_SERVER (IP), FTP_PASSWORD (main account), and paths in secrets."
+          echo "::error::Files uploaded but deploy-sha.txt not updated on msht.io. Check FTP_SERVER_DIR path."
           exit 1
