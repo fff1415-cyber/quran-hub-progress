@@ -4,14 +4,16 @@
 
 | Secret | Value |
 |---|---|
-| `FTP_SERVER` | **IP السيرفر** من hPanel → SSH أو FTP (لا تستخدم الدomain خلف Cloudflare) |
-| `FTP_USERNAME` | اسم مستخدم SSH/FTP (مثل `u112851217`) |
-| `FTP_PASSWORD` | كلمة مرور SSH/FTP |
-| `FTP_SERVER_DIR` | جذر الموقع، مثل `/domains/msht.io/public_html/` |
-| `FTP_API_DIR` | مجلد API، مثل `/domains/msht.io/public_html/api/` |
-| `VITE_API_URL` | `https://yourdomain.com` |
+| `FTP_SERVER` | **IP السيرفر** من hPanel → Advanced → **SSH Access** (مثل `93.xxx.xxx.xxx`) — **لا** تستخدم `msht.io` |
+| `FTP_USERNAME` | اسم SSH من نفس الصفحة (مثل `u112851217`) — **ليس** حساب FTP فرعي |
+| `FTP_PASSWORD` | كلمة مرور **الحساب الرئيسي** (نفس كلمة FTP للدomain الرئيسي) |
+| `FTP_SERVER_DIR` | `/domains/msht.io/public_html/` (يُحوَّل تلقائياً إلى `/home/u112851217/domains/msht.io/public_html/`) |
+| `FTP_API_DIR` | `/domains/msht.io/public_html/api/` |
+| `VITE_API_URL` | `https://msht.io` |
 
-النشر يستخدم **SFTP على المنفذ 65002** (Hostinger shared hosting). فعّل SSH من hPanel → Advanced → SSH Access.
+فعّل **SSH Access** من hPanel → Advanced → SSH Access.
+
+**تحقق محلياً (FileZilla):** Host = IP، Port = `65002`، Protocol = SFTP، User = `u112851217`.
 
 ## Server setup (once)
 

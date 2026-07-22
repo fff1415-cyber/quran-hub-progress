@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+
+env:
+  SSH_PORT: "65002"
 
 jobs:
   deploy:
@@ -12,6 +16,58 @@ jobs:
     steps:
       - name: Get latest code
         uses: actions/checkout@v4
+
+      - name: Validate secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          check() {
+            if [ -z "$1" ]; then
+              echo "::error::Secret $2 is missing in GitHub Settings → Secrets"
+              missing=1
+            fi
+          }
+          check "${{ secrets.FTP_SERVER }}" "FTP_SERVER"
+          check "${{ secrets.FTP_USERNAME }}" "FTP_USERNAME"
+          check "${{ secrets.FTP_PASSWORD }}" "FTP_PASSWORD"
+          check "${{ secrets.FTP_SERVER_DIR }}" "FTP_SERVER_DIR"
+          check "${{ secrets.FTP_API_DIR }}" "FTP_API_DIR"
+          check "${{ secrets.VITE_API_URL }}" "VITE_API_URL"
+          if [ "$missing" -ne 0 ]; then exit 1; fi
+          echo "All required secrets are present."
+
+      - name: Resolve Hostinger paths
+        id: paths
+        run: |
+          set -euo pipefail
+          user="${{ secrets.FTP_USERNAME }}"
+          user="${user%%@*}"
+          front="${{ secrets.FTP_SERVER_DIR }}"
+          api="${{ secrets.FTP_API_DIR }}"
+          if [[ "$front" != /home/* ]]; then
+            front="/home/${user}${front}"
+          fi
+          if [[ "$api" != /home/* ]]; then
+            api="/home/${user}${api}"
+          fi
+          echo "frontend=$front" >> "$GITHUB_OUTPUT"
+          echo "api=$api" >> "$GITHUB_OUTPUT"
+          echo "ssh_user=$user" >> "$GITHUB_OUTPUT"
+          echo "Frontend path: $front"
+          echo "API path: $api"
+          echo "SSH user: $user"
+
+      - name: Test server connectivity
+        run: |
+          set -euo pipefail
+          host="${{ secrets.FTP_SERVER }}"
+          echo "Testing SSH/SFTP port ${SSH_PORT} on $host ..."
+          if nc -z -w 15 "$host" "${SSH_PORT}"; then
+            echo "Port ${SSH_PORT} is open."
+          else
+            echo "::error::Cannot reach $host:${SSH_PORT}. Set FTP_SERVER to the IP from hPanel → SSH Access (not the domain name)."
+            exit 1
+          fi
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v1
@@ -29,31 +85,65 @@ jobs:
       - name: Write deploy marker
         run: echo "${{ github.sha }}" > dist/client/deploy-sha.txt
 
-      - name: Sync frontend to Hostinger (SFTP)
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
+      - name: Sync frontend (FTPS fallback)
+        id: ftps_frontend
+        continue-on-error: true
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
         with:
-          username: ${{ secrets.FTP_USERNAME }}
           server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
           password: ${{ secrets.FTP_PASSWORD }}
-          port: 65002
-          local_path: ./dist/client/
-          remote_path: ${{ secrets.FTP_SERVER_DIR }}
-          sftp_only: true
-          sftpArgs: -o ConnectTimeout=60 -o StrictHostKeyChecking=no
-          rsyncArgs: --delete
+          protocol: ftps
+          port: 21
+          timeout: 300000
+          local-dir: ./dist/client/
+          server-dir: ${{ secrets.FTP_SERVER_DIR }}
+          state-name: .ftp-deploy-frontend-v4-state.json
 
-      - name: Sync PHP API to Hostinger (SFTP)
+      - name: Sync frontend (SFTP)
+        if: steps.ftps_frontend.outcome == 'failure'
         uses: wlixcc/SFTP-Deploy-Action@v1.2.5
         with:
-          username: ${{ secrets.FTP_USERNAME }}
+          username: ${{ steps.paths.outputs.ssh_user }}
           server: ${{ secrets.FTP_SERVER }}
           password: ${{ secrets.FTP_PASSWORD }}
-          port: 65002
-          local_path: ./api/
-          remote_path: ${{ secrets.FTP_API_DIR }}
+          port: ${{ env.SSH_PORT }}
+          local_path: ./dist/client/
+          remote_path: ${{ steps.paths.outputs.frontend }}
           sftp_only: true
-          sftpArgs: -o ConnectTimeout=60 -o StrictHostKeyChecking=no
-          rsyncArgs: --exclude=config.php
+          sftpArgs: "-o ConnectTimeout=60 -o StrictHostKeyChecking=no"
+          rsyncArgs: "--delete"
+
+      - name: Sync PHP API (FTPS fallback)
+        id: ftps_api
+        continue-on-error: true
+        uses: SamKirkland/FTP-Deploy-Action@v4.3.5
+        with:
+          server: ${{ secrets.FTP_SERVER }}
+          username: ${{ secrets.FTP_USERNAME }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          protocol: ftps
+          port: 21
+          timeout: 300000
+          local-dir: ./api/
+          server-dir: ${{ secrets.FTP_API_DIR }}
+          state-name: .ftp-deploy-api-v4-state.json
+          exclude: |
+            **/config.php
+
+      - name: Sync PHP API (SFTP)
+        if: steps.ftps_api.outcome == 'failure'
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
+        with:
+          username: ${{ steps.paths.outputs.ssh_user }}
+          server: ${{ secrets.FTP_SERVER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ env.SSH_PORT }}
+          local_path: ./api/
+          remote_path: ${{ steps.paths.outputs.api }}
+          sftp_only: true
+          sftpArgs: "-o ConnectTimeout=60 -o StrictHostKeyChecking=no"
+          rsyncArgs: "--exclude=config.php"
 
       - name: Verify live deploy
         run: |
@@ -63,8 +153,8 @@ jobs:
               echo "Deploy verified on msht.io"
               exit 0
             fi
-            echo "Attempt $i: deploy-sha.txt='$LIVE'"
+            echo "Attempt $i: deploy-sha.txt='$LIVE' (expected ${{ github.sha }})"
             sleep 15
           done
-          echo "Deploy did not reach msht.io. Check FTP_SERVER (use server IP), FTP_SERVER_DIR, and SSH access in hPanel."
+          echo "::error::Deploy did not reach msht.io. Check FTP_SERVER (IP), FTP_PASSWORD (main account), and paths in secrets."
           exit 1
