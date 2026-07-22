@@ -55,6 +55,16 @@ function filterTrack(plans: EducationPlan[], track?: "gold" | "silver"): Educati
   return track ? plans.filter((p) => p.track === track) : plans;
 }
 
+function isPlansDbUnavailableError(e: unknown): boolean {
+  if (!(e instanceof Error)) return false;
+  const m = e.message;
+  return (
+    m.includes("migrate-education-plans") ||
+    m.includes("جداول الخطط غير") ||
+    m.includes("HTTP 503")
+  );
+}
+
 export async function fetchPlans(track?: "gold" | "silver"): Promise<EducationPlan[]> {
   try {
     const q = track ? `?track=${track}` : "";
@@ -106,8 +116,12 @@ export async function assignStudentPlan(
       }),
     });
     localClearPlansCache();
-  } catch {
-    localAssignPlan(studentId, planId, startSegment, assignedBy, options);
+  } catch (e) {
+    if (isPlansDbUnavailableError(e)) {
+      localAssignPlan(studentId, planId, startSegment, assignedBy, options);
+      return;
+    }
+    throw e;
   }
 }
 
@@ -120,8 +134,12 @@ export async function patchStudentAssignment(
       method: "PATCH",
       body: JSON.stringify({ student_id: studentId, status }),
     });
-  } catch {
-    localPatchAssignment(studentId, status);
+  } catch (e) {
+    if (isPlansDbUnavailableError(e)) {
+      localPatchAssignment(studentId, status);
+      return;
+    }
+    throw e;
   }
 }
 

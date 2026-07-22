@@ -23,6 +23,36 @@ function plans_table_exists(PDO $pdo, string $table): bool
     return (int) $stmt->fetchColumn() > 0;
 }
 
+function plans_column_exists(PDO $pdo, string $table, string $column): bool
+{
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM information_schema.columns
+         WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
+    );
+    $stmt->execute([$table, $column]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+/** Add plan_start_date / start_muraja_segment when table predates migrate-plan-assignments-v2.sql */
+function plans_ensure_assignment_v2_columns(PDO $pdo): void
+{
+    if (!plans_table_exists($pdo, 'student_plan_assignments')) {
+        return;
+    }
+    if (!plans_column_exists($pdo, 'student_plan_assignments', 'plan_start_date')) {
+        $pdo->exec(
+            'ALTER TABLE `student_plan_assignments`
+             ADD COLUMN `plan_start_date` DATE NULL DEFAULT NULL AFTER `start_segment_index`'
+        );
+    }
+    if (!plans_column_exists($pdo, 'student_plan_assignments', 'start_muraja_segment')) {
+        $pdo->exec(
+            'ALTER TABLE `student_plan_assignments`
+             ADD COLUMN `start_muraja_segment` INT NULL DEFAULT NULL AFTER `plan_start_date`'
+        );
+    }
+}
+
 function plan_row(array $row): array
 {
     return [
@@ -324,31 +354,37 @@ function handle_assign_plan(): void
         error_response('نفّذ migrate-education-plans.sql على قاعدة البيانات أولاً', 503);
     }
 
-    $planStmt = $pdo->prepare('SELECT level_number FROM education_plans WHERE id = ?');
-    $planStmt->execute([$planId]);
-    $planRow = $planStmt->fetch();
-    if (!$planRow) {
-        error_response('الخطة غير موجودة', 404);
+    try {
+        plans_ensure_assignment_v2_columns($pdo);
+
+        $planStmt = $pdo->prepare('SELECT level_number FROM education_plans WHERE id = ?');
+        $planStmt->execute([$planId]);
+        $planRow = $planStmt->fetch();
+        if (!$planRow) {
+            error_response('الخطة غير موجودة', 404);
+        }
+        if (plans_plan_phase((int) $planRow['level_number']) !== 1) {
+            $startMuraja = null;
+        }
+
+        $pdo->prepare(
+            "UPDATE student_plan_assignments SET status = 'transferred' WHERE student_id = ? AND status = 'active'"
+        )->execute([$studentId]);
+
+        $id = new_uuid();
+        $name = (string) ($auth['name'] ?? 'المشرف');
+        $dateVal = $planStartDate !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $planStartDate) ? $planStartDate : null;
+
+        $pdo->prepare(
+            'INSERT INTO student_plan_assignments
+             (id, student_id, plan_id, start_segment_index, plan_start_date, start_muraja_segment, status, assigned_by)
+             VALUES (?, ?, ?, ?, ?, ?, \'active\', ?)'
+        )->execute([$id, $studentId, $planId, $startSegment, $dateVal, $startMuraja, $name]);
+
+        json_response(['ok' => true, 'assignment_id' => $id]);
+    } catch (Throwable $e) {
+        error_response('فشل ربط الطالب: ' . $e->getMessage(), 500);
     }
-    if (plans_plan_phase((int) $planRow['level_number']) !== 1) {
-        $startMuraja = null;
-    }
-
-    $pdo->prepare(
-        "UPDATE student_plan_assignments SET status = 'transferred' WHERE student_id = ? AND status = 'active'"
-    )->execute([$studentId]);
-
-    $id = new_uuid();
-    $name = (string) ($auth['name'] ?? 'المشرف');
-    $dateVal = $planStartDate !== '' && preg_match('/^\d{4}-\d{2}-\d{2}$/', $planStartDate) ? $planStartDate : null;
-
-    $pdo->prepare(
-        'INSERT INTO student_plan_assignments
-         (id, student_id, plan_id, start_segment_index, plan_start_date, start_muraja_segment, status, assigned_by)
-         VALUES (?, ?, ?, ?, ?, ?, \'active\', ?)'
-    )->execute([$id, $studentId, $planId, $startSegment, $dateVal, $startMuraja, $name]);
-
-    json_response(['ok' => true, 'assignment_id' => $id]);
 }
 
 function handle_patch_assignment(): void
@@ -400,6 +436,12 @@ function handle_student_plan_sheet(): void
     $pdo = db();
     if (!plans_table_exists($pdo, 'education_plans')) {
         error_response('نفّذ migrate-education-plans.sql على قاعدة البيانات أولاً', 503);
+    }
+
+    try {
+        plans_ensure_assignment_v2_columns($pdo);
+    } catch (Throwable $e) {
+        error_response('جداول الربط تحتاج تحديثاً: ' . $e->getMessage(), 500);
     }
 
     $assignStmt = $pdo->prepare(
@@ -474,6 +516,12 @@ function handle_apply_plan_input(): void
 
     if (!plans_table_exists($pdo, 'education_plans')) {
         error_response('جداول الخطط غير مُنشأة بعد', 503);
+    }
+
+    try {
+        plans_ensure_assignment_v2_columns($pdo);
+    } catch (Throwable $e) {
+        error_response('جداول الربط تحتاج تحديثاً: ' . $e->getMessage(), 500);
     }
 
     $assignStmt = $pdo->prepare(

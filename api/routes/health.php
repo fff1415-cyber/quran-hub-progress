@@ -38,6 +38,17 @@ function handle_health_check(): void
         if (count($missingPlans) > 0) {
             $result['checks']['missing_plan_tables'] = $missingPlans;
             $result['checks']['plans_hint'] = 'نفّذ database/migrate-education-plans.sql في phpMyAdmin';
+        } elseif (in_array('student_plan_assignments', $tables, true)) {
+            $colStmt = $pdo->prepare(
+                'SELECT column_name FROM information_schema.columns
+                 WHERE table_schema = DATABASE() AND table_name = ? AND column_name IN (?, ?)'
+            );
+            $colStmt->execute(['student_plan_assignments', 'plan_start_date', 'start_muraja_segment']);
+            $planCols = $colStmt->fetchAll(PDO::FETCH_COLUMN);
+            $result['checks']['plan_assignments_v2_ready'] = count($planCols) === 2;
+            if (count($planCols) < 2) {
+                $result['checks']['plans_hint'] = 'نفّذ database/migrate-plan-assignments-v2.sql أو أعد محاولة الربط (يُحدَّث تلقائياً)';
+            }
         }
 
         if (in_array('role_accounts', $tables, true)) {
