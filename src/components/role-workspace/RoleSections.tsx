@@ -6,7 +6,11 @@ import {
   pushNotification, updateSardItem, DAYS,
   type WeekRecord, type Student, type GradesStore,
 } from "@/lib/mock-data";
-import { isSupervisorScheduledRetry } from "@/lib/sard-phased-flow";
+import {
+  buildForceImmediatePatch,
+  forceRetryKind,
+  isSupervisorForceRetryCandidate,
+} from "@/lib/sard-phased-flow";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getCalendarDayKey, getCalendarIsoDate } from "@/lib/operational-date";
 import { fetchActiveCalendar } from "@/lib/academic-context";
@@ -370,19 +374,25 @@ export function SupervisorForceRetryPanel() {
   const [queue, setQueue] = useState(() => loadSardQueue());
   const students = loadStudents();
   const halaqat = loadHalaqat();
-  const scheduled = queue.filter((q) => isSupervisorScheduledRetry(q));
+  const scheduled = queue.filter((q) => isSupervisorForceRetryCandidate(q));
 
-  const forceImmediate = (id: string, name: string) => {
-    updateSardItem(id, { status: "pending", scheduledAt: new Date().toISOString() });
-    pushNotification({ message: `سمح المشرف بإعادة سرد فوري — ${name}`, type: "sard" });
-    toast.success("تم — يمكن للمسمّع البدء فوراً");
+  const forceImmediate = (item: typeof scheduled[number], name: string) => {
+    const kind = forceRetryKind(item);
+    updateSardItem(item.id, buildForceImmediatePatch(item));
+    pushNotification({
+      message: kind === "review"
+        ? `سمح المشرف بإعادة مراجعة فورية — ${name}`
+        : `سمح المشرف بإعادة سرد فوري — ${name}`,
+      type: "sard",
+    });
+    toast.success(kind === "review" ? "تم — يمكن للمسمّع إجراء المراجعة فوراً" : "تم — يمكن للمسمّع البدء فوراً");
     setQueue(loadSardQueue());
   };
 
   return (
     <section className="glass-card rounded-2xl p-6">
-      <h2 className="text-lg font-bold text-primary mb-2">إعادة السرد الفوري ({scheduled.length})</h2>
-      <p className="text-xs text-muted-foreground mb-4">السماح بإعادة السرد دون انتظار يومين</p>
+      <h2 className="text-lg font-bold text-primary mb-2">إعادة فورية ({scheduled.length})</h2>
+      <p className="text-xs text-muted-foreground mb-4">السماح بإعادة السرد أو المراجعة دون انتظار يومين</p>
       {scheduled.length === 0 ? (
         <p className="text-muted-foreground text-center py-8 text-sm">لا يوجد طلاب مجدولون</p>
       ) : (
@@ -391,15 +401,18 @@ export function SupervisorForceRetryPanel() {
             const s = students.find((x) => x.id === q.studentId);
             const h = halaqat.find((x) => x.id === q.halaqaId);
             if (!s || !h) return null;
+            const kind = forceRetryKind(q);
             return (
               <div key={q.id} className="flex items-center justify-between p-4 rounded-lg bg-warning/5 border border-warning/20 flex-wrap gap-2">
                 <div>
                   <div className="font-bold">{s.name}</div>
-                  <div className="text-xs text-muted-foreground">{h.name} · {weekLabel(q.week)}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {h.name} · {weekLabel(q.week)} · {kind === "review" ? "انتظار إعادة المراجعة" : "انتظار إعادة السرد"}
+                  </div>
                 </div>
-                <button onClick={() => forceImmediate(q.id, s.name)}
+                <button onClick={() => forceImmediate(q, s.name)}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-warning/20 text-warning border border-warning/30 font-bold text-sm">
-                  <Clock className="w-4 h-4" /> الإعادة الآن
+                  <Clock className="w-4 h-4" /> {kind === "review" ? "المراجعة الآن" : "الإعادة الآن"}
                 </button>
               </div>
             );

@@ -8,6 +8,7 @@ import { setToken } from "@/lib/cloud-sync";
 import { getCalendarDayKey } from "@/lib/operational-date";
 import { fetchStudentPlanSheet } from "@/lib/plans-service";
 import type { StudentPlanSheetData } from "@/lib/plan-types";
+import { StudentAcademicResultsSection } from "@/components/student-profile/StudentAcademicResults";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { AppHeader } from "@/components/AppHeader";
 import { Trophy, BookOpen, IdCard, X, CheckCircle2, Clock, AlertCircle, UserCheck, GraduationCap } from "lucide-react";
@@ -178,6 +179,10 @@ function StudentPage() {
                 <Stat label="مرات التأخر" value={String(data.lates)} />
                 <Stat label="مرات الاستئذان" value={String(data.excused)} />
               </div>
+
+              <section className="mt-6 pt-6 border-t border-border">
+                <StudentAcademicResultsSection studentId={data.s.id} />
+              </section>
 
               <section className="mt-6 pt-6 border-t border-border">
                 <h4 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">

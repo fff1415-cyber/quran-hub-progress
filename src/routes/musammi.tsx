@@ -22,9 +22,10 @@ import {
   computeMergedEvaluation,
   isMusammiVisible,
   resetFullSardAttempt,
-  scheduleInTwoDays,
+  scheduleRetry,
   sardPhase,
 } from "@/lib/sard-phased-flow";
+import { runPostPassAutomation } from "@/lib/post-pass-automation";
 import { AppHeader } from "@/components/AppHeader";
 import { Mic, Minus, Plus, ArrowRight, Award, CheckCircle2, XCircle, Clock, Lock } from "lucide-react";
 import { Toaster, toast } from "sonner";
@@ -326,11 +327,11 @@ function SardEvaluatorFull({
         updateSardItem(item.id, {
           status: "scheduled",
           attempt: 2,
-          scheduledAt: scheduleInTwoDays(),
+          scheduledAt: scheduleRetry(settings.retry_delay_days),
           ...resetFullSardAttempt(segmentCount),
         });
-        pushNotification({ message: `الطالب ${studentName} رسب في الحفظ — إعادة السرد كاملاً بعد يومين`, type: "sard" });
-        toast.error("راسب في الحفظ — إعادة السرد (حفظ + مراجعة) بعد يومين");
+        pushNotification({ message: `الطالب ${studentName} رسب في الحفظ — إعادة السرد كاملاً بعد ${settings.retry_delay_days} يوم`, type: "sard" });
+        toast.error(`راسب في الحفظ — إعادة السرد (حفظ + مراجعة) بعد ${settings.retry_delay_days} يوم`);
       } else if (item.attempt === 2) {
         updateSardItem(item.id, {
           status: "awaiting_supervisor", attempt: 2,
@@ -351,12 +352,12 @@ function SardEvaluatorFull({
     }
 
     if (review.failed) {
-      updateSardItem(item.id, buildReviewOnlyPatch(item, hifz.score, hifzErrors, hifzWarnings, segmentCount));
+      updateSardItem(item.id, buildReviewOnlyPatch(item, hifz.score, hifzErrors, hifzWarnings, segmentCount, settings.retry_delay_days));
       pushNotification({
-        message: `اجتاز ${studentName} الحفظ (${hifz.score}) — جُدولت المراجعة بعد يومين`,
+        message: `اجتاز ${studentName} الحفظ (${hifz.score}) — جُدولت المراجعة بعد ${settings.retry_delay_days} يوم`,
         type: "sard",
       });
-      toast.success(`تم تثبيت الحفظ (${hifz.score}) — مراجعة بعد يومين`);
+      toast.success(`تم تثبيت الحفظ (${hifz.score}) — مراجعة بعد ${settings.retry_delay_days} يوم`);
       onDone();
       return;
     }
@@ -374,8 +375,24 @@ function SardEvaluatorFull({
       updateSardItem(item.id, { status: "passed", finalPercent: merged.percent, phase: "full" });
       try {
         const newLevel = await promoteStudentLevel(item.studentId, level);
-        pushNotification({ message: `الطالب ${studentName} اجتاز السرد بنسبة ${merged.percent}% — المستوى ${newLevel}`, type: "sard" });
-        toast.success(`اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}`);
+        const advance = await runPostPassAutomation({
+          studentId: item.studentId,
+          halaqaId: item.halaqaId,
+          week: item.week,
+          attempt: item.attempt,
+          percent: merged.percent,
+          hifzScore: merged.hifzScore,
+          reviewScore: merged.reviewScore,
+          track: levelType,
+          assignedBy: "المسمّع",
+        });
+        const planMsg = advance.newPlanTitle
+          ? ` — انتقل إلى ${advance.newPlanTitle}`
+          : advance.closedPlanTitle
+            ? ` — أُنجزت ${advance.closedPlanTitle}`
+            : "";
+        pushNotification({ message: `الطالب ${studentName} اجتاز السرد بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`, type: "sard" });
+        toast.success(`اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
       } catch {
         toast.success(`اجتاز بنسبة ${merged.percent}%`);
       }
@@ -468,12 +485,12 @@ function SardEvaluatorReviewOnly({
       const segs = emptyReviewSegments(segmentCount);
       updateSardItem(item.id, {
         status: "awaiting_review",
-        scheduledAt: scheduleInTwoDays(),
+        scheduledAt: scheduleRetry(settings.retry_delay_days),
         reviewErrors: segs.map((s) => s.errors),
         reviewWarnings: segs.map((s) => s.warnings),
       });
-      pushNotification({ message: `رسب ${studentName} في المراجعة — إعادة بعد يومين (الحفظ مثبت)`, type: "sard" });
-      toast.warning("راسب في المراجعة — إعادة بعد يومين (درجة الحفظ مثبتة)");
+      pushNotification({ message: `رسب ${studentName} في المراجعة — إعادة بعد ${settings.retry_delay_days} يوم (الحفظ مثبت)`, type: "sard" });
+      toast.warning(`راسب في المراجعة — إعادة بعد ${settings.retry_delay_days} يوم (درجة الحفظ مثبتة)`);
       onDone();
       return;
     }
@@ -493,8 +510,24 @@ function SardEvaluatorReviewOnly({
       updateSardItem(item.id, { status: "passed", finalPercent: merged.percent, phase: "review_only" });
       try {
         const newLevel = await promoteStudentLevel(item.studentId, level);
-        pushNotification({ message: `الطالب ${studentName} اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}`, type: "sard" });
-        toast.success(`اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}`);
+        const advance = await runPostPassAutomation({
+          studentId: item.studentId,
+          halaqaId: item.halaqaId,
+          week: item.week,
+          attempt: item.attempt,
+          percent: merged.percent,
+          hifzScore: merged.hifzScore,
+          reviewScore: merged.reviewScore,
+          track: levelType,
+          assignedBy: "المسمّع",
+        });
+        const planMsg = advance.newPlanTitle
+          ? ` — انتقل إلى ${advance.newPlanTitle}`
+          : advance.closedPlanTitle
+            ? ` — أُنجزت ${advance.closedPlanTitle}`
+            : "";
+        pushNotification({ message: `الطالب ${studentName} اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`, type: "sard" });
+        toast.success(`اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
       } catch {
         toast.success(`اجتاز بنسبة ${merged.percent}%`);
       }

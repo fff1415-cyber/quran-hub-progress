@@ -25,8 +25,45 @@ export function isSupervisorScheduledRetry(item: SardQueueItem): boolean {
   return item.status === "scheduled" && sardPhase(item) === "full";
 }
 
+/** Review-only retries still waiting for the two-day deferral. */
+export function isSupervisorScheduledReview(item: SardQueueItem, now = Date.now()): boolean {
+  if (item.status !== "awaiting_review") return false;
+  const due = item.scheduledAt ? new Date(item.scheduledAt).getTime() <= now : false;
+  return !due;
+}
+
+/** Full sard or deferred review — eligible for supervisor «إعادة فورية». */
+export function isSupervisorForceRetryCandidate(item: SardQueueItem, now = Date.now()): boolean {
+  return isSupervisorScheduledRetry(item) || isSupervisorScheduledReview(item, now);
+}
+
+export function forceRetryKind(item: SardQueueItem): "full" | "review" {
+  return item.status === "awaiting_review" ? "review" : "full";
+}
+
+export function buildForceImmediatePatch(item: SardQueueItem): Partial<SardQueueItem> {
+  const now = new Date().toISOString();
+  if (forceRetryKind(item) === "review") {
+    const segCount = item.reviewSegmentCount ?? item.reviewErrors.length;
+    const segs = emptyReviewSegments(segCount);
+    return {
+      status: "awaiting_review",
+      scheduledAt: now,
+      reviewErrors: segs.map((s) => s.errors),
+      reviewWarnings: segs.map((s) => s.warnings),
+    };
+  }
+  return { status: "pending", scheduledAt: now };
+}
+
+export function scheduleRetry(days: number): string {
+  const d = Math.max(1, days);
+  return new Date(Date.now() + d * 24 * 60 * 60 * 1000).toISOString();
+}
+
+/** @deprecated use scheduleRetry(settings.retry_delay_days) */
 export function scheduleInTwoDays(): string {
-  return new Date(Date.now() + 2 * 24 * 60 * 60 * 1000).toISOString();
+  return scheduleRetry(2);
 }
 
 export interface MergedEvaluation {
@@ -76,11 +113,12 @@ export function buildReviewOnlyPatch(
   hifzErrors: number,
   hifzWarnings: number,
   segmentCount: number,
+  retryDays = 2,
 ): Partial<SardQueueItem> {
   return {
     phase: "review_only",
     status: "awaiting_review",
-    scheduledAt: scheduleInTwoDays(),
+    scheduledAt: scheduleRetry(retryDays),
     lockedHifzScore,
     lockedHifzErrors: hifzErrors,
     lockedHifzWarnings: hifzWarnings,

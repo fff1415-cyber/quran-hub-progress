@@ -31,6 +31,7 @@ function eval_settings_defaults(): array
         'review_segments_under_10' => 3,
         'review_segments_10_to_20' => 4,
         'review_segments_over_20' => 5,
+        'retry_delay_days' => 2,
     ];
 }
 
@@ -105,6 +106,9 @@ function eval_settings_sanitize(array $input): array
     }
     if ($out['review_segments_over_20'] < 1) {
         $out['review_segments_over_20'] = 1;
+    }
+    if ($out['retry_delay_days'] < 1) {
+        $out['retry_delay_days'] = 1;
     }
     return $out;
 }

@@ -14,6 +14,8 @@ export interface EvaluationSettings {
   review_segments_under_10: number;
   review_segments_10_to_20: number;
   review_segments_over_20: number;
+  /** أيام الانتظار قبل إعادة الاختبار بعد الرسوب */
+  retry_delay_days: number;
 }
 
 export interface SegmentTally {
@@ -49,4 +51,5 @@ export const DEFAULT_EVALUATION_SETTINGS: EvaluationSettings = {
   review_segments_under_10: 3,
   review_segments_10_to_20: 4,
   review_segments_over_20: 5,
+  retry_delay_days: 2,
 };

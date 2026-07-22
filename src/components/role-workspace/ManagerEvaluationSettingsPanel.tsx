@@ -43,6 +43,7 @@ const SECTIONS: { title: string; fields: { key: FieldKey; label: string; step?: 
     fields: [
       { key: "pass_percent", label: "نسبة الاجتياز (%)" },
       { key: "max_minutes_per_face", label: "دقائق لكل وجه (الوقت = أوجه × هذا الرقم)", step: 0.5 },
+      { key: "retry_delay_days", label: "أيام الانتظار قبل إعادة الاختبار" },
     ],
   },
 ];

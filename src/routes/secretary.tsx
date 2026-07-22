@@ -12,9 +12,10 @@ import {
   SecretaryLatePermitPanel,
   SecretarySardPanel,
 } from "@/components/role-workspace/RoleSections";
+import { SecretaryStudentProfilesPanel } from "@/components/role-workspace/SecretaryStudentProfilesPanel";
 import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTransfersPanel";
 import { PlanStudentLookup } from "@/components/plans/SupervisorPlansPanel";
-import { Clipboard, UserX, Clock, Mic, Send, GraduationCap } from "lucide-react";
+import { Clipboard, UserX, Clock, Mic, Send, GraduationCap, Users } from "lucide-react";
 import { Toaster } from "sonner";
 import type { WeekRecord } from "@/lib/mock-data";
 
@@ -52,6 +53,13 @@ function SecretaryPage() {
   const forwardedTransfers = countTransfersForRole("secretary");
 
   const tabs: RoleTab[] = [
+    {
+      id: "profiles",
+      label: "ملفات الطلاب",
+      icon: Users,
+      perm: "view_attendance",
+      content: <SecretaryStudentProfilesPanel />,
+    },
     {
       id: "plans",
       label: "الخطط التراكمية",
@@ -104,7 +112,7 @@ function SecretaryPage() {
         <RoleShell
           className="max-w-5xl mx-auto"
           tabs={tabs}
-          defaultTab="attendance"
+          defaultTab="profiles"
           activeTab={search.tab}
           onTabChange={setTab}
           header={
