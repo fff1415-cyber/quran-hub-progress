@@ -2,7 +2,6 @@ import {
   DAYS,
   loadGrades,
   loadSardHistory,
-  weekPercentage,
   HIFZ_LABELS,
   type GradesStore,
   type Student,
@@ -14,6 +13,7 @@ import { getSelectableWeeks, resolveWeekForDate } from "@/lib/academic-context";
 import { isoDateToDayKey } from "@/lib/operational-date";
 import { weekLabel } from "@/lib/arabic-numbers";
 import type { HalaqaCustomField } from "@/lib/halaqa-custom-fields";
+import { semesterOverallPercentage } from "@/lib/semester-grading";
 import * as XLSX from "xlsx";
 
 export interface PeriodDayStats {
@@ -140,7 +140,7 @@ function tallyDayEntry(stats: PeriodDayStats, e: WeekRecord["days"][string] | un
 }
 
 export function aggregateStudentPeriod(
-  studentId: string,
+  student: Student,
   grades: GradesStore,
   calendar: AcademicCalendar,
   weekNums: number[],
@@ -148,12 +148,10 @@ export function aggregateStudentPeriod(
   toIso: string,
   isTalqeen: boolean,
 ): StudentPeriodExportRow | null {
-  const studentGrades = grades[studentId];
+  const studentGrades = grades[student.id];
   if (!studentGrades) return null;
 
   const stats = emptyPeriodStats();
-  let pctSum = 0;
-  let pctCount = 0;
 
   for (const wn of weekNums) {
     const week = studentGrades[wn];
@@ -161,22 +159,14 @@ export function aggregateStudentPeriod(
     eachDayInWeekPeriod(calendar, wn, fromIso, toIso, (dayKey) => {
       tallyDayEntry(stats, week.days[dayKey]);
     });
-    const hasData = DAYS.some((d) => {
-      const e = week.days[d.key];
-      return e && (e.attendance || e.hifz || e.rabt || e.muraja);
-    });
-    if (hasData) {
-      pctSum += weekPercentage(week, isTalqeen);
-      pctCount++;
-    }
   }
 
   const cappedTo = clampToToday(calendar, toIso);
   return {
     ...stats,
     weeksIncluded: weekNums,
-    overallPercent: pctCount > 0 ? Math.round(pctSum / pctCount) : 0,
-    sardPassed: countPassedSardInRange(studentId, fromIso, cappedTo),
+    overallPercent: semesterOverallPercentage(student.id, student.levelType, isTalqeen, grades, calendar),
+    sardPassed: countPassedSardInRange(student.id, fromIso, cappedTo),
   };
 }
 
@@ -227,7 +217,7 @@ export function buildTeacherGradesWorkbook(
   ];
 
   students.forEach((s) => {
-    const row = aggregateStudentPeriod(s.id, grades, calendar, weekNums, fromIso, cappedTo, isTalqeen);
+    const row = aggregateStudentPeriod(s, grades, calendar, weekNums, fromIso, cappedTo, isTalqeen);
     const weeksLabel = weekNums.map((w) => weekLabel(w)).join("، ");
     if (!row) {
       summary.push([s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, weeksLabel]);

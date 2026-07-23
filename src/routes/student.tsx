@@ -1,17 +1,24 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
-  loadHalaqat, loadStudents, loadGrades, studentOverallPercentage, DAYS,
+  loadHalaqat, loadStudents, loadGrades, DAYS,
 } from "@/lib/mock-data";
 import { loginByNationalId } from "@/lib/secure-data.functions";
 import { setToken } from "@/lib/cloud-sync";
 import { getCalendarDayKey } from "@/lib/operational-date";
+import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
+import {
+  semesterOverallPercentage,
+  halaqaSemesterAverage,
+  formatOverallPercent,
+  fallbackWeeklyAverage,
+} from "@/lib/semester-grading";
 import { fetchStudentPlanSheet } from "@/lib/plans-service";
 import type { StudentPlanSheetData } from "@/lib/plan-types";
 import { StudentAcademicResultsSection } from "@/components/student-profile/StudentAcademicResults";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { AppHeader } from "@/components/AppHeader";
-import { Trophy, BookOpen, IdCard, X, CheckCircle2, Clock, AlertCircle, UserCheck, GraduationCap } from "lucide-react";
+import { Trophy, BookOpen, IdCard, X, CheckCircle2, Clock, AlertCircle, UserCheck, GraduationCap, Loader2 } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/student")({ component: StudentPage });
@@ -24,22 +31,41 @@ function StudentPage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [planData, setPlanData] = useState<StudentPlanSheetData | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
+  const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
 
-  const halaqaStats = useMemo(() => halaqat.map((h) => {
-    const hs = students.filter((s) => s.halaqaId === h.id);
-    const avg = hs.length === 0 ? 0 : Math.round(hs.reduce((acc, s) => acc + studentOverallPercentage(s.id, h.isTalqeen, grades), 0) / hs.length);
-    return { halaqa: h, pct: avg };
-  }), [halaqat, students, grades]);
+  useEffect(() => {
+    let cancelled = false;
+    fetchActiveCalendar(true)
+      .then((cal) => { if (!cancelled) setCalendar(cal); })
+      .catch(() => { if (!cancelled) setCalendar(null); });
+    return () => { cancelled = true; };
+  }, []);
 
-  const top15 = useMemo(() => students
-    .map((s) => {
-      const h = halaqat.find((x) => x.id === s.halaqaId)!;
-      if (!h) return null;
-      return { student: s, halaqa: h, pct: studentOverallPercentage(s.id, h.isTalqeen, grades) };
-    })
-    .filter((x): x is NonNullable<typeof x> => !!x)
-    .sort((a, b) => b.pct - a.pct)
-    .slice(0, 15), [students, halaqat, grades]);
+  const halaqaStats = useMemo(() => {
+    if (!calendar) return halaqat.map((h) => ({ halaqa: h, pct: 0 }));
+    return halaqat.map((h) => {
+      const hs = students.filter((s) => s.halaqaId === h.id);
+      const pct = halaqaSemesterAverage(hs, h.isTalqeen, grades, calendar);
+      return { halaqa: h, pct };
+    });
+  }, [halaqat, students, grades, calendar]);
+
+  const top15 = useMemo(() => {
+    if (!calendar) return [];
+    return students
+      .map((s) => {
+        const h = halaqat.find((x) => x.id === s.halaqaId);
+        if (!h) return null;
+        return {
+          student: s,
+          halaqa: h,
+          pct: semesterOverallPercentage(s.id, s.levelType, h.isTalqeen, grades, calendar),
+        };
+      })
+      .filter((x): x is NonNullable<typeof x> => !!x)
+      .sort((a, b) => b.pct - a.pct)
+      .slice(0, 15);
+  }, [students, halaqat, grades, calendar]);
 
   const submit = async () => {
     if (!nid.trim()) { toast.error("أدخل رقم الهوية"); return; }
@@ -57,7 +83,18 @@ function StudentPage() {
     const s = students.find((x) => x.id === selectedId);
     if (!s) return null;
     const h = halaqat.find((x) => x.id === s.halaqaId)!;
-    const overall = studentOverallPercentage(s.id, h.isTalqeen, grades);
+    const halaqaStudents = students.filter((st) => st.halaqaId === h.id);
+    const overall = calendar
+      ? semesterOverallPercentage(s.id, s.levelType, h.isTalqeen, grades, calendar)
+      : fallbackWeeklyAverage(s.id, h.isTalqeen, grades);
+    const halaqaPct = calendar
+      ? halaqaSemesterAverage(halaqaStudents, h.isTalqeen, grades, calendar)
+      : halaqaStudents.length === 0
+        ? 0
+        : Math.round(
+            halaqaStudents.reduce((acc, st) => acc + fallbackWeeklyAverage(st.id, h.isTalqeen, grades), 0)
+            / halaqaStudents.length,
+          );
     let absences = 0, lates = 0, excused = 0, memorizedCount = 0;
     Object.values(grades[s.id] || {}).forEach((w) => {
       DAYS.forEach((d) => {
@@ -69,7 +106,6 @@ function StudentPage() {
         if (e.hifz === "half" || e.hifz === "one" || e.hifz === "two") memorizedCount++;
       });
     });
-    // Find today's status across any week that recorded it
     const todayKey = getCalendarDayKey();
     let todayStatus = "";
     const weeks = Object.values(grades[s.id] || {});
@@ -77,8 +113,8 @@ function StudentPage() {
       const att = weeks[i].days[todayKey]?.attendance;
       if (att) { todayStatus = att; break; }
     }
-    return { s, h, overall, absences, lates, excused, memorizedCount, todayStatus };
-  }, [selectedId, students, halaqat, grades]);
+    return { s, h, overall, halaqaPct, absences, lates, excused, memorizedCount, todayStatus };
+  }, [selectedId, students, halaqat, grades, calendar]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -100,42 +136,53 @@ function StudentPage() {
       <AppHeader title="نتائج الطلاب" subtitle="الطالب وولي الأمر" />
       <main className="max-w-6xl mx-auto px-4 py-8">
 
-        {/* Halaqa progress */}
-        <section className="glass-card rounded-2xl p-6 mb-6">
-          <h2 className="text-xl font-bold text-primary mb-4 flex items-center gap-2">
-            <BookOpen className="w-5 h-5" /> تقدّم الحلقات
-          </h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {halaqaStats.map(({ halaqa, pct }) => (
-              <Donut key={halaqa.id} pct={pct} label={halaqa.name} />
-            ))}
+        {!calendar && (
+          <div className="glass-card rounded-2xl p-6 mb-6 flex items-center justify-center gap-2 text-muted-foreground">
+            <Loader2 className="w-5 h-5 animate-spin" />
+            جاري تحميل التقويم...
           </div>
-        </section>
+        )}
 
-        {/* Honor roll */}
-        <section className="glass-card rounded-2xl p-6 mb-6">
-          <h2 className="text-xl font-bold text-primary mb-4 flex items-center gap-2">
-            <Trophy className="w-5 h-5" /> لوحة الشرف — أفضل 15 طالب
-          </h2>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
-            {top15.map((row, i) => (
-              <div key={row.student.id} className={`flex items-center justify-between p-3 rounded-lg ${i < 3 ? "bg-primary/10 border border-primary/30" : "bg-secondary/50"}`}>
-                <div className="flex items-center gap-3">
-                  <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${i < 3 ? "gold-gradient text-primary-foreground" : "bg-secondary text-muted-foreground"}`}>
-                    {i + 1}
-                  </div>
-                  <div>
-                    <div className="text-sm font-medium">{row.student.name}</div>
-                    <div className="text-xs text-muted-foreground">{row.halaqa.name}</div>
-                  </div>
-                </div>
-                <div className="font-bold gold-text">{row.pct}%</div>
+        {calendar && (
+          <>
+            <section className="glass-card rounded-2xl p-6 mb-6">
+              <h2 className="text-xl font-bold text-primary mb-1 flex items-center gap-2">
+                <BookOpen className="w-5 h-5" /> متوسط الحلقات — النسبة الكلية للفصل
+              </h2>
+              <p className="text-xs text-muted-foreground mb-4">
+                {calendar.semester?.name ?? "الفصل الحالي"} · منفصلة عن «تقدم الحفظ» في ورقة الخطة
+              </p>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+                {halaqaStats.map(({ halaqa, pct }) => (
+                  <Donut key={halaqa.id} pct={pct} label={halaqa.name} />
+                ))}
               </div>
-            ))}
-          </div>
-        </section>
+            </section>
 
-        {/* National ID input — required to see personal data */}
+            <section className="glass-card rounded-2xl p-6 mb-6">
+              <h2 className="text-xl font-bold text-primary mb-4 flex items-center gap-2">
+                <Trophy className="w-5 h-5" /> لوحة الشرف — أفضل 15 طالب
+              </h2>
+              <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
+                {top15.map((row, i) => (
+                  <div key={row.student.id} className={`flex items-center justify-between p-3 rounded-lg ${i < 3 ? "bg-primary/10 border border-primary/30" : "bg-secondary/50"}`}>
+                    <div className="flex items-center gap-3">
+                      <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-sm ${i < 3 ? "gold-gradient text-primary-foreground" : "bg-secondary text-muted-foreground"}`}>
+                        {i + 1}
+                      </div>
+                      <div>
+                        <div className="text-sm font-medium">{row.student.name}</div>
+                        <div className="text-xs text-muted-foreground">{row.halaqa.name}</div>
+                      </div>
+                    </div>
+                    <div className="font-bold gold-text">{formatOverallPercent(row.pct)}</div>
+                  </div>
+                ))}
+              </div>
+            </section>
+          </>
+        )}
+
         <section className="glass-card rounded-2xl p-6 gold-glow">
           <h2 className="text-xl font-bold text-primary mb-2 flex items-center gap-2">
             <IdCard className="w-5 h-5" /> الاطلاع على نتائج الطالب
@@ -169,12 +216,12 @@ function StudentPage() {
                 </button>
               </div>
 
-              {/* Today's status */}
               <TodayBadge status={data.todayStatus} />
 
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 mt-4">
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
+                <Stat label="النسبة الكلية" value={formatOverallPercent(data.overall)} />
+                <Stat label="متوسط الحلقة" value={formatOverallPercent(data.halaqaPct)} />
                 <Stat label="مقاطع محفوظة" value={String(data.memorizedCount)} />
-                <Stat label="النسبة العامة" value={`${data.overall}%`} />
                 <Stat label="مرات الغياب" value={String(data.absences)} />
                 <Stat label="مرات التأخر" value={String(data.lates)} />
                 <Stat label="مرات الاستئذان" value={String(data.excused)} />
@@ -185,9 +232,12 @@ function StudentPage() {
               </section>
 
               <section className="mt-6 pt-6 border-t border-border">
-                <h4 className="text-lg font-bold text-primary mb-4 flex items-center gap-2">
+                <h4 className="text-lg font-bold text-primary mb-1 flex items-center gap-2">
                   <GraduationCap className="w-5 h-5" /> ورقة الإنجاز التراكمية
                 </h4>
+                <p className="text-xs text-muted-foreground mb-4">
+                  «تقدم الحفظ» أدناه = إنجاز الخطة التعليمية فقط — مختلف عن النسبة الكلية أعلاه
+                </p>
                 <StudentPlanSheet
                   data={planData ?? { assignment: null, plan: null, segments: [], completions: [] }}
                   studentName={data.s.name}
@@ -232,7 +282,8 @@ function Stat({ label, value, small }: { label: string; value: string; small?: b
 function Donut({ pct, label }: { pct: number; label: string }) {
   const r = 36;
   const c = 2 * Math.PI * r;
-  const dash = (pct / 100) * c;
+  const dash = (Math.min(pct, 100) / 100) * c;
+  const display = pct % 1 === 0 ? String(Math.round(pct)) : pct.toFixed(1);
   return (
     <div className="flex flex-col items-center">
       <div className="relative w-24 h-24">
@@ -247,7 +298,7 @@ function Donut({ pct, label }: { pct: number; label: string }) {
             </linearGradient>
           </defs>
         </svg>
-        <div className="absolute inset-0 flex items-center justify-center font-bold gold-text">{pct}%</div>
+        <div className="absolute inset-0 flex items-center justify-center font-bold gold-text text-sm">{display}%</div>
       </div>
       <div className="text-xs text-center text-muted-foreground mt-2 leading-tight">{label}</div>
     </div>

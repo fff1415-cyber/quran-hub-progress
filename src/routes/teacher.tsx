@@ -31,6 +31,12 @@ import { loadHalaqaCustomFields } from "@/lib/halaqa-custom-fields";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  semesterOverallPercentage,
+  halaqaSemesterAverage,
+  formatOverallPercent,
+  overallPercentColorClass,
+} from "@/lib/semester-grading";
 import { TeacherGradesExport } from "@/components/TeacherGradesExport";
 
 export const Route = createFileRoute("/teacher")({
@@ -237,6 +243,11 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const [planSheetData, setPlanSheetData] = useState<StudentPlanSheetData | null>(null);
   const [planSheetLoading, setPlanSheetLoading] = useState(false);
   const senderName = typeof window !== "undefined" ? (sessionStorage.getItem("qs_name") || "المعلم") : "المعلم";
+
+  const halaqaSemesterPct = useMemo(
+    () => halaqaSemesterAverage(students, isTalqeen, grades, calendar),
+    [students, isTalqeen, grades, calendar],
+  );
 
   const selectableWeeks = useMemo(() => getSelectableWeeks(calendar), [calendar]);
   const workingKeys = useMemo(
@@ -482,7 +493,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
             {!isTalqeen && <th className="p-2 border-r border-border">اختبار مراجعة</th>}
             <th className="p-2 border-r border-border">اختبار ربط</th>
             <th className="p-2 border-r border-border">السرد</th>
-            <th className="p-2 border-r border-border text-primary">النسبة</th>
+            <th className="p-2 border-r border-border text-muted-foreground">نسبة الأسبوع</th>
+            <th className="p-2 border-r border-border text-primary font-bold">النسبة الكلية</th>
             <th className="p-2 border-r border-border text-warning">إرسال للإدارة</th>
           </tr>
           <tr className="bg-secondary/30 text-xs text-muted-foreground">
@@ -517,12 +529,14 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
             <th></th>
             <th></th>
             <th></th>
+            <th></th>
           </tr>
         </thead>
         <tbody>
           {students.map((s) => {
             const w = grades[s.id]?.[weekNum] || emptyWeek();
-            const pct = weekPercentage(w, isTalqeen);
+            const weekPct = weekPercentage(w, isTalqeen);
+            const semesterPct = semesterOverallPercentage(s.id, s.levelType, isTalqeen, grades, calendar);
             return (
               <tr key={s.id} className="border-b border-border/50 hover:bg-accent/30">
                 <td className="p-2 sticky right-0 bg-card font-medium">
@@ -609,9 +623,14 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 <td className="p-1 text-center border-r border-border/30">
                   <Cbx checked={w.sard} onChange={(v) => toggleSard(s, v)} />
                 </td>
-                <td className="p-2 text-center font-bold">
-                  <span className={pct >= 80 ? "text-success" : pct >= 50 ? "text-warning" : "text-muted-foreground"}>
-                    {pct}%
+                <td className="p-2 text-center font-bold border-r border-border/30">
+                  <span className={weekPct >= 80 ? "text-success" : weekPct >= 50 ? "text-warning" : "text-muted-foreground"}>
+                    {weekPct}%
+                  </span>
+                </td>
+                <td className="p-2 text-center font-bold border-r border-border/30">
+                  <span className={overallPercentColorClass(semesterPct)}>
+                    {formatOverallPercent(semesterPct)}
                   </span>
                 </td>
                 <td className="p-1 text-center">
@@ -628,6 +647,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           })}
         </tbody>
       </table>
+      )}
+
+      {students.length > 0 && (
+        <div className="mt-4 px-2 py-3 rounded-xl border border-primary/25 bg-primary/5 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-sm text-muted-foreground">
+            النسبة الكلية للحلقة (من بداية الفصل)
+            {calendar.semester && ` · ${calendar.semester.name}`}
+          </span>
+          <span className="text-xl font-bold gold-text">{formatOverallPercent(halaqaSemesterPct)}</span>
+        </div>
       )}
 
       {showAssign && <AssignmentDialog halaqaId={halaqaId} onClose={() => setShowAssign(false)} />}
