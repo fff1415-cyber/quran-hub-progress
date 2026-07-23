@@ -16,9 +16,10 @@ import { ManagerSettingsPanel } from "@/components/role-workspace/ManagerSetting
 import { ManagerEvaluationSettingsPanel } from "@/components/role-workspace/ManagerEvaluationSettingsPanel";
 import { ManagerHalaqaFieldsPanel } from "@/components/role-workspace/ManagerHalaqaFieldsPanel";
 import { ManagerWeeklyTestsSettingsPanel } from "@/components/ManagerWeeklyTestsSettingsPanel";
+import { ManagerStaffAttendancePanel } from "@/components/ManagerStaffAttendancePanel";
 import { WeeklyTestsOverviewPanel } from "@/components/WeeklyTestsOverviewPanel";
 import {
-  Crown, CalendarDays, ClipboardList, Send, BarChart3, FolderArchive, MessageSquare, LayoutDashboard, Scale, Columns3, ClipboardCheck,
+  Crown, CalendarDays, ClipboardList, Send, BarChart3, FolderArchive, MessageSquare, LayoutDashboard, Scale, Columns3, ClipboardCheck, UserCheck,
 } from "lucide-react";
 import { Toaster } from "sonner";
 
@@ -106,6 +107,13 @@ function ManagerPage() {
       icon: Columns3,
       roles: ["manager"],
       content: <ManagerHalaqaFieldsPanel />,
+    },
+    {
+      id: "staff-attendance",
+      label: "حضور العاملين",
+      icon: UserCheck,
+      roles: ["manager"],
+      content: <ManagerStaffAttendancePanel />,
     },
     {
       id: "weekly-tests",

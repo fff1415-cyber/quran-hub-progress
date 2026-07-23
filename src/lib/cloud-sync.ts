@@ -2,6 +2,7 @@
 import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, Notification, SardHistoryItem, SardQueueItem, Student } from "./mock-data";
 import { saveGrades, saveHalaqat, saveLatePermissions, saveMessageTemplates, saveNotifications, saveSardHistory, saveSardQueue, saveStudents, ensureGradesSemester } from "./mock-data";
 import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } from "./weekly-tests";
+import { saveStaffAttendanceSettings, saveStaffCheckIns } from "./staff-attendance";
 import type { AcademicPhaseRecord } from "./academic-record";
 import { saveAcademicRecords } from "./academic-record";
 import type { HalaqaCustomFieldsStore } from "./halaqa-custom-fields";
@@ -137,6 +138,8 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       if (!semesterReset && state.has("grades")) saveGrades(state.get("grades") as GradesStore);
       if (!weeklyTestsReset && state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
       if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
+      if (state.has("staff_attendance_settings")) saveStaffAttendanceSettings(state.get("staff_attendance_settings") as import("./staff-attendance").StaffAttendanceSettings);
+      if (state.has("staff_attendance")) saveStaffCheckIns(state.get("staff_attendance") as import("./staff-attendance").StaffCheckIn[]);
       if (state.has("sard_queue")) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
       if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
       if (state.has("academic_records")) saveAcademicRecords(state.get("academic_records") as AcademicPhaseRecord[]);
@@ -238,7 +241,7 @@ export async function deleteRoleAccount(id: string) {
 }
 
 export async function pushAppState(
-  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_custom_fields" | "notifications" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings",
+  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_custom_fields" | "notifications" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings" | "staff_attendance" | "staff_attendance_settings",
   value: unknown,
 ) {
   await secureSetAppState({ data: { token: tokenOrThrow(), key, value } });

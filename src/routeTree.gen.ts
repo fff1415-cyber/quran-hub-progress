@@ -16,6 +16,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ManagerRouteImport } from './routes/manager'
 import { Route as MusammiRouteImport } from './routes/musammi'
 import { Route as SecretaryRouteImport } from './routes/secretary'
+import { Route as StaffAttendanceRouteImport } from './routes/staff-attendance'
 import { Route as StudentRouteImport } from './routes/student'
 import { Route as SupervisorRouteImport } from './routes/supervisor'
 import { Route as TeacherRouteImport } from './routes/teacher'
@@ -55,6 +56,11 @@ const SecretaryRoute = SecretaryRouteImport.update({
   path: '/secretary',
   getParentRoute: () => rootRouteImport,
 } as any)
+const StaffAttendanceRoute = StaffAttendanceRouteImport.update({
+  id: '/staff-attendance',
+  path: '/staff-attendance',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StudentRoute = StudentRouteImport.update({
   id: '/student',
   path: '/student',
@@ -79,6 +85,7 @@ export interface FileRoutesByFullPath {
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
   '/secretary': typeof SecretaryRoute
+  '/staff-attendance': typeof StaffAttendanceRoute
   '/student': typeof StudentRoute
   '/supervisor': typeof SupervisorRoute
   '/teacher': typeof TeacherRoute
@@ -91,6 +98,7 @@ export interface FileRoutesByTo {
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
   '/secretary': typeof SecretaryRoute
+  '/staff-attendance': typeof StaffAttendanceRoute
   '/student': typeof StudentRoute
   '/supervisor': typeof SupervisorRoute
   '/teacher': typeof TeacherRoute
@@ -104,6 +112,7 @@ export interface FileRoutesById {
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
   '/secretary': typeof SecretaryRoute
+  '/staff-attendance': typeof StaffAttendanceRoute
   '/student': typeof StudentRoute
   '/supervisor': typeof SupervisorRoute
   '/teacher': typeof TeacherRoute
@@ -118,6 +127,7 @@ export interface FileRouteTypes {
     | '/manager'
     | '/musammi'
     | '/secretary'
+    | '/staff-attendance'
     | '/student'
     | '/supervisor'
     | '/teacher'
@@ -130,6 +140,7 @@ export interface FileRouteTypes {
     | '/manager'
     | '/musammi'
     | '/secretary'
+    | '/staff-attendance'
     | '/student'
     | '/supervisor'
     | '/teacher'
@@ -142,6 +153,7 @@ export interface FileRouteTypes {
     | '/manager'
     | '/musammi'
     | '/secretary'
+    | '/staff-attendance'
     | '/student'
     | '/supervisor'
     | '/teacher'
@@ -155,6 +167,7 @@ export interface RootRouteChildren {
   ManagerRoute: typeof ManagerRoute
   MusammiRoute: typeof MusammiRoute
   SecretaryRoute: typeof SecretaryRoute
+  StaffAttendanceRoute: typeof StaffAttendanceRoute
   StudentRoute: typeof StudentRoute
   SupervisorRoute: typeof SupervisorRoute
   TeacherRoute: typeof TeacherRoute
@@ -211,6 +224,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SecretaryRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/staff-attendance': {
+      id: '/staff-attendance'
+      path: '/staff-attendance'
+      fullPath: '/staff-attendance'
+      preLoaderRoute: typeof StaffAttendanceRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/student': {
       id: '/student'
       path: '/student'
@@ -243,6 +263,7 @@ const rootRouteChildren: RootRouteChildren = {
   ManagerRoute: ManagerRoute,
   MusammiRoute: MusammiRoute,
   SecretaryRoute: SecretaryRoute,
+  StaffAttendanceRoute: StaffAttendanceRoute,
   StudentRoute: StudentRoute,
   SupervisorRoute: SupervisorRoute,
   TeacherRoute: TeacherRoute,

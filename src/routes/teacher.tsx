@@ -38,6 +38,7 @@ import {
   overallPercentColorClass,
 } from "@/lib/semester-grading";
 import { TeacherGradesExport } from "@/components/TeacherGradesExport";
+import { StaffAttendanceCheckInButton } from "@/components/StaffAttendanceCheckInButton";
 import { TeacherWeeklyTestsPanel } from "@/components/TeacherWeeklyTestsPanel";
 import { ensureWeeklyTestsSemester } from "@/lib/weekly-tests";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -138,6 +139,13 @@ function TeacherPage() {
               </div>
             </div>
             <div className="flex items-center gap-2 flex-wrap shrink-0">
+              {name && role && (
+                <StaffAttendanceCheckInButton
+                  role={role}
+                  name={name}
+                  halaqaId={halaqa.id}
+                />
+              )}
               {!loadingCal && calendar && (
                 <TeacherGradesExport
                   halaqaId={halaqa.id}
