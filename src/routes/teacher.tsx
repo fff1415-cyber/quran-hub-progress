@@ -30,6 +30,7 @@ import { AttSelect } from "@/components/plans/TeacherGradeInputs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { TeacherGradesExport } from "@/components/TeacherGradesExport";
 
 export const Route = createFileRoute("/teacher")({
   validateSearch: z.object({ h: z.number().optional(), w: z.number().optional() }),
@@ -118,6 +119,16 @@ function TeacherPage() {
         </div>
 
         <HalaqaNotifications halaqaId={halaqa.id} />
+
+        {!loadingCal && calendar && (
+          <TeacherGradesExport
+            halaqaId={halaqa.id}
+            halaqaName={halaqa.name}
+            isTalqeen={halaqa.isTalqeen}
+            calendar={calendar}
+            viewerRole={isAssistant ? "assistant" : "teacher"}
+          />
+        )}
 
         {loadingCal || !calendar || selectedWeek === null ? (
           <div className="glass-card rounded-2xl p-12 flex flex-col items-center gap-3 text-muted-foreground">
