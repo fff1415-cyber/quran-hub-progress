@@ -1,6 +1,7 @@
 // Cloud sync layer — all data via Hostinger PHP API
 import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, Notification, SardHistoryItem, SardQueueItem, Student } from "./mock-data";
 import { saveGrades, saveHalaqat, saveLatePermissions, saveMessageTemplates, saveNotifications, saveSardHistory, saveSardQueue, saveStudents, ensureGradesSemester } from "./mock-data";
+import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } from "./weekly-tests";
 import type { AcademicPhaseRecord } from "./academic-record";
 import { saveAcademicRecords } from "./academic-record";
 import type { HalaqaCustomFieldsStore } from "./halaqa-custom-fields";
@@ -128,11 +129,14 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
     if (token) {
       const calendar = await fetchActiveCalendar(true);
       const semesterReset = ensureGradesSemester(calendar.semester?.id ?? null);
+      const weeklyTestsReset = ensureWeeklyTestsSemester(calendar.semester?.id ?? null);
 
       const stateRows = await secureListAppState({ data: { token } });
       const state = new Map(stateRows.map((row) => [row.key, row.value]));
       sessionStorage.setItem("qs_syncing", "1");
       if (!semesterReset && state.has("grades")) saveGrades(state.get("grades") as GradesStore);
+      if (!weeklyTestsReset && state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
+      if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
       if (state.has("sard_queue")) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
       if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
       if (state.has("academic_records")) saveAcademicRecords(state.get("academic_records") as AcademicPhaseRecord[]);
@@ -145,6 +149,7 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       if (semesterReset) {
         try {
           await secureSetAppState({ data: { token, key: "grades", value: {} } });
+          await secureSetAppState({ data: { token, key: "weekly_tests", value: {} } });
         } catch {
           /* local reset is enough */
         }
@@ -233,7 +238,7 @@ export async function deleteRoleAccount(id: string) {
 }
 
 export async function pushAppState(
-  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_custom_fields" | "notifications" | "message_templates" | "late_permissions",
+  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_custom_fields" | "notifications" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings",
   value: unknown,
 ) {
   await secureSetAppState({ data: { token: tokenOrThrow(), key, value } });

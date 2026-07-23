@@ -20,7 +20,7 @@ import { AppHeader } from "@/components/AppHeader";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Bell, Check, CheckCircle2, ClipboardList, Loader2, Send, Users, X } from "lucide-react";
+import { Bell, Check, CheckCircle2, ClipboardList, ClipboardCheck, Loader2, Send, Users, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { applyPlanInput, fetchStudentPlanSheet } from "@/lib/plans-service";
 import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
@@ -38,14 +38,22 @@ import {
   overallPercentColorClass,
 } from "@/lib/semester-grading";
 import { TeacherGradesExport } from "@/components/TeacherGradesExport";
+import { TeacherWeeklyTestsPanel } from "@/components/TeacherWeeklyTestsPanel";
+import { ensureWeeklyTestsSemester } from "@/lib/weekly-tests";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/teacher")({
-  validateSearch: z.object({ h: z.number().optional(), w: z.number().optional() }),
+  validateSearch: z.object({
+    h: z.number().optional(),
+    w: z.number().optional(),
+    view: z.enum(["grades", "tests"]).optional(),
+  }),
   component: TeacherPage,
 });
 
 function TeacherPage() {
-  const { h, w } = Route.useSearch();
+  const { h, w, view: viewParam } = Route.useSearch();
+  const view = viewParam ?? "grades";
   const navigate = useNavigate();
   const halaqat = loadHalaqat();
   const halaqa = halaqat.find((x) => x.id === h);
@@ -67,7 +75,9 @@ function TeacherPage() {
       .then((cal) => {
         if (cancelled) return;
         const reset = ensureGradesSemester(cal.semester?.id ?? null);
+        const testsReset = ensureWeeklyTestsSemester(cal.semester?.id ?? null);
         if (reset) toast.info("بدء فصل دراسي جديد — تم تصفير سجل التحضير");
+        if (testsReset) toast.info("بدء فصل دراسي جديد — تم تصفير الاختبارات الأسبوعية");
         setCalendar(cal);
         const selectable = cal.weeks.filter((wk) => wk.week_number <= cal.currentWeekNumber);
         const fromUrl = w && selectable.some((wk) => wk.week_number === w) ? w : null;
@@ -87,7 +97,13 @@ function TeacherPage() {
   const handleWeekChange = (weekNum: number) => {
     setSelectedWeek(weekNum);
     if (halaqa) {
-      navigate({ to: "/teacher", search: { h: halaqa.id, w: weekNum } });
+      navigate({ to: "/teacher", search: { h: halaqa.id, w: weekNum, view } });
+    }
+  };
+
+  const setView = (next: "grades" | "tests") => {
+    if (halaqa) {
+      navigate({ to: "/teacher", search: { h: halaqa.id, w: selectedWeek ?? undefined, view: next } });
     }
   };
 
@@ -127,31 +143,51 @@ function TeacherPage() {
 
         <HalaqaNotifications halaqaId={halaqa.id} />
 
-        {!loadingCal && calendar && (
-          <TeacherGradesExport
-            halaqaId={halaqa.id}
-            halaqaName={halaqa.name}
-            isTalqeen={halaqa.isTalqeen}
-            calendar={calendar}
-            viewerRole={isAssistant ? "assistant" : "teacher"}
-          />
-        )}
-
         {loadingCal || !calendar || selectedWeek === null ? (
           <div className="glass-card rounded-2xl p-12 flex flex-col items-center gap-3 text-muted-foreground">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
             <p className="text-sm">جاري تحميل التقويم الدراسي...</p>
           </div>
         ) : (
-          <WeekTable
-            halaqaId={halaqa.id}
-            weekNum={selectedWeek}
-            calendar={calendar}
-            onWeekChange={handleWeekChange}
-            isTalqeen={halaqa.isTalqeen}
-            viewerRole={isAssistant ? "assistant" : "teacher"}
-            canAssign={!isAssistant}
-          />
+          <Tabs value={view} onValueChange={(v) => setView(v as "grades" | "tests")} dir="rtl">
+            <TabsList className="w-full sm:w-auto h-auto flex gap-1 p-1 mb-4 bg-secondary/50 border border-border rounded-xl">
+              <TabsTrigger value="grades" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <ClipboardList className="w-4 h-4" /> التحضير والدرجات
+              </TabsTrigger>
+              <TabsTrigger value="tests" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <ClipboardCheck className="w-4 h-4" /> الاختبارات الأسبوعية
+              </TabsTrigger>
+            </TabsList>
+            <TabsContent value="grades" className="mt-0 space-y-4">
+              <TeacherGradesExport
+                halaqaId={halaqa.id}
+                halaqaName={halaqa.name}
+                isTalqeen={halaqa.isTalqeen}
+                calendar={calendar}
+                viewerRole={isAssistant ? "assistant" : "teacher"}
+              />
+              <WeekTable
+                halaqaId={halaqa.id}
+                weekNum={selectedWeek}
+                calendar={calendar}
+                onWeekChange={handleWeekChange}
+                isTalqeen={halaqa.isTalqeen}
+                viewerRole={isAssistant ? "assistant" : "teacher"}
+                canAssign={!isAssistant}
+              />
+            </TabsContent>
+            <TabsContent value="tests" className="mt-0">
+              <TeacherWeeklyTestsPanel
+                halaqaId={halaqa.id}
+                halaqaName={halaqa.name}
+                isTalqeen={halaqa.isTalqeen}
+                calendar={calendar}
+                weekNum={selectedWeek}
+                onWeekChange={handleWeekChange}
+                viewerRole={isAssistant ? "assistant" : "teacher"}
+              />
+            </TabsContent>
+          </Tabs>
         )}
       </main>
     </div>
@@ -490,8 +526,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 {highlightDay(d.key) && <span className="block text-[10px] text-primary font-normal">اليوم</span>}
               </th>
             ))}
-            {!isTalqeen && <th className="p-2 border-r border-border">اختبار مراجعة</th>}
-            <th className="p-2 border-r border-border">اختبار ربط</th>
             <th className="p-2 border-r border-border">السرد</th>
             <th className="p-2 border-r border-border text-muted-foreground">نسبة الأسبوع</th>
             <th className="p-2 border-r border-border text-primary font-bold">النسبة الكلية</th>
@@ -524,8 +558,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 </React.Fragment>
               )
             )}
-            {!isTalqeen && <th></th>}
-            <th></th>
             <th></th>
             <th></th>
             <th></th>
@@ -612,14 +644,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                     </React.Fragment>
                   );
                 })}
-                {!isTalqeen && (
-                  <td className="p-1 text-center border-r border-border/30">
-                    <Cbx checked={w.testMuraja} onChange={(v) => update(s.id, (x) => ({ ...x, testMuraja: v }))} />
-                  </td>
-                )}
-                <td className="p-1 text-center border-r border-border/30">
-                  <Cbx checked={w.testRabt} onChange={(v) => update(s.id, (x) => ({ ...x, testRabt: v }))} />
-                </td>
                 <td className="p-1 text-center border-r border-border/30">
                   <Cbx checked={w.sard} onChange={(v) => toggleSard(s, v)} />
                 </td>

@@ -13,7 +13,8 @@ import {
 } from "@/components/role-workspace/RoleSections";
 import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTransfersPanel";
 import { SupervisorPlansPanel } from "@/components/plans/SupervisorPlansPanel";
-import { Eye, BookOpen, Mic, CheckCircle2, Zap, Award, Send, GraduationCap } from "lucide-react";
+import { Eye, BookOpen, Mic, CheckCircle2, Zap, Award, Send, GraduationCap, ClipboardCheck } from "lucide-react";
+import { WeeklyTestsOverviewPanel } from "@/components/WeeklyTestsOverviewPanel";
 import { Toaster } from "sonner";
 
 export const Route = createFileRoute("/supervisor")({
@@ -49,6 +50,13 @@ function SupervisorPage() {
       perm: "view_attendance",
       badge: forwardedTransfers,
       content: <ForwardedTransfersPanel role="supervisor" />,
+    },
+    {
+      id: "weekly-tests",
+      label: "الاختبارات الأسبوعية",
+      icon: ClipboardCheck,
+      perm: "view_attendance",
+      content: <WeeklyTestsOverviewPanel />,
     },
     {
       id: "halaqat",

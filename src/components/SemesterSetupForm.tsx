@@ -9,6 +9,7 @@ import { getToken } from "@/lib/cloud-sync";
 import { secureCreateSemester } from "@/lib/secure-data.functions";
 import { clearCalendarCache, fetchActiveCalendar } from "@/lib/academic-context";
 import { resetGradesForNewSemester } from "@/lib/mock-data";
+import { resetWeeklyTestsForNewSemester } from "@/lib/weekly-tests";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -147,10 +148,12 @@ export function SemesterSetupForm() {
 
       clearCalendarCache();
       resetGradesForNewSemester(result.id);
+      resetWeeklyTestsForNewSemester(result.id);
       await fetchActiveCalendar(true);
       try {
         const { pushAppState } = await import("@/lib/cloud-sync");
         await pushAppState("grades", {});
+        await pushAppState("weekly_tests", {});
       } catch {
         /* local reset applied */
       }
