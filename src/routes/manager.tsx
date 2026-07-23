@@ -6,6 +6,7 @@ import {
 import { getSessionName } from "@/lib/session-role";
 import { AppHeader } from "@/components/AppHeader";
 import { SemesterSetupForm } from "@/components/SemesterSetupForm";
+import { SemesterEditForm } from "@/components/SemesterEditForm";
 import { DailyOperations } from "@/components/DailyOperations";
 import { RoleShell, RolePageHeader, type RoleTab } from "@/components/role-workspace/RoleShell";
 import { AdminOverviewPanel } from "@/components/role-workspace/AdminOverviewPanel";
@@ -51,8 +52,13 @@ function ManagerPage() {
       icon: CalendarDays,
       roles: ["manager"],
       content: (
-        <div className="ring-2 ring-primary/25 rounded-2xl">
-          <SemesterSetupForm />
+        <div className="space-y-6">
+          <div className="ring-2 ring-success/25 rounded-2xl">
+            <SemesterEditForm />
+          </div>
+          <div className="ring-2 ring-primary/25 rounded-2xl">
+            <SemesterSetupForm />
+          </div>
         </div>
       ),
     },

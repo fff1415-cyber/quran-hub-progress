@@ -199,3 +199,25 @@ export async function secureCreateSemester({
     body: JSON.stringify({ semester: data.semester, weeks: data.weeks }),
   });
 }
+
+export async function secureUpdateActiveSemester({
+  data,
+}: {
+  data: {
+    token: string;
+    semester: {
+      name: string;
+      start_date: string;
+      weeks_count: number;
+      working_days: number[];
+      excluded_dates: string[];
+    };
+    weeks: { week_number: number; start_date: string; end_date: string }[];
+  };
+}) {
+  return apiFetch<{ ok: boolean; id: string; weeks_count: number }>("/semesters/active", {
+    method: "PUT",
+    auth: data.token,
+    body: JSON.stringify({ semester: data.semester, weeks: data.weeks }),
+  });
+}

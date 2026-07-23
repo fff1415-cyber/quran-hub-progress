@@ -94,6 +94,10 @@ function route_request(string $method, string $path): void
         handle_create_semester();
         return;
     }
+    if ($path === '/semesters/active' && $method === 'PUT') {
+        handle_update_active_semester();
+        return;
+    }
     if ($path === '/plans' && $method === 'GET') {
         handle_list_plans();
         return;

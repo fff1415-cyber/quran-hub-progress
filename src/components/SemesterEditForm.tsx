@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   generateAcademicWeeks,
   WEEKDAY_OPTIONS,
@@ -6,9 +6,8 @@ import {
   type GeneratedAcademicWeek,
 } from "@/lib/calendar-generator";
 import { getToken } from "@/lib/cloud-sync";
-import { secureCreateSemester } from "@/lib/secure-data.functions";
-import { clearCalendarCache, fetchActiveCalendar } from "@/lib/academic-context";
-import { resetGradesForNewSemester } from "@/lib/mock-data";
+import { secureGetActiveSemester, secureUpdateActiveSemester } from "@/lib/secure-data.functions";
+import { clearCalendarCache, fetchActiveCalendar, type ActiveSemester } from "@/lib/academic-context";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -18,12 +17,32 @@ import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { CalendarDays, Eye, Save, Plus, Trash2, Loader2 } from "lucide-react";
+import { CalendarRange, Eye, Save, Plus, Trash2, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 const DEFAULT_WORKING_DAYS = [0, 1, 2, 3, 4];
 
-export function SemesterSetupForm() {
+function normalizeIsoDate(raw: string): string {
+  return raw.slice(0, 10);
+}
+
+function parseActiveSemester(raw: unknown): ActiveSemester | null {
+  if (!raw || typeof raw !== "object") return null;
+  const s = raw as Record<string, unknown>;
+  if (typeof s.id !== "string" || typeof s.name !== "string") return null;
+  return {
+    id: s.id,
+    name: s.name,
+    start_date: normalizeIsoDate(String(s.start_date ?? "")),
+    weeks_count: Number(s.weeks_count ?? 0),
+    working_days: Array.isArray(s.working_days) ? s.working_days.map(Number) : DEFAULT_WORKING_DAYS,
+    excluded_dates: Array.isArray(s.excluded_dates) ? s.excluded_dates.map((d) => normalizeIsoDate(String(d))) : [],
+  };
+}
+
+export function SemesterEditForm() {
+  const [loading, setLoading] = useState(true);
+  const [semesterId, setSemesterId] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
   const [weeksCount, setWeeksCount] = useState(18);
@@ -38,6 +57,38 @@ export function SemesterSetupForm() {
     () => [...excludedDates].sort((a, b) => a.localeCompare(b)),
     [excludedDates],
   );
+
+  const loadActive = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = getToken();
+      if (!token) {
+        setSemesterId(null);
+        return;
+      }
+      const res = await secureGetActiveSemester({ data: { token } });
+      const semester = parseActiveSemester(res.semester);
+      if (!semester) {
+        setSemesterId(null);
+        return;
+      }
+      setSemesterId(semester.id);
+      setName(semester.name);
+      setStartDate(semester.start_date);
+      setWeeksCount(semester.weeks_count || 18);
+      setWorkingDays(semester.working_days.length ? semester.working_days : DEFAULT_WORKING_DAYS);
+      setExcludedDates(semester.excluded_dates);
+      setPreview(null);
+    } catch {
+      setSemesterId(null);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadActive();
+  }, [loadActive]);
 
   const toggleWorkingDay = (day: number) => {
     setWorkingDays((cur) => {
@@ -112,7 +163,7 @@ export function SemesterSetupForm() {
   };
 
   const handleSave = async () => {
-    if (!validateForm()) return;
+    if (!semesterId || !validateForm()) return;
 
     let weeks: GeneratedAcademicWeek[];
     try {
@@ -127,7 +178,7 @@ export function SemesterSetupForm() {
       const token = getToken();
       if (!token) throw new Error("الجلسة منتهية — أعد تسجيل الدخول");
 
-      const result = await secureCreateSemester({
+      const result = await secureUpdateActiveSemester({
         data: {
           token,
           semester: {
@@ -146,45 +197,69 @@ export function SemesterSetupForm() {
       });
 
       clearCalendarCache();
-      resetGradesForNewSemester(result.id);
       await fetchActiveCalendar(true);
-      try {
-        const { pushAppState } = await import("@/lib/cloud-sync");
-        await pushAppState("grades", {});
-      } catch {
-        /* local reset applied */
-      }
 
       setPreview(weeks);
-      toast.success(`تم اعتماد الفصل «${name.trim()}» — بدء فصل جديد (${result.weeks_count} أسبوعاً)`);
+      toast.success(`تم تحديث الفصل «${name.trim()}» (${result.weeks_count} أسبوعاً) — الدرجات محفوظة`);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "فشل اعتماد الفصل الدراسي");
+      toast.error(e instanceof Error ? e.message : "فشل تحديث الفصل الدراسي");
     } finally {
       setSaving(false);
     }
   };
 
+  if (loading) {
+    return (
+      <Card className="glass-card border-border shadow-none" dir="rtl">
+        <CardContent className="py-10 flex items-center justify-center gap-2 text-muted-foreground">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          جاري تحميل الفصل الحالي...
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (!semesterId) {
+    return (
+      <Card className="glass-card border-dashed border-border shadow-none" dir="rtl">
+        <CardHeader>
+          <CardTitle className="text-lg flex items-center gap-2 text-muted-foreground">
+            <CalendarRange className="w-5 h-5" />
+            لا يوجد فصل نشط
+          </CardTitle>
+          <CardDescription>
+            أنشئ فصلاً دراسياً جديداً من القسم أدناه لبدء العمل على التقويم
+          </CardDescription>
+        </CardHeader>
+      </Card>
+    );
+  }
+
   return (
-    <Card className="glass-card border-primary/15 shadow-none" dir="rtl">
+    <Card className="glass-card border-success/25 shadow-none" dir="rtl">
       <CardHeader>
-        <CardTitle className="text-lg flex items-center gap-2 text-primary">
-          <CalendarDays className="w-5 h-5" />
-          نظام التقويم الأكاديمي — فصل جديد
-        </CardTitle>
-        <CardDescription>
-          إعداد فصل دراسي جديد — عند الاعتماد تُصفّر درجات جميع الطلاب تلقائياً
-        </CardDescription>
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div>
+            <CardTitle className="text-lg flex items-center gap-2 text-success">
+              <CalendarRange className="w-5 h-5" />
+              تحرير الفصل الحالي
+            </CardTitle>
+            <CardDescription>
+              عدّل الأسابيع أو الإجازات أو أيام العمل — الدرجات الحالية تبقى كما هي
+            </CardDescription>
+          </div>
+          <Button type="button" variant="ghost" size="sm" onClick={() => void loadActive()} disabled={saving}>
+            <RefreshCw className="w-4 h-4" />
+            تحديث
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-6">
-        <div className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
-          تنبيه: اعتماد فصل جديد يُلغي الفصل السابق ويصفّر جميع الدرجات — استخدم «تحرير الفصل الحالي» للتعديلات دون تصفير.
-        </div>
-
         <div className="grid gap-4 sm:grid-cols-2">
           <div className="space-y-2 sm:col-span-2">
-            <Label htmlFor="semester-name">اسم الفصل الدراسي</Label>
+            <Label htmlFor="edit-semester-name">اسم الفصل الدراسي</Label>
             <Input
-              id="semester-name"
+              id="edit-semester-name"
               value={name}
               onChange={(e) => { setName(e.target.value); setPreview(null); }}
               placeholder="مثال: الفصل الأول 1447هـ"
@@ -193,9 +268,9 @@ export function SemesterSetupForm() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="semester-start">تاريخ بداية الفصل</Label>
+            <Label htmlFor="edit-semester-start">تاريخ بداية الفصل</Label>
             <Input
-              id="semester-start"
+              id="edit-semester-start"
               type="date"
               value={startDate}
               onChange={(e) => { setStartDate(e.target.value); setPreview(null); }}
@@ -205,9 +280,9 @@ export function SemesterSetupForm() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="semester-weeks">عدد الأسابيع</Label>
+            <Label htmlFor="edit-semester-weeks">عدد الأسابيع</Label>
             <Input
-              id="semester-weeks"
+              id="edit-semester-weeks"
               type="number"
               min={1}
               max={52}
@@ -286,7 +361,7 @@ export function SemesterSetupForm() {
           </Button>
           <Button type="button" onClick={() => void handleSave()} disabled={saving || previewing} className="gold-gradient text-primary-foreground">
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            اعتماد فصل جديد (تصفير الدرجات)
+            حفظ التعديلات
           </Button>
         </div>
 

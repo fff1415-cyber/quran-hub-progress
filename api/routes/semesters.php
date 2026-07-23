@@ -147,3 +147,94 @@ function handle_create_semester(): void
         error_response('فشل حفظ الفصل الدراسي: ' . $e->getMessage(), 500);
     }
 }
+
+function handle_update_active_semester(): void
+{
+    require_auth();
+    $input = json_input();
+    $semester = $input['semester'] ?? [];
+    $weeks = $input['weeks'] ?? [];
+
+    if (!is_array($semester) || !is_array($weeks)) {
+        error_response('بيانات الفصل غير صالحة');
+    }
+
+    $name = trim((string) ($semester['name'] ?? ''));
+    $startDate = trim((string) ($semester['start_date'] ?? ''));
+    $weeksCount = (int) ($semester['weeks_count'] ?? 0);
+    $workingDays = $semester['working_days'] ?? [];
+    $excludedDates = $semester['excluded_dates'] ?? [];
+
+    if ($name === '' || $startDate === '' || $weeksCount < 1) {
+        error_response('الاسم وتاريخ البداية وعدد الأسابيع مطلوبة');
+    }
+    if (!is_array($workingDays) || count($workingDays) === 0) {
+        error_response('يجب تحديد يوم عمل واحد على الأقل');
+    }
+    if (count($weeks) === 0) {
+        error_response('يجب إرسال الأسابيع المولّدة');
+    }
+
+    $pdo = db();
+    $stmt = $pdo->query('SELECT id FROM semesters WHERE is_active = 1 LIMIT 1');
+    $active = $stmt->fetch();
+    if (!$active) {
+        error_response('لا يوجد فصل دراسي نشط للتعديل', 404);
+    }
+
+    $semesterId = $active['id'];
+
+    try {
+        $pdo->beginTransaction();
+
+        $updateSemester = $pdo->prepare(
+            'UPDATE semesters
+             SET name = :name, start_date = :start_date, weeks_count = :weeks_count,
+                 working_days = :working_days, excluded_dates = :excluded_dates
+             WHERE id = :id'
+        );
+        $updateSemester->execute([
+            ':id' => $semesterId,
+            ':name' => $name,
+            ':start_date' => $startDate,
+            ':weeks_count' => $weeksCount,
+            ':working_days' => json_encode(array_values($workingDays), JSON_UNESCAPED_UNICODE),
+            ':excluded_dates' => json_encode(array_values($excludedDates), JSON_UNESCAPED_UNICODE),
+        ]);
+
+        $deleteWeeks = $pdo->prepare('DELETE FROM academic_weeks WHERE semester_id = ?');
+        $deleteWeeks->execute([$semesterId]);
+
+        $insertWeek = $pdo->prepare(
+            'INSERT INTO academic_weeks (id, semester_id, week_number, start_date, end_date)
+             VALUES (:id, :semester_id, :week_number, :start_date, :end_date)'
+        );
+
+        foreach ($weeks as $w) {
+            if (!is_array($w)) {
+                throw new RuntimeException('بيانات أسبوع غير صالحة');
+            }
+            $weekNumber = (int) ($w['week_number'] ?? 0);
+            $weekStart = trim((string) ($w['start_date'] ?? ''));
+            $weekEnd = trim((string) ($w['end_date'] ?? ''));
+            if ($weekNumber < 1 || $weekStart === '' || $weekEnd === '') {
+                throw new RuntimeException('بيانات أسبوع ناقصة');
+            }
+            $insertWeek->execute([
+                ':id' => new_uuid(),
+                ':semester_id' => $semesterId,
+                ':week_number' => $weekNumber,
+                ':start_date' => $weekStart,
+                ':end_date' => $weekEnd,
+            ]);
+        }
+
+        $pdo->commit();
+        json_response(['ok' => true, 'id' => $semesterId, 'weeks_count' => count($weeks)]);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_response('فشل تحديث الفصل الدراسي: ' . $e->getMessage(), 500);
+    }
+}
