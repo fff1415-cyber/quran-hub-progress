@@ -137,7 +137,18 @@ function TeacherPage() {
                 )}
               </div>
             </div>
-            {elevated && <HalaqaSwitcher current={halaqa.id} />}
+            <div className="flex items-center gap-2 flex-wrap shrink-0">
+              {!loadingCal && calendar && (
+                <TeacherGradesExport
+                  halaqaId={halaqa.id}
+                  halaqaName={halaqa.name}
+                  isTalqeen={halaqa.isTalqeen}
+                  calendar={calendar}
+                  viewerRole={isAssistant ? "assistant" : "teacher"}
+                />
+              )}
+              {elevated && <HalaqaSwitcher current={halaqa.id} />}
+            </div>
           </div>
         </div>
 
@@ -159,13 +170,6 @@ function TeacherPage() {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="grades" className="mt-0 space-y-4">
-              <TeacherGradesExport
-                halaqaId={halaqa.id}
-                halaqaName={halaqa.name}
-                isTalqeen={halaqa.isTalqeen}
-                calendar={calendar}
-                viewerRole={isAssistant ? "assistant" : "teacher"}
-              />
               <WeekTable
                 halaqaId={halaqa.id}
                 weekNum={selectedWeek}

@@ -6,7 +6,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export function TabBadge({ count }: { count: number }) {
-  if (count <= 0) return null;
+  if (!Number.isFinite(count) || count <= 0) return null;
   return (
     <Badge variant="default" className="mr-1.5 h-5 min-w-5 justify-center px-1.5 text-[10px]">
       {count}

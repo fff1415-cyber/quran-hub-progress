@@ -191,6 +191,33 @@ export function countPassedSardInRange(studentId: string, fromIso: string, toIso
   return seen.size;
 }
 
+function latestCustomFieldValues(
+  studentGrades: GradesStore[string] | undefined,
+  calendar: AcademicCalendar,
+  weekNums: number[],
+  fromIso: string,
+  toIso: string,
+  customFields: HalaqaCustomField[],
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!studentGrades || customFields.length === 0) return out;
+
+  const cappedTo = clampToToday(calendar, toIso);
+  for (const wn of weekNums) {
+    const week = studentGrades[wn];
+    if (!week) continue;
+    eachDayInWeekPeriod(calendar, wn, fromIso, cappedTo, (dayKey) => {
+      const e = week.days[dayKey];
+      if (!e?.custom) return;
+      customFields.forEach((f) => {
+        const v = e.custom?.[f.id];
+        if (v) out[f.id] = v;
+      });
+    });
+  }
+  return out;
+}
+
 export function buildTeacherGradesWorkbook(
   students: Student[],
   halaqaName: string,
@@ -212,22 +239,24 @@ export function buildTeacherGradesWorkbook(
     [
       "الطالب", "المستوى", "النوع", "حضور", "غياب", "تأخر", "استئذان",
       "مرات الحفظ", "مراجعة ✓", "مراجعة ✗", "ربط ✓", "ربط ✗",
-      "سرد مجتاز", "النسبة العامة %", "الأسابيع المشمولة",
+      "سرد مجتاز", "النسبة العامة %", ...customFields.map((f) => f.label), "الأسابيع المشمولة",
     ],
   ];
 
   students.forEach((s) => {
     const row = aggregateStudentPeriod(s, grades, calendar, weekNums, fromIso, cappedTo, isTalqeen);
     const weeksLabel = weekNums.map((w) => weekLabel(w)).join("، ");
+    const customVals = latestCustomFieldValues(grades[s.id], calendar, weekNums, fromIso, cappedTo, customFields);
+    const customCols = customFields.map((f) => customVals[f.id] ?? "—");
     if (!row) {
-      summary.push([s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, weeksLabel]);
+      summary.push([s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...customCols, weeksLabel]);
       return;
     }
     summary.push([
       s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي",
       row.present, row.absent, row.late, row.excused, row.hifz,
       row.murajaPass, row.murajaFail, row.rabtPass, row.rabtFail,
-      row.sardPassed, row.overallPercent, weeksLabel,
+      row.sardPassed, row.overallPercent, ...customCols, weeksLabel,
     ]);
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "ملخص الطلاب");

@@ -80,7 +80,7 @@ function ManagerPage() {
       label: "التحويلات",
       icon: Send,
       roles: ["manager"],
-      badge: pendingTransfers.length + struggling.length + failedFinal.length,
+      badge: pendingTransfers + struggling.length + failedFinal.length,
       content: <ManagerTransfersPanel />,
     },
     {

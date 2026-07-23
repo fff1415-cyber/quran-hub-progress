@@ -22,6 +22,25 @@ import {
   type StudentWeeklyTests,
   type WeeklyTestsStore,
 } from "@/lib/weekly-tests";
+
+function normalizeRabtArray(
+  rabt: WeeklyTestResult | WeeklyTestResult[],
+  slots: number,
+): WeeklyTestResult[] {
+  const empty = Array.from({ length: slots }, () => "" as WeeklyTestResult);
+  if (Array.isArray(rabt)) {
+    rabt.forEach((v, i) => { if (i < slots) empty[i] = v ?? ""; });
+    return empty;
+  }
+  if (typeof rabt === "string" && rabt !== "") empty[0] = rabt;
+  return empty;
+}
+
+function rabtValue(row: StudentWeeklyTests, index: number): WeeklyTestResult {
+  const r = row.rabt;
+  if (Array.isArray(r)) return r[index] ?? "";
+  return index === 0 ? (r ?? "") : "";
+}
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -124,15 +143,29 @@ export function TeacherWeeklyTestsPanel({
 
   const setMuraja = (studentId: string, index: number, value: WeeklyTestResult) => {
     updateTest(studentId, (row) => {
-      const muraja = [...row.muraja] as StudentWeeklyTests["muraja"];
+      const muraja = [...row.muraja];
       muraja[index] = value;
       return { ...row, muraja };
     });
   };
 
-  const setRabt = (studentId: string, value: WeeklyTestResult) => {
-    updateTest(studentId, { rabt: value });
+  const setRabt = (studentId: string, index: number, value: WeeklyTestResult) => {
+    updateTest(studentId, (row) => {
+      const rabt = Array.isArray(row.rabt) ? [...row.rabt] : normalizeRabtArray(row.rabt, settings.rabt_slots);
+      rabt[index] = value;
+      return { ...row, rabt };
+    });
   };
+
+  const murajaHeaders = useMemo(
+    () => Array.from({ length: settings.muraja_slots }, (_, i) => `مراجعة ${i + 1}`),
+    [settings.muraja_slots],
+  );
+  const rabtHeaders = useMemo(
+    () => Array.from({ length: settings.rabt_slots }, (_, i) =>
+      settings.rabt_slots === 1 ? "ربط كامل" : `ربط ${i + 1}`),
+    [settings.rabt_slots],
+  );
 
   if (!settings.enabled) {
     return (
@@ -186,10 +219,12 @@ export function TeacherWeeklyTestsPanel({
             <thead>
               <tr className="bg-secondary/50">
                 <th className="p-2 text-right sticky right-0 bg-secondary z-10 min-w-[120px]">الطالب</th>
-                <th className="p-2 text-center border-r border-border">مراجعة 1</th>
-                <th className="p-2 text-center border-r border-border">مراجعة 2</th>
-                <th className="p-2 text-center border-r border-border">مراجعة 3</th>
-                <th className="p-2 text-center border-r border-border">ربط كامل</th>
+                {murajaHeaders.map((label) => (
+                  <th key={label} className="p-2 text-center border-r border-border">{label}</th>
+                ))}
+                {rabtHeaders.map((label) => (
+                  <th key={label} className="p-2 text-center border-r border-border">{label}</th>
+                ))}
                 <th className="p-2 text-center border-r border-border text-muted-foreground">أسبوع</th>
                 <th className="p-2 text-center text-primary font-bold">تراكم</th>
               </tr>
@@ -231,7 +266,7 @@ function StudentWeeklyTestsRow({
   store: WeeklyTestsStore;
   settings: ReturnType<typeof loadWeeklyTestsSettings>;
   onMuraja: (id: string, i: number, v: WeeklyTestResult) => void;
-  onRabt: (id: string, v: WeeklyTestResult) => void;
+  onRabt: (id: string, i: number, v: WeeklyTestResult) => void;
 }) {
   const row = getStudentWeeklyTests(store, student.id, weekNum, settings);
   const weekScore = scoreWeeklyTests(row, settings);
@@ -240,21 +275,22 @@ function StudentWeeklyTestsRow({
   return (
     <tr className="border-b border-border/50 hover:bg-accent/20">
       <td className="p-2 sticky right-0 bg-card font-medium">{student.name}</td>
-      {[0, 1, 2].slice(0, settings.muraja_slots).map((i) => (
-        <td key={i} className="p-1 border-r border-border/30">
+      {Array.from({ length: settings.muraja_slots }, (_, i) => (
+        <td key={`m-${i}`} className="p-1 border-r border-border/30">
           <TestSelect
             value={row.muraja[i] ?? ""}
             onChange={(v) => onMuraja(student.id, i, v)}
           />
         </td>
       ))}
-      <td className="p-1 border-r border-border/30">
-        {settings.rabt_slots > 0 ? (
-          <TestSelect value={row.rabt} onChange={(v) => onRabt(student.id, v)} />
-        ) : (
-          <span className="text-muted-foreground text-xs">—</span>
-        )}
-      </td>
+      {Array.from({ length: settings.rabt_slots }, (_, i) => (
+        <td key={`r-${i}`} className="p-1 border-r border-border/30">
+          <TestSelect
+            value={rabtValue(row, i)}
+            onChange={(v) => onRabt(student.id, i, v)}
+          />
+        </td>
+      ))}
       <td className="p-2 text-center font-bold border-r border-border/30 text-muted-foreground">
         {formatWeeklyTestPercent(weekScore.percent)}
       </td>

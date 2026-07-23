@@ -38,7 +38,7 @@ export function ManagerWeeklyTestsSettingsPanel() {
           <ClipboardCheck className="w-5 h-5" /> الاختبارات الأسبوعية
         </h2>
         <p className="text-xs text-muted-foreground">
-          3 مراجعة + 1 ربط كامل لكل طالب أسبوعياً — مسار مستقل عن النسبة الكلية
+          عدد مقاطع المراجعة والربط لكل طالب أسبوعياً — مسار مستقل عن النسبة الكلية
         </p>
       </div>
 
@@ -51,6 +51,26 @@ export function ManagerWeeklyTestsSettingsPanel() {
       </label>
 
       <div className="grid sm:grid-cols-2 gap-4 rounded-xl border border-border p-4 bg-secondary/20">
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">عدد مقاطع المراجعة</label>
+          <Input
+            type="number"
+            min={1}
+            max={6}
+            value={draft.muraja_slots}
+            onChange={(e) => setField("muraja_slots", Number(e.target.value) || 1)}
+          />
+        </div>
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">عدد مقاطع الربط</label>
+          <Input
+            type="number"
+            min={0}
+            max={3}
+            value={draft.rabt_slots}
+            onChange={(e) => setField("rabt_slots", Number(e.target.value) || 0)}
+          />
+        </div>
         <div>
           <label className="text-xs text-muted-foreground mb-1 block">نقاط المراجعة (ناجح)</label>
           <Input type="number" min={1} value={draft.muraja_pass_points} onChange={(e) => setField("muraja_pass_points", Number(e.target.value) || 0)} />

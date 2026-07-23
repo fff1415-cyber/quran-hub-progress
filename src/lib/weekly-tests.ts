@@ -1,6 +1,6 @@
 /**
  * Weekly tests track — independent from semester overall % and plan progress.
- * 3 muraja + 1 full rabt per student per week.
+ * Slot counts configured by manager (muraja_slots, rabt_slots).
  */
 
 import type { AcademicCalendar } from "@/lib/academic-context";
@@ -9,8 +9,9 @@ import type { Student } from "@/lib/mock-data";
 export type WeeklyTestResult = "" | "pass" | "fail";
 
 export interface StudentWeeklyTests {
-  muraja: [WeeklyTestResult, WeeklyTestResult, WeeklyTestResult];
-  rabt: WeeklyTestResult;
+  muraja: WeeklyTestResult[];
+  /** Legacy rows may store a single string; normalized to array on read. */
+  rabt: WeeklyTestResult | WeeklyTestResult[];
 }
 
 export type WeeklyTestsStore = Record<string, Record<number, StudentWeeklyTests>>;
@@ -39,6 +40,21 @@ const KEY_STORE = "qshatawi_weekly_tests_v1";
 const KEY_SETTINGS = "qshatawi_weekly_tests_settings_v1";
 const KEY_SEMESTER = "qshatawi_weekly_tests_semester_v1";
 
+function clampSlots(n: number, min: number, max: number): number {
+  const v = Math.round(Number(n));
+  if (!Number.isFinite(v)) return min;
+  return Math.min(max, Math.max(min, v));
+}
+
+export function normalizeWeeklyTestsSettings(raw: Partial<WeeklyTestsSettings>): WeeklyTestsSettings {
+  return {
+    ...DEFAULT_WEEKLY_TESTS_SETTINGS,
+    ...raw,
+    muraja_slots: clampSlots(raw.muraja_slots ?? DEFAULT_WEEKLY_TESTS_SETTINGS.muraja_slots, 1, 6),
+    rabt_slots: clampSlots(raw.rabt_slots ?? DEFAULT_WEEKLY_TESTS_SETTINGS.rabt_slots, 0, 3),
+  };
+}
+
 function persistStore(value: WeeklyTestsStore) {
   if (typeof window === "undefined" || !sessionStorage.getItem("qs_token")) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
@@ -52,11 +68,39 @@ function persistSettings(value: WeeklyTestsSettings) {
 }
 
 export function emptyWeeklyTests(settings = DEFAULT_WEEKLY_TESTS_SETTINGS): StudentWeeklyTests {
-  const muraja = Array.from({ length: settings.muraja_slots }, () => "" as WeeklyTestResult);
+  const s = normalizeWeeklyTestsSettings(settings);
   return {
-    muraja: [muraja[0] ?? "", muraja[1] ?? "", muraja[2] ?? ""] as StudentWeeklyTests["muraja"],
-    rabt: "",
+    muraja: Array.from({ length: s.muraja_slots }, () => "" as WeeklyTestResult),
+    rabt: Array.from({ length: s.rabt_slots }, () => "" as WeeklyTestResult),
   };
+}
+
+function normalizeRabt(
+  rabt: WeeklyTestResult | WeeklyTestResult[] | undefined,
+  slots: number,
+): WeeklyTestResult[] {
+  const empty = Array.from({ length: slots }, () => "" as WeeklyTestResult);
+  if (slots === 0) return [];
+  if (Array.isArray(rabt)) {
+    rabt.forEach((v, i) => {
+      if (i < slots) empty[i] = v ?? "";
+    });
+    return empty;
+  }
+  if (typeof rabt === "string" && rabt !== "") empty[0] = rabt;
+  return empty;
+}
+
+function normalizeMuraja(
+  muraja: WeeklyTestResult[] | undefined,
+  slots: number,
+): WeeklyTestResult[] {
+  const empty = Array.from({ length: slots }, () => "" as WeeklyTestResult);
+  if (!muraja?.length) return empty;
+  muraja.forEach((v, i) => {
+    if (i < slots) empty[i] = v ?? "";
+  });
+  return empty;
 }
 
 export function loadWeeklyTests(): WeeklyTestsStore {
@@ -75,15 +119,16 @@ export function loadWeeklyTestsSettings(): WeeklyTestsSettings {
   const raw = localStorage.getItem(KEY_SETTINGS);
   if (!raw) return { ...DEFAULT_WEEKLY_TESTS_SETTINGS };
   try {
-    return { ...DEFAULT_WEEKLY_TESTS_SETTINGS, ...JSON.parse(raw) };
+    return normalizeWeeklyTestsSettings(JSON.parse(raw));
   } catch {
     return { ...DEFAULT_WEEKLY_TESTS_SETTINGS };
   }
 }
 
 export function saveWeeklyTestsSettings(settings: WeeklyTestsSettings) {
-  localStorage.setItem(KEY_SETTINGS, JSON.stringify(settings));
-  persistSettings(settings);
+  const normalized = normalizeWeeklyTestsSettings(settings);
+  localStorage.setItem(KEY_SETTINGS, JSON.stringify(normalized));
+  persistSettings(normalized);
 }
 
 export function getWeeklyTestsSemesterId(): string | null {
@@ -119,16 +164,19 @@ export function getStudentWeeklyTests(
   weekNum: number,
   settings = DEFAULT_WEEKLY_TESTS_SETTINGS,
 ): StudentWeeklyTests {
+  const s = normalizeWeeklyTestsSettings(settings);
   const row = store[studentId]?.[weekNum];
-  if (!row) return emptyWeeklyTests(settings);
+  if (!row) return emptyWeeklyTests(s);
   return {
-    muraja: [
-      row.muraja[0] ?? "",
-      row.muraja[1] ?? "",
-      row.muraja[2] ?? "",
-    ],
-    rabt: row.rabt ?? "",
+    muraja: normalizeMuraja(row.muraja, s.muraja_slots),
+    rabt: normalizeRabt(row.rabt, s.rabt_slots),
   };
+}
+
+function rabtAt(row: StudentWeeklyTests, index: number): WeeklyTestResult {
+  const r = row.rabt;
+  if (Array.isArray(r)) return r[index] ?? "";
+  return index === 0 ? (r ?? "") : "";
 }
 
 function resultPoints(result: WeeklyTestResult, passPts: number, failPts: number): number {
@@ -138,24 +186,23 @@ function resultPoints(result: WeeklyTestResult, passPts: number, failPts: number
 }
 
 export function weekTestsMaxPoints(settings: WeeklyTestsSettings): number {
-  return settings.muraja_slots * settings.muraja_pass_points
-    + settings.rabt_slots * settings.rabt_pass_points;
+  const s = normalizeWeeklyTestsSettings(settings);
+  return s.muraja_slots * s.muraja_pass_points + s.rabt_slots * s.rabt_pass_points;
 }
 
 export function scoreWeeklyTests(
   row: StudentWeeklyTests,
   settings: WeeklyTestsSettings = DEFAULT_WEEKLY_TESTS_SETTINGS,
 ): { earned: number; max: number; percent: number } {
+  const s = normalizeWeeklyTestsSettings(settings);
   let earned = 0;
-  for (let i = 0; i < settings.muraja_slots; i++) {
-    earned += resultPoints(row.muraja[i] ?? "", settings.muraja_pass_points, settings.muraja_fail_points);
+  for (let i = 0; i < s.muraja_slots; i++) {
+    earned += resultPoints(row.muraja[i] ?? "", s.muraja_pass_points, s.muraja_fail_points);
   }
-  for (let i = 0; i < settings.rabt_slots; i++) {
-    if (i === 0) {
-      earned += resultPoints(row.rabt, settings.rabt_pass_points, settings.rabt_fail_points);
-    }
+  for (let i = 0; i < s.rabt_slots; i++) {
+    earned += resultPoints(rabtAt(row, i), s.rabt_pass_points, s.rabt_fail_points);
   }
-  const max = weekTestsMaxPoints(settings);
+  const max = weekTestsMaxPoints(s);
   const percent = max > 0 ? Math.round((earned / max) * 1000) / 10 : 0;
   return { earned, max, percent };
 }
@@ -166,13 +213,17 @@ export function weekTestsCompletion(row: StudentWeeklyTests, settings: WeeklyTes
   rabtDone: number;
   rabtTotal: number;
 } {
-  const murajaDone = row.muraja.slice(0, settings.muraja_slots).filter((r) => r !== "").length;
-  const rabtDone = settings.rabt_slots > 0 && row.rabt !== "" ? 1 : 0;
+  const s = normalizeWeeklyTestsSettings(settings);
+  const murajaDone = row.muraja.slice(0, s.muraja_slots).filter((r) => r !== "").length;
+  let rabtDone = 0;
+  for (let i = 0; i < s.rabt_slots; i++) {
+    if (rabtAt(row, i) !== "") rabtDone++;
+  }
   return {
     murajaDone,
-    murajaTotal: settings.muraja_slots,
+    murajaTotal: s.muraja_slots,
     rabtDone,
-    rabtTotal: settings.rabt_slots,
+    rabtTotal: s.rabt_slots,
   };
 }
 
