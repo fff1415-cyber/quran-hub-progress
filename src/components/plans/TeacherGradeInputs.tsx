@@ -51,6 +51,30 @@ export function HifzSelect({
   );
 }
 
+export function CustomFieldSelect({
+  value,
+  options,
+  onChange,
+}: {
+  value: string;
+  options: string[];
+  onChange: (v: string) => void;
+}) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      className="w-full bg-input border border-border rounded px-1 py-1 text-xs min-w-[4.5rem]"
+      title={options.join(" · ")}
+    >
+      <option value="">—</option>
+      {options.map((opt) => (
+        <option key={opt} value={opt}>{opt}</option>
+      ))}
+    </select>
+  );
+}
+
 export function PassFail({
   value,
   onChange,

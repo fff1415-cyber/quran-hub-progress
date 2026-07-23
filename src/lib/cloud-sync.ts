@@ -3,6 +3,8 @@ import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, Notificat
 import { saveGrades, saveHalaqat, saveLatePermissions, saveMessageTemplates, saveNotifications, saveSardHistory, saveSardQueue, saveStudents, ensureGradesSemester } from "./mock-data";
 import type { AcademicPhaseRecord } from "./academic-record";
 import { saveAcademicRecords } from "./academic-record";
+import type { HalaqaCustomFieldsStore } from "./halaqa-custom-fields";
+import { saveAllHalaqaCustomFields } from "./halaqa-custom-fields";
 import {
   secureListStudents,
   secureListHalaqatFull,
@@ -134,6 +136,7 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       if (state.has("sard_queue")) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
       if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
       if (state.has("academic_records")) saveAcademicRecords(state.get("academic_records") as AcademicPhaseRecord[]);
+      if (state.has("halaqa_custom_fields")) saveAllHalaqaCustomFields(state.get("halaqa_custom_fields") as HalaqaCustomFieldsStore);
       if (state.has("notifications")) saveNotifications(state.get("notifications") as Notification[]);
       if (state.has("message_templates")) saveMessageTemplates(state.get("message_templates") as Record<MessageTemplateKey, string>);
       if (state.has("late_permissions")) saveLatePermissions(state.get("late_permissions") as LatePermission[]);
@@ -230,7 +233,7 @@ export async function deleteRoleAccount(id: string) {
 }
 
 export async function pushAppState(
-  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "notifications" | "message_templates" | "late_permissions",
+  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_custom_fields" | "notifications" | "message_templates" | "late_permissions",
   value: unknown,
 ) {
   await secureSetAppState({ data: { token: tokenOrThrow(), key, value } });

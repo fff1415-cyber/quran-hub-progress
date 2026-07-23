@@ -32,6 +32,8 @@ export interface DayEntry {
   rabt: "pass" | "fail" | "";
   muraja: "pass" | "fail" | "";
   wajib?: boolean; // talqeen
+  /** Custom field id → selected option (per halaqa field definitions). */
+  custom?: Record<string, string>;
 }
 
 export interface WeekRecord {

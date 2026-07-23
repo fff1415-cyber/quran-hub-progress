@@ -13,6 +13,7 @@ import type { AcademicCalendar, AcademicWeekRow } from "@/lib/academic-context";
 import { getSelectableWeeks, resolveWeekForDate } from "@/lib/academic-context";
 import { isoDateToDayKey } from "@/lib/operational-date";
 import { weekLabel } from "@/lib/arabic-numbers";
+import type { HalaqaCustomField } from "@/lib/halaqa-custom-fields";
 import * as XLSX from "xlsx";
 
 export interface PeriodDayStats {
@@ -207,6 +208,7 @@ export function buildTeacherGradesWorkbook(
   fromIso: string,
   toIso: string,
   isTalqeen: boolean,
+  customFields: HalaqaCustomField[] = [],
 ): XLSX.WorkBook {
   const grades = loadGrades();
   const cappedTo = clampToToday(calendar, toIso);
@@ -241,7 +243,7 @@ export function buildTeacherGradesWorkbook(
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "ملخص الطلاب");
 
   const daily: (string | number)[][] = [
-    ["الطالب", "الأسبوع", "اليوم", "التاريخ", "الحضور", "الحفظ", "الربط", "المراجعة"],
+    ["الطالب", "الأسبوع", "اليوم", "التاريخ", "الحضور", "الحفظ", "الربط", "المراجعة", ...customFields.map((f) => f.label)],
   ];
   students.forEach((s) => {
     const studentGrades = grades[s.id];
@@ -252,7 +254,8 @@ export function buildTeacherGradesWorkbook(
       eachDayInWeekPeriod(calendar, wn, fromIso, cappedTo, (dayKey, isoDate) => {
         const e = week.days[dayKey];
         if (!e) return;
-        if (!e.attendance && !e.hifz && !e.rabt && !e.muraja) return;
+        const hasCustom = customFields.some((f) => e.custom?.[f.id]);
+        if (!e.attendance && !e.hifz && !e.rabt && !e.muraja && !hasCustom) return;
         const dayLabel = DAYS.find((d) => d.key === dayKey)?.label ?? dayKey;
         daily.push([
           s.name, weekLabel(wn), dayLabel, isoDate ?? "—",
@@ -260,6 +263,7 @@ export function buildTeacherGradesWorkbook(
           HIFZ_LABELS[e.hifz] || "—",
           e.rabt === "pass" ? "✓" : e.rabt === "fail" ? "✗" : "—",
           e.muraja === "pass" ? "✓" : e.muraja === "fail" ? "✗" : "—",
+          ...customFields.map((f) => e.custom?.[f.id] ?? "—"),
         ]);
       });
     }
@@ -284,8 +288,9 @@ export function downloadTeacherGradesWorkbook(
   fromIso: string,
   toIso: string,
   isTalqeen: boolean,
+  customFields: HalaqaCustomField[] = [],
 ): void {
-  const wb = buildTeacherGradesWorkbook(students, halaqaName, calendar, fromIso, toIso, isTalqeen);
+  const wb = buildTeacherGradesWorkbook(students, halaqaName, calendar, fromIso, toIso, isTalqeen, customFields);
   const cappedTo = clampToToday(calendar, toIso);
   const safeName = halaqaName.replace(/[^\w\u0600-\u06FF-]+/g, "_");
   XLSX.writeFile(wb, `درجات_${safeName}_${fromIso}_${cappedTo}.xlsx`);

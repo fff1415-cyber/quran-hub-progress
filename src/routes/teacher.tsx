@@ -26,7 +26,8 @@ import { applyPlanInput, fetchStudentPlanSheet } from "@/lib/plans-service";
 import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
-import { AttSelect } from "@/components/plans/TeacherGradeInputs";
+import { AttSelect, CustomFieldSelect } from "@/components/plans/TeacherGradeInputs";
+import { loadHalaqaCustomFields } from "@/lib/halaqa-custom-fields";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -225,6 +226,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     ? allStudents.filter((s) => s.assignedTo !== "teacher")
     : allStudents.filter((s) => s.assignedTo !== "assistant");
   const [grades, setGrades] = useState(() => loadGrades());
+  const customFields = useMemo(() => loadHalaqaCustomFields(halaqaId), [halaqaId]);
+  const baseDayCols = isTalqeen ? 2 : 4;
+  const dayColSpan = baseDayCols + customFields.length;
   const [transferFor, setTransferFor] = useState<Student | null>(null);
   const [transferReason, setTransferReason] = useState("");
   const [showAssign, setShowAssign] = useState(false);
@@ -365,6 +369,36 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     update(studentId, (w) => ({ ...w, days: { ...w.days, [dayKey]: { ...w.days[dayKey], ...patch } } }));
   };
 
+  const updateCustomField = (studentId: string, dayKey: string, fieldId: string, value: string) => {
+    update(studentId, (w) => {
+      const prev = w.days[dayKey] ?? emptyWeek().days[dayKey];
+      const custom = { ...(prev.custom ?? {}) };
+      if (value) custom[fieldId] = value;
+      else delete custom[fieldId];
+      return {
+        ...w,
+        days: {
+          ...w.days,
+          [dayKey]: {
+            ...prev,
+            custom: Object.keys(custom).length > 0 ? custom : undefined,
+          },
+        },
+      };
+    });
+  };
+
+  const renderCustomCells = (s: Student, dayKey: string, entry: DayEntry) =>
+    customFields.map((f) => (
+      <td key={f.id} className={dayCellClass(dayKey)}>
+        <CustomFieldSelect
+          value={entry.custom?.[f.id] ?? ""}
+          options={f.options}
+          onChange={(v) => updateCustomField(s.id, dayKey, f.id, v)}
+        />
+      </td>
+    ));
+
   const toggleSard = (s: Student, on: boolean) => {
     update(s.id, (w) => ({ ...w, sard: on }));
     if (on) {
@@ -440,7 +474,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           <tr className="bg-secondary/50">
             <th className="p-2 text-right sticky right-0 bg-secondary z-10 min-w-[140px]">الطالب</th>
             {visibleDays.map((d) => (
-              <th key={d.key} data-day-col={d.key} colSpan={isTalqeen ? 2 : 4} className={dayHeaderClass(d.key)}>
+              <th key={d.key} data-day-col={d.key} colSpan={dayColSpan} className={dayHeaderClass(d.key)}>
                 {d.label}
                 {highlightDay(d.key) && <span className="block text-[10px] text-primary font-normal">اليوم</span>}
               </th>
@@ -458,6 +492,11 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 <React.Fragment key={d.key}>
                   <th className={cn("p-1 border-r border-border", highlightDay(d.key) && "bg-muted/50")}>حاضر</th>
                   <th className={cn("p-1", highlightDay(d.key) && "bg-muted/50")}>واجب</th>
+                  {customFields.map((f) => (
+                    <th key={f.id} className={cn("p-1 border-r border-border text-primary/80", highlightDay(d.key) && "bg-muted/50")}>
+                      {f.label}
+                    </th>
+                  ))}
                 </React.Fragment>
               ) : (
                 <React.Fragment key={d.key}>
@@ -465,6 +504,11 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                   <th className={cn("p-1", highlightDay(d.key) && "bg-muted/50")}>حفظ</th>
                   <th className={cn("p-1", highlightDay(d.key) && "bg-muted/50")}>ربط</th>
                   <th className={cn("p-1", highlightDay(d.key) && "bg-muted/50")}>مراجعة</th>
+                  {customFields.map((f) => (
+                    <th key={f.id} className={cn("p-1 border-r border-border text-primary/80", highlightDay(d.key) && "bg-muted/50")}>
+                      {f.label}
+                    </th>
+                  ))}
                 </React.Fragment>
               )
             )}
@@ -507,6 +551,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                       <td className={cn("p-1 text-center", highlightDay(d.key) && "bg-muted/60")}>
                         <Cbx checked={!!e.wajib} onChange={(v) => updateDay(s.id, d.key, { wajib: v })} />
                       </td>
+                      {renderCustomCells(s, d.key, e)}
                     </React.Fragment>
                   ) : (
                     <React.Fragment key={d.key}>
@@ -549,6 +594,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           onPlanPassFailChange={(v) => void handlePlanPassFail(s, d.key, "muraja", v)}
                         />
                       </td>
+                      {renderCustomCells(s, d.key, e)}
                     </React.Fragment>
                   );
                 })}

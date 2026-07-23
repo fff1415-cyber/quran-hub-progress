@@ -13,8 +13,9 @@ import { ManagerTransfersPanel } from "@/components/role-workspace/ManagerTransf
 import { ManagerRecordsPanel } from "@/components/role-workspace/ManagerRecordsPanel";
 import { ManagerSettingsPanel } from "@/components/role-workspace/ManagerSettingsPanel";
 import { ManagerEvaluationSettingsPanel } from "@/components/role-workspace/ManagerEvaluationSettingsPanel";
+import { ManagerHalaqaFieldsPanel } from "@/components/role-workspace/ManagerHalaqaFieldsPanel";
 import {
-  Crown, CalendarDays, ClipboardList, Send, BarChart3, FolderArchive, MessageSquare, LayoutDashboard, Scale,
+  Crown, CalendarDays, ClipboardList, Send, BarChart3, FolderArchive, MessageSquare, LayoutDashboard, Scale, Columns3,
 } from "lucide-react";
 import { Toaster } from "sonner";
 
@@ -90,6 +91,13 @@ function ManagerPage() {
       roles: ["manager"],
       badge: absenceArchive.length + lateArchive.length,
       content: <ManagerRecordsPanel />,
+    },
+    {
+      id: "halaqa-fields",
+      label: "أعمدة الحلقات",
+      icon: Columns3,
+      roles: ["manager"],
+      content: <ManagerHalaqaFieldsPanel />,
     },
     {
       id: "evaluation-settings",
