@@ -1,10 +1,17 @@
-import { useMemo, useState } from "react";
+import { useMemo, useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import {
   loadStudents, loadHalaqat, loadGrades, loadAttendanceArchive, loadSardHistory,
-  studentStats, weekPercentage, HIFZ_LABELS, DAYS,
+  weekPercentage, HIFZ_LABELS, DAYS,
   type Student,
 } from "@/lib/mock-data";
+import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
+import {
+  studentReportPercentages,
+  studentReportPercentRows,
+  fallbackWeeklyAverage,
+} from "@/lib/semester-grading";
+import { StudentPercentSummary } from "@/components/StudentPercentSummary";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { Download, Search, FileSpreadsheet, User } from "lucide-react";
 import { toast } from "sonner";
@@ -19,6 +26,15 @@ export function GradesExport() {
   const [halaqaId, setHalaqaId] = useState<number | "all">("all");
   const [search, setSearch] = useState("");
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchActiveCalendar(true)
+      .then((cal) => { if (!cancelled) setCalendar(cal); })
+      .catch(() => { if (!cancelled) setCalendar(null); });
+    return () => { cancelled = true; };
+  }, []);
 
   const halaqat = loadHalaqat();
   const students = loadStudents();
@@ -91,7 +107,17 @@ export function GradesExport() {
 
   const exportStudentReport = (s: Student) => {
     const h = halaqat.find((x) => x.id === s.halaqaId);
-    const st = studentStats(s.id, grades);
+    const isTalqeen = !!h?.isTalqeen;
+    const report = calendar
+      ? studentReportPercentages(s.id, s.levelType, isTalqeen, grades, calendar)
+      : {
+          overall: fallbackWeeklyAverage(s.id, isTalqeen, grades),
+          weekOverall: weekPercentage(
+            grades[s.id]?.[Math.max(...Object.keys(grades[s.id] || {}).map(Number), 0)],
+            isTalqeen,
+          ),
+          components: { attendance: 0, hifz: 0, muraja: 0, rabt: 0, wajib: 0 },
+        };
     const wb = XLSX.utils.book_new();
 
     const info: (string | number)[][] = [
@@ -102,34 +128,16 @@ export function GradesExport() {
       ["رقم الهوية", s.nationalId],
       ["ولي الأمر", s.parentPhone],
       [],
-      ["الإحصائيات"],
-      ["عدد الأسابيع المسجلة", st.weeksRecorded],
-      ["عدد مرات الحفظ", st.hifzCount],
-      ["عدد مرات الغياب", st.absentCount],
-      ["عدد مرات التأخر", st.lateCount],
-      ["عدد مرات الاستئذان", st.excusedCount],
-      ["مراجعة ناجحة", st.murajaPass],
-      ["مراجعة راسبة", st.murajaFail],
-      ["ربط ناجح", st.rabtPass],
-      ["ربط راسب", st.rabtFail],
+      ...studentReportPercentRows(report, isTalqeen),
     ];
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(info), "معلومات");
 
-    // Weekly breakdown
-    const weekRows: (string | number)[][] = [["الأسبوع", "النسبة %", "غياب", "تأخر", "حفظ", "مراجعة ✓/✗", "ربط ✓/✗"]];
+    // Weekly breakdown — percentages only
+    const weekRows: (string | number)[][] = [["الأسبوع", "النسبة %"]];
     const weeks = grades[s.id] || {};
     Object.keys(weeks).map(Number).sort((a, b) => a - b).forEach((w) => {
       const week = weeks[w];
-      let abs=0, late=0, hifz=0, mp=0, mf=0, rp=0, rf=0;
-      DAYS.forEach((d) => {
-        const e = week.days[d.key]; if (!e) return;
-        if (e.attendance === "absent") abs++;
-        else if (e.attendance === "late") late++;
-        if (e.hifz) hifz++;
-        if (e.muraja === "pass") mp++; else if (e.muraja === "fail") mf++;
-        if (e.rabt === "pass") rp++; else if (e.rabt === "fail") rf++;
-      });
-      weekRows.push([weekLabel(w), weekPercentage(week, !!h?.isTalqeen), abs, late, hifz, `${mp}/${mf}`, `${rp}/${rf}`]);
+      weekRows.push([weekLabel(w), weekPercentage(week, isTalqeen)]);
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(weekRows), "الأسابيع");
 
@@ -151,7 +159,19 @@ export function GradesExport() {
     toast.success("تم تصدير التقرير");
   };
 
-  const selectedStats = selectedStudent ? studentStats(selectedStudent.id, grades) : null;
+  const selectedReport = useMemo(() => {
+    if (!selectedStudent) return null;
+    const h = halaqat.find((x) => x.id === selectedStudent.halaqaId);
+    const isTalqeen = !!h?.isTalqeen;
+    if (calendar) {
+      return studentReportPercentages(selectedStudent.id, selectedStudent.levelType, isTalqeen, grades, calendar);
+    }
+    return {
+      overall: fallbackWeeklyAverage(selectedStudent.id, isTalqeen, grades),
+      weekOverall: 0,
+      components: { attendance: 0, hifz: 0, muraja: 0, rabt: 0, wajib: 0 },
+    };
+  }, [selectedStudent, halaqat, grades, calendar]);
   const selectedH = selectedStudent ? halaqat.find((x) => x.id === selectedStudent.halaqaId) : null;
 
   return (
@@ -209,7 +229,7 @@ export function GradesExport() {
             })}
           </div>
         )}
-        {selectedStudent && selectedStats && (
+        {selectedStudent && selectedReport && (
           <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
             <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
               <div>
@@ -221,17 +241,11 @@ export function GradesExport() {
                 <Download className="w-4 h-4" /> تصدير التقرير
               </button>
             </div>
-            <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-center text-xs">
-              <Mini label="أسابيع" v={selectedStats.weeksRecorded} />
-              <Mini label="حفظ" v={selectedStats.hifzCount} />
-              <Mini label="غياب" v={selectedStats.absentCount} tone="destructive" />
-              <Mini label="تأخر" v={selectedStats.lateCount} tone="warning" />
-              <Mini label="استئذان" v={selectedStats.excusedCount} />
-              <Mini label="مراجعة ✓" v={selectedStats.murajaPass} tone="success" />
-              <Mini label="مراجعة ✗" v={selectedStats.murajaFail} tone="destructive" />
-              <Mini label="ربط ✓" v={selectedStats.rabtPass} tone="success" />
-              <Mini label="ربط ✗" v={selectedStats.rabtFail} tone="destructive" />
-            </div>
+            <StudentPercentSummary
+              report={selectedReport}
+              isTalqeen={!!selectedH?.isTalqeen}
+              compact
+            />
           </div>
         )}
         {search && filteredForSearch.length === 0 && !selectedStudent && (
@@ -240,12 +254,4 @@ export function GradesExport() {
       </div>
     </div>
   );
-}
-
-function Mini({ label, v, tone }: { label: string; v: number; tone?: "destructive" | "warning" | "success" }) {
-  const c = tone === "destructive" ? "bg-destructive/10 text-destructive"
-    : tone === "warning" ? "bg-warning/10 text-warning"
-    : tone === "success" ? "bg-success/10 text-success"
-    : "bg-secondary/50";
-  return <div className={`rounded-lg p-2 ${c}`}><div className="text-base font-bold">{v}</div><div className="text-[10px] opacity-80">{label}</div></div>;
 }

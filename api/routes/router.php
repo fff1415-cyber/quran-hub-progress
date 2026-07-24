@@ -122,6 +122,10 @@ function route_request(string $method, string $path): void
         handle_patch_assignment();
         return;
     }
+    if ($path === '/plans/assignment-quotas' && $method === 'PATCH') {
+        handle_patch_assignment_quotas();
+        return;
+    }
     if ($path === '/plans/apply-input' && $method === 'POST') {
         handle_apply_plan_input();
         return;

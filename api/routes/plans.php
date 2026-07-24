@@ -53,16 +53,58 @@ function plans_ensure_assignment_v2_columns(PDO $pdo): void
     }
 }
 
-function plan_row(array $row): array
+function plans_ensure_daily_faces_columns(PDO $pdo): void
+{
+    $planCols = [
+        'daily_hifz_faces' => 'TINYINT UNSIGNED NOT NULL DEFAULT 2',
+        'daily_rabt_faces' => 'TINYINT UNSIGNED NOT NULL DEFAULT 2',
+        'daily_muraja_faces' => 'TINYINT UNSIGNED NOT NULL DEFAULT 2',
+        'faces_per_half' => 'TINYINT UNSIGNED NOT NULL DEFAULT 1',
+        'faces_per_one' => 'TINYINT UNSIGNED NOT NULL DEFAULT 2',
+        'faces_per_two' => 'TINYINT UNSIGNED NOT NULL DEFAULT 4',
+    ];
+    if (plans_table_exists($pdo, 'education_plans')) {
+        $after = 'segment_count';
+        foreach ($planCols as $col => $def) {
+            if (!plans_column_exists($pdo, 'education_plans', $col)) {
+                $pdo->exec("ALTER TABLE `education_plans` ADD COLUMN `$col` $def AFTER `$after`");
+            }
+            $after = $col;
+        }
+    }
+    if (plans_table_exists($pdo, 'student_plan_assignments')) {
+        $after = 'start_muraja_segment';
+        foreach ($planCols as $col => $def) {
+            if (!plans_column_exists($pdo, 'student_plan_assignments', $col)) {
+                $pdo->exec("ALTER TABLE `student_plan_assignments` ADD COLUMN `$col` $def AFTER `$after`");
+            }
+            $after = $col;
+        }
+    }
+}
+
+function plans_face_row(array $row): array
 {
     return [
+        'daily_hifz_faces' => (int) ($row['daily_hifz_faces'] ?? 2),
+        'daily_rabt_faces' => (int) ($row['daily_rabt_faces'] ?? 2),
+        'daily_muraja_faces' => (int) ($row['daily_muraja_faces'] ?? 2),
+        'faces_per_half' => (int) ($row['faces_per_half'] ?? 1),
+        'faces_per_one' => (int) ($row['faces_per_one'] ?? 2),
+        'faces_per_two' => (int) ($row['faces_per_two'] ?? 4),
+    ];
+}
+
+function plan_row(array $row): array
+{
+    return array_merge([
         'id' => $row['id'],
         'track' => $row['track'],
         'level_number' => (int) $row['level_number'],
         'title' => $row['title'],
         'segment_count' => (int) $row['segment_count'],
         'created_at' => $row['created_at'] ?? null,
-    ];
+    ], plans_face_row($row));
 }
 
 function segment_row(array $row): array
@@ -113,8 +155,12 @@ function handle_list_plans(): void
     if (!plans_table_exists($pdo, 'education_plans')) {
         error_response('نفّذ migrate-education-plans.sql على قاعدة البيانات أولاً', 503);
     }
+    plans_ensure_daily_faces_columns($pdo);
     $track = isset($_GET['track']) ? trim((string) $_GET['track']) : '';
-    $sql = 'SELECT id, track, level_number, title, segment_count, created_at FROM education_plans';
+    $sql = 'SELECT id, track, level_number, title, segment_count,
+            daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+            faces_per_half, faces_per_one, faces_per_two, created_at
+            FROM education_plans';
     $params = [];
     if ($track === 'gold' || $track === 'silver') {
         $sql .= ' WHERE track = ?';
@@ -139,7 +185,10 @@ function handle_plan_detail(): void
         error_response('جداول الخطط غير مُنشأة بعد', 503);
     }
     $stmt = $pdo->prepare(
-        'SELECT id, track, level_number, title, segment_count, created_at FROM education_plans WHERE id = ?'
+        'SELECT id, track, level_number, title, segment_count,
+                daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                faces_per_half, faces_per_one, faces_per_two, created_at
+         FROM education_plans WHERE id = ?'
     );
     $stmt->execute([$planId]);
     $plan = $stmt->fetch();
@@ -249,7 +298,7 @@ function plans_plan_phase(int $levelNumber): int
 
 function assignment_row(array $row): array
 {
-    return [
+    return array_merge([
         'id' => $row['id'],
         'student_id' => $row['student_id'],
         'plan_id' => $row['plan_id'],
@@ -261,7 +310,7 @@ function assignment_row(array $row): array
         'assigned_by' => $row['assigned_by'],
         'assigned_at' => $row['assigned_at'] ?? null,
         'frozen_at' => $row['frozen_at'] ?? null,
-    ];
+    ], plans_face_row($row));
 }
 
 /** Next segment index to complete for a task (single segment). */
@@ -356,8 +405,13 @@ function handle_assign_plan(): void
 
     try {
         plans_ensure_assignment_v2_columns($pdo);
+        plans_ensure_daily_faces_columns($pdo);
 
-        $planStmt = $pdo->prepare('SELECT level_number FROM education_plans WHERE id = ?');
+        $planStmt = $pdo->prepare(
+            'SELECT level_number, daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                    faces_per_half, faces_per_one, faces_per_two
+             FROM education_plans WHERE id = ?'
+        );
         $planStmt->execute([$planId]);
         $planRow = $planStmt->fetch();
         if (!$planRow) {
@@ -366,6 +420,15 @@ function handle_assign_plan(): void
         if (plans_plan_phase((int) $planRow['level_number']) !== 1) {
             $startMuraja = null;
         }
+
+        $faces = plans_face_row(array_merge($planRow, [
+            'daily_hifz_faces' => $input['daily_hifz_faces'] ?? $planRow['daily_hifz_faces'],
+            'daily_rabt_faces' => $input['daily_rabt_faces'] ?? $planRow['daily_rabt_faces'],
+            'daily_muraja_faces' => $input['daily_muraja_faces'] ?? $planRow['daily_muraja_faces'],
+            'faces_per_half' => $input['faces_per_half'] ?? $planRow['faces_per_half'],
+            'faces_per_one' => $input['faces_per_one'] ?? $planRow['faces_per_one'],
+            'faces_per_two' => $input['faces_per_two'] ?? $planRow['faces_per_two'],
+        ]));
 
         $pdo->prepare(
             "UPDATE student_plan_assignments SET status = 'transferred' WHERE student_id = ? AND status = 'active'"
@@ -377,14 +440,48 @@ function handle_assign_plan(): void
 
         $pdo->prepare(
             'INSERT INTO student_plan_assignments
-             (id, student_id, plan_id, start_segment_index, plan_start_date, start_muraja_segment, status, assigned_by)
-             VALUES (?, ?, ?, ?, ?, ?, \'active\', ?)'
-        )->execute([$id, $studentId, $planId, $startSegment, $dateVal, $startMuraja, $name]);
+             (id, student_id, plan_id, start_segment_index, plan_start_date, start_muraja_segment,
+              daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+              faces_per_half, faces_per_one, faces_per_two,
+              status, assigned_by)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, \'active\', ?)'
+        )->execute([
+            $id, $studentId, $planId, $startSegment, $dateVal, $startMuraja,
+            $faces['daily_hifz_faces'], $faces['daily_rabt_faces'], $faces['daily_muraja_faces'],
+            $faces['faces_per_half'], $faces['faces_per_one'], $faces['faces_per_two'],
+            $name,
+        ]);
 
         json_response(['ok' => true, 'assignment_id' => $id]);
     } catch (Throwable $e) {
         error_response('فشل ربط الطالب: ' . $e->getMessage(), 500);
     }
+}
+
+function handle_patch_assignment_quotas(): void
+{
+    $auth = require_auth();
+    plans_require_roles($auth, ['supervisor']);
+    $input = json_input();
+    $studentId = trim((string) ($input['student_id'] ?? ''));
+    if ($studentId === '') {
+        error_response('student_id مطلوب');
+    }
+    $pdo = db();
+    plans_ensure_daily_faces_columns($pdo);
+    $faces = plans_face_row($input);
+    $stmt = $pdo->prepare(
+        'UPDATE student_plan_assignments
+         SET daily_hifz_faces = ?, daily_rabt_faces = ?, daily_muraja_faces = ?,
+             faces_per_half = ?, faces_per_one = ?, faces_per_two = ?
+         WHERE student_id = ? AND status IN (\'active\', \'frozen\')'
+    );
+    $stmt->execute([
+        $faces['daily_hifz_faces'], $faces['daily_rabt_faces'], $faces['daily_muraja_faces'],
+        $faces['faces_per_half'], $faces['faces_per_one'], $faces['faces_per_two'],
+        $studentId,
+    ]);
+    json_response(['ok' => true, 'updated' => $stmt->rowCount()]);
 }
 
 function handle_patch_assignment(): void
@@ -440,12 +537,15 @@ function handle_student_plan_sheet(): void
 
     try {
         plans_ensure_assignment_v2_columns($pdo);
+        plans_ensure_daily_faces_columns($pdo);
     } catch (Throwable $e) {
         error_response('جداول الربط تحتاج تحديثاً: ' . $e->getMessage(), 500);
     }
 
     $assignStmt = $pdo->prepare(
         'SELECT id, student_id, plan_id, start_segment_index, plan_start_date, start_muraja_segment,
+                daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                faces_per_half, faces_per_one, faces_per_two,
                 status, assigned_by, assigned_at, frozen_at
          FROM student_plan_assignments
          WHERE student_id = ? AND status IN (\'active\', \'frozen\')
@@ -460,7 +560,10 @@ function handle_student_plan_sheet(): void
 
     $planId = $assignment['plan_id'];
     $planStmt = $pdo->prepare(
-        'SELECT id, track, level_number, title, segment_count, created_at FROM education_plans WHERE id = ?'
+        'SELECT id, track, level_number, title, segment_count,
+                daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                faces_per_half, faces_per_one, faces_per_two, created_at
+         FROM education_plans WHERE id = ?'
     );
     $planStmt->execute([$planId]);
     $plan = $planStmt->fetch();

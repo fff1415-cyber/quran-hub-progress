@@ -12,6 +12,7 @@ import type {
   TapValue,
 } from "@/lib/plan-types";
 import { nextSegmentsToApply, nextSegmentForTask, segmentsForTap } from "@/lib/plan-translator";
+import { DEFAULT_FACE_QUOTAS, normalizeFaceQuotas, faceQuotasFromPlan } from "@/lib/plan-daily-faces";
 import { getCalendarIsoDate } from "@/lib/operational-date";
 
 const KEY_PLANS = "qshatawi_education_plans_v1";
@@ -41,8 +42,12 @@ function write<T>(key: string, value: T): void {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
+function withFaceDefaults<T extends Partial<import("@/lib/plan-types").DailyFaceQuotas>>(row: T): T & import("@/lib/plan-types").DailyFaceQuotas {
+  return { ...row, ...normalizeFaceQuotas(row) };
+}
+
 export function localListPlans(): EducationPlan[] {
-  return read<EducationPlan[]>(KEY_PLANS, []).sort(
+  return read<EducationPlan[]>(KEY_PLANS, []).map((p) => withFaceDefaults(p)).sort(
     (a, b) => a.track.localeCompare(b.track) || a.level_number - b.level_number,
   );
 }
@@ -62,13 +67,13 @@ export function localImportPlans(plans: ImportPlanPayload[]): { plans: number; s
           : `مرحلة ${p.level_number}`);
     let plan = existing.find((x) => x.track === p.track && x.level_number === p.level_number);
     if (!plan) {
-      plan = {
+      plan = withFaceDefaults({
         id: uid(),
         track: p.track,
         level_number: p.level_number,
         title,
         segment_count: p.segments.length,
-      };
+      });
       existing.push(plan);
     } else {
       plan.title = title;
@@ -100,8 +105,15 @@ export function localAssignPlan(
   planId: string,
   startSegment: number,
   assignedBy: string,
-  options?: { plan_start_date?: string; start_muraja_segment?: number | null },
+  options?: {
+    plan_start_date?: string;
+    start_muraja_segment?: number | null;
+    face_quotas?: Partial<import("@/lib/plan-types").DailyFaceQuotas>;
+  },
 ): void {
+  const plans = localListPlans();
+  const plan = plans.find((p) => p.id === planId);
+  const quotas = normalizeFaceQuotas(options?.face_quotas ?? (plan ? faceQuotasFromPlan(plan) : undefined));
   const list = read<StudentPlanAssignment[]>(KEY_ASSIGNMENTS, []);
   const next = list.map((a) =>
     a.student_id === studentId && a.status === "active"
@@ -118,8 +130,24 @@ export function localAssignPlan(
     status: "active",
     assigned_by: assignedBy,
     assigned_at: new Date().toISOString(),
+    ...quotas,
   });
   write(KEY_ASSIGNMENTS, next);
+}
+
+export function localPatchAssignmentQuotas(
+  studentId: string,
+  quotas: Partial<import("@/lib/plan-types").DailyFaceQuotas>,
+): void {
+  const list = read<StudentPlanAssignment[]>(KEY_ASSIGNMENTS, []);
+  const normalized = normalizeFaceQuotas(quotas);
+  write(
+    KEY_ASSIGNMENTS,
+    list.map((a) => {
+      if (a.student_id !== studentId || !["active", "frozen"].includes(a.status)) return a;
+      return { ...a, ...normalized };
+    }),
+  );
 }
 
 export function localPatchAssignment(
@@ -166,7 +194,7 @@ export function localGetStudentSheet(studentId: string): StudentPlanSheetData {
       recorded_by,
     }));
 
-  return { assignment, plan, segments, completions };
+  return { assignment: assignment ? withFaceDefaults(assignment) : null, plan, segments, completions };
 }
 
 export function localApplyInput(

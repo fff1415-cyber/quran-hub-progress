@@ -3,7 +3,17 @@ export type PlanTaskType = "hifz" | "rabt" | "muraja";
 export type TapValue = "half" | "one" | "two";
 export type AssignmentStatus = "active" | "frozen" | "transferred";
 
-export interface EducationPlan {
+/** Daily face quotas + tap→face mapping (plan defaults, copied to assignment on link). */
+export interface DailyFaceQuotas {
+  daily_hifz_faces: number;
+  daily_rabt_faces: number;
+  daily_muraja_faces: number;
+  faces_per_half: number;
+  faces_per_one: number;
+  faces_per_two: number;
+}
+
+export interface EducationPlan extends DailyFaceQuotas {
   id: string;
   track: PlanTrack;
   level_number: number;
@@ -21,7 +31,7 @@ export interface PlanSegment {
   muraja_plan: string;
 }
 
-export interface StudentPlanAssignment {
+export interface StudentPlanAssignment extends DailyFaceQuotas {
   id: string;
   student_id: string;
   plan_id: string;

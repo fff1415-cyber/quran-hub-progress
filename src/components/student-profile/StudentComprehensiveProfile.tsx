@@ -2,8 +2,12 @@ import { useMemo } from "react";
 import {
   loadHalaqat,
   loadStudents,
+  loadGrades,
   type Student,
 } from "@/lib/mock-data";
+import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
+import { studentReportPercentages } from "@/lib/semester-grading";
+import { StudentPercentSummary } from "@/components/StudentPercentSummary";
 import { fetchStudentPlanSheet } from "@/lib/plans-service";
 import type { StudentPlanSheetData } from "@/lib/plan-types";
 import { useEffect, useState } from "react";
@@ -23,11 +27,26 @@ const DAY_AR: Record<string, string> = {
 
 export function StudentComprehensiveProfile({ student }: { student: Student }) {
   const halaqat = loadHalaqat();
+  const grades = loadGrades();
   const halaqa = halaqat.find((h) => h.id === student.halaqaId);
   const [planData, setPlanData] = useState<StudentPlanSheetData | null>(null);
   const [planLoading, setPlanLoading] = useState(true);
+  const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
 
   const profile = useMemo(() => buildStudentProfileData(student.id), [student.id]);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchActiveCalendar(true)
+      .then((cal) => { if (!cancelled) setCalendar(cal); })
+      .catch(() => { if (!cancelled) setCalendar(null); });
+    return () => { cancelled = true; };
+  }, []);
+
+  const report = useMemo(() => {
+    if (!calendar || !halaqa) return null;
+    return studentReportPercentages(student.id, student.levelType, halaqa.isTalqeen, grades, calendar);
+  }, [calendar, halaqa, student, grades]);
 
   useEffect(() => {
     let cancelled = false;
@@ -53,6 +72,13 @@ export function StudentComprehensiveProfile({ student }: { student: Student }) {
           )}
         </div>
       </div>
+
+      {report && halaqa && (
+        <section className="glass-card rounded-2xl p-5">
+          <h4 className="font-bold text-primary mb-3">النسب التراكمية — من بداية الفصل حتى اليوم</h4>
+          <StudentPercentSummary report={report} isTalqeen={halaqa.isTalqeen} />
+        </section>
+      )}
 
       <section className="glass-card rounded-2xl p-5">
         <h4 className="font-bold text-primary mb-3 flex items-center gap-2">

@@ -4,6 +4,7 @@ import type {
   PlanTaskType,
   StudentPlanSheetData,
   TapValue,
+  DailyFaceQuotas,
 } from "@/lib/plan-types";
 import { getToken } from "@/lib/cloud-sync";
 import {
@@ -14,6 +15,7 @@ import {
   localImportPlans,
   localListPlans,
   localPatchAssignment,
+  localPatchAssignmentQuotas,
   localPlanDetail,
 } from "@/lib/plans-store";
 
@@ -126,7 +128,11 @@ export async function assignStudentPlan(
   planId: string,
   startSegment: number,
   assignedBy: string,
-  options?: { plan_start_date?: string; start_muraja_segment?: number | null },
+  options?: {
+    plan_start_date?: string;
+    start_muraja_segment?: number | null;
+    face_quotas?: Partial<DailyFaceQuotas>;
+  },
 ): Promise<void> {
   try {
     await planFetch("/plans/assign", {
@@ -137,6 +143,7 @@ export async function assignStudentPlan(
         start_segment_index: startSegment,
         plan_start_date: options?.plan_start_date,
         start_muraja_segment: options?.start_muraja_segment,
+        ...options?.face_quotas,
       }),
     });
     localClearPlansCache();
@@ -145,6 +152,24 @@ export async function assignStudentPlan(
   } catch (e) {
     if (isPlansDbUnavailableError(e)) {
       localAssignPlan(studentId, planId, startSegment, assignedBy, options);
+      return;
+    }
+    throw e;
+  }
+}
+
+export async function patchAssignmentFaceQuotas(
+  studentId: string,
+  quotas: Partial<DailyFaceQuotas>,
+): Promise<void> {
+  try {
+    await planFetch("/plans/assignment-quotas", {
+      method: "PATCH",
+      body: JSON.stringify({ student_id: studentId, ...quotas }),
+    });
+  } catch (e) {
+    if (isPlansDbUnavailableError(e)) {
+      localPatchAssignmentQuotas(studentId, quotas);
       return;
     }
     throw e;

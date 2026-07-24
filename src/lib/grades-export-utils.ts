@@ -13,7 +13,7 @@ import { getSelectableWeeks, resolveWeekForDate } from "@/lib/academic-context";
 import { isoDateToDayKey } from "@/lib/operational-date";
 import { weekLabel } from "@/lib/arabic-numbers";
 import type { HalaqaCustomField } from "@/lib/halaqa-custom-fields";
-import { semesterOverallPercentage } from "@/lib/semester-grading";
+import { semesterOverallPercentage, semesterComponentPercentages, studentWeekOverallPercentage } from "@/lib/semester-grading";
 import * as XLSX from "xlsx";
 
 export interface PeriodDayStats {
@@ -31,6 +31,12 @@ export interface PeriodDayStats {
 export interface StudentPeriodExportRow extends PeriodDayStats {
   weeksIncluded: number[];
   overallPercent: number;
+  weekPercent: number;
+  attendancePercent: number;
+  hifzPercent: number;
+  murajaPercent: number;
+  rabtPercent: number;
+  wajibPercent: number;
   sardPassed: number;
 }
 
@@ -162,10 +168,17 @@ export function aggregateStudentPeriod(
   }
 
   const cappedTo = clampToToday(calendar, toIso);
+  const components = semesterComponentPercentages(student.id, student.levelType, isTalqeen, grades, calendar);
   return {
     ...stats,
     weeksIncluded: weekNums,
     overallPercent: semesterOverallPercentage(student.id, student.levelType, isTalqeen, grades, calendar),
+    weekPercent: studentWeekOverallPercentage(student.id, isTalqeen, grades, calendar.currentWeekNumber),
+    attendancePercent: components.attendance,
+    hifzPercent: components.hifz,
+    murajaPercent: components.muraja,
+    rabtPercent: components.rabt,
+    wajibPercent: components.wajib,
     sardPassed: countPassedSardInRange(student.id, fromIso, cappedTo),
   };
 }
@@ -236,11 +249,19 @@ export function buildTeacherGradesWorkbook(
   const summary: (string | number)[][] = [
     [`حلقة: ${halaqaName}`, `من ${fromIso} إلى ${cappedTo}`],
     [],
-    [
-      "الطالب", "المستوى", "النوع", "حضور", "غياب", "تأخر", "استئذان",
-      "مرات الحفظ", "مراجعة ✓", "مراجعة ✗", "ربط ✓", "ربط ✗",
-      "سرد مجتاز", "النسبة العامة %", ...customFields.map((f) => f.label), "الأسابيع المشمولة",
-    ],
+    isTalqeen
+      ? [
+          "الطالب", "المستوى", "النوع",
+          "نسبة الحضور %", "نسبة الواجب %",
+          "نسبة الأسبوع %", "النسبة الكلية %",
+          "سرد مجتاز", ...customFields.map((f) => f.label), "الأسابيع المشمولة",
+        ]
+      : [
+          "الطالب", "المستوى", "النوع",
+          "نسبة الحضور %", "نسبة الحفظ %", "نسبة المراجعة %", "نسبة الربط %",
+          "نسبة الأسبوع %", "النسبة الكلية %",
+          "سرد مجتاز", ...customFields.map((f) => f.label), "الأسابيع المشمولة",
+        ],
   ];
 
   students.forEach((s) => {
@@ -249,15 +270,27 @@ export function buildTeacherGradesWorkbook(
     const customVals = latestCustomFieldValues(grades[s.id], calendar, weekNums, fromIso, cappedTo, customFields);
     const customCols = customFields.map((f) => customVals[f.id] ?? "—");
     if (!row) {
-      summary.push([s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي", 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, ...customCols, weeksLabel]);
+      const empty = isTalqeen
+        ? [s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي", 0, 0, 0, 0, 0, ...customCols, weeksLabel]
+        : [s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي", 0, 0, 0, 0, 0, 0, 0, ...customCols, weeksLabel];
+      summary.push(empty);
       return;
     }
-    summary.push([
-      s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي",
-      row.present, row.absent, row.late, row.excused, row.hifz,
-      row.murajaPass, row.murajaFail, row.rabtPass, row.rabtFail,
-      row.sardPassed, row.overallPercent, ...customCols, weeksLabel,
-    ]);
+    summary.push(
+      isTalqeen
+        ? [
+            s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي",
+            row.attendancePercent, row.wajibPercent,
+            row.weekPercent, row.overallPercent,
+            row.sardPassed, ...customCols, weeksLabel,
+          ]
+        : [
+            s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي",
+            row.attendancePercent, row.hifzPercent, row.murajaPercent, row.rabtPercent,
+            row.weekPercent, row.overallPercent,
+            row.sardPassed, ...customCols, weeksLabel,
+          ],
+    );
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "ملخص الطلاب");
 

@@ -2,7 +2,10 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { loadStudents, type Student } from "@/lib/mock-data";
 import { syncFromCloud } from "@/lib/cloud-sync";
 import { fetchPlans, fetchStudentPlanSheet, importPlans, assignStudentPlan, patchStudentAssignment } from "@/lib/plans-service";
-import type { EducationPlan, PlanTrack, StudentPlanSheetData } from "@/lib/plan-types";
+import type { EducationPlan, PlanTrack, StudentPlanSheetData, DailyFaceQuotas } from "@/lib/plan-types";
+import { DEFAULT_FACE_QUOTAS, faceQuotasFromPlan, normalizeFaceQuotas } from "@/lib/plan-daily-faces";
+import { FaceQuotasFields } from "@/components/plans/FaceQuotasFields";
+import { StudentFaceReportPanel } from "@/components/plans/StudentFaceReportPanel";
 import { parsePlansExcel } from "@/lib/plan-excel-import";
 import { trackLabel } from "@/lib/plan-translator";
 import { isFirstPhasePlan } from "@/lib/plan-phase";
@@ -101,6 +104,7 @@ export function SupervisorPlansPanel() {
   const [planStartDate, setPlanStartDate] = useState(getCalendarIsoDate());
   const [startHifz, setStartHifz] = useState("1");
   const [startMuraja, setStartMuraja] = useState("1");
+  const [faceQuotas, setFaceQuotas] = useState<DailyFaceQuotas>({ ...DEFAULT_FACE_QUOTAS });
   const [lookupRefresh, setLookupRefresh] = useState(0);
   const [studentsVersion, setStudentsVersion] = useState(0);
 
@@ -166,6 +170,12 @@ export function SupervisorPlansPanel() {
 
   const showMurajaStart = selectedPlan ? isFirstPhasePlan(selectedPlan.level_number) : false;
 
+  useEffect(() => {
+    if (selectedPlan) {
+      setFaceQuotas(faceQuotasFromPlan(selectedPlan));
+    }
+  }, [selectedPlan]);
+
   const submitAssign = async () => {
     if (!selectedPlan || !selectedStudent) {
       toast.error("اختر الطالب والخطة");
@@ -181,6 +191,7 @@ export function SupervisorPlansPanel() {
         {
           plan_start_date: planStartDate,
           start_muraja_segment: showMurajaStart ? Number(startMuraja) || 1 : null,
+          face_quotas: normalizeFaceQuotas(faceQuotas),
         },
       );
       toast.success(`تم ربط ${selectedStudent.name} — ${selectedPlan.title}`);
@@ -337,6 +348,9 @@ export function SupervisorPlansPanel() {
                   الربط والمراجعة يبدآن مع الحفظ تلقائياً (مرحلة {selectedPlan.level_number % 1000})
                 </p>
               )}
+              <div className="sm:col-span-2 pt-2 border-t border-border">
+                <FaceQuotasFields value={faceQuotas} onChange={setFaceQuotas} />
+              </div>
             </div>
           )}
 
@@ -363,6 +377,8 @@ export function SupervisorPlansPanel() {
           </div>
         </CardContent>
       </Card>
+
+      <StudentFaceReportPanel />
 
       <PlanStudentLookup readOnly refreshKey={lookupRefresh} />
     </div>

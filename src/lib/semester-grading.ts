@@ -190,6 +190,132 @@ export function halaqaSemesterAverage(
   return Math.round((sum / students.length) * 10) / 10;
 }
 
+export interface ComponentPercentages {
+  attendance: number;
+  hifz: number;
+  muraja: number;
+  rabt: number;
+  wajib: number;
+}
+
+export interface StudentReportPercentages {
+  overall: number;
+  weekOverall: number;
+  components: ComponentPercentages;
+}
+
+function ratioPct(earned: number, max: number): number {
+  if (max <= 0) return 0;
+  return Math.round((earned / max) * 1000) / 10;
+}
+
+function accumulateComponentTotals(
+  entry: DayEntry | undefined,
+  levelType: Student["levelType"],
+  isTalqeen: boolean,
+  weights: DailyGradeWeights,
+  acc: { attE: number; attM: number; hifzE: number; hifzM: number; murE: number; murM: number; rabE: number; rabM: number; wajE: number; wajM: number },
+): void {
+  const d = entry ?? EMPTY_DAY;
+  acc.attE += attendancePoints(d.attendance, weights);
+  acc.attM += attendanceMax(weights);
+  if (isTalqeen) {
+    acc.wajE += d.wajib ? weights.talqeen_wajib : 0;
+    acc.wajM += weights.talqeen_wajib;
+    return;
+  }
+  acc.hifzE += hifzPoints(d.hifz, weights);
+  acc.hifzM += hifzFullMax(levelType, weights);
+  acc.murE += d.muraja === "pass" ? weights.muraja_pass : d.muraja === "fail" ? weights.muraja_fail : 0;
+  acc.murM += weights.muraja_pass;
+  acc.rabE += d.rabt === "pass" ? weights.rabt_pass : d.rabt === "fail" ? weights.rabt_fail : 0;
+  acc.rabM += weights.rabt_pass;
+}
+
+/** Component % from semester start through today (elapsed working days). */
+export function semesterComponentPercentages(
+  studentId: string,
+  levelType: Student["levelType"],
+  isTalqeen: boolean,
+  grades: GradesStore,
+  calendar: AcademicCalendar,
+  weights: DailyGradeWeights = DEFAULT_DAILY_GRADE_WEIGHTS,
+): ComponentPercentages {
+  const days = getElapsedSemesterDays(calendar);
+  const acc = { attE: 0, attM: 0, hifzE: 0, hifzM: 0, murE: 0, murM: 0, rabE: 0, rabM: 0, wajE: 0, wajM: 0 };
+  for (const day of days) {
+    accumulateComponentTotals(lookupDayEntry(grades, studentId, day), levelType, isTalqeen, weights, acc);
+  }
+  return {
+    attendance: ratioPct(acc.attE, acc.attM),
+    hifz: ratioPct(acc.hifzE, acc.hifzM),
+    muraja: ratioPct(acc.murE, acc.murM),
+    rabt: ratioPct(acc.rabE, acc.rabM),
+    wajib: ratioPct(acc.wajE, acc.wajM),
+  };
+}
+
+export function studentWeekOverallPercentage(
+  studentId: string,
+  isTalqeen: boolean,
+  grades: GradesStore,
+  weekNum: number,
+): number {
+  return weekPercentage(grades[studentId]?.[weekNum], isTalqeen);
+}
+
+export function studentReportPercentages(
+  studentId: string,
+  levelType: Student["levelType"],
+  isTalqeen: boolean,
+  grades: GradesStore,
+  calendar: AcademicCalendar,
+  weights?: DailyGradeWeights,
+): StudentReportPercentages {
+  return {
+    overall: semesterOverallPercentage(studentId, levelType, isTalqeen, grades, calendar, weights),
+    weekOverall: studentWeekOverallPercentage(studentId, isTalqeen, grades, calendar.currentWeekNumber),
+    components: semesterComponentPercentages(studentId, levelType, isTalqeen, grades, calendar, weights),
+  };
+}
+
+export function halaqaWeekAverage(
+  students: Student[],
+  isTalqeen: boolean,
+  grades: GradesStore,
+  weekNum: number,
+): number {
+  if (students.length === 0) return 0;
+  const sum = students.reduce(
+    (acc, s) => acc + studentWeekOverallPercentage(s.id, isTalqeen, grades, weekNum),
+    0,
+  );
+  return Math.round((sum / students.length) * 10) / 10;
+}
+
+/** Rows for Excel / report «معلومات» sheet. */
+export function studentReportPercentRows(
+  report: StudentReportPercentages,
+  isTalqeen: boolean,
+): (string | number)[][] {
+  const rows: (string | number)[][] = [
+    ["النسب — من بداية الفصل حتى اليوم"],
+    ["النسبة الكلية %", report.overall],
+    ["نسبة الأسبوع الحالي %", report.weekOverall],
+    ["نسبة الحضور %", report.components.attendance],
+  ];
+  if (isTalqeen) {
+    rows.push(["نسبة الواجب %", report.components.wajib]);
+  } else {
+    rows.push(
+      ["نسبة الحفظ %", report.components.hifz],
+      ["نسبة المراجعة %", report.components.muraja],
+      ["نسبة الربط %", report.components.rabt],
+    );
+  }
+  return rows;
+}
+
 /** Legacy fallback when no semester calendar is configured. */
 export function fallbackWeeklyAverage(
   studentId: string,

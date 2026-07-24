@@ -1,8 +1,10 @@
 import { useEffect, useState } from "react";
 import {
   loadStudents, loadHalaqat, loadGrades, loadNotifications,
-  updateNotification, studentStats, type Notification,
+  updateNotification, type Notification,
 } from "@/lib/mock-data";
+import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
+import { studentReportPercentages, formatOverallPercent } from "@/lib/semester-grading";
 import type { TransferTargetRole } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
@@ -16,7 +18,7 @@ const ROLE_LABEL: Record<TransferTargetRole, string> = {
   supervisor: "المشرف التعليمي",
 };
 
-function Stat({ label, value, tone }: { label: string; value: number; tone: "destructive" | "warning" | "primary" | "success" }) {
+function PctStat({ label, value, tone }: { label: string; value: number; tone: "destructive" | "warning" | "primary" | "success" }) {
   const colors: Record<string, string> = {
     destructive: "bg-destructive/10 text-destructive border-destructive/30",
     warning: "bg-warning/10 text-warning border-warning/30",
@@ -25,7 +27,7 @@ function Stat({ label, value, tone }: { label: string; value: number; tone: "des
   };
   return (
     <div className={`rounded-lg border p-2 text-center text-xs ${colors[tone]}`}>
-      <div className="text-base font-bold">{value}</div>
+      <div className="text-base font-bold">{formatOverallPercent(value)}</div>
       <div className="opacity-80">{label}</div>
     </div>
   );
@@ -37,6 +39,15 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
   const grades = loadGrades();
   const [items, setItems] = useState<Notification[]>([]);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchActiveCalendar(true)
+      .then((cal) => { if (!cancelled) setCalendar(cal); })
+      .catch(() => { if (!cancelled) setCalendar(null); });
+    return () => { cancelled = true; };
+  }, []);
 
   const refresh = () => {
     setItems(
@@ -90,7 +101,9 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
               const td = n.transferData!;
               const s = students.find((x) => x.id === td.studentId);
               const h = halaqat.find((x) => x.id === td.halaqaId);
-              const st = studentStats(td.studentId, grades);
+              const pct = calendar && s && h
+                ? studentReportPercentages(s.id, s.levelType, h.isTalqeen, grades, calendar).components
+                : null;
               const processing = busyId === n.id;
               return (
                 <div key={n.id} className="rounded-xl border border-warning/30 bg-warning/5 p-4">
@@ -108,10 +121,23 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
                     <span className="text-xs text-muted-foreground">السبب: </span>{td.reason}
                   </div>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-3">
-                    <Stat label="غياب" value={st.absentCount} tone="destructive" />
-                    <Stat label="تأخر" value={st.lateCount} tone="warning" />
-                    <Stat label="استئذان" value={st.excusedCount} tone="primary" />
-                    <Stat label="حفظ" value={st.hifzCount} tone="success" />
+                    {pct ? (
+                      h?.isTalqeen ? (
+                        <>
+                          <PctStat label="نسبة الحضور" value={pct.attendance} tone="primary" />
+                          <PctStat label="نسبة الواجب" value={pct.wajib} tone="success" />
+                        </>
+                      ) : (
+                        <>
+                          <PctStat label="نسبة الحضور" value={pct.attendance} tone="primary" />
+                          <PctStat label="نسبة الحفظ" value={pct.hifz} tone="success" />
+                          <PctStat label="نسبة المراجعة" value={pct.muraja} tone="warning" />
+                          <PctStat label="نسبة الربط" value={pct.rabt} tone="success" />
+                        </>
+                      )
+                    ) : (
+                      <p className="col-span-full text-xs text-muted-foreground">جاري تحميل النسب...</p>
+                    )}
                   </div>
                   <button
                     type="button"

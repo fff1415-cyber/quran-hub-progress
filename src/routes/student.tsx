@@ -1,18 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
-  loadHalaqat, loadStudents, loadGrades, DAYS,
+  loadHalaqat, loadStudents, loadGrades,
+  weekPercentage,
 } from "@/lib/mock-data";
 import { loginByNationalId } from "@/lib/secure-data.functions";
 import { setToken } from "@/lib/cloud-sync";
 import { getCalendarDayKey } from "@/lib/operational-date";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import {
-  semesterOverallPercentage,
   halaqaSemesterAverage,
+  halaqaWeekAverage,
+  studentReportPercentages,
+  studentWeekOverallPercentage,
   formatOverallPercent,
   fallbackWeeklyAverage,
 } from "@/lib/semester-grading";
+import { StudentPercentSummary } from "@/components/StudentPercentSummary";
 import { fetchStudentPlanSheet } from "@/lib/plans-service";
 import type { StudentPlanSheetData } from "@/lib/plan-types";
 import { StudentAcademicResultsSection } from "@/components/student-profile/StudentAcademicResults";
@@ -59,7 +63,7 @@ function StudentPage() {
         return {
           student: s,
           halaqa: h,
-          pct: semesterOverallPercentage(s.id, s.levelType, h.isTalqeen, grades, calendar),
+          pct: studentWeekOverallPercentage(s.id, h.isTalqeen, grades, calendar.currentWeekNumber),
         };
       })
       .filter((x): x is NonNullable<typeof x> => !!x)
@@ -84,9 +88,11 @@ function StudentPage() {
     if (!s) return null;
     const h = halaqat.find((x) => x.id === s.halaqaId)!;
     const halaqaStudents = students.filter((st) => st.halaqaId === h.id);
-    const overall = calendar
-      ? semesterOverallPercentage(s.id, s.levelType, h.isTalqeen, grades, calendar)
-      : fallbackWeeklyAverage(s.id, h.isTalqeen, grades);
+    const report = calendar
+      ? studentReportPercentages(s.id, s.levelType, h.isTalqeen, grades, calendar)
+      : null;
+    const overall = report?.overall ?? fallbackWeeklyAverage(s.id, h.isTalqeen, grades);
+    const weekOverall = report?.weekOverall ?? weekPctFallback(s.id, h.isTalqeen, grades);
     const halaqaPct = calendar
       ? halaqaSemesterAverage(halaqaStudents, h.isTalqeen, grades, calendar)
       : halaqaStudents.length === 0
@@ -95,17 +101,14 @@ function StudentPage() {
             halaqaStudents.reduce((acc, st) => acc + fallbackWeeklyAverage(st.id, h.isTalqeen, grades), 0)
             / halaqaStudents.length,
           );
-    let absences = 0, lates = 0, excused = 0, memorizedCount = 0;
-    Object.values(grades[s.id] || {}).forEach((w) => {
-      DAYS.forEach((d) => {
-        const e = w.days[d.key];
-        if (!e) return;
-        if (e.attendance === "absent") absences++;
-        if (e.attendance === "late") lates++;
-        if (e.attendance === "excused") excused++;
-        if (e.hifz === "half" || e.hifz === "one" || e.hifz === "two") memorizedCount++;
-      });
-    });
+    const halaqaWeekPct = calendar
+      ? halaqaWeekAverage(halaqaStudents, h.isTalqeen, grades, calendar.currentWeekNumber)
+      : halaqaStudents.length === 0
+        ? 0
+        : Math.round(
+            halaqaStudents.reduce((acc, st) => acc + weekPctFallback(st.id, h.isTalqeen, grades), 0)
+            / halaqaStudents.length,
+          );
     const todayKey = getCalendarDayKey();
     let todayStatus = "";
     const weeks = Object.values(grades[s.id] || {});
@@ -113,7 +116,7 @@ function StudentPage() {
       const att = weeks[i].days[todayKey]?.attendance;
       if (att) { todayStatus = att; break; }
     }
-    return { s, h, overall, halaqaPct, absences, lates, excused, memorizedCount, todayStatus };
+    return { s, h, report, overall, weekOverall, halaqaPct, halaqaWeekPct, todayStatus };
   }, [selectedId, students, halaqat, grades, calendar]);
 
   useEffect(() => {
@@ -161,7 +164,7 @@ function StudentPage() {
 
             <section className="glass-card rounded-2xl p-6 mb-6">
               <h2 className="text-xl font-bold text-primary mb-4 flex items-center gap-2">
-                <Trophy className="w-5 h-5" /> لوحة الشرف — أفضل 15 طالب
+                <Trophy className="w-5 h-5" /> لوحة الشرف — أفضل 15 طالب (الأسبوع الحالي)
               </h2>
               <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2">
                 {top15.map((row, i) => (
@@ -218,13 +221,24 @@ function StudentPage() {
 
               <TodayBadge status={data.todayStatus} />
 
-              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mt-4">
-                <Stat label="النسبة الكلية" value={formatOverallPercent(data.overall)} />
-                <Stat label="متوسط الحلقة" value={formatOverallPercent(data.halaqaPct)} />
-                <Stat label="مقاطع محفوظة" value={String(data.memorizedCount)} />
-                <Stat label="مرات الغياب" value={String(data.absences)} />
-                <Stat label="مرات التأخر" value={String(data.lates)} />
-                <Stat label="مرات الاستئذان" value={String(data.excused)} />
+              {data.report ? (
+                <div className="mt-4">
+                  <p className="text-xs text-muted-foreground mb-2">نسب الطالب — من بداية الفصل حتى اليوم</p>
+                  <StudentPercentSummary report={data.report} isTalqeen={data.h.isTalqeen} />
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 mt-4">
+                  <Stat label="النسبة الكلية" value={formatOverallPercent(data.overall)} />
+                  <Stat label="نسبة الأسبوع" value={formatOverallPercent(data.weekOverall)} />
+                </div>
+              )}
+
+              <div className="mt-4 p-4 rounded-xl bg-secondary/30 border border-border">
+                <p className="text-xs text-muted-foreground mb-3">متوسط الحلقة ({data.h.name})</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <Donut pct={data.halaqaPct} label="تراكمي — الفصل" />
+                  <Donut pct={data.halaqaWeekPct} label="الأسبوع الحالي" />
+                </div>
               </div>
 
               <section className="mt-6 pt-6 border-t border-border">
@@ -251,6 +265,14 @@ function StudentPage() {
       </main>
     </div>
   );
+}
+
+function weekPctFallback(studentId: string, isTalqeen: boolean, grades: ReturnType<typeof loadGrades>): number {
+  const weeks = grades[studentId];
+  if (!weeks) return 0;
+  const nums = Object.keys(weeks).map(Number).sort((a, b) => b - a);
+  if (nums.length === 0) return 0;
+  return weekPercentage(weeks[nums[0]], isTalqeen);
 }
 
 function TodayBadge({ status }: { status: string }) {

@@ -7,6 +7,7 @@ import {
   levelUnit,
   trackLabel,
 } from "@/lib/plan-translator";
+import { faceQuotasFromAssignment } from "@/lib/plan-daily-faces";
 import { arabicDayName } from "@/lib/plan-phase";
 import { cn } from "@/lib/utils";
 import { Check, Loader2 } from "lucide-react";
@@ -69,6 +70,7 @@ export function StudentPlanSheet({
   }
 
   const planLabel = `${trackLabel(plan.track)} · ${levelUnit(plan.track)} ${plan.level_number}`;
+  const quotas = faceQuotasFromAssignment(assignment);
   const visibleSegments = segments.filter((s) => s.segment_index >= assignment.start_segment_index);
 
   return (
@@ -96,6 +98,13 @@ export function StudentPlanSheet({
           متأخر {delayDays} {delayDays === 1 ? "يوم" : "أيام"} — المقطع #{currentSeg}
         </div>
       )}
+
+      <div className="rounded-lg border border-border bg-secondary/20 px-3 py-2 text-xs text-muted-foreground grid grid-cols-2 sm:grid-cols-3 gap-2">
+        <span>حفظ/يوم: <strong className="text-foreground">{quotas.daily_hifz_faces}</strong> وجه</span>
+        <span>ربط/يوم: <strong className="text-foreground">{quotas.daily_rabt_faces}</strong> وجه</span>
+        <span>مراجعة/يوم: <strong className="text-foreground">{quotas.daily_muraja_faces}</strong> وجه</span>
+        <span className="sm:col-span-3">ضغطات الحفظ: ½={quotas.faces_per_half} · 1={quotas.faces_per_one} · 2={quotas.faces_per_two} وجه</span>
+      </div>
 
       <div className="overflow-x-auto rounded-xl border border-border">
         <table className="w-full text-sm border-collapse min-w-[720px]">

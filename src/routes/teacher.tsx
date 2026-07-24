@@ -428,6 +428,42 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     update(studentId, (w) => ({ ...w, days: { ...w.days, [dayKey]: { ...w.days[dayKey], ...patch } } }));
   };
 
+  const markAllPresentForDay = (dayKey: string) => {
+    const g = { ...grades };
+    let updated = 0;
+    students.forEach((s) => {
+      if (!g[s.id]) g[s.id] = {};
+      if (!g[s.id][weekNum]) g[s.id][weekNum] = emptyWeek();
+      const week = g[s.id][weekNum];
+      const prev = week.days[dayKey] ?? emptyWeek().days[dayKey];
+      if (prev.attendance === "present") return;
+      g[s.id][weekNum] = {
+        ...week,
+        days: { ...week.days, [dayKey]: { ...prev, attendance: "present" } },
+      };
+      updated++;
+    });
+    setGrades(g);
+    saveGrades(g);
+    const dayLabel = DAYS.find((d) => d.key === dayKey)?.label ?? dayKey;
+    toast.success(
+      updated > 0
+        ? `حُضّر ${updated} طالب — ${dayLabel}`
+        : `جميع الطلاب مسجّلون حاضرين — ${dayLabel}`,
+    );
+  };
+
+  const bulkPresentBtn = (dayKey: string) => (
+    <button
+      type="button"
+      onClick={() => markAllPresentForDay(dayKey)}
+      className="w-full mb-1 px-1 py-0.5 rounded bg-success/15 text-success border border-success/30 text-[10px] font-bold hover:bg-success/25 leading-tight"
+      title="تحضير حضور جميع الطلاب"
+    >
+      حضّر الكل
+    </button>
+  );
+
   const updateCustomField = (studentId: string, dayKey: string, fieldId: string, value: string) => {
     update(studentId, (w) => {
       const prev = w.days[dayKey] ?? emptyWeek().days[dayKey];
@@ -548,7 +584,10 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
             {visibleDays.map((d) =>
               isTalqeen ? (
                 <React.Fragment key={d.key}>
-                  <th className={cn("p-1 border-r border-border", highlightDay(d.key) && "bg-muted/50")}>حاضر</th>
+                  <th className={cn("p-1 border-r border-border", highlightDay(d.key) && "bg-muted/50")}>
+                    {bulkPresentBtn(d.key)}
+                    <span className="block">حاضر</span>
+                  </th>
                   <th className={cn("p-1", highlightDay(d.key) && "bg-muted/50")}>واجب</th>
                   {customFields.map((f) => (
                     <th key={f.id} className={cn("p-1 border-r border-border text-primary/80", highlightDay(d.key) && "bg-muted/50")}>
@@ -558,7 +597,10 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 </React.Fragment>
               ) : (
                 <React.Fragment key={d.key}>
-                  <th className={cn("p-1 border-r border-border", highlightDay(d.key) && "bg-muted/50")}>الحضور</th>
+                  <th className={cn("p-1 border-r border-border", highlightDay(d.key) && "bg-muted/50")}>
+                    {bulkPresentBtn(d.key)}
+                    <span className="block">الحضور</span>
+                  </th>
                   <th className={cn("p-1", highlightDay(d.key) && "bg-muted/50")}>حفظ</th>
                   <th className={cn("p-1", highlightDay(d.key) && "bg-muted/50")}>ربط</th>
                   <th className={cn("p-1", highlightDay(d.key) && "bg-muted/50")}>مراجعة</th>
