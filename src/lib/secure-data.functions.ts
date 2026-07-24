@@ -1,18 +1,17 @@
 // Client-side API layer — Hostinger PHP + MySQL backend
 
+import { getActiveComplexId } from "@/lib/tenant";
+
 const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
-/** Default مجمع when multi-tenant migration is applied (override via .env). */
-function defaultComplexId(): number | undefined {
-  const raw = import.meta.env.VITE_COMPLEX_ID;
-  if (raw === undefined || raw === "") return undefined;
-  const n = Number(raw);
-  return Number.isFinite(n) && n > 0 ? n : undefined;
+function loginBody(extra: Record<string, unknown>): string {
+  const cid = getActiveComplexId();
+  return JSON.stringify(cid ? { ...extra, complexId: cid } : extra);
 }
 
-function loginBody(extra: Record<string, unknown>): string {
-  const cid = defaultComplexId();
-  return JSON.stringify(cid ? { ...extra, complexId: cid } : extra);
+function publicComplexQuery(): string {
+  const cid = getActiveComplexId();
+  return cid ? `complexId=${cid}` : "";
 }
 
 function apiUrl(path: string): string {
@@ -90,9 +89,8 @@ export async function secureListStudents({ data }: { data: { token: string } }) 
 }
 
 export async function listPublicStudents() {
-  const cid = defaultComplexId();
-  const q = cid ? `?complexId=${cid}` : "";
-  return apiFetch<unknown[]>(`/students/public${q}`, { method: "GET" });
+  const q = publicComplexQuery();
+  return apiFetch<unknown[]>(`/students/public${q ? `?${q}` : ""}`, { method: "GET" });
 }
 
 export async function secureUpsertStudents({ data }: { data: { token: string; students: unknown[] } }) {
@@ -126,7 +124,8 @@ export async function secureListHalaqatFull({ data }: { data: { token: string } 
 }
 
 export async function listPublicHalaqat() {
-  return apiFetch<unknown[]>("/halaqat/public", { method: "GET" });
+  const q = publicComplexQuery();
+  return apiFetch<unknown[]>(`/halaqat/public${q ? `?${q}` : ""}`, { method: "GET" });
 }
 
 export async function secureUpsertHalaqat({ data }: { data: { token: string; halaqat: unknown[] } }) {

@@ -2,9 +2,9 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { loginByCode, loginByNationalId } from "@/lib/secure-data.functions";
 import { setToken, syncFromCloud } from "@/lib/cloud-sync";
-import { Shield, UserCheck, GraduationCap, Mic, Eye } from "lucide-react";
-import logo from "@/assets/shtaiwi-logo.png.asset.json";
+import { Shield, UserCheck, GraduationCap, Mic, Eye, Loader2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
+import { useTenant } from "@/contexts/TenantContext";
 
 export const Route = createFileRoute("/")({ component: LoginPage });
 
@@ -12,6 +12,7 @@ type LoginMode = "staff" | "student";
 
 function LoginPage() {
   const navigate = useNavigate();
+  const { tenant, logoUrl, loading: tenantLoading, error: tenantError } = useTenant();
   const [mode, setMode] = useState<LoginMode>("staff");
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
@@ -29,7 +30,7 @@ function LoginPage() {
         sessionStorage.setItem("qs_role", auth.role);
         sessionStorage.setItem("qs_name", auth.name);
         if (auth.complexId != null) sessionStorage.setItem("qs_complex", String(auth.complexId));
-        else sessionStorage.removeItem("qs_complex");
+        else sessionStorage.setItem("qs_complex", String(tenant.id));
         if (auth.halaqaId) sessionStorage.setItem("qs_halaqa", String(auth.halaqaId));
         else sessionStorage.removeItem("qs_halaqa");
         await syncFromCloud();
@@ -50,7 +51,7 @@ function LoginPage() {
         sessionStorage.setItem("qs_role", "student");
         sessionStorage.setItem("qs_student", student.studentId);
         if (student.complexId != null) sessionStorage.setItem("qs_complex", String(student.complexId));
-        else sessionStorage.removeItem("qs_complex");
+        else sessionStorage.setItem("qs_complex", String(tenant.id));
         await syncFromCloud();
         navigate({ to: "/student", search: { s: student.studentId } });
       }
@@ -62,6 +63,27 @@ function LoginPage() {
     }
   };
 
+  if (tenantLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-4">
+        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+        <p className="text-muted-foreground text-sm">جاري تحميل بيانات المجمع...</p>
+      </div>
+    );
+  }
+
+  if (tenantError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="glass-card rounded-2xl p-8 max-w-md text-center">
+          <h1 className="text-xl font-bold text-destructive mb-2">تعذّر تحميل المجمع</h1>
+          <p className="text-muted-foreground text-sm">{tenantError}</p>
+          <p className="text-muted-foreground text-xs mt-4">تحقق من الرابط الفرعي (subdomain) أو اتصل بالدعم.</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
       <Toaster position="top-center" richColors />
@@ -70,10 +92,10 @@ function LoginPage() {
       <div className="glass-card rounded-3xl p-8 md:p-12 w-full max-w-xl relative z-10 gold-glow">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-28 h-28 rounded-2xl bg-card border border-primary/15 mb-4 gold-glow p-2">
-            <img src={logo.url} alt="شعار مجمع الشتيوي" className="w-full h-full object-contain" />
+            <img src={logoUrl} alt={`شعار ${tenant.name}`} className="w-full h-full object-contain" />
           </div>
           <h1 className="display text-3xl md:text-4xl font-bold gold-text mb-2">
-            مجمع حلقات الشتيوي
+            {tenant.name}
           </h1>
           <p className="text-muted-foreground text-sm">لتحفيظ القرآن الكريم</p>
           <div className="mt-4 flex items-center justify-center gap-2">

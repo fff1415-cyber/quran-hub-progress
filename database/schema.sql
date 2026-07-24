@@ -9,10 +9,12 @@
 CREATE TABLE IF NOT EXISTS `complexes` (
   `id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(255) NOT NULL,
+  `subdomain` VARCHAR(50) NOT NULL,
   `logo_url` VARCHAR(512) NULL DEFAULT NULL,
   `primary_color` VARCHAR(20) NOT NULL DEFAULT '#C9A227',
   `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`)
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_complexes_subdomain` (`subdomain`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `halaqat` (

@@ -27,6 +27,8 @@ INSERT INTO `complexes` (`id`, `name`, `primary_color`)
 VALUES (1, 'مجمع حلقات الشتيوي', '#C9A227')
 ON DUPLICATE KEY UPDATE `name` = VALUES(`name`);
 
+-- Subdomain column: run database/migrate-complex-subdomain.sql after this script
+
 
 -- ─── 2. halaqat — composite PK (complex_id, id) ─────────────────────────────
 

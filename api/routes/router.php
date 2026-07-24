@@ -11,11 +11,20 @@ require_once __DIR__ . '/semesters.php';
 require_once __DIR__ . '/plans.php';
 require_once __DIR__ . '/evaluation_settings.php';
 require_once __DIR__ . '/health.php';
+require_once __DIR__ . '/tenant_info.php';
 
 function route_request(string $method, string $path): void
 {
     if ($path === '/health' && $method === 'GET') {
         handle_health_check();
+        return;
+    }
+    if ($path === '/tenant-info' && $method === 'GET') {
+        handle_tenant_info();
+        return;
+    }
+    if (preg_match('#^/tenant-info/([a-z0-9-]+)$#i', $path) && $method === 'GET') {
+        handle_tenant_info();
         return;
     }
     if ($method === 'POST' && $path === '/login/code') {
