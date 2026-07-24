@@ -2,6 +2,11 @@
 
 declare(strict_types=1);
 
+function semesters_tenant_enabled(PDO $pdo): bool
+{
+    return table_column_exists($pdo, 'semesters', 'complex_id');
+}
+
 function decode_json_array(mixed $raw): array
 {
     if (is_array($raw)) {
@@ -30,24 +35,48 @@ function semester_row_to_array(array $row): array
 
 function handle_list_semesters(): void
 {
-    require_auth();
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
     $pdo = db();
-    $rows = $pdo->query(
-        'SELECT id, name, start_date, weeks_count, working_days, excluded_dates, is_active, created_at
-         FROM semesters ORDER BY created_at DESC'
-    )->fetchAll();
+    $tenants = semesters_tenant_enabled($pdo);
+
+    if ($tenants) {
+        $stmt = $pdo->prepare(
+            'SELECT id, name, start_date, weeks_count, working_days, excluded_dates, is_active, created_at
+             FROM semesters WHERE complex_id = ? ORDER BY created_at DESC'
+        );
+        $stmt->execute([$cid]);
+        $rows = $stmt->fetchAll();
+    } else {
+        $rows = $pdo->query(
+            'SELECT id, name, start_date, weeks_count, working_days, excluded_dates, is_active, created_at
+             FROM semesters ORDER BY created_at DESC'
+        )->fetchAll();
+    }
     json_response(array_map('semester_row_to_array', $rows));
 }
 
 function handle_get_active_semester(): void
 {
-    require_auth();
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
     $pdo = db();
-    $stmt = $pdo->query(
-        'SELECT id, name, start_date, weeks_count, working_days, excluded_dates, is_active, created_at
-         FROM semesters WHERE is_active = 1 LIMIT 1'
-    );
-    $semester = $stmt->fetch();
+    $tenants = semesters_tenant_enabled($pdo);
+
+    if ($tenants) {
+        $stmt = $pdo->prepare(
+            'SELECT id, name, start_date, weeks_count, working_days, excluded_dates, is_active, created_at
+             FROM semesters WHERE complex_id = ? AND is_active = 1 LIMIT 1'
+        );
+        $stmt->execute([$cid]);
+        $semester = $stmt->fetch();
+    } else {
+        $semester = $pdo->query(
+            'SELECT id, name, start_date, weeks_count, working_days, excluded_dates, is_active, created_at
+             FROM semesters WHERE is_active = 1 LIMIT 1'
+        )->fetch();
+    }
+
     if (!$semester) {
         json_response(['semester' => null, 'weeks' => []]);
         return;
@@ -68,7 +97,8 @@ function handle_get_active_semester(): void
 
 function handle_create_semester(): void
 {
-    require_auth();
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
     $input = json_input();
     $semester = $input['semester'] ?? [];
     $weeks = $input['weeks'] ?? [];
@@ -95,24 +125,42 @@ function handle_create_semester(): void
 
     $semesterId = new_uuid();
     $pdo = db();
+    $tenants = semesters_tenant_enabled($pdo);
 
     try {
         $pdo->beginTransaction();
 
-        $pdo->exec('UPDATE semesters SET is_active = 0 WHERE is_active = 1');
-
-        $insertSemester = $pdo->prepare(
-            'INSERT INTO semesters (id, name, start_date, weeks_count, working_days, excluded_dates, is_active)
-             VALUES (:id, :name, :start_date, :weeks_count, :working_days, :excluded_dates, 1)'
-        );
-        $insertSemester->execute([
-            ':id' => $semesterId,
-            ':name' => $name,
-            ':start_date' => $startDate,
-            ':weeks_count' => $weeksCount,
-            ':working_days' => json_encode(array_values($workingDays), JSON_UNESCAPED_UNICODE),
-            ':excluded_dates' => json_encode(array_values($excludedDates), JSON_UNESCAPED_UNICODE),
-        ]);
+        if ($tenants) {
+            $pdo->prepare('UPDATE semesters SET is_active = 0 WHERE complex_id = ? AND is_active = 1')
+                ->execute([$cid]);
+            $insertSemester = $pdo->prepare(
+                'INSERT INTO semesters (id, complex_id, name, start_date, weeks_count, working_days, excluded_dates, is_active)
+                 VALUES (:id, :complex_id, :name, :start_date, :weeks_count, :working_days, :excluded_dates, 1)'
+            );
+            $insertSemester->execute([
+                ':id' => $semesterId,
+                ':complex_id' => $cid,
+                ':name' => $name,
+                ':start_date' => $startDate,
+                ':weeks_count' => $weeksCount,
+                ':working_days' => json_encode(array_values($workingDays), JSON_UNESCAPED_UNICODE),
+                ':excluded_dates' => json_encode(array_values($excludedDates), JSON_UNESCAPED_UNICODE),
+            ]);
+        } else {
+            $pdo->exec('UPDATE semesters SET is_active = 0 WHERE is_active = 1');
+            $insertSemester = $pdo->prepare(
+                'INSERT INTO semesters (id, name, start_date, weeks_count, working_days, excluded_dates, is_active)
+                 VALUES (:id, :name, :start_date, :weeks_count, :working_days, :excluded_dates, 1)'
+            );
+            $insertSemester->execute([
+                ':id' => $semesterId,
+                ':name' => $name,
+                ':start_date' => $startDate,
+                ':weeks_count' => $weeksCount,
+                ':working_days' => json_encode(array_values($workingDays), JSON_UNESCAPED_UNICODE),
+                ':excluded_dates' => json_encode(array_values($excludedDates), JSON_UNESCAPED_UNICODE),
+            ]);
+        }
 
         $insertWeek = $pdo->prepare(
             'INSERT INTO academic_weeks (id, semester_id, week_number, start_date, end_date)
@@ -150,7 +198,8 @@ function handle_create_semester(): void
 
 function handle_update_active_semester(): void
 {
-    require_auth();
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
     $input = json_input();
     $semester = $input['semester'] ?? [];
     $weeks = $input['weeks'] ?? [];
@@ -176,8 +225,16 @@ function handle_update_active_semester(): void
     }
 
     $pdo = db();
-    $stmt = $pdo->query('SELECT id FROM semesters WHERE is_active = 1 LIMIT 1');
-    $active = $stmt->fetch();
+    $tenants = semesters_tenant_enabled($pdo);
+
+    if ($tenants) {
+        $stmt = $pdo->prepare('SELECT id FROM semesters WHERE complex_id = ? AND is_active = 1 LIMIT 1');
+        $stmt->execute([$cid]);
+        $active = $stmt->fetch();
+    } else {
+        $active = $pdo->query('SELECT id FROM semesters WHERE is_active = 1 LIMIT 1')->fetch();
+    }
+
     if (!$active) {
         error_response('لا يوجد فصل دراسي نشط للتعديل', 404);
     }
@@ -187,20 +244,38 @@ function handle_update_active_semester(): void
     try {
         $pdo->beginTransaction();
 
-        $updateSemester = $pdo->prepare(
-            'UPDATE semesters
-             SET name = :name, start_date = :start_date, weeks_count = :weeks_count,
-                 working_days = :working_days, excluded_dates = :excluded_dates
-             WHERE id = :id'
-        );
-        $updateSemester->execute([
-            ':id' => $semesterId,
-            ':name' => $name,
-            ':start_date' => $startDate,
-            ':weeks_count' => $weeksCount,
-            ':working_days' => json_encode(array_values($workingDays), JSON_UNESCAPED_UNICODE),
-            ':excluded_dates' => json_encode(array_values($excludedDates), JSON_UNESCAPED_UNICODE),
-        ]);
+        if ($tenants) {
+            $updateSemester = $pdo->prepare(
+                'UPDATE semesters
+                 SET name = :name, start_date = :start_date, weeks_count = :weeks_count,
+                     working_days = :working_days, excluded_dates = :excluded_dates
+                 WHERE id = :id AND complex_id = :complex_id'
+            );
+            $updateSemester->execute([
+                ':id' => $semesterId,
+                ':complex_id' => $cid,
+                ':name' => $name,
+                ':start_date' => $startDate,
+                ':weeks_count' => $weeksCount,
+                ':working_days' => json_encode(array_values($workingDays), JSON_UNESCAPED_UNICODE),
+                ':excluded_dates' => json_encode(array_values($excludedDates), JSON_UNESCAPED_UNICODE),
+            ]);
+        } else {
+            $updateSemester = $pdo->prepare(
+                'UPDATE semesters
+                 SET name = :name, start_date = :start_date, weeks_count = :weeks_count,
+                     working_days = :working_days, excluded_dates = :excluded_dates
+                 WHERE id = :id'
+            );
+            $updateSemester->execute([
+                ':id' => $semesterId,
+                ':name' => $name,
+                ':start_date' => $startDate,
+                ':weeks_count' => $weeksCount,
+                ':working_days' => json_encode(array_values($workingDays), JSON_UNESCAPED_UNICODE),
+                ':excluded_dates' => json_encode(array_values($excludedDates), JSON_UNESCAPED_UNICODE),
+            ]);
+        }
 
         $deleteWeeks = $pdo->prepare('DELETE FROM academic_weeks WHERE semester_id = ?');
         $deleteWeeks->execute([$semesterId]);

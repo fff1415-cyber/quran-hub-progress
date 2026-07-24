@@ -25,12 +25,61 @@ function plans_table_exists(PDO $pdo, string $table): bool
 
 function plans_column_exists(PDO $pdo, string $table, string $column): bool
 {
-    $stmt = $pdo->prepare(
-        'SELECT COUNT(*) FROM information_schema.columns
-         WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
-    );
-    $stmt->execute([$table, $column]);
-    return (int) $stmt->fetchColumn() > 0;
+    return table_column_exists($pdo, $table, $column);
+}
+
+function plans_tenant_enabled(PDO $pdo): bool
+{
+    return plans_column_exists($pdo, 'education_plans', 'complex_id');
+}
+
+function plans_assert_student_in_complex(PDO $pdo, string $studentId, int $cid, bool $tenants): void
+{
+    if (!$tenants) {
+        return;
+    }
+    $st = $pdo->prepare('SELECT complex_id FROM students WHERE id = ? LIMIT 1');
+    $st->execute([$studentId]);
+    $row = $st->fetch();
+    if (!$row) {
+        error_response('Not found', 404);
+    }
+    assert_row_belongs_to_complex(isset($row['complex_id']) ? (int) $row['complex_id'] : null, $cid);
+}
+
+function plans_assert_plan_in_complex(PDO $pdo, string $planId, int $cid, bool $tenants): void
+{
+    if (!$tenants) {
+        return;
+    }
+    $st = $pdo->prepare('SELECT complex_id FROM education_plans WHERE id = ? LIMIT 1');
+    $st->execute([$planId]);
+    $row = $st->fetch();
+    if (!$row) {
+        error_response('الخطة غير موجودة', 404);
+    }
+    assert_row_belongs_to_complex(isset($row['complex_id']) ? (int) $row['complex_id'] : null, $cid);
+}
+
+function plans_assert_teacher_student_access(PDO $pdo, array $auth, string $studentId, bool $tenants): void
+{
+    $role = (string) ($auth['role'] ?? '');
+    if ($role !== 'teacher' && $role !== 'assistant') {
+        return;
+    }
+    $halaqaId = (int) ($auth['halaqaId'] ?? 0);
+    if ($tenants) {
+        $cid = require_complex_id($auth);
+        $st = $pdo->prepare('SELECT halaqa_id FROM students WHERE id = ? AND complex_id = ? LIMIT 1');
+        $st->execute([$studentId, $cid]);
+    } else {
+        $st = $pdo->prepare('SELECT halaqa_id FROM students WHERE id = ? LIMIT 1');
+        $st->execute([$studentId]);
+    }
+    $row = $st->fetch();
+    if (!$row || (int) $row['halaqa_id'] !== $halaqaId) {
+        error_response('Forbidden', 403);
+    }
 }
 
 /** Add plan_start_date / start_muraja_segment when table predates migrate-plan-assignments-v2.sql */
@@ -150,21 +199,31 @@ function plans_segments_for_tap(string $track, string $tap): int
 function handle_list_plans(): void
 {
     $auth = require_auth();
+    $cid = require_complex_id($auth);
     plans_require_roles($auth, ['supervisor', 'secretary', 'teacher', 'assistant']);
     $pdo = db();
     if (!plans_table_exists($pdo, 'education_plans')) {
         error_response('نفّذ migrate-education-plans.sql على قاعدة البيانات أولاً', 503);
     }
     plans_ensure_daily_faces_columns($pdo);
+    $tenants = plans_tenant_enabled($pdo);
     $track = isset($_GET['track']) ? trim((string) $_GET['track']) : '';
     $sql = 'SELECT id, track, level_number, title, segment_count,
             daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
             faces_per_half, faces_per_one, faces_per_two, created_at
             FROM education_plans';
     $params = [];
+    $where = [];
+    if ($tenants) {
+        $where[] = 'complex_id = ?';
+        $params[] = $cid;
+    }
     if ($track === 'gold' || $track === 'silver') {
-        $sql .= ' WHERE track = ?';
+        $where[] = 'track = ?';
         $params[] = $track;
+    }
+    if (count($where) > 0) {
+        $sql .= ' WHERE ' . implode(' AND ', $where);
     }
     $sql .= ' ORDER BY track, level_number';
     $stmt = $pdo->prepare($sql);
@@ -175,6 +234,7 @@ function handle_list_plans(): void
 function handle_plan_detail(): void
 {
     $auth = require_auth();
+    $cid = require_complex_id($auth);
     plans_require_roles($auth, ['supervisor', 'secretary', 'teacher', 'assistant', 'manager']);
     $planId = trim((string) ($_GET['plan_id'] ?? ''));
     if ($planId === '') {
@@ -184,13 +244,24 @@ function handle_plan_detail(): void
     if (!plans_table_exists($pdo, 'education_plans')) {
         error_response('جداول الخطط غير مُنشأة بعد', 503);
     }
-    $stmt = $pdo->prepare(
-        'SELECT id, track, level_number, title, segment_count,
-                daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
-                faces_per_half, faces_per_one, faces_per_two, created_at
-         FROM education_plans WHERE id = ?'
-    );
-    $stmt->execute([$planId]);
+    $tenants = plans_tenant_enabled($pdo);
+    if ($tenants) {
+        $stmt = $pdo->prepare(
+            'SELECT id, track, level_number, title, segment_count,
+                    daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                    faces_per_half, faces_per_one, faces_per_two, created_at
+             FROM education_plans WHERE id = ? AND complex_id = ?'
+        );
+        $stmt->execute([$planId, $cid]);
+    } else {
+        $stmt = $pdo->prepare(
+            'SELECT id, track, level_number, title, segment_count,
+                    daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                    faces_per_half, faces_per_one, faces_per_two, created_at
+             FROM education_plans WHERE id = ?'
+        );
+        $stmt->execute([$planId]);
+    }
     $plan = $stmt->fetch();
     if (!$plan) {
         error_response('الخطة غير موجودة', 404);
@@ -209,6 +280,7 @@ function handle_plan_detail(): void
 function handle_import_plans(): void
 {
     $auth = require_auth();
+    $cid = require_complex_id($auth);
     plans_require_roles($auth, ['supervisor']);
     $input = json_input();
     $plans = $input['plans'] ?? [];
@@ -219,6 +291,7 @@ function handle_import_plans(): void
     if (!plans_table_exists($pdo, 'education_plans')) {
         error_response('نفّذ migrate-education-plans.sql على قاعدة البيانات أولاً', 503);
     }
+    $tenants = plans_tenant_enabled($pdo);
 
     $imported = 0;
     $segmentsTotal = 0;
@@ -240,24 +313,40 @@ function handle_import_plans(): void
             }
 
             $planId = new_uuid();
-            $ins = $pdo->prepare(
-                'INSERT INTO education_plans (id, track, level_number, title, segment_count)
-                 VALUES (?, ?, ?, ?, ?)
-                 ON DUPLICATE KEY UPDATE title = VALUES(title), segment_count = VALUES(segment_count)'
-            );
-            // Use upsert by track+level — fetch existing id if duplicate
-            $exist = $pdo->prepare('SELECT id FROM education_plans WHERE track = ? AND level_number = ?');
-            $exist->execute([$track, $level]);
+            if ($tenants) {
+                $exist = $pdo->prepare(
+                    'SELECT id FROM education_plans WHERE complex_id = ? AND track = ? AND level_number = ?'
+                );
+                $exist->execute([$cid, $track, $level]);
+            } else {
+                $exist = $pdo->prepare('SELECT id FROM education_plans WHERE track = ? AND level_number = ?');
+                $exist->execute([$track, $level]);
+            }
             $existing = $exist->fetch();
             if ($existing) {
                 $planId = $existing['id'];
-                $upd = $pdo->prepare(
-                    'UPDATE education_plans SET title = ?, segment_count = ? WHERE id = ?'
-                );
-                $upd->execute([$title, count($segments), $planId]);
+                if ($tenants) {
+                    $upd = $pdo->prepare(
+                        'UPDATE education_plans SET title = ?, segment_count = ? WHERE id = ? AND complex_id = ?'
+                    );
+                    $upd->execute([$title, count($segments), $planId, $cid]);
+                } else {
+                    $upd = $pdo->prepare(
+                        'UPDATE education_plans SET title = ?, segment_count = ? WHERE id = ?'
+                    );
+                    $upd->execute([$title, count($segments), $planId]);
+                }
                 $pdo->prepare('DELETE FROM plan_segments WHERE plan_id = ?')->execute([$planId]);
+            } elseif ($tenants) {
+                $pdo->prepare(
+                    'INSERT INTO education_plans (id, complex_id, track, level_number, title, segment_count)
+                     VALUES (?, ?, ?, ?, ?, ?)'
+                )->execute([$planId, $cid, $track, $level, $title, count($segments)]);
             } else {
-                $ins->execute([$planId, $track, $level, $title, count($segments)]);
+                $pdo->prepare(
+                    'INSERT INTO education_plans (id, track, level_number, title, segment_count)
+                     VALUES (?, ?, ?, ?, ?)'
+                )->execute([$planId, $track, $level, $title, count($segments)]);
             }
 
             $segIns = $pdo->prepare(
@@ -388,6 +477,7 @@ function plans_next_hifz_segments_for_tap(
 function handle_assign_plan(): void
 {
     $auth = require_auth();
+    $cid = require_complex_id($auth);
     plans_require_roles($auth, ['supervisor']);
     $input = json_input();
     $studentId = trim((string) ($input['student_id'] ?? ''));
@@ -402,17 +492,29 @@ function handle_assign_plan(): void
     if (!plans_table_exists($pdo, 'education_plans')) {
         error_response('نفّذ migrate-education-plans.sql على قاعدة البيانات أولاً', 503);
     }
+    $tenants = plans_tenant_enabled($pdo);
+    plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
+    plans_assert_plan_in_complex($pdo, $planId, $cid, $tenants);
 
     try {
         plans_ensure_assignment_v2_columns($pdo);
         plans_ensure_daily_faces_columns($pdo);
 
-        $planStmt = $pdo->prepare(
-            'SELECT level_number, daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
-                    faces_per_half, faces_per_one, faces_per_two
-             FROM education_plans WHERE id = ?'
-        );
-        $planStmt->execute([$planId]);
+        if ($tenants) {
+            $planStmt = $pdo->prepare(
+                'SELECT level_number, daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                        faces_per_half, faces_per_one, faces_per_two
+                 FROM education_plans WHERE id = ? AND complex_id = ?'
+            );
+            $planStmt->execute([$planId, $cid]);
+        } else {
+            $planStmt = $pdo->prepare(
+                'SELECT level_number, daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                        faces_per_half, faces_per_one, faces_per_two
+                 FROM education_plans WHERE id = ?'
+            );
+            $planStmt->execute([$planId]);
+        }
         $planRow = $planStmt->fetch();
         if (!$planRow) {
             error_response('الخطة غير موجودة', 404);
@@ -461,6 +563,7 @@ function handle_assign_plan(): void
 function handle_patch_assignment_quotas(): void
 {
     $auth = require_auth();
+    $cid = require_complex_id($auth);
     plans_require_roles($auth, ['supervisor']);
     $input = json_input();
     $studentId = trim((string) ($input['student_id'] ?? ''));
@@ -468,6 +571,8 @@ function handle_patch_assignment_quotas(): void
         error_response('student_id مطلوب');
     }
     $pdo = db();
+    $tenants = plans_tenant_enabled($pdo);
+    plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
     plans_ensure_daily_faces_columns($pdo);
     $faces = plans_face_row($input);
     $stmt = $pdo->prepare(
@@ -487,6 +592,7 @@ function handle_patch_assignment_quotas(): void
 function handle_patch_assignment(): void
 {
     $auth = require_auth();
+    $cid = require_complex_id($auth);
     plans_require_roles($auth, ['supervisor']);
     $input = json_input();
     $studentId = trim((string) ($input['student_id'] ?? ''));
@@ -495,6 +601,8 @@ function handle_patch_assignment(): void
         error_response('بيانات غير صالحة');
     }
     $pdo = db();
+    $tenants = plans_tenant_enabled($pdo);
+    plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
     $frozenAt = $status === 'frozen' ? date('Y-m-d H:i:s') : null;
     $stmt = $pdo->prepare(
         'UPDATE student_plan_assignments SET status = ?, frozen_at = ?
@@ -507,30 +615,29 @@ function handle_patch_assignment(): void
 function handle_student_plan_sheet(): void
 {
     $auth = require_auth();
+    $cid = require_complex_id($auth);
     $role = (string) ($auth['role'] ?? '');
     $studentId = trim((string) ($_GET['student_id'] ?? ''));
     if ($studentId === '') {
         error_response('student_id مطلوب');
     }
 
+    $pdo = db();
+    $tenants = plans_tenant_enabled($pdo);
+
     if ($role === 'student' || $role === 'parent') {
         if (($auth['studentId'] ?? '') !== $studentId) {
             error_response('Forbidden', 403);
         }
+        plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
     } elseif ($role === 'teacher' || $role === 'assistant') {
-        $halaqaId = (int) ($auth['halaqaId'] ?? 0);
-        $pdo = db();
-        $st = $pdo->prepare('SELECT halaqa_id FROM students WHERE id = ?');
-        $st->execute([$studentId]);
-        $row = $st->fetch();
-        if (!$row || (int) $row['halaqa_id'] !== $halaqaId) {
-            error_response('Forbidden', 403);
-        }
+        plans_assert_teacher_student_access($pdo, $auth, $studentId, $tenants);
     } elseif (!in_array($role, ['supervisor', 'secretary', 'manager'], true)) {
         error_response('Forbidden', 403);
+    } else {
+        plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
     }
 
-    $pdo = db();
     if (!plans_table_exists($pdo, 'education_plans')) {
         error_response('نفّذ migrate-education-plans.sql على قاعدة البيانات أولاً', 503);
     }
@@ -559,13 +666,23 @@ function handle_student_plan_sheet(): void
     }
 
     $planId = $assignment['plan_id'];
-    $planStmt = $pdo->prepare(
-        'SELECT id, track, level_number, title, segment_count,
-                daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
-                faces_per_half, faces_per_one, faces_per_two, created_at
-         FROM education_plans WHERE id = ?'
-    );
-    $planStmt->execute([$planId]);
+    if ($tenants) {
+        $planStmt = $pdo->prepare(
+            'SELECT id, track, level_number, title, segment_count,
+                    daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                    faces_per_half, faces_per_one, faces_per_two, created_at
+             FROM education_plans WHERE id = ? AND complex_id = ?'
+        );
+        $planStmt->execute([$planId, $cid]);
+    } else {
+        $planStmt = $pdo->prepare(
+            'SELECT id, track, level_number, title, segment_count,
+                    daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                    faces_per_half, faces_per_one, faces_per_two, created_at
+             FROM education_plans WHERE id = ?'
+        );
+        $planStmt->execute([$planId]);
+    }
     $plan = $planStmt->fetch();
 
     $segStmt = $pdo->prepare(
@@ -591,6 +708,7 @@ function handle_student_plan_sheet(): void
 function handle_apply_plan_input(): void
 {
     $auth = require_auth();
+    $cid = require_complex_id($auth);
     plans_require_roles($auth, ['teacher', 'assistant', 'manager']);
     $input = json_input();
     $studentId = trim((string) ($input['student_id'] ?? ''));
@@ -606,15 +724,12 @@ function handle_apply_plan_input(): void
     }
 
     $pdo = db();
+    $tenants = plans_tenant_enabled($pdo);
     $role = (string) ($auth['role'] ?? '');
     if ($role === 'teacher' || $role === 'assistant') {
-        $halaqaId = (int) ($auth['halaqaId'] ?? 0);
-        $st = $pdo->prepare('SELECT halaqa_id FROM students WHERE id = ?');
-        $st->execute([$studentId]);
-        $row = $st->fetch();
-        if (!$row || (int) $row['halaqa_id'] !== $halaqaId) {
-            error_response('Forbidden', 403);
-        }
+        plans_assert_teacher_student_access($pdo, $auth, $studentId, $tenants);
+    } else {
+        plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
     }
 
     if (!plans_table_exists($pdo, 'education_plans')) {

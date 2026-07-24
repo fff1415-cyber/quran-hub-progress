@@ -12,6 +12,11 @@ function eval_settings_table_exists(PDO $pdo): bool
     return (int) $stmt->fetchColumn() > 0;
 }
 
+function eval_settings_tenant_enabled(PDO $pdo): bool
+{
+    return table_column_exists($pdo, 'evaluation_settings', 'complex_id');
+}
+
 /** @return array<string, int|float> */
 function eval_settings_defaults(): array
 {
@@ -58,17 +63,31 @@ function eval_settings_row(array $row): array
     return $out;
 }
 
-function eval_settings_fetch(PDO $pdo): array
+function eval_settings_fetch(PDO $pdo, int $complexId): array
 {
     if (!eval_settings_table_exists($pdo)) {
         return eval_settings_defaults();
     }
+
     $cols = implode(', ', eval_settings_columns());
-    $stmt = $pdo->query("SELECT $cols FROM evaluation_settings WHERE id = 1 LIMIT 1");
-    $row = $stmt->fetch();
-    if (!$row) {
-        $pdo->exec('INSERT INTO evaluation_settings (id) VALUES (1)');
-        $row = $pdo->query("SELECT $cols FROM evaluation_settings WHERE id = 1 LIMIT 1")->fetch();
+    $tenants = eval_settings_tenant_enabled($pdo);
+
+    if ($tenants) {
+        $stmt = $pdo->prepare("SELECT $cols FROM evaluation_settings WHERE complex_id = ? LIMIT 1");
+        $stmt->execute([$complexId]);
+        $row = $stmt->fetch();
+        if (!$row) {
+            $pdo->prepare('INSERT INTO evaluation_settings (complex_id) VALUES (?)')->execute([$complexId]);
+            $stmt->execute([$complexId]);
+            $row = $stmt->fetch();
+        }
+    } else {
+        $stmt = $pdo->query("SELECT $cols FROM evaluation_settings WHERE id = 1 LIMIT 1");
+        $row = $stmt->fetch();
+        if (!$row) {
+            $pdo->exec('INSERT INTO evaluation_settings (id) VALUES (1)');
+            $row = $pdo->query("SELECT $cols FROM evaluation_settings WHERE id = 1 LIMIT 1")->fetch();
+        }
     }
     return eval_settings_row($row ?: []);
 }
@@ -115,18 +134,20 @@ function eval_settings_sanitize(array $input): array
 
 function handle_get_evaluation_settings(): void
 {
-    require_auth();
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
     $pdo = db();
     if (!eval_settings_table_exists($pdo)) {
         json_response(['settings' => eval_settings_defaults(), 'source' => 'defaults']);
         return;
     }
-    json_response(['settings' => eval_settings_fetch($pdo), 'source' => 'database']);
+    json_response(['settings' => eval_settings_fetch($pdo, $cid), 'source' => 'database']);
 }
 
 function handle_put_evaluation_settings(): void
 {
     $auth = require_auth();
+    $cid = require_complex_id($auth);
     $role = (string) ($auth['role'] ?? '');
     if ($role !== 'manager') {
         error_response('Forbidden', 403);
@@ -139,15 +160,27 @@ function handle_put_evaluation_settings(): void
         error_response('نفّذ migrate-evaluation-settings.sql على قاعدة البيانات أولاً', 503);
     }
 
+    $tenants = eval_settings_tenant_enabled($pdo);
     $sets = [];
     $params = [];
     foreach ($settings as $key => $val) {
         $sets[] = "`$key` = ?";
         $params[] = $val;
     }
-    $params[] = 1;
-    $sql = 'UPDATE evaluation_settings SET ' . implode(', ', $sets) . ' WHERE id = ?';
+
+    if ($tenants) {
+        $check = $pdo->prepare('SELECT complex_id FROM evaluation_settings WHERE complex_id = ? LIMIT 1');
+        $check->execute([$cid]);
+        if (!$check->fetch()) {
+            $pdo->prepare('INSERT INTO evaluation_settings (complex_id) VALUES (?)')->execute([$cid]);
+        }
+        $params[] = $cid;
+        $sql = 'UPDATE evaluation_settings SET ' . implode(', ', $sets) . ' WHERE complex_id = ?';
+    } else {
+        $params[] = 1;
+        $sql = 'UPDATE evaluation_settings SET ' . implode(', ', $sets) . ' WHERE id = ?';
+    }
     $pdo->prepare($sql)->execute($params);
 
-    json_response(['ok' => true, 'settings' => eval_settings_fetch($pdo)]);
+    json_response(['ok' => true, 'settings' => eval_settings_fetch($pdo, $cid)]);
 }
