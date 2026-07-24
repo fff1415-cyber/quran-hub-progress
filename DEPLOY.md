@@ -28,6 +28,30 @@
 
 **اختبار سريع:** FileZilla → SFTP → Host = IP، Port = 65002. إذا فشل محلياً، الأسرار خاطئة قبل GitHub.
 
+## Subdomains (m1.msht.io, m2.msht.io)
+
+إذا ظهرت **صفحة Hostinger الافتراضية (`default.php`)** على subdomain، فالسبب أن Hostinger أنشأ **مجلداً منفصلاً** لكل subdomain ولا يقرأ `.htaccess` من `public_html` الرئيسي.
+
+### الحل الأفضل (مرة واحدة في hPanel)
+
+1. **Domains** → **Subdomains** → تعديل `m1` / `m2`
+2. **Document root** = نفس مجلد الدومين الرئيسي:  
+   `/home/u112851217/domains/msht.io/public_html/`
+3. احذف `default.php` من أي مجلد subdomain قديم
+
+### أو: نسخ التطبيق لكل subdomain
+
+```bash
+npm run build:hostinger
+# ينشئ dist/hostinger-subdomains/m1/ و m2/ — ارفع كل مجلد إلى public_html الخاص بذلك subdomain
+# ثم احذف default.php
+
+# مزامنة عبر SSH (بعد تفعيل SSH في hPanel):
+bash scripts/sync-hostinger-subdomains.sh u112851217@SERVER_IP
+```
+
+راجع `dist/HOSTINGER-SUBDOMAINS.txt` بعد كل build.
+
 ## Server setup (once)
 
 1. Create MySQL database — see [`database/README.md`](database/README.md)

@@ -1,34 +1,38 @@
-# Hostinger / Apache — SPA routing for msht.io and all subdomains (m1.msht.io, m2.msht.io, …)
+# ─────────────────────────────────────────────────────────────────────────────
+# Hostinger / Apache — SPA for msht.io + subdomains (m1.msht.io, m2.msht.io, …)
 #
-# Requirements in hPanel:
-# 1. Main domain msht.io → public_html (this folder)
-# 2. Wildcard subdomain *.msht.io → same public_html folder
-# 3. Or add each subdomain (m1, m2) pointing to public_html
-#
-# Upload this file to public_html/.htaccess (same level as index.html)
+# Upload to the DOCUMENT ROOT of each vhost (usually public_html).
+# If m1.msht.io shows default.php, its docroot is NOT this folder — see:
+#   scripts/prepare-hostinger-deploy.mjs  +  DEPLOY.md § Subdomains
+# ─────────────────────────────────────────────────────────────────────────────
+
+# Prefer SPA index over Hostinger default.php
+DirectoryIndex index.html index.htm
+
+Options -Indexes -MultiViews
 
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteBase /
 
-  # Pass Authorization header to PHP API
-  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+  # Hostinger placeholder — send to SPA
+  RewriteRule ^default\.php$ /index.html [L,R=301,NC]
 
-  # Do not rewrite API requests
+  # PHP API (same docroot: public_html/api/)
   RewriteRule ^api(/|$) - [L]
 
-  # Existing files and directories (assets, logo, robots.txt, …)
+  # Bearer token for API
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+
+  # Static files that exist on disk
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # SPA fallback — works on apex + every subdomain sharing this docroot
+  # SPA — all routes → index.html
   RewriteRule ^ index.html [L]
 </IfModule>
 
-Options -Indexes
-
-# Cache static assets (optional, safe for hashed Vite filenames)
 <IfModule mod_expires.c>
   ExpiresActive On
   ExpiresByType text/css "access plus 7 days"
