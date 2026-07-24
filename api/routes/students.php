@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 function students_column_exists(PDO $pdo, string $column): bool
 {
-    $stmt = $pdo->prepare(
-        'SELECT COUNT(*) FROM information_schema.columns
-         WHERE table_schema = DATABASE() AND table_name = ? AND column_name = ?'
-    );
-    $stmt->execute(['students', $column]);
-    return (int) $stmt->fetchColumn() > 0;
+    return table_column_exists($pdo, 'students', $column);
+}
+
+function students_tenant_enabled(PDO $pdo): bool
+{
+    return students_column_exists($pdo, 'complex_id');
 }
 
 function students_ensure_extended_columns(PDO $pdo): void
@@ -38,25 +38,48 @@ function handle_list_students_public(): void
 {
     $pdo = db();
     students_ensure_extended_columns($pdo);
-    $rows = $pdo->query(
-        'SELECT id, name, halaqa_id, level, level_type, institute_level, phase_number, assigned_to, memorized
-         FROM students ORDER BY name'
-    )->fetchAll();
+    $tenants = students_tenant_enabled($pdo);
+    $cid = public_complex_id_from_request();
+
+    if ($tenants) {
+        $stmt = $pdo->prepare(
+            'SELECT id, name, halaqa_id, level, level_type, institute_level, phase_number,
+                    assigned_to, memorized, complex_id
+             FROM students WHERE complex_id = ? ORDER BY name'
+        );
+        $stmt->execute([$cid]);
+        $rows = $stmt->fetchAll();
+    } else {
+        $rows = $pdo->query(
+            'SELECT id, name, halaqa_id, level, level_type, institute_level, phase_number, assigned_to, memorized
+             FROM students ORDER BY name'
+        )->fetchAll();
+    }
     json_response($rows);
 }
 
 function handle_list_students(): void
 {
-    require_auth();
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
     $pdo = db();
     students_ensure_extended_columns($pdo);
-    $rows = $pdo->query('SELECT * FROM students ORDER BY name')->fetchAll();
+    $tenants = students_tenant_enabled($pdo);
+
+    if ($tenants) {
+        $stmt = $pdo->prepare('SELECT * FROM students WHERE complex_id = ? ORDER BY name');
+        $stmt->execute([$cid]);
+        $rows = $stmt->fetchAll();
+    } else {
+        $rows = $pdo->query('SELECT * FROM students ORDER BY name')->fetchAll();
+    }
     json_response($rows);
 }
 
 function handle_upsert_students(): void
 {
-    require_auth();
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
     $input = json_input();
     $students = $input['students'] ?? [];
     if (!is_array($students) || count($students) === 0) {
@@ -65,25 +88,50 @@ function handle_upsert_students(): void
 
     $pdo = db();
     students_ensure_extended_columns($pdo);
-    $sql = 'INSERT INTO students (id, name, halaqa_id, national_id, parent_phone, student_phone, level, level_type, institute_level, phase_number, assigned_to, memorized)
-            VALUES (:id, :name, :halaqa_id, :national_id, :parent_phone, :student_phone, :level, :level_type, :institute_level, :phase_number, :assigned_to, :memorized)
-            ON DUPLICATE KEY UPDATE
-              name = VALUES(name),
-              halaqa_id = VALUES(halaqa_id),
-              national_id = VALUES(national_id),
-              parent_phone = VALUES(parent_phone),
-              student_phone = VALUES(student_phone),
-              level = VALUES(level),
-              level_type = VALUES(level_type),
-              institute_level = VALUES(institute_level),
-              phase_number = VALUES(phase_number),
-              assigned_to = VALUES(assigned_to),
-              memorized = VALUES(memorized)';
+    $tenants = students_tenant_enabled($pdo);
+
+    if ($tenants) {
+        $sql = 'INSERT INTO students (
+                  id, complex_id, name, halaqa_id, national_id, parent_phone, student_phone,
+                  level, level_type, institute_level, phase_number, assigned_to, memorized
+                ) VALUES (
+                  :id, :complex_id, :name, :halaqa_id, :national_id, :parent_phone, :student_phone,
+                  :level, :level_type, :institute_level, :phase_number, :assigned_to, :memorized
+                )
+                ON DUPLICATE KEY UPDATE
+                  name = VALUES(name),
+                  halaqa_id = VALUES(halaqa_id),
+                  national_id = VALUES(national_id),
+                  parent_phone = VALUES(parent_phone),
+                  student_phone = VALUES(student_phone),
+                  level = VALUES(level),
+                  level_type = VALUES(level_type),
+                  institute_level = VALUES(institute_level),
+                  phase_number = VALUES(phase_number),
+                  assigned_to = VALUES(assigned_to),
+                  memorized = VALUES(memorized),
+                  complex_id = VALUES(complex_id)';
+    } else {
+        $sql = 'INSERT INTO students (id, name, halaqa_id, national_id, parent_phone, student_phone, level, level_type, institute_level, phase_number, assigned_to, memorized)
+                VALUES (:id, :name, :halaqa_id, :national_id, :parent_phone, :student_phone, :level, :level_type, :institute_level, :phase_number, :assigned_to, :memorized)
+                ON DUPLICATE KEY UPDATE
+                  name = VALUES(name),
+                  halaqa_id = VALUES(halaqa_id),
+                  national_id = VALUES(national_id),
+                  parent_phone = VALUES(parent_phone),
+                  student_phone = VALUES(student_phone),
+                  level = VALUES(level),
+                  level_type = VALUES(level_type),
+                  institute_level = VALUES(institute_level),
+                  phase_number = VALUES(phase_number),
+                  assigned_to = VALUES(assigned_to),
+                  memorized = VALUES(memorized)';
+    }
     $stmt = $pdo->prepare($sql);
 
     foreach ($students as $s) {
         $phase = isset($s['phase_number']) ? (int) $s['phase_number'] : null;
-        $stmt->execute([
+        $params = [
             ':id' => $s['id'],
             ':name' => $s['name'],
             ':halaqa_id' => (int) $s['halaqa_id'],
@@ -96,7 +144,14 @@ function handle_upsert_students(): void
             ':phase_number' => $phase > 0 ? $phase : null,
             ':assigned_to' => $s['assigned_to'] ?? null,
             ':memorized' => $s['memorized'] ?? null,
-        ]);
+        ];
+        if ($tenants) {
+            if (isset($s['complex_id']) && (int) $s['complex_id'] !== $cid) {
+                error_response('Forbidden — complex mismatch', 403);
+            }
+            $params[':complex_id'] = $cid;
+        }
+        $stmt->execute($params);
     }
 
     json_response(['ok' => true]);
@@ -104,7 +159,8 @@ function handle_upsert_students(): void
 
 function handle_patch_student(): void
 {
-    require_auth();
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
     $input = json_input();
     $id = (string) ($input['id'] ?? '');
     $patch = $input['patch'] ?? [];
@@ -131,19 +187,47 @@ function handle_patch_student(): void
 
     $pdo = db();
     students_ensure_extended_columns($pdo);
-    $sql = 'UPDATE students SET ' . implode(', ', $sets) . ' WHERE id = :id';
+    $tenants = students_tenant_enabled($pdo);
+
+    if ($tenants) {
+        $check = $pdo->prepare('SELECT complex_id FROM students WHERE id = ? LIMIT 1');
+        $check->execute([$id]);
+        $row = $check->fetch();
+        if (!$row) {
+            error_response('Not found', 404);
+        }
+        assert_row_belongs_to_complex(isset($row['complex_id']) ? (int) $row['complex_id'] : null, $cid);
+        $params[':complex_id'] = $cid;
+        $sql = 'UPDATE students SET ' . implode(', ', $sets) . ' WHERE id = :id AND complex_id = :complex_id';
+    } else {
+        $sql = 'UPDATE students SET ' . implode(', ', $sets) . ' WHERE id = :id';
+    }
+
     $pdo->prepare($sql)->execute($params);
     json_response(['ok' => true]);
 }
 
 function handle_delete_student(): void
 {
-    require_auth();
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
     $input = json_input();
     $id = (string) ($input['id'] ?? '');
     if ($id === '') {
         error_response('Missing id');
     }
-    db()->prepare('DELETE FROM students WHERE id = ?')->execute([$id]);
+
+    $pdo = db();
+    $tenants = students_tenant_enabled($pdo);
+
+    if ($tenants) {
+        $stmt = $pdo->prepare('DELETE FROM students WHERE id = ? AND complex_id = ?');
+        $stmt->execute([$id, $cid]);
+        if ($stmt->rowCount() === 0) {
+            error_response('Not found', 404);
+        }
+    } else {
+        $pdo->prepare('DELETE FROM students WHERE id = ?')->execute([$id]);
+    }
     json_response(['ok' => true]);
 }

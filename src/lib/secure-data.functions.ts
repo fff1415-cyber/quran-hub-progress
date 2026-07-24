@@ -2,6 +2,19 @@
 
 const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
+/** Default مجمع when multi-tenant migration is applied (override via .env). */
+function defaultComplexId(): number | undefined {
+  const raw = import.meta.env.VITE_COMPLEX_ID;
+  if (raw === undefined || raw === "") return undefined;
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+function loginBody(extra: Record<string, unknown>): string {
+  const cid = defaultComplexId();
+  return JSON.stringify(cid ? { ...extra, complexId: cid } : extra);
+}
+
 function apiUrl(path: string): string {
   if (!API_BASE) {
     throw new Error("VITE_API_URL is not configured");
@@ -51,9 +64,10 @@ export async function loginByCode({ data }: { data: { code: string } }) {
     role: string;
     name: string;
     halaqaId: number | null;
+    complexId?: number | null;
   }>("/login/code", {
     method: "POST",
-    body: JSON.stringify({ code: data.code.trim() }),
+    body: loginBody({ code: data.code.trim() }),
   });
 }
 
@@ -63,9 +77,10 @@ export async function loginByNationalId({ data }: { data: { nationalId: string }
     studentId: string;
     name: string;
     halaqaId: number;
+    complexId?: number | null;
   }>("/login/national-id", {
     method: "POST",
-    body: JSON.stringify({ nationalId: data.nationalId.trim() }),
+    body: loginBody({ nationalId: data.nationalId.trim() }),
   });
 }
 
@@ -75,7 +90,9 @@ export async function secureListStudents({ data }: { data: { token: string } }) 
 }
 
 export async function listPublicStudents() {
-  return apiFetch<unknown[]>("/students/public", { method: "GET" });
+  const cid = defaultComplexId();
+  const q = cid ? `?complexId=${cid}` : "";
+  return apiFetch<unknown[]>(`/students/public${q}`, { method: "GET" });
 }
 
 export async function secureUpsertStudents({ data }: { data: { token: string; students: unknown[] } }) {

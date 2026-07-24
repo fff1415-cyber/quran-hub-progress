@@ -1,5 +1,10 @@
 import type { HifzValue } from "@/lib/mock-data";
 import { HIFZ_LABELS } from "@/lib/mock-data";
+import { cn } from "@/lib/utils";
+
+/** Fixed-width selects for the halaqa grade table (width set by colgroup). */
+export const gradeCellSelectClass =
+  "w-full max-w-full min-w-0 bg-input border border-border rounded px-1 py-1 text-xs truncate";
 
 export function AttSelect({
   value,
@@ -14,7 +19,7 @@ export function AttSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value as "present" | "late" | "excused" | "absent" | "")}
-      className="w-full bg-input border border-border rounded px-1 py-1 text-xs"
+      className={gradeCellSelectClass}
     >
       <option value="">—</option>
       <option value="present">حاضر</option>
@@ -41,7 +46,7 @@ export function HifzSelect({
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value as HifzValue)}
-      className="w-full bg-input border border-border rounded px-1 py-1 text-xs font-bold"
+      className={cn(gradeCellSelectClass, "font-bold")}
     >
       <option value="">{HIFZ_LABELS[""]}</option>
       {!goldOnly && <option value="half">{HIFZ_LABELS["half"]}</option>}
@@ -64,7 +69,7 @@ export function CustomFieldSelect({
     <select
       value={value}
       onChange={(e) => onChange(e.target.value)}
-      className="w-full bg-input border border-border rounded px-1 py-1 text-xs min-w-[4.5rem]"
+      className={gradeCellSelectClass}
       title={options.join(" · ")}
     >
       <option value="">—</option>
@@ -89,7 +94,7 @@ export function PassFail({
       value={value}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value as "pass" | "fail" | "")}
-      className="w-full bg-input border border-border rounded px-1 py-1 text-xs"
+      className={gradeCellSelectClass}
     >
       <option value="">—</option>
       <option value="pass">مجتاز</option>

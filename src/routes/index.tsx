@@ -28,6 +28,8 @@ function LoginPage() {
         setToken(auth.token);
         sessionStorage.setItem("qs_role", auth.role);
         sessionStorage.setItem("qs_name", auth.name);
+        if (auth.complexId != null) sessionStorage.setItem("qs_complex", String(auth.complexId));
+        else sessionStorage.removeItem("qs_complex");
         if (auth.halaqaId) sessionStorage.setItem("qs_halaqa", String(auth.halaqaId));
         else sessionStorage.removeItem("qs_halaqa");
         await syncFromCloud();
@@ -47,6 +49,8 @@ function LoginPage() {
         setToken(student.token);
         sessionStorage.setItem("qs_role", "student");
         sessionStorage.setItem("qs_student", student.studentId);
+        if (student.complexId != null) sessionStorage.setItem("qs_complex", String(student.complexId));
+        else sessionStorage.removeItem("qs_complex");
         await syncFromCloud();
         navigate({ to: "/student", search: { s: student.studentId } });
       }

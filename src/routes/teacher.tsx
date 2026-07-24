@@ -273,6 +273,82 @@ interface WeekTableProps {
   canAssign: boolean;
 }
 
+/** Fixed pixel widths — core day columns stay constant when custom fields are added. */
+const GRADE_COL = {
+  student: 140,
+  attendance: 72,
+  hifz: 48,
+  passFail: 56,
+  wajib: 44,
+  custom: 80,
+  sard: 48,
+  weekPct: 72,
+  semesterPct: 80,
+  transfer: 88,
+} as const;
+
+const GRADE_CELL_W = {
+  att: "w-[72px] max-w-[72px]",
+  hifz: "w-12 max-w-12",
+  pf: "w-14 max-w-14",
+  wajib: "w-11 max-w-11",
+  custom: "w-20 max-w-20",
+  sard: "w-12 max-w-12",
+  weekPct: "w-[72px] max-w-[72px]",
+  semesterPct: "w-20 max-w-20",
+  transfer: "w-[88px] max-w-[88px]",
+  student: "w-[140px] max-w-[140px]",
+} as const;
+
+function gradeTableWidthPx(dayCount: number, customCount: number, isTalqeen: boolean): number {
+  const perDay = isTalqeen
+    ? GRADE_COL.attendance + GRADE_COL.wajib + customCount * GRADE_COL.custom
+    : GRADE_COL.attendance + GRADE_COL.hifz + GRADE_COL.passFail * 2 + customCount * GRADE_COL.custom;
+  return (
+    GRADE_COL.student
+    + dayCount * perDay
+    + GRADE_COL.sard
+    + GRADE_COL.weekPct
+    + GRADE_COL.semesterPct
+    + GRADE_COL.transfer
+  );
+}
+
+function GradeTableColGroup({
+  dayCount,
+  customCount,
+  isTalqeen,
+}: {
+  dayCount: number;
+  customCount: number;
+  isTalqeen: boolean;
+}) {
+  const dayCols = isTalqeen
+    ? [GRADE_COL.attendance, GRADE_COL.wajib, ...Array(customCount).fill(GRADE_COL.custom)]
+    : [
+        GRADE_COL.attendance,
+        GRADE_COL.hifz,
+        GRADE_COL.passFail,
+        GRADE_COL.passFail,
+        ...Array(customCount).fill(GRADE_COL.custom),
+      ];
+
+  return (
+    <colgroup>
+      <col style={{ width: GRADE_COL.student }} />
+      {Array.from({ length: dayCount }, (_, dayIdx) =>
+        dayCols.map((w, colIdx) => (
+          <col key={`d${dayIdx}-c${colIdx}`} style={{ width: w }} />
+        )),
+      )}
+      <col style={{ width: GRADE_COL.sard }} />
+      <col style={{ width: GRADE_COL.weekPct }} />
+      <col style={{ width: GRADE_COL.semesterPct }} />
+      <col style={{ width: GRADE_COL.transfer }} />
+    </colgroup>
+  );
+}
+
 function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewerRole, canAssign }: WeekTableProps) {
   const tableRef = useRef<HTMLDivElement>(null);
   const allStudents = useMemo(() => loadStudents().filter((s) => s.halaqaId === halaqaId), [halaqaId]);
@@ -483,9 +559,14 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     });
   };
 
+  const tableWidthPx = useMemo(
+    () => gradeTableWidthPx(visibleDays.length, customFields.length, isTalqeen),
+    [visibleDays.length, customFields.length, isTalqeen],
+  );
+
   const renderCustomCells = (s: Student, dayKey: string, entry: DayEntry) =>
     customFields.map((f) => (
-      <td key={f.id} className={dayCellClass(dayKey)}>
+      <td key={f.id} className={dayCellClass(dayKey, GRADE_CELL_W.custom)}>
         <CustomFieldSelect
           value={entry.custom?.[f.id] ?? ""}
           options={f.options}
@@ -508,10 +589,18 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       highlightDay(dayKey) && "bg-muted/90 ring-1 ring-primary/25 font-bold",
     );
 
-  const dayCellClass = (dayKey: string) =>
+  const dayCellClass = (dayKey: string, widthClass?: string) =>
     cn(
       "p-1 border-r border-border/30",
+      widthClass,
       highlightDay(dayKey) && "bg-muted/60",
+    );
+
+  const subHeaderClass = (dayKey: string, widthClass?: string) =>
+    cn(
+      "p-1 border-r border-border",
+      widthClass,
+      highlightDay(dayKey) && "bg-muted/50",
     );
 
   return (
@@ -564,58 +653,74 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           {viewerRole === "assistant" ? "لم يُعيّن لك أي طالب بعد" : "لا يوجد طلاب"}
         </p>
       ) : (
-      <table className="w-full text-sm border-collapse min-w-[900px]">
+      <table
+        className="text-sm border-collapse table-fixed"
+        style={{ width: tableWidthPx, minWidth: tableWidthPx }}
+      >
+        <GradeTableColGroup
+          dayCount={visibleDays.length}
+          customCount={customFields.length}
+          isTalqeen={isTalqeen}
+        />
         <thead>
           <tr className="bg-secondary/50">
-            <th className="p-2 text-right sticky right-0 bg-secondary z-10 min-w-[140px]">الطالب</th>
+            <th className={cn("p-2 text-right sticky right-0 bg-secondary z-10", GRADE_CELL_W.student)}>الطالب</th>
             {visibleDays.map((d) => (
               <th key={d.key} data-day-col={d.key} colSpan={dayColSpan} className={dayHeaderClass(d.key)}>
                 {d.label}
                 {highlightDay(d.key) && <span className="block text-[10px] text-primary font-normal">اليوم</span>}
               </th>
             ))}
-            <th className="p-2 border-r border-border">السرد</th>
-            <th className="p-2 border-r border-border text-muted-foreground">نسبة الأسبوع</th>
-            <th className="p-2 border-r border-border text-primary font-bold">النسبة الكلية</th>
-            <th className="p-2 border-r border-border text-warning">إرسال للإدارة</th>
+            <th className={cn("p-2 border-r border-border", GRADE_CELL_W.sard)}>السرد</th>
+            <th className={cn("p-2 border-r border-border text-muted-foreground", GRADE_CELL_W.weekPct)}>نسبة الأسبوع</th>
+            <th className={cn("p-2 border-r border-border text-primary font-bold", GRADE_CELL_W.semesterPct)}>النسبة الكلية</th>
+            <th className={cn("p-2 border-r border-border text-warning", GRADE_CELL_W.transfer)}>إرسال للإدارة</th>
           </tr>
           <tr className="bg-secondary/30 text-xs text-muted-foreground">
-            <th className="sticky right-0 bg-secondary"></th>
+            <th className={cn("sticky right-0 bg-secondary", GRADE_CELL_W.student)} />
             {visibleDays.map((d) =>
               isTalqeen ? (
                 <React.Fragment key={d.key}>
-                  <th className={cn("p-1 border-r border-border", highlightDay(d.key) && "bg-muted/50")}>
+                  <th className={subHeaderClass(d.key, GRADE_CELL_W.att)}>
                     {bulkPresentBtn(d.key)}
                     <span className="block">حاضر</span>
                   </th>
-                  <th className={cn("p-1", highlightDay(d.key) && "bg-muted/50")}>واجب</th>
+                  <th className={subHeaderClass(d.key, GRADE_CELL_W.wajib)}>واجب</th>
                   {customFields.map((f) => (
-                    <th key={f.id} className={cn("p-1 border-r border-border text-primary/80", highlightDay(d.key) && "bg-muted/50")}>
-                      {f.label}
+                    <th
+                      key={f.id}
+                      className={cn(subHeaderClass(d.key, GRADE_CELL_W.custom), "text-primary/80 truncate")}
+                      title={f.label}
+                    >
+                      <span className="block truncate">{f.label}</span>
                     </th>
                   ))}
                 </React.Fragment>
               ) : (
                 <React.Fragment key={d.key}>
-                  <th className={cn("p-1 border-r border-border", highlightDay(d.key) && "bg-muted/50")}>
+                  <th className={subHeaderClass(d.key, GRADE_CELL_W.att)}>
                     {bulkPresentBtn(d.key)}
                     <span className="block">الحضور</span>
                   </th>
-                  <th className={cn("p-1", highlightDay(d.key) && "bg-muted/50")}>حفظ</th>
-                  <th className={cn("p-1", highlightDay(d.key) && "bg-muted/50")}>ربط</th>
-                  <th className={cn("p-1", highlightDay(d.key) && "bg-muted/50")}>مراجعة</th>
+                  <th className={subHeaderClass(d.key, GRADE_CELL_W.hifz)}>حفظ</th>
+                  <th className={subHeaderClass(d.key, GRADE_CELL_W.pf)}>ربط</th>
+                  <th className={subHeaderClass(d.key, GRADE_CELL_W.pf)}>مراجعة</th>
                   {customFields.map((f) => (
-                    <th key={f.id} className={cn("p-1 border-r border-border text-primary/80", highlightDay(d.key) && "bg-muted/50")}>
-                      {f.label}
+                    <th
+                      key={f.id}
+                      className={cn(subHeaderClass(d.key, GRADE_CELL_W.custom), "text-primary/80 truncate")}
+                      title={f.label}
+                    >
+                      <span className="block truncate">{f.label}</span>
                     </th>
                   ))}
                 </React.Fragment>
               )
             )}
-            <th></th>
-            <th></th>
-            <th></th>
-            <th></th>
+            <th className={GRADE_CELL_W.sard} />
+            <th className={GRADE_CELL_W.weekPct} />
+            <th className={GRADE_CELL_W.semesterPct} />
+            <th className={GRADE_CELL_W.transfer} />
           </tr>
         </thead>
         <tbody>
@@ -625,7 +730,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
             const semesterPct = semesterOverallPercentage(s.id, s.levelType, isTalqeen, grades, calendar);
             return (
               <tr key={s.id} className="border-b border-border/50 hover:bg-accent/30">
-                <td className="p-2 sticky right-0 bg-card font-medium">
+                <td className={cn("p-2 sticky right-0 bg-card font-medium", GRADE_CELL_W.student)}>
                   <div className="flex flex-col gap-1">
                     <span>{s.name}</span>
                     {s.assignedTo === "assistant" && viewerRole === "teacher" && (
@@ -645,20 +750,20 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                   const e = w.days[d.key];
                   return isTalqeen ? (
                     <React.Fragment key={d.key}>
-                      <td className={dayCellClass(d.key)}>
+                      <td className={dayCellClass(d.key, GRADE_CELL_W.att)}>
                         <AttSelect value={e.attendance} talqeen onChange={(v) => updateDay(s.id, d.key, { attendance: v })} />
                       </td>
-                      <td className={cn("p-1 text-center", highlightDay(d.key) && "bg-muted/60")}>
+                      <td className={cn("p-1 text-center", GRADE_CELL_W.wajib, highlightDay(d.key) && "bg-muted/60")}>
                         <Cbx checked={!!e.wajib} onChange={(v) => updateDay(s.id, d.key, { wajib: v })} />
                       </td>
                       {renderCustomCells(s, d.key, e)}
                     </React.Fragment>
                   ) : (
                     <React.Fragment key={d.key}>
-                      <td className={dayCellClass(d.key)}>
+                      <td className={dayCellClass(d.key, GRADE_CELL_W.att)}>
                         <AttSelect value={e.attendance} onChange={(v) => updateDay(s.id, d.key, { attendance: v })} />
                       </td>
-                      <td className={dayCellClass(d.key)}>
+                      <td className={dayCellClass(d.key, GRADE_CELL_W.hifz)}>
                         <PlanAwareTaskCell
                           student={s}
                           task="hifz"
@@ -670,7 +775,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           onPlanHifzChange={(v) => void handlePlanHifz(s, d.key, v)}
                         />
                       </td>
-                      <td className={dayCellClass(d.key)}>
+                      <td className={dayCellClass(d.key, GRADE_CELL_W.pf)}>
                         <PlanAwareTaskCell
                           student={s}
                           task="rabt"
@@ -682,7 +787,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           onPlanPassFailChange={(v) => void handlePlanPassFail(s, d.key, "rabt", v)}
                         />
                       </td>
-                      <td className={dayCellClass(d.key)}>
+                      <td className={dayCellClass(d.key, GRADE_CELL_W.pf)}>
                         <PlanAwareTaskCell
                           student={s}
                           task="muraja"
@@ -698,20 +803,20 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                     </React.Fragment>
                   );
                 })}
-                <td className="p-1 text-center border-r border-border/30">
+                <td className={cn("p-1 text-center border-r border-border/30", GRADE_CELL_W.sard)}>
                   <Cbx checked={w.sard} onChange={(v) => toggleSard(s, v)} />
                 </td>
-                <td className="p-2 text-center font-bold border-r border-border/30">
+                <td className={cn("p-2 text-center font-bold border-r border-border/30", GRADE_CELL_W.weekPct)}>
                   <span className={weekPct >= 80 ? "text-success" : weekPct >= 50 ? "text-warning" : "text-muted-foreground"}>
                     {weekPct}%
                   </span>
                 </td>
-                <td className="p-2 text-center font-bold border-r border-border/30">
+                <td className={cn("p-2 text-center font-bold border-r border-border/30", GRADE_CELL_W.semesterPct)}>
                   <span className={overallPercentColorClass(semesterPct)}>
                     {formatOverallPercent(semesterPct)}
                   </span>
                 </td>
-                <td className="p-1 text-center">
+                <td className={cn("p-1 text-center", GRADE_CELL_W.transfer)}>
                   <button
                     onClick={() => { setTransferFor(s); setTransferReason(""); }}
                     title="إرسال للإدارة"
