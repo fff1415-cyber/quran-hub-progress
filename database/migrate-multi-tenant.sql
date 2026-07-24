@@ -1,12 +1,16 @@
 /*
   Multi-tenant (Multi-Complex) — Step 1
-  Compatible with MySQL 8+ and MariaDB 10.4+
+  Compatible with MySQL 8+ and MariaDB 10.4+ (Hostinger / phpMyAdmin)
 
-  Run once in phpMyAdmin (select your database first).
-  If a step fails because the change already exists, skip that step and continue.
+  Run once. Safe to re-run: skips steps already applied (IF NOT EXISTS / checks).
 
-  Existing data is assigned to complex_id = 1 (default مجمع).
+  If a previous run stopped at halaqat DROP PRIMARY KEY, use:
+  database/migrate-multi-tenant-resume.sql
 */
+
+SET @OLD_FK_CHECKS = @@FOREIGN_KEY_CHECKS;
+SET FOREIGN_KEY_CHECKS = 0;
+
 
 -- ─── 1. complexes ───────────────────────────────────────────────────────────
 
@@ -24,7 +28,7 @@ VALUES (1, 'مجمع حلقات الشتيوي', '#C9A227')
 ON DUPLICATE KEY UPDATE `name` = VALUES(`name`);
 
 
--- ─── 2. halaqat ─────────────────────────────────────────────────────────────
+-- ─── 2. halaqat — composite PK (complex_id, id) ─────────────────────────────
 
 ALTER TABLE `halaqat`
   ADD COLUMN IF NOT EXISTS `complex_id` INT UNSIGNED NULL DEFAULT NULL AFTER `id`;
@@ -34,15 +38,66 @@ UPDATE `halaqat` SET `complex_id` = 1 WHERE `complex_id` IS NULL;
 ALTER TABLE `halaqat`
   MODIFY COLUMN `complex_id` INT UNSIGNED NOT NULL;
 
-ALTER TABLE `halaqat` DROP PRIMARY KEY;
+-- Drop FKs pointing TO halaqat (e.g. partial run added fk_students_halaqa early)
+DROP PROCEDURE IF EXISTS `_mt_drop_fks_to_halaqat`;
+DELIMITER $$
+CREATE PROCEDURE `_mt_drop_fks_to_halaqat`()
+BEGIN
+  DECLARE done INT DEFAULT 0;
+  DECLARE tbl VARCHAR(64);
+  DECLARE cname VARCHAR(64);
+  DECLARE cur CURSOR FOR
+    SELECT DISTINCT kcu.TABLE_NAME, kcu.CONSTRAINT_NAME
+    FROM information_schema.KEY_COLUMN_USAGE kcu
+    JOIN information_schema.TABLE_CONSTRAINTS tc
+      ON tc.CONSTRAINT_SCHEMA = kcu.CONSTRAINT_SCHEMA
+     AND tc.TABLE_NAME = kcu.TABLE_NAME
+     AND tc.CONSTRAINT_NAME = kcu.CONSTRAINT_NAME
+     AND tc.CONSTRAINT_TYPE = 'FOREIGN KEY'
+    WHERE kcu.CONSTRAINT_SCHEMA = DATABASE()
+      AND kcu.REFERENCED_TABLE_NAME = 'halaqat';
+  DECLARE CONTINUE HANDLER FOR NOT FOUND SET done = 1;
+  OPEN cur;
+  read_loop: LOOP
+    FETCH cur INTO tbl, cname;
+    IF done THEN LEAVE read_loop; END IF;
+    SET @drop = CONCAT('ALTER TABLE `', tbl, '` DROP FOREIGN KEY `', cname, '`');
+    PREPARE _s FROM @drop; EXECUTE _s; DEALLOCATE PREPARE _s;
+  END LOOP;
+  CLOSE cur;
+END$$
+DELIMITER ;
+CALL `_mt_drop_fks_to_halaqat`();
+DROP PROCEDURE IF EXISTS `_mt_drop_fks_to_halaqat`;
 
-ALTER TABLE `halaqat`
-  ADD PRIMARY KEY (`complex_id`, `id`);
+-- Drop FK from halaqat → complexes if re-running
+ALTER TABLE `halaqat` DROP FOREIGN KEY IF EXISTS `fk_halaqat_complex`;
+
+SET @halaqa_pk_has_complex := (
+  SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'halaqat'
+    AND CONSTRAINT_NAME = 'PRIMARY'
+    AND COLUMN_NAME = 'complex_id'
+);
+
+SET @sql := IF(
+  @halaqa_pk_has_complex = 0,
+  'ALTER TABLE `halaqat` DROP PRIMARY KEY',
+  'SELECT 1 AS _halaqa_pk_ok'
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
+
+SET @sql := IF(
+  @halaqa_pk_has_complex = 0,
+  'ALTER TABLE `halaqat` ADD PRIMARY KEY (`complex_id`, `id`)',
+  'SELECT 1 AS _halaqa_pk_ok'
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 
 ALTER TABLE `halaqat`
   ADD KEY IF NOT EXISTS `idx_halaqat_complex` (`complex_id`);
 
--- FK (ignore error if already exists)
 ALTER TABLE `halaqat`
   ADD CONSTRAINT `fk_halaqat_complex`
     FOREIGN KEY (`complex_id`) REFERENCES `complexes` (`id`) ON DELETE RESTRICT;
@@ -57,6 +112,9 @@ UPDATE `students` SET `complex_id` = 1 WHERE `complex_id` IS NULL;
 
 ALTER TABLE `students`
   MODIFY COLUMN `complex_id` INT UNSIGNED NOT NULL;
+
+ALTER TABLE `students` DROP FOREIGN KEY IF EXISTS `fk_students_halaqa`;
+ALTER TABLE `students` DROP FOREIGN KEY IF EXISTS `fk_students_complex`;
 
 ALTER TABLE `students` DROP INDEX IF EXISTS `uk_national_id`;
 
@@ -88,6 +146,8 @@ UPDATE `role_accounts` SET `complex_id` = 1 WHERE `complex_id` IS NULL;
 ALTER TABLE `role_accounts`
   MODIFY COLUMN `complex_id` INT UNSIGNED NOT NULL;
 
+ALTER TABLE `role_accounts` DROP FOREIGN KEY IF EXISTS `fk_role_accounts_complex`;
+
 ALTER TABLE `role_accounts` DROP INDEX IF EXISTS `uk_code`;
 
 ALTER TABLE `role_accounts`
@@ -111,10 +171,29 @@ UPDATE `app_state` SET `complex_id` = 1 WHERE `complex_id` IS NULL;
 ALTER TABLE `app_state`
   MODIFY COLUMN `complex_id` INT UNSIGNED NOT NULL;
 
-ALTER TABLE `app_state` DROP PRIMARY KEY;
+ALTER TABLE `app_state` DROP FOREIGN KEY IF EXISTS `fk_app_state_complex`;
 
-ALTER TABLE `app_state`
-  ADD PRIMARY KEY (`complex_id`, `key`);
+SET @app_pk_has_complex := (
+  SELECT COUNT(*) FROM information_schema.KEY_COLUMN_USAGE
+  WHERE TABLE_SCHEMA = DATABASE()
+    AND TABLE_NAME = 'app_state'
+    AND CONSTRAINT_NAME = 'PRIMARY'
+    AND COLUMN_NAME = 'complex_id'
+);
+
+SET @sql := IF(
+  @app_pk_has_complex = 0,
+  'ALTER TABLE `app_state` DROP PRIMARY KEY',
+  'SELECT 1 AS _app_state_pk_ok'
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
+
+SET @sql := IF(
+  @app_pk_has_complex = 0,
+  'ALTER TABLE `app_state` ADD PRIMARY KEY (`complex_id`, `key`)',
+  'SELECT 1 AS _app_state_pk_ok'
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 
 ALTER TABLE `app_state`
   ADD CONSTRAINT `fk_app_state_complex`
@@ -131,6 +210,8 @@ UPDATE `semesters` SET `complex_id` = 1 WHERE `complex_id` IS NULL;
 ALTER TABLE `semesters`
   MODIFY COLUMN `complex_id` INT UNSIGNED NOT NULL;
 
+ALTER TABLE `semesters` DROP FOREIGN KEY IF EXISTS `fk_semesters_complex`;
+
 ALTER TABLE `semesters`
   ADD KEY IF NOT EXISTS `idx_semesters_complex` (`complex_id`);
 
@@ -142,7 +223,7 @@ ALTER TABLE `semesters`
     FOREIGN KEY (`complex_id`) REFERENCES `complexes` (`id`) ON DELETE RESTRICT;
 
 
--- ─── 7. education_plans (only if table exists) ────────────────────────────────
+-- ─── 7. education_plans (only if table exists) ──────────────────────────────
 
 SET @plans_exists := (
   SELECT COUNT(*) FROM information_schema.tables
@@ -166,6 +247,13 @@ PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 SET @sql := IF(
   @plans_exists > 0,
   'ALTER TABLE `education_plans` MODIFY COLUMN `complex_id` INT UNSIGNED NOT NULL',
+  'SELECT 1 AS _skip'
+);
+PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
+
+SET @sql := IF(
+  @plans_exists > 0,
+  'ALTER TABLE `education_plans` DROP FOREIGN KEY IF EXISTS `fk_plans_complex`',
   'SELECT 1 AS _skip'
 );
 PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
@@ -199,7 +287,7 @@ SET @sql := IF(
 PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 
 
--- ─── 8. evaluation_settings — rebuild (MariaDB-safe, no DROP CHECK) ─────────
+-- ─── 8. evaluation_settings — rebuild (no DROP CHECK) ─────────────────────────
 
 SET @eval_exists := (
   SELECT COUNT(*) FROM information_schema.tables
@@ -213,18 +301,9 @@ SET @eval_has_complex := (
     AND column_name = 'complex_id'
 );
 
--- 8a. Already migrated → skip rebuild
-SET @sql := IF(
-  @eval_exists > 0 AND @eval_has_complex > 0,
-  'SELECT 1 AS _eval_already_migrated',
-  'SELECT 1 AS _skip'
-);
-PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
-
--- 8b. Rebuild table: copy data, drop old (removes CHECK + old PK), rename
 SET @sql := IF(
   @eval_exists > 0 AND @eval_has_complex = 0,
-  'CREATE TABLE `evaluation_settings_mt` (
+  'CREATE TABLE IF NOT EXISTS `evaluation_settings_mt` (
     `complex_id` INT UNSIGNED NOT NULL,
     `hifz_max_score` INT NOT NULL DEFAULT 45,
     `review_max_score` INT NOT NULL DEFAULT 50,
@@ -273,7 +352,7 @@ PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 
 SET @sql := IF(
   @eval_exists > 0 AND @eval_has_complex = 0,
-  'DROP TABLE `evaluation_settings`',
+  'DROP TABLE IF EXISTS `evaluation_settings`',
   'SELECT 1 AS _skip'
 );
 PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
@@ -285,7 +364,6 @@ SET @sql := IF(
 );
 PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 
--- Ensure default row for complex 1 (only if table exists)
 SET @eval_final := (
   SELECT COUNT(*) FROM information_schema.tables
   WHERE table_schema = DATABASE() AND table_name = 'evaluation_settings'
@@ -301,6 +379,6 @@ SET @sql := IF(
 PREPARE _s FROM @sql; EXECUTE _s; DEALLOCATE PREPARE _s;
 
 
--- ─── Done ───────────────────────────────────────────────────────────────────
+SET FOREIGN_KEY_CHECKS = @OLD_FK_CHECKS;
 
 SELECT 'migrate-multi-tenant completed' AS status;
