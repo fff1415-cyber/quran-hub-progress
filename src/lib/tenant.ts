@@ -28,25 +28,13 @@ function apiUrl(path: string): string {
   return `${API_BASE}/api/r.php?path=${encodeURIComponent(p)}`;
 }
 
-/** Extract tenant subdomain from hostname (e.g. m1.example.com → m1). */
-export function parseSubdomain(hostname: string): string {
-  const host = hostname.toLowerCase().trim();
-  if (!host) {
-    return envSubdomainFallback();
+/** Production apex domain (msht.io). Override via VITE_APEX_DOMAIN. */
+export function apexDomain(): string {
+  const fromEnv = import.meta.env.VITE_APEX_DOMAIN;
+  if (typeof fromEnv === "string" && fromEnv.trim() !== "") {
+    return fromEnv.trim().toLowerCase();
   }
-  if (host === "localhost" || host.endsWith(".localhost") || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
-    return envSubdomainFallback();
-  }
-
-  const parts = host.split(".").filter(Boolean);
-  if (parts.length >= 3) {
-    const sub = parts[0];
-    if (sub !== "www") {
-      return sub;
-    }
-  }
-
-  return envSubdomainFallback();
+  return "msht.io";
 }
 
 function envSubdomainFallback(): string {
@@ -55,6 +43,77 @@ function envSubdomainFallback(): string {
     return fromEnv.trim().toLowerCase();
   }
   return DEFAULT_TENANT.subdomain;
+}
+
+/** True when hostname is the apex or www (no tenant subdomain). */
+export function isApexHostname(hostname: string): boolean {
+  const host = hostname.toLowerCase().trim();
+  const apex = apexDomain();
+  return host === apex || host === `www.${apex}`;
+}
+
+/**
+ * Extract tenant subdomain from hostname.
+ * msht.io / www.msht.io → m1 (default complex)
+ * m1.msht.io → m1
+ */
+export function parseSubdomain(hostname: string): string {
+  const host = hostname.toLowerCase().trim();
+  if (!host) {
+    return DEFAULT_TENANT.subdomain;
+  }
+
+  if (host === "localhost" || host.endsWith(".localhost") || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    return envSubdomainFallback();
+  }
+
+  const apex = apexDomain();
+
+  if (host === apex || host === `www.${apex}`) {
+    return DEFAULT_TENANT.subdomain;
+  }
+
+  const suffix = `.${apex}`;
+  if (host.endsWith(suffix)) {
+    const label = host.slice(0, -suffix.length);
+    if (!label || label === "www") {
+      return DEFAULT_TENANT.subdomain;
+    }
+    const sub = label.split(".")[0];
+    return sub && sub !== "www" ? sub : DEFAULT_TENANT.subdomain;
+  }
+
+  const parts = host.split(".").filter(Boolean);
+  if (parts.length >= 3 && parts[0] !== "www") {
+    return parts[0];
+  }
+
+  if (parts.length === 2) {
+    return DEFAULT_TENANT.subdomain;
+  }
+
+  return envSubdomainFallback();
+}
+
+/**
+ * Optional: redirect msht.io → m1.msht.io (enable with VITE_REDIRECT_APEX_TO_SUBDOMAIN=true).
+ * Returns true if a redirect was initiated.
+ */
+export function redirectApexToDefaultSubdomain(): boolean {
+  if (typeof window === "undefined") {
+    return false;
+  }
+  if (import.meta.env.VITE_REDIRECT_APEX_TO_SUBDOMAIN !== "true") {
+    return false;
+  }
+  if (!isApexHostname(window.location.hostname)) {
+    return false;
+  }
+
+  const apex = apexDomain();
+  const target = `${window.location.protocol}//${DEFAULT_TENANT.subdomain}.${apex}${window.location.pathname}${window.location.search}${window.location.hash}`;
+  window.location.replace(target);
+  return true;
 }
 
 function normalizeHexColor(input: string): string {
@@ -121,7 +180,7 @@ export function tenantLogoUrl(tenant: TenantInfo): string {
   return tenant.logo_url?.trim() || defaultLogo.url;
 }
 
-export async function fetchTenantBySubdomain(subdomain: string): Promise<TenantInfo> {
+async function fetchTenantFromApi(subdomain: string): Promise<TenantInfo> {
   const sub = subdomain.trim().toLowerCase();
   const res = await fetch(apiUrl(`/tenant-info?subdomain=${encodeURIComponent(sub)}`));
   const text = await res.text();
@@ -147,6 +206,18 @@ export async function fetchTenantBySubdomain(subdomain: string): Promise<TenantI
     primary_color: row.primary_color || DEFAULT_TENANT.primary_color,
     subdomain: row.subdomain || sub,
   };
+}
+
+export async function fetchTenantBySubdomain(subdomain: string): Promise<TenantInfo> {
+  const sub = subdomain.trim().toLowerCase() || DEFAULT_TENANT.subdomain;
+  try {
+    return await fetchTenantFromApi(sub);
+  } catch (firstError) {
+    if (sub === DEFAULT_TENANT.subdomain) {
+      throw firstError;
+    }
+    return fetchTenantFromApi(DEFAULT_TENANT.subdomain);
+  }
 }
 
 export function setCachedTenant(tenant: TenantInfo): void {
@@ -191,6 +262,12 @@ export function getActiveComplexId(): number | undefined {
 }
 
 export async function resolveTenantFromHostname(hostname?: string): Promise<TenantInfo> {
+  if (redirectApexToDefaultSubdomain()) {
+    return new Promise(() => {
+      /* redirect in progress */
+    });
+  }
+
   const host = hostname ?? (typeof window !== "undefined" ? window.location.hostname : "");
   const subdomain = parseSubdomain(host);
   const tenant = await fetchTenantBySubdomain(subdomain);

@@ -1,8 +1,9 @@
-import { writeFile } from "node:fs/promises";
+import { writeFile, copyFile } from "node:fs/promises";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const clientDir = join(process.cwd(), "dist", "client");
+const publicDir = join(process.cwd(), "public");
 const serverPath = pathToFileURL(join(process.cwd(), "dist", "server", "server.js")).href;
 
 const { default: server } = await import(serverPath);
@@ -15,4 +16,12 @@ if (!response.ok) {
 
 const html = await response.text();
 await writeFile(join(clientDir, "index.html"), html, "utf8");
+
+try {
+  await copyFile(join(publicDir, ".htaccess"), join(clientDir, ".htaccess"));
+  console.log("Copied public/.htaccess → dist/client/.htaccess");
+} catch (e) {
+  console.warn("Could not copy .htaccess:", e);
+}
+
 console.log(`Generated dist/client/index.html via SSR (${html.length} bytes)`);
