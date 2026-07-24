@@ -16,7 +16,7 @@ export type PermissionKey = typeof PERMISSIONS[number]["key"];
 // Default permission sets per role
 export const DEFAULT_PERMS: Record<string, PermissionKey[]> = {
   manager: PERMISSIONS.map((p) => p.key),
-  secretary: ["view_attendance", "send_whatsapp", "force_retry"],
+  secretary: ["view_attendance", "send_whatsapp", "force_retry", "manage_students", "import_sheets"],
   supervisor: ["view_attendance", "approve_sard", "force_retry", "manage_plans"],
   musammi: [],
   teacher: [],

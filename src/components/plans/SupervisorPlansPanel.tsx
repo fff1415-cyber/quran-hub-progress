@@ -2,13 +2,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { loadStudents, type Student } from "@/lib/mock-data";
 import { syncFromCloud } from "@/lib/cloud-sync";
 import { fetchPlans, fetchStudentPlanSheet, importPlans, assignStudentPlan, patchStudentAssignment } from "@/lib/plans-service";
-import type { EducationPlan, PlanTrack, StudentPlanSheetData, DailyFaceQuotas } from "@/lib/plan-types";
+import type { EducationPlan, PlanTrack, StudentPlanSheetData } from "@/lib/plan-types";
 import { DEFAULT_FACE_QUOTAS, faceQuotasFromPlan, normalizeFaceQuotas } from "@/lib/plan-daily-faces";
 import { FaceQuotasFields } from "@/components/plans/FaceQuotasFields";
 import { StudentFaceReportPanel } from "@/components/plans/StudentFaceReportPanel";
 import { parsePlansExcel } from "@/lib/plan-excel-import";
 import { trackLabel } from "@/lib/plan-translator";
-import { isFirstPhasePlan } from "@/lib/plan-phase";
+import { globalPhaseFromPlanLevel, murajaStartSegment } from "@/lib/plan-level-ranges";
 import { getCalendarIsoDate } from "@/lib/operational-date";
 import { getSessionName } from "@/lib/session-role";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
@@ -103,8 +103,7 @@ export function SupervisorPlansPanel() {
   const [selectedPlan, setSelectedPlan] = useState<EducationPlan | null>(null);
   const [planStartDate, setPlanStartDate] = useState(getCalendarIsoDate());
   const [startHifz, setStartHifz] = useState("1");
-  const [startMuraja, setStartMuraja] = useState("1");
-  const [faceQuotas, setFaceQuotas] = useState<DailyFaceQuotas>({ ...DEFAULT_FACE_QUOTAS });
+  const [faceQuotas, setFaceQuotas] = useState(DEFAULT_FACE_QUOTAS);
   const [lookupRefresh, setLookupRefresh] = useState(0);
   const [studentsVersion, setStudentsVersion] = useState(0);
 
@@ -168,8 +167,6 @@ export function SupervisorPlansPanel() {
     return list.slice(0, 15);
   }, [plans, trackFilter, planQ]);
 
-  const showMurajaStart = selectedPlan ? isFirstPhasePlan(selectedPlan.level_number) : false;
-
   useEffect(() => {
     if (selectedPlan) {
       setFaceQuotas(faceQuotasFromPlan(selectedPlan));
@@ -181,6 +178,7 @@ export function SupervisorPlansPanel() {
       toast.error("اختر الطالب والخطة");
       return;
     }
+    const globalPhase = globalPhaseFromPlanLevel(selectedPlan.track, selectedPlan.level_number);
     setAssigning(true);
     try {
       await assignStudentPlan(
@@ -190,7 +188,7 @@ export function SupervisorPlansPanel() {
         me,
         {
           plan_start_date: planStartDate,
-          start_muraja_segment: showMurajaStart ? Number(startMuraja) || 1 : null,
+          start_muraja_segment: globalPhase !== null ? murajaStartSegment(globalPhase) : null,
           face_quotas: normalizeFaceQuotas(faceQuotas),
         },
       );
@@ -337,17 +335,9 @@ export function SupervisorPlansPanel() {
                 <label className="text-xs text-muted-foreground mb-1 block">بداية مقطع الحفظ</label>
                 <Input type="number" min={1} value={startHifz} onChange={(e) => setStartHifz(e.target.value)} />
               </div>
-              {showMurajaStart && (
-                <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">بداية المراجعة (المرحلة الأولى فقط)</label>
-                  <Input type="number" min={1} value={startMuraja} onChange={(e) => setStartMuraja(e.target.value)} />
-                </div>
-              )}
-              {!showMurajaStart && selectedPlan && (
-                <p className="sm:col-span-2 text-xs text-muted-foreground">
-                  الربط والمراجعة يبدآن مع الحفظ تلقائياً (مرحلة {selectedPlan.level_number % 1000})
-                </p>
-              )}
+              <p className="sm:col-span-2 text-xs text-muted-foreground">
+                المراجعة في المرحلة العامة 1 تبدأ تلقائياً من المقطع 16. الحفظ: ½=0.5 · 1=1 · 2=2 وجه (ثابت).
+              </p>
               <div className="sm:col-span-2 pt-2 border-t border-border">
                 <FaceQuotasFields value={faceQuotas} onChange={setFaceQuotas} />
               </div>

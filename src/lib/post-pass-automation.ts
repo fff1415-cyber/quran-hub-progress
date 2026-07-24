@@ -1,5 +1,6 @@
 import { pushAcademicRecord, type AcademicPhaseRecord } from "@/lib/academic-record";
 import { completePlanAndAdvance, type PlanAdvanceResult } from "@/lib/plan-progression";
+import { syncStudentToGlobalPhase } from "@/lib/student-phase-promote";
 import { fetchStudentPlanSheet } from "@/lib/plans-service";
 import type { PlanTrack } from "@/lib/plan-types";
 
@@ -45,6 +46,9 @@ export async function runPostPassAutomation(payload: SardPassPayload): Promise<P
   let advance: PlanAdvanceResult = {};
   try {
     advance = await completePlanAndAdvance(payload.studentId, assignedBy, payload.track);
+    if (advance.newGlobalPhase) {
+      await syncStudentToGlobalPhase(payload.studentId, advance.newGlobalPhase);
+    }
   } catch {
     /* plan API may be unavailable — academic record still saved */
   }

@@ -1,22 +1,18 @@
 import type { EducationPlan, PlanTrack } from "@/lib/plan-types";
+import {
+  findPlanByGlobalPhase,
+  globalPhaseFromPlanLevel,
+  nextGlobalPhase,
+  murajaStartSegment,
+} from "@/lib/plan-level-ranges";
+import { normalizeTaskQuotas } from "@/lib/plan-daily-faces";
 import { fetchPlans, assignStudentPlan, fetchStudentPlanSheet, patchStudentAssignment } from "@/lib/plans-service";
-
-export function findNextPlan(plans: EducationPlan[], current: EducationPlan): EducationPlan | null {
-  const sameTrack = plans
-    .filter((p) => p.track === current.track)
-    .sort((a, b) => a.level_number - b.level_number);
-  const idx = sameTrack.findIndex((p) => p.id === current.id);
-  if (idx < 0) {
-    const nextLevel = current.level_number + 1;
-    return sameTrack.find((p) => p.level_number === nextLevel) ?? null;
-  }
-  return sameTrack[idx + 1] ?? null;
-}
 
 export interface PlanAdvanceResult {
   closedPlanTitle?: string;
   newPlanTitle?: string;
   newPlanId?: string;
+  newGlobalPhase?: number;
 }
 
 export async function completePlanAndAdvance(
@@ -39,19 +35,43 @@ export async function completePlanAndAdvance(
     return result;
   }
 
+  const currentGlobal = globalPhaseFromPlanLevel(track, sheet.plan.level_number);
+  if (currentGlobal === null) {
+    return result;
+  }
+
+  const nextPhase = nextGlobalPhase(track, currentGlobal);
+  if (nextPhase === null) {
+    return result;
+  }
+
   const plans = await fetchPlans(track);
-  const next = findNextPlan(plans, sheet.plan);
+  const next = findPlanByGlobalPhase(plans, track, nextPhase);
   if (!next) {
     return result;
   }
 
+  const prevQuotas = sheet.assignment ? normalizeTaskQuotas(sheet.assignment) : undefined;
   const today = new Date().toISOString().slice(0, 10);
+
   await assignStudentPlan(studentId, next.id, 1, assignedBy, {
     plan_start_date: today,
-    start_muraja_segment: next.level_number % 1000 === 1 ? 1 : null,
+    start_muraja_segment: murajaStartSegment(nextPhase),
+    face_quotas: prevQuotas,
   });
 
   result.newPlanTitle = next.title;
   result.newPlanId = next.id;
+  result.newGlobalPhase = nextPhase;
   return result;
+}
+
+/** @deprecated use completePlanAndAdvance with global phase */
+export function findNextPlan(plans: EducationPlan[], current: EducationPlan): EducationPlan | null {
+  const track = current.track;
+  const global = globalPhaseFromPlanLevel(track, current.level_number);
+  if (global === null) return null;
+  const next = nextGlobalPhase(track, global);
+  if (next === null) return null;
+  return findPlanByGlobalPhase(plans, track, next);
 }

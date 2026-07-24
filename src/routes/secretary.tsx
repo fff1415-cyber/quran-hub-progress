@@ -15,7 +15,8 @@ import {
 import { SecretaryStudentProfilesPanel } from "@/components/role-workspace/SecretaryStudentProfilesPanel";
 import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTransfersPanel";
 import { PlanStudentLookup } from "@/components/plans/SupervisorPlansPanel";
-import { Clipboard, UserX, Clock, Mic, Send, GraduationCap, Users, ClipboardCheck } from "lucide-react";
+import { StudentImportPanel, StudentsManagementPanel } from "@/components/admin/StudentsAdminPanel";
+import { Clipboard, UserX, Clock, Mic, Send, GraduationCap, Users, ClipboardCheck, FileSpreadsheet } from "lucide-react";
 import { WeeklyTestsOverviewPanel } from "@/components/WeeklyTestsOverviewPanel";
 import { Toaster } from "sonner";
 import type { WeekRecord } from "@/lib/mock-data";
@@ -60,6 +61,20 @@ function SecretaryPage() {
       icon: Users,
       perm: "view_attendance",
       content: <SecretaryStudentProfilesPanel />,
+    },
+    {
+      id: "students",
+      label: "إدارة الطلاب",
+      icon: Users,
+      perm: "manage_students",
+      content: <StudentsManagementPanel />,
+    },
+    {
+      id: "import",
+      label: "استيراد الطلاب",
+      icon: FileSpreadsheet,
+      perm: "import_sheets",
+      content: <StudentImportPanel />,
     },
     {
       id: "plans",

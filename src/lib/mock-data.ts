@@ -18,9 +18,15 @@ export interface Student {
   halaqaId: number;
   nationalId: string;
   parentPhone: string;
+  /** @deprecated use phaseNumber — kept for cloud sync */
   level: string;
   levelType: "gold" | "silver";
-  assignedTo?: "teacher" | "assistant"; // for splitting between teacher & assistant
+  /** المستوى — التأهيل، النجباء، الفرسان، الحفاظ، الخريجين */
+  instituteLevel?: string;
+  /** رقم المرحلة العام (1–60 فضي · 1–30 ذهبي) */
+  phaseNumber?: number;
+  studentPhone?: string;
+  assignedTo?: "teacher" | "assistant";
   memorized?: string;
 }
 

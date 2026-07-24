@@ -46,7 +46,7 @@ export function planLevelNumber(tierName: string, phaseNumber: number): number {
 const COL = {
   track: ["track", "المسار", "لمسار", "نوع", "type"],
   phase: ["phase", "phase_number", "المرحلة", "رقم_المرحلة"],
-  tier: ["tier", "tier_name", "المستوى", "level_name", "الفئة"],
+  tier: ["tier", "tier_name", "المستوى", "level_name"],
   legacyLevel: ["level_number", "level", "جزء", "level_num"],
   segment: ["segment_index", "segment", "المقطع", "رقم_المقطع", "مقطع"],
   hifz: ["hifz_plan", "hifz", "حفظ", "خطة_الحفظ", "plan_hifz"],

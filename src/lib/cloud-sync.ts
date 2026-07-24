@@ -43,8 +43,11 @@ interface CloudStudentRow {
   halaqa_id: number;
   national_id?: string;
   parent_phone?: string;
+  student_phone?: string;
   level: string;
   level_type: string;
+  institute_level?: string | null;
+  phase_number?: number | null;
   assigned_to: string | null;
   memorized: string | null;
 }
@@ -60,14 +63,19 @@ interface CloudHalaqaRow {
 }
 
 function rowToStudent(r: CloudStudentRow): Student {
+  const phaseFromRow = r.phase_number ?? parseInt(r.level, 10);
+  const phaseNumber = Number.isFinite(phaseFromRow) && phaseFromRow > 0 ? phaseFromRow : undefined;
   return {
     id: r.id,
     name: r.name,
     halaqaId: r.halaqa_id,
     nationalId: r.national_id ?? "",
     parentPhone: r.parent_phone ?? "",
+    studentPhone: r.student_phone ?? undefined,
     level: r.level,
     levelType: r.level_type === "silver" ? "silver" : "gold",
+    instituteLevel: r.institute_level ?? undefined,
+    phaseNumber,
     assignedTo: (r.assigned_to as "teacher" | "assistant" | undefined) ?? undefined,
     memorized: r.memorized ?? undefined,
   };
@@ -84,14 +92,18 @@ function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
   };
 }
 function studentToRow(s: Student): CloudStudentRow {
+  const phase = s.phaseNumber ?? parseInt(s.level, 10);
   return {
     id: s.id,
     name: s.name,
     halaqa_id: s.halaqaId,
     national_id: s.nationalId,
     parent_phone: s.parentPhone,
+    student_phone: s.studentPhone ?? "",
     level: s.level,
     level_type: s.levelType,
+    institute_level: s.instituteLevel ?? null,
+    phase_number: Number.isFinite(phase) && phase > 0 ? phase : null,
     assigned_to: s.assignedTo ?? null,
     memorized: s.memorized ?? null,
   };
@@ -189,8 +201,11 @@ export async function patchStudent(id: string, patch: Partial<Student>) {
   if (patch.halaqaId !== undefined) row.halaqa_id = patch.halaqaId;
   if (patch.nationalId !== undefined) row.national_id = patch.nationalId;
   if (patch.parentPhone !== undefined) row.parent_phone = patch.parentPhone;
+  if (patch.studentPhone !== undefined) row.student_phone = patch.studentPhone ?? "";
   if (patch.level !== undefined) row.level = patch.level;
   if (patch.levelType !== undefined) row.level_type = patch.levelType;
+  if (patch.instituteLevel !== undefined) row.institute_level = patch.instituteLevel ?? null;
+  if (patch.phaseNumber !== undefined) row.phase_number = patch.phaseNumber ?? null;
   if ("assignedTo" in patch) row.assigned_to = patch.assignedTo ?? null;
   if ("memorized" in patch) row.memorized = patch.memorized ?? null;
   await securePatchStudent({ data: { token: tokenOrThrow(), id, patch: row } });

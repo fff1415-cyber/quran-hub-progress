@@ -26,6 +26,7 @@ import {
   sardPhase,
 } from "@/lib/sard-phased-flow";
 import { runPostPassAutomation } from "@/lib/post-pass-automation";
+import { promoteStudentPhase } from "@/lib/student-phase-promote";
 import { AppHeader } from "@/components/AppHeader";
 import { Mic, Minus, Plus, ArrowRight, Award, CheckCircle2, XCircle, Clock, Lock } from "lucide-react";
 import { Toaster, toast } from "sonner";
@@ -224,19 +225,8 @@ function ReviewSegmentsEditor({
   );
 }
 
-async function promoteStudentLevel(studentId: string, level: string): Promise<string> {
-  const { loadStudents, saveStudents } = await import("@/lib/mock-data");
-  const all = loadStudents();
-  const idx = all.findIndex((s) => s.id === studentId);
-  let newLevel = level;
-  if (idx >= 0) {
-    const n = parseInt(level, 10);
-    newLevel = isNaN(n) ? level : String(n + 1);
-    all[idx] = { ...all[idx], level: newLevel };
-    saveStudents(all);
-    void import("@/lib/cloud-sync").then((m) => m.patchStudent(studentId, { level: newLevel }));
-  }
-  return newLevel;
+async function promoteStudentLevel(studentId: string, _level: string): Promise<string> {
+  return promoteStudentPhase(studentId);
 }
 
 function ResultSummary({
