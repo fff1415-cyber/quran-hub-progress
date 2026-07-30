@@ -10,6 +10,14 @@ export type TenantInfo = {
   subdomain: string;
 };
 
+/** Public SaaS landing brand (msht.io apex — not a specific complex). */
+export const PLATFORM_BRAND = {
+  name: "msht.io",
+  tagline: "منصة إدارة مجمعات تحفيظ القرآن الكريم",
+  logoUrl: defaultLogo.url,
+  primaryColor: "#1e3a5f",
+};
+
 export const DEFAULT_TENANT: TenantInfo = {
   id: 1,
   name: "مجمع حلقات الشتيوي",
@@ -19,6 +27,7 @@ export const DEFAULT_TENANT: TenantInfo = {
 };
 
 let cachedTenant: TenantInfo | null = null;
+let cachedPlatformMode = false;
 
 function apiUrl(path: string): string {
   if (!API_BASE) {
@@ -28,7 +37,6 @@ function apiUrl(path: string): string {
   return `${API_BASE}/api/r.php?path=${encodeURIComponent(p)}`;
 }
 
-/** Production apex domain (msht.io). Override via VITE_APEX_DOMAIN. */
 export function apexDomain(): string {
   const fromEnv = import.meta.env.VITE_APEX_DOMAIN;
   if (typeof fromEnv === "string" && fromEnv.trim() !== "") {
@@ -45,42 +53,57 @@ function envSubdomainFallback(): string {
   return DEFAULT_TENANT.subdomain;
 }
 
-/** True when hostname is the apex or www (no tenant subdomain). */
-export function isApexHostname(hostname: string): boolean {
-  const host = hostname.toLowerCase().trim();
+/** msht.io / www.msht.io — platform homepage, no tenant. */
+export function isPlatformHost(hostname?: string): boolean {
+  const host = (hostname ?? (typeof window !== "undefined" ? window.location.hostname : ""))
+    .toLowerCase()
+    .trim();
+  if (!host) {
+    return true;
+  }
+  if (host === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    return import.meta.env.VITE_DEV_TENANT !== "true";
+  }
   const apex = apexDomain();
   return host === apex || host === `www.${apex}`;
 }
 
+export function isApexHostname(hostname: string): boolean {
+  return isPlatformHost(hostname);
+}
+
 /**
- * Extract tenant subdomain from hostname.
- * msht.io / www.msht.io → m1 (default complex)
- * m1.msht.io → m1
+ * Tenant subdomain from hostname, or null on platform apex.
+ * m1.msht.io → "m1", msht.io → null
  */
-export function parseSubdomain(hostname: string): string {
+export function parseSubdomain(hostname: string): string | null {
   const host = hostname.toLowerCase().trim();
   if (!host) {
-    return DEFAULT_TENANT.subdomain;
+    return null;
   }
 
-  if (host === "localhost" || host.endsWith(".localhost") || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
-    return envSubdomainFallback();
+  if (host === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+    return import.meta.env.VITE_DEV_TENANT === "true" ? envSubdomainFallback() : null;
   }
 
   const apex = apexDomain();
-
   if (host === apex || host === `www.${apex}`) {
-    return DEFAULT_TENANT.subdomain;
+    return null;
   }
 
   const suffix = `.${apex}`;
   if (host.endsWith(suffix)) {
     const label = host.slice(0, -suffix.length);
     if (!label || label === "www") {
-      return DEFAULT_TENANT.subdomain;
+      return null;
     }
     const sub = label.split(".")[0];
-    return sub && sub !== "www" ? sub : DEFAULT_TENANT.subdomain;
+    return sub && sub !== "www" ? sub : null;
+  }
+
+  if (host.endsWith(".localhost")) {
+    const sub = host.replace(/\.localhost$/, "").split(".")[0];
+    return sub && sub !== "www" ? sub : null;
   }
 
   const parts = host.split(".").filter(Boolean);
@@ -88,32 +111,23 @@ export function parseSubdomain(hostname: string): string {
     return parts[0];
   }
 
-  if (parts.length === 2) {
-    return DEFAULT_TENANT.subdomain;
-  }
-
-  return envSubdomainFallback();
+  return null;
 }
 
-/**
- * Optional: redirect msht.io → m1.msht.io (enable with VITE_REDIRECT_APEX_TO_SUBDOMAIN=true).
- * Returns true if a redirect was initiated.
- */
-export function redirectApexToDefaultSubdomain(): boolean {
-  if (typeof window === "undefined") {
-    return false;
+export function tenantOrigin(subdomain: string): string {
+  const sub = subdomain.trim().toLowerCase();
+  if (typeof window !== "undefined") {
+    const host = window.location.hostname.toLowerCase();
+    if (host === "localhost" || host.endsWith(".localhost") || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+      const port = window.location.port ? `:${window.location.port}` : "";
+      return `${window.location.protocol}//${sub}.localhost${port}`;
+    }
   }
-  if (import.meta.env.VITE_REDIRECT_APEX_TO_SUBDOMAIN !== "true") {
-    return false;
-  }
-  if (!isApexHostname(window.location.hostname)) {
-    return false;
-  }
+  return `https://${sub}.${apexDomain()}`;
+}
 
-  const apex = apexDomain();
-  const target = `${window.location.protocol}//${DEFAULT_TENANT.subdomain}.${apex}${window.location.pathname}${window.location.search}${window.location.hash}`;
-  window.location.replace(target);
-  return true;
+export function isPlatformMode(): boolean {
+  return cachedPlatformMode;
 }
 
 function normalizeHexColor(input: string): string {
@@ -127,7 +141,7 @@ function normalizeHexColor(input: string): string {
     const b = raw[3];
     return `#${r}${r}${g}${g}${b}${b}`;
   }
-  return DEFAULT_TENANT.primary_color;
+  return PLATFORM_BRAND.primaryColor;
 }
 
 function mixHex(hex: string, amount: number): string {
@@ -140,7 +154,6 @@ function mixHex(hex: string, amount: number): string {
   return `#${toHex(mix(r))}${toHex(mix(g))}${toHex(mix(b))}`;
 }
 
-/** Apply tenant brand color to CSS variables and gradient utility classes. */
 export function applyTenantTheme(primaryColor: string): void {
   if (typeof document === "undefined") {
     return;
@@ -176,6 +189,13 @@ export function applyTenantTheme(primaryColor: string): void {
   `;
 }
 
+export function applyPlatformTheme(): void {
+  applyTenantTheme(PLATFORM_BRAND.primaryColor);
+  if (typeof document !== "undefined") {
+    document.title = PLATFORM_BRAND.name;
+  }
+}
+
 export function tenantLogoUrl(tenant: TenantInfo): string {
   return tenant.logo_url?.trim() || defaultLogo.url;
 }
@@ -209,19 +229,95 @@ async function fetchTenantFromApi(subdomain: string): Promise<TenantInfo> {
 }
 
 export async function fetchTenantBySubdomain(subdomain: string): Promise<TenantInfo> {
-  const sub = subdomain.trim().toLowerCase() || DEFAULT_TENANT.subdomain;
-  try {
-    return await fetchTenantFromApi(sub);
-  } catch (firstError) {
-    if (sub === DEFAULT_TENANT.subdomain) {
-      throw firstError;
-    }
-    return fetchTenantFromApi(DEFAULT_TENANT.subdomain);
+  const sub = subdomain.trim().toLowerCase();
+  if (!sub) {
+    throw new Error("subdomain مطلوب");
   }
+  return fetchTenantFromApi(sub);
 }
 
-export function setCachedTenant(tenant: TenantInfo): void {
+export type TenantResolveResult = {
+  id: number;
+  name: string;
+  subdomain: string;
+  url: string;
+};
+
+/** Find complex by subdomain slug or Arabic/English name (platform homepage). */
+export async function resolveComplexQuery(query: string): Promise<TenantResolveResult> {
+  const q = query.trim();
+  if (!q) {
+    throw new Error("أدخل اسم المجمع");
+  }
+  const res = await fetch(apiUrl(`/tenant-resolve?q=${encodeURIComponent(q)}`));
+  const text = await res.text();
+  let body: unknown = {};
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new Error("استجابة غير صالحة من الخادم");
+    }
+  }
+  if (!res.ok) {
+    throw new Error((body as { error?: string }).error ?? "المجمع غير موجود");
+  }
+  const row = body as TenantResolveResult;
+  return {
+    ...row,
+    url: row.url || tenantOrigin(row.subdomain),
+  };
+}
+
+export type ComplexRegisterInput = {
+  name: string;
+  subdomain: string;
+  contact_name?: string;
+  contact_phone?: string;
+};
+
+export async function registerNewComplex(input: ComplexRegisterInput): Promise<TenantResolveResult> {
+  const res = await fetch(apiUrl("/complex-register"), {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  const text = await res.text();
+  let body: unknown = {};
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new Error("استجابة غير صالحة من الخادم");
+    }
+  }
+  if (!res.ok) {
+    throw new Error((body as { error?: string }).error ?? "تعذّر تسجيل المجمع");
+  }
+  const row = body as TenantResolveResult & { ok?: boolean };
+  return {
+    id: row.id,
+    name: row.name,
+    subdomain: row.subdomain,
+    url: tenantOrigin(row.subdomain),
+  };
+}
+
+export function setCachedTenant(tenant: TenantInfo | null, platform = false): void {
   cachedTenant = tenant;
+  cachedPlatformMode = platform;
+  if (platform) {
+    if (typeof sessionStorage !== "undefined") {
+      sessionStorage.removeItem("qs_complex");
+      sessionStorage.removeItem("qs_tenant_subdomain");
+      sessionStorage.removeItem("qs_tenant_name");
+    }
+    applyPlatformTheme();
+    return;
+  }
+  if (!tenant) {
+    return;
+  }
   if (typeof sessionStorage !== "undefined") {
     sessionStorage.setItem("qs_complex", String(tenant.id));
     sessionStorage.setItem("qs_tenant_subdomain", tenant.subdomain);
@@ -237,8 +333,10 @@ export function getCachedTenant(): TenantInfo | null {
   return cachedTenant;
 }
 
-/** Resolved complex id for API calls (tenant → session → env). */
 export function getActiveComplexId(): number | undefined {
+  if (cachedPlatformMode) {
+    return undefined;
+  }
   if (cachedTenant?.id) {
     return cachedTenant.id;
   }
@@ -261,16 +359,20 @@ export function getActiveComplexId(): number | undefined {
   return undefined;
 }
 
-export async function resolveTenantFromHostname(hostname?: string): Promise<TenantInfo> {
-  if (redirectApexToDefaultSubdomain()) {
-    return new Promise(() => {
-      /* redirect in progress */
-    });
+export async function resolveTenantFromHostname(hostname?: string): Promise<TenantInfo | null> {
+  const host = hostname ?? (typeof window !== "undefined" ? window.location.hostname : "");
+
+  if (isPlatformHost(host)) {
+    setCachedTenant(null, true);
+    return null;
   }
 
-  const host = hostname ?? (typeof window !== "undefined" ? window.location.hostname : "");
   const subdomain = parseSubdomain(host);
+  if (!subdomain) {
+    throw new Error("تعذّر تحديد المجمع من الرابط");
+  }
+
   const tenant = await fetchTenantBySubdomain(subdomain);
-  setCachedTenant(tenant);
+  setCachedTenant(tenant, false);
   return tenant;
 }

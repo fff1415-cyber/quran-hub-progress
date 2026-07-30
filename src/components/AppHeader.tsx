@@ -38,7 +38,7 @@ const MANAGER_CROSS_LINKS: NavItem[] = [
 
 export function AppHeader({ title, subtitle }: { title: string; subtitle?: string }) {
   const router = useRouter();
-  const { tenant, logoUrl } = useTenant();
+  const { brandName, logoUrl } = useTenant();
   const [open, setOpen] = useState(false);
   const [halaqatOpen, setHalaqatOpen] = useState(false);
   const role = typeof window !== "undefined" ? sessionStorage.getItem("qs_role") || "" : "";
@@ -72,9 +72,9 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
             <SheetContent side="right" className="w-[300px] bg-background border-l border-primary/15 overflow-y-auto">
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-3">
-                  <img src={logoUrl} alt={`شعار ${tenant.name}`} className="w-12 h-12 object-contain" />
+                  <img src={logoUrl} alt={`شعار ${brandName}`} className="w-12 h-12 object-contain" />
                   <div className="text-right">
-                    <div className="display gold-text text-base font-bold">{tenant.name}</div>
+                    <div className="display gold-text text-base font-bold">{brandName}</div>
                     {name && <div className="text-xs text-muted-foreground font-normal">{name}</div>}
                   </div>
                 </SheetTitle>
@@ -163,9 +163,9 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
         </div>
 
         <Link to="/" className="flex items-center gap-2 sm:gap-3 group flex-1 justify-center sm:justify-start">
-          <img src={logoUrl} alt={`شعار ${tenant.name}`} className="w-10 h-10 sm:w-11 sm:h-11 object-contain" />
+          <img src={logoUrl} alt={`شعار ${brandName}`} className="w-10 h-10 sm:w-11 sm:h-11 object-contain" />
           <div className="text-right">
-            <div className="display text-base sm:text-lg font-bold gold-text leading-tight">{tenant.name}</div>
+            <div className="display text-base sm:text-lg font-bold gold-text leading-tight">{brandName}</div>
             {subtitle && <div className="text-[11px] text-muted-foreground leading-tight">{subtitle}</div>}
           </div>
         </Link>

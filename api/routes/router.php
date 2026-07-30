@@ -12,6 +12,7 @@ require_once __DIR__ . '/plans.php';
 require_once __DIR__ . '/evaluation_settings.php';
 require_once __DIR__ . '/health.php';
 require_once __DIR__ . '/tenant_info.php';
+require_once __DIR__ . '/tenant_resolve.php';
 
 function route_request(string $method, string $path): void
 {
@@ -25,6 +26,14 @@ function route_request(string $method, string $path): void
     }
     if (preg_match('#^/tenant-info/([a-z0-9-]+)$#i', $path) && $method === 'GET') {
         handle_tenant_info();
+        return;
+    }
+    if ($path === '/tenant-resolve' && $method === 'GET') {
+        handle_tenant_resolve();
+        return;
+    }
+    if ($path === '/complex-register' && $method === 'POST') {
+        handle_complex_register();
         return;
     }
     if ($method === 'POST' && $path === '/login/code') {
