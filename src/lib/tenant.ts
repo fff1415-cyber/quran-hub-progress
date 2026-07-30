@@ -1,19 +1,21 @@
+import { buildRphpUrl } from "@/lib/api-base";
+import { getBrandTheme, type BrandThemeKey } from "@/lib/brand-themes";
 import defaultLogo from "@/assets/shtaiwi-logo.png.asset.json";
-
-const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 
 export type TenantInfo = {
   id: number;
   name: string;
   logo_url: string | null;
   primary_color: string;
+  theme_key: BrandThemeKey;
   subdomain: string;
 };
 
 /** Public SaaS landing brand (msht.io apex — not a specific complex). */
 export const PLATFORM_BRAND = {
-  name: "msht.io",
-  tagline: "منصة إدارة مجمعات تحفيظ القرآن الكريم",
+  name: "قلائد",
+  tagline: "إدارتك أسهل",
+  subtitle: "منصة إدارة مجمعات تحفيظ القرآن الكريم",
   logoUrl: defaultLogo.url,
   primaryColor: "#1e3a5f",
 };
@@ -23,6 +25,7 @@ export const DEFAULT_TENANT: TenantInfo = {
   name: "مجمع حلقات الشتيوي",
   logo_url: defaultLogo.url,
   primary_color: "#C9A227",
+  theme_key: "beige",
   subdomain: "m1",
 };
 
@@ -30,11 +33,7 @@ let cachedTenant: TenantInfo | null = null;
 let cachedPlatformMode = false;
 
 function apiUrl(path: string): string {
-  if (!API_BASE) {
-    throw new Error("VITE_API_URL is not configured");
-  }
-  const p = path.startsWith("/") ? path : `/${path}`;
-  return `${API_BASE}/api/r.php?path=${encodeURIComponent(p)}`;
+  return buildRphpUrl(path);
 }
 
 export function apexDomain(): string {
@@ -154,17 +153,26 @@ function mixHex(hex: string, amount: number): string {
   return `#${toHex(mix(r))}${toHex(mix(g))}${toHex(mix(b))}`;
 }
 
-export function applyTenantTheme(primaryColor: string): void {
+export function applyTenantTheme(tenant: TenantInfo | Pick<TenantInfo, "primary_color" | "theme_key">): void {
   if (typeof document === "undefined") {
     return;
   }
-  const primary = normalizeHexColor(primaryColor);
+  const theme = getBrandTheme(tenant.theme_key);
+  const primary = normalizeHexColor(tenant.primary_color || theme.primary);
+  const secondary = normalizeHexColor(theme.secondary ?? mixHex(primary, 0.22));
   const light = mixHex(primary, 0.22);
   const root = document.documentElement;
   root.style.setProperty("--primary", primary);
   root.style.setProperty("--ring", primary);
   root.style.setProperty("--gold", primary);
   root.style.setProperty("--tenant-primary", primary);
+
+  const gradientBg = theme.gradient
+    ? `linear-gradient(135deg, ${primary}, ${secondary}, ${primary})`
+    : `linear-gradient(135deg, ${primary}, ${light}, ${primary})`;
+  const textGradient = theme.gradient
+    ? `linear-gradient(135deg, ${primary}, ${secondary})`
+    : `linear-gradient(135deg, ${primary}, ${light})`;
 
   let styleEl = document.getElementById("tenant-theme") as HTMLStyleElement | null;
   if (!styleEl) {
@@ -174,10 +182,10 @@ export function applyTenantTheme(primaryColor: string): void {
   }
   styleEl.textContent = `
     .gold-gradient {
-      background: linear-gradient(135deg, ${primary}, ${light}, ${primary});
+      background: ${gradientBg};
     }
     .gold-text {
-      background: linear-gradient(135deg, ${primary}, ${light});
+      background: ${textGradient};
       -webkit-background-clip: text;
       background-clip: text;
       color: transparent;
@@ -190,14 +198,27 @@ export function applyTenantTheme(primaryColor: string): void {
 }
 
 export function applyPlatformTheme(): void {
-  applyTenantTheme(PLATFORM_BRAND.primaryColor);
+  applyTenantTheme({ primary_color: PLATFORM_BRAND.primaryColor, theme_key: "navy" });
   if (typeof document !== "undefined") {
     document.title = PLATFORM_BRAND.name;
   }
 }
 
-export function tenantLogoUrl(tenant: TenantInfo): string {
-  return tenant.logo_url?.trim() || defaultLogo.url;
+export function tenantLogoUrl(tenant: TenantInfo): string | null {
+  const url = tenant.logo_url?.trim();
+  return url ? url : null;
+}
+
+function parseTenantRow(row: TenantInfo, sub: string): TenantInfo {
+  const themeKey = getBrandTheme(row.theme_key).key;
+  return {
+    id: row.id,
+    name: row.name,
+    logo_url: row.logo_url?.trim() ? row.logo_url.trim() : null,
+    primary_color: row.primary_color || getBrandTheme(themeKey).primary,
+    theme_key: themeKey,
+    subdomain: row.subdomain || sub,
+  };
 }
 
 async function fetchTenantFromApi(subdomain: string): Promise<TenantInfo> {
@@ -219,13 +240,7 @@ async function fetchTenantFromApi(subdomain: string): Promise<TenantInfo> {
     throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
   }
   const row = body as TenantInfo;
-  return {
-    id: row.id,
-    name: row.name,
-    logo_url: row.logo_url,
-    primary_color: row.primary_color || DEFAULT_TENANT.primary_color,
-    subdomain: row.subdomain || sub,
-  };
+  return parseTenantRow(row, sub);
 }
 
 export async function fetchTenantBySubdomain(subdomain: string): Promise<TenantInfo> {
@@ -271,10 +286,37 @@ export async function resolveComplexQuery(query: string): Promise<TenantResolveR
 
 export type ComplexRegisterInput = {
   name: string;
-  subdomain: string;
-  contact_name?: string;
-  contact_phone?: string;
+  subdomain?: string;
+  manager_name: string;
+  contact_phone: string;
+  manager_code: string;
 };
+
+export type NextSubdomainResult = {
+  subdomain: string;
+  url: string;
+};
+
+export async function fetchNextSubdomain(): Promise<NextSubdomainResult> {
+  const res = await fetch(apiUrl("/next-subdomain"));
+  const text = await res.text();
+  let body: unknown = {};
+  if (text) {
+    try {
+      body = JSON.parse(text);
+    } catch {
+      throw new Error("استجابة غير صالحة من الخادم");
+    }
+  }
+  if (!res.ok) {
+    throw new Error((body as { error?: string }).error ?? "تعذّر جلب عضوية المجمع");
+  }
+  const row = body as NextSubdomainResult;
+  return {
+    subdomain: row.subdomain,
+    url: row.url || tenantOrigin(row.subdomain),
+  };
+}
 
 export async function registerNewComplex(input: ComplexRegisterInput): Promise<TenantResolveResult> {
   const res = await fetch(apiUrl("/complex-register"), {
@@ -323,7 +365,7 @@ export function setCachedTenant(tenant: TenantInfo | null, platform = false): vo
     sessionStorage.setItem("qs_tenant_subdomain", tenant.subdomain);
     sessionStorage.setItem("qs_tenant_name", tenant.name);
   }
-  applyTenantTheme(tenant.primary_color);
+  applyTenantTheme(tenant);
   if (typeof document !== "undefined") {
     document.title = tenant.name;
   }

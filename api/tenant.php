@@ -118,3 +118,43 @@ function assert_row_belongs_to_complex(?int $rowComplexId, int $currentComplexId
         error_response('Forbidden', 403);
     }
 }
+
+function table_index_exists(PDO $pdo, string $table, string $indexName): bool
+{
+    $stmt = $pdo->prepare(
+        'SELECT COUNT(*) FROM information_schema.statistics
+         WHERE table_schema = DATABASE() AND table_name = ? AND index_name = ?'
+    );
+    $stmt->execute([$table, $indexName]);
+    return (int) $stmt->fetchColumn() > 0;
+}
+
+function pdo_is_integrity_violation(PDOException $e): bool
+{
+    $sqlState = (string) $e->getCode();
+    if ($sqlState === '23000') {
+        return true;
+    }
+    $info = $e->errorInfo ?? [];
+    return isset($info[0]) && (string) $info[0] === '23000';
+}
+
+function pdo_integrity_error_message(PDOException $e): string
+{
+    $msg = strtolower($e->getMessage());
+
+    if (str_contains($msg, 'uk_complexes_subdomain') || str_contains($msg, 'subdomain')) {
+        return 'رمز المجمع (العضوية) مستخدم — اختر رمزاً آخر أو حدّث الصفحة';
+    }
+    if (str_contains($msg, 'uk_complex_code')) {
+        return 'رقم عضوية المدير مستخدم في هذا المجمع — اختر رقماً مختلفاً';
+    }
+    if (str_contains($msg, 'uk_code')) {
+        return 'رقم عضوية المدير مستخدم مسبقاً — اختر رقماً مختلفاً';
+    }
+    if (str_contains($msg, 'primary') && str_contains($msg, 'duplicate')) {
+        return 'تعذّر إنشاء المجمع — بيانات متعارضة مع سجل موجود';
+    }
+
+    return 'البيانات المدخلة تتعارض مع سجل موجود — تحقق من رمز المجمع ورقم العضوية';
+}

@@ -32,7 +32,6 @@ jobs:
           check "${{ secrets.FTP_PASSWORD }}" "FTP_PASSWORD"
           check "${{ secrets.FTP_SERVER_DIR }}" "FTP_SERVER_DIR"
           check "${{ secrets.FTP_API_DIR }}" "FTP_API_DIR"
-          check "${{ secrets.VITE_API_URL }}" "VITE_API_URL"
           if [ "$missing" -ne 0 ]; then exit 1; fi
           host="${{ secrets.FTP_SERVER }}"
           if echo "$host" | grep -qE '[A-Za-z]'; then
@@ -97,9 +96,7 @@ jobs:
         run: bun install
 
       - name: Build project
-        run: bun run build
-        env:
-          VITE_API_URL: ${{ secrets.VITE_API_URL }}
+        run: bun run build:hostinger
 
       - name: Write deploy marker
         run: echo "${{ github.sha }}" > dist/client/deploy-sha.txt

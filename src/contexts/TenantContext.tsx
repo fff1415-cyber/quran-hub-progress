@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useMemo,
@@ -8,7 +9,10 @@ import {
 } from "react";
 import {
   PLATFORM_BRAND,
+  fetchTenantBySubdomain,
+  parseSubdomain,
   resolveTenantFromHostname,
+  setCachedTenant,
   tenantLogoUrl,
   type TenantInfo,
 } from "@/lib/tenant";
@@ -17,9 +21,11 @@ type TenantContextValue = {
   isPlatform: boolean;
   tenant: TenantInfo | null;
   brandName: string;
-  logoUrl: string;
+  logoUrl: string | null;
   loading: boolean;
   error: string | null;
+  refreshTenant: () => Promise<void>;
+  setTenantState: (tenant: TenantInfo) => void;
 };
 
 const TenantContext = createContext<TenantContextValue | null>(null);
@@ -57,9 +63,25 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  const setTenantState = useCallback((next: TenantInfo) => {
+    setTenant(next);
+    setCachedTenant(next, false);
+  }, []);
+
+  const refreshTenant = useCallback(async () => {
+    const sub =
+      tenant?.subdomain ??
+      (typeof window !== "undefined" ? parseSubdomain(window.location.hostname) : null);
+    if (!sub) {
+      return;
+    }
+    const updated = await fetchTenantBySubdomain(sub);
+    setTenantState(updated);
+  }, [tenant?.subdomain, setTenantState]);
+
   const value = useMemo(() => {
     const brandName = isPlatform ? PLATFORM_BRAND.name : (tenant?.name ?? PLATFORM_BRAND.name);
-    const logoUrl = isPlatform ? PLATFORM_BRAND.logoUrl : tenant ? tenantLogoUrl(tenant) : PLATFORM_BRAND.logoUrl;
+    const logoUrl = isPlatform ? null : tenant ? tenantLogoUrl(tenant) : null;
     return {
       isPlatform,
       tenant,
@@ -67,8 +89,10 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       logoUrl,
       loading,
       error,
+      refreshTenant,
+      setTenantState,
     };
-  }, [isPlatform, tenant, loading, error]);
+  }, [isPlatform, tenant, loading, error, refreshTenant, setTenantState]);
 
   return <TenantContext.Provider value={value}>{children}</TenantContext.Provider>;
 }

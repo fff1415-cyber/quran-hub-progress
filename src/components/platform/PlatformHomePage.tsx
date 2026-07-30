@@ -3,10 +3,10 @@ import { useState } from "react";
 import { Building2, Loader2, Search } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import {
-  PLATFORM_BRAND,
   resolveComplexQuery,
   tenantOrigin,
 } from "@/lib/tenant";
+import { PlatformBrandHeader } from "@/components/platform/PlatformBrandHeader";
 
 export function PlatformHomePage() {
   const [query, setQuery] = useState("");
@@ -40,13 +40,7 @@ export function PlatformHomePage() {
       <div className="absolute top-0 left-1/2 -translate-x-1/2 w-[700px] h-[700px] rounded-full bg-primary/5 blur-3xl pointer-events-none" />
 
       <div className="glass-card rounded-3xl p-8 md:p-12 w-full max-w-lg relative z-10 gold-glow">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-24 h-24 rounded-2xl bg-card border border-primary/15 mb-4 p-2">
-            <img src={PLATFORM_BRAND.logoUrl} alt={PLATFORM_BRAND.name} className="w-full h-full object-contain" />
-          </div>
-          <h1 className="display text-3xl md:text-4xl font-bold gold-text mb-2">{PLATFORM_BRAND.name}</h1>
-          <p className="text-muted-foreground text-sm">{PLATFORM_BRAND.tagline}</p>
-        </div>
+        <PlatformBrandHeader />
 
         <div className="space-y-4">
           <div>

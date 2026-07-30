@@ -45,12 +45,14 @@ function handle_tenant_info(): void
     }
 
     $hasSubdomain = table_column_exists($pdo, 'complexes', 'subdomain');
+    $hasTheme = table_column_exists($pdo, 'complexes', 'theme_key');
 
     if ($hasSubdomain) {
-        $stmt = $pdo->prepare(
-            'SELECT id, name, logo_url, primary_color, subdomain
-             FROM complexes WHERE subdomain = ? LIMIT 1'
-        );
+        $cols = 'id, name, logo_url, primary_color, subdomain';
+        if ($hasTheme) {
+            $cols .= ', theme_key';
+        }
+        $stmt = $pdo->prepare("SELECT $cols FROM complexes WHERE subdomain = ? LIMIT 1");
         $stmt->execute([$sub]);
         $row = $stmt->fetch();
     } else {
@@ -60,10 +62,11 @@ function handle_tenant_info(): void
     }
 
     if (!$row && !$explicit) {
-        $stmt = $pdo->prepare(
-            'SELECT id, name, logo_url, primary_color, subdomain
-             FROM complexes WHERE subdomain = ? LIMIT 1'
-        );
+        $cols = 'id, name, logo_url, primary_color, subdomain';
+        if ($hasTheme) {
+            $cols .= ', theme_key';
+        }
+        $stmt = $pdo->prepare("SELECT $cols FROM complexes WHERE subdomain = ? LIMIT 1");
         $stmt->execute([TENANT_DEFAULT_SUBDOMAIN]);
         $row = $stmt->fetch();
     }
@@ -72,11 +75,16 @@ function handle_tenant_info(): void
         error_response('المجمع غير موجود', 404);
     }
 
+    $themeKey = ($hasTheme && isset($row['theme_key'])) ? (string) $row['theme_key'] : 'navy';
+
     json_response([
         'id' => (int) $row['id'],
         'name' => (string) $row['name'],
-        'logo_url' => $row['logo_url'] !== null ? (string) $row['logo_url'] : null,
-        'primary_color' => (string) ($row['primary_color'] ?? '#C9A227'),
+        'logo_url' => $row['logo_url'] !== null && trim((string) $row['logo_url']) !== ''
+            ? (string) $row['logo_url']
+            : null,
+        'primary_color' => (string) ($row['primary_color'] ?? '#1e3a5f'),
+        'theme_key' => $themeKey,
         'subdomain' => $hasSubdomain ? (string) ($row['subdomain'] ?? TENANT_DEFAULT_SUBDOMAIN) : TENANT_DEFAULT_SUBDOMAIN,
     ]);
 }

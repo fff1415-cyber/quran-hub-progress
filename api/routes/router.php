@@ -13,6 +13,7 @@ require_once __DIR__ . '/evaluation_settings.php';
 require_once __DIR__ . '/health.php';
 require_once __DIR__ . '/tenant_info.php';
 require_once __DIR__ . '/tenant_resolve.php';
+require_once __DIR__ . '/complex_branding.php';
 
 function route_request(string $method, string $path): void
 {
@@ -32,8 +33,28 @@ function route_request(string $method, string $path): void
         handle_tenant_resolve();
         return;
     }
+    if ($path === '/next-subdomain' && $method === 'GET') {
+        handle_next_subdomain();
+        return;
+    }
     if ($path === '/complex-register' && $method === 'POST') {
         handle_complex_register();
+        return;
+    }
+    if ($path === '/complex-branding' && $method === 'GET') {
+        handle_get_complex_branding();
+        return;
+    }
+    if ($path === '/complex-branding' && $method === 'PUT') {
+        handle_put_complex_branding();
+        return;
+    }
+    if ($path === '/complex-branding/logo' && $method === 'POST') {
+        handle_post_complex_branding_logo();
+        return;
+    }
+    if ($path === '/complex-branding/logo' && $method === 'DELETE') {
+        handle_delete_complex_branding_logo();
         return;
     }
     if ($method === 'POST' && $path === '/login/code') {

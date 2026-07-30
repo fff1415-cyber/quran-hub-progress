@@ -11,7 +11,9 @@ CREATE TABLE IF NOT EXISTS `complexes` (
   `name` VARCHAR(255) NOT NULL,
   `subdomain` VARCHAR(50) NOT NULL,
   `logo_url` VARCHAR(512) NULL DEFAULT NULL,
-  `primary_color` VARCHAR(20) NOT NULL DEFAULT '#C9A227',
+  `primary_color` VARCHAR(20) NOT NULL DEFAULT '#1e3a5f',
+  `theme_key` VARCHAR(30) NOT NULL DEFAULT 'navy',
+  `contact_phone` VARCHAR(30) NULL DEFAULT NULL,
   `created_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
   UNIQUE KEY `uk_complexes_subdomain` (`subdomain`)

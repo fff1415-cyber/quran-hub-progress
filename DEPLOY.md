@@ -1,5 +1,15 @@
 # Hostinger deployment
 
+## Build for Hostinger
+
+```bash
+npm run build:hostinger
+```
+
+Uses `.env.hostinger` — **no `VITE_API_URL` required**. The app calls `/api/r.php` on the current domain (`msht.io`, `m1.msht.io`, …).
+
+Upload `dist/client/` to `public_html/` and `api/` to `public_html/api/`.
+
 ## GitHub Secrets
 
 | Secret | Value |
@@ -9,7 +19,7 @@
 | `FTP_PASSWORD` | كلمة مرور **الحساب الرئيسي** (نفس كلمة FTP للدomain الرئيسي) |
 | `FTP_SERVER_DIR` | `/domains/msht.io/public_html/` (يُحوَّل تلقائياً إلى `/home/u112851217/domains/msht.io/public_html/`) |
 | `FTP_API_DIR` | `/domains/msht.io/public_html/api/` |
-| `VITE_API_URL` | `https://msht.io` |
+| `VITE_API_URL` | **اختياري** — للتطوير المحلي فقط (`http://localhost:8080`). على Hostinger اتركه فارغاً؛ التطبيق يستخدم `/api` على نفس الدومين تلقائياً (`m1.msht.io/api`, …). |
 
 فعّل **SSH Access** من hPanel → Advanced → SSH Access.
 

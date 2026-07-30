@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite dev",
     "build": "vite build && node scripts/generate-index.mjs && node scripts/prepare-hostinger-deploy.mjs",
-    "build:hostinger": "npm run build",
+    "build:hostinger": "vite build --mode hostinger && node scripts/generate-index.mjs && node scripts/prepare-hostinger-deploy.mjs && node scripts/verify-hostinger-build.mjs",
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",

@@ -9,6 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { cn } from "@/lib/utils";
 import { loadHalaqat } from "@/lib/mock-data";
 import { useTenant } from "@/contexts/TenantContext";
+import { TenantLogo } from "@/components/TenantLogo";
 
 interface NavItem {
   to: string;
@@ -72,7 +73,12 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
             <SheetContent side="right" className="w-[300px] bg-background border-l border-primary/15 overflow-y-auto">
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-3">
-                  <img src={logoUrl} alt={`شعار ${brandName}`} className="w-12 h-12 object-contain" />
+                  <TenantLogo
+                    logoUrl={logoUrl}
+                    brandName={brandName}
+                    imgClassName="w-12 h-12 object-contain"
+                    placeholderClassName="w-12 h-12"
+                  />
                   <div className="text-right">
                     <div className="display gold-text text-base font-bold">{brandName}</div>
                     {name && <div className="text-xs text-muted-foreground font-normal">{name}</div>}
@@ -163,7 +169,12 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
         </div>
 
         <Link to="/" className="flex items-center gap-2 sm:gap-3 group flex-1 justify-center sm:justify-start">
-          <img src={logoUrl} alt={`شعار ${brandName}`} className="w-10 h-10 sm:w-11 sm:h-11 object-contain" />
+          <TenantLogo
+            logoUrl={logoUrl}
+            brandName={brandName}
+            imgClassName="w-10 h-10 sm:w-11 sm:h-11 object-contain"
+            placeholderClassName="w-10 h-10 sm:w-11 sm:h-11"
+          />
           <div className="text-right">
             <div className="display text-base sm:text-lg font-bold gold-text leading-tight">{brandName}</div>
             {subtitle && <div className="text-[11px] text-muted-foreground leading-tight">{subtitle}</div>}

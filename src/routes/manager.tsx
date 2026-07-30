@@ -13,13 +13,14 @@ import { AdminOverviewPanel } from "@/components/role-workspace/AdminOverviewPan
 import { ManagerTransfersPanel } from "@/components/role-workspace/ManagerTransfersPanel";
 import { ManagerRecordsPanel } from "@/components/role-workspace/ManagerRecordsPanel";
 import { ManagerSettingsPanel } from "@/components/role-workspace/ManagerSettingsPanel";
+import { ManagerBrandingPanel } from "@/components/role-workspace/ManagerBrandingPanel";
 import { ManagerEvaluationSettingsPanel } from "@/components/role-workspace/ManagerEvaluationSettingsPanel";
 import { ManagerHalaqaFieldsPanel } from "@/components/role-workspace/ManagerHalaqaFieldsPanel";
 import { ManagerWeeklyTestsSettingsPanel } from "@/components/ManagerWeeklyTestsSettingsPanel";
 import { ManagerStaffAttendancePanel } from "@/components/ManagerStaffAttendancePanel";
 import { WeeklyTestsOverviewPanel } from "@/components/WeeklyTestsOverviewPanel";
 import {
-  Crown, CalendarDays, ClipboardList, Send, BarChart3, FolderArchive, MessageSquare, LayoutDashboard, Scale, Columns3, ClipboardCheck, UserCheck,
+  Crown, CalendarDays, ClipboardList, Send, BarChart3, FolderArchive, MessageSquare, LayoutDashboard, Scale, Columns3, ClipboardCheck, UserCheck, Palette,
 } from "lucide-react";
 import { Toaster } from "sonner";
 
@@ -126,6 +127,13 @@ function ManagerPage() {
           <WeeklyTestsOverviewPanel />
         </div>
       ),
+    },
+    {
+      id: "branding",
+      label: "هوية المجمع",
+      icon: Palette,
+      roles: ["manager"],
+      content: <ManagerBrandingPanel />,
     },
     {
       id: "evaluation-settings",

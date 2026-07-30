@@ -5,6 +5,7 @@ import { setToken, syncFromCloud } from "@/lib/cloud-sync";
 import { Shield, UserCheck, GraduationCap, Mic, Eye, Loader2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { useTenant } from "@/contexts/TenantContext";
+import { TenantLogo } from "@/components/TenantLogo";
 
 type LoginMode = "staff" | "student";
 
@@ -100,7 +101,12 @@ export function TenantLoginPage() {
       <div className="glass-card rounded-3xl p-8 md:p-12 w-full max-w-xl relative z-10 gold-glow">
         <div className="text-center mb-8">
           <div className="inline-flex items-center justify-center w-28 h-28 rounded-2xl bg-card border border-primary/15 mb-4 gold-glow p-2">
-            <img src={logoUrl} alt={`شعار ${brandName}`} className="w-full h-full object-contain" />
+            <TenantLogo
+              logoUrl={logoUrl}
+              brandName={brandName}
+              imgClassName="w-full h-full object-contain"
+              placeholderClassName="w-full h-full border-0 bg-transparent"
+            />
           </div>
           <h1 className="display text-3xl md:text-4xl font-bold gold-text mb-2">{brandName}</h1>
           <p className="text-muted-foreground text-sm">لتحفيظ القرآن الكريم</p>

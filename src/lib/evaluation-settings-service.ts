@@ -1,19 +1,12 @@
+import { buildRphpUrl } from "@/lib/api-base";
 import type { EvaluationSettings } from "@/lib/evaluation-types";
 import { DEFAULT_EVALUATION_SETTINGS } from "@/lib/evaluation-types";
 import { getToken } from "@/lib/cloud-sync";
 
-const API_BASE = (import.meta.env.VITE_API_URL ?? "").replace(/\/$/, "");
 const KEY_LOCAL = "qshatawi_evaluation_settings_v1";
 
 function apiUrl(path: string): string {
-  if (!API_BASE) throw new Error("VITE_API_URL is not configured");
-  const qIndex = path.indexOf("?");
-  const pathname = qIndex >= 0 ? path.slice(0, qIndex) : path;
-  const query = qIndex >= 0 ? path.slice(qIndex + 1) : "";
-  const p = pathname.startsWith("/") ? pathname : `/${pathname}`;
-  let url = `${API_BASE}/api/r.php?path=${encodeURIComponent(p)}`;
-  if (query) url += `&${query}`;
-  return url;
+  return buildRphpUrl(path);
 }
 
 function readLocal(): EvaluationSettings {

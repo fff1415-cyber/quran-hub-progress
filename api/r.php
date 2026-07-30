@@ -31,6 +31,14 @@ require_once __DIR__ . '/routes/router.php';
 $method = $_SERVER['REQUEST_METHOD'];
 $uri = (string) ($_GET['path'] ?? '/');
 if (($qi = strpos($uri, '?')) !== false) {
+    parse_str(substr($uri, $qi + 1), $pathQuery);
+    if (is_array($pathQuery)) {
+        foreach ($pathQuery as $key => $value) {
+            if (!isset($_GET[$key])) {
+                $_GET[$key] = $value;
+            }
+        }
+    }
     $uri = substr($uri, 0, $qi);
 }
 if ($uri === '' || $uri[0] !== '/') {

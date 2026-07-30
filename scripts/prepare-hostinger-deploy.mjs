@@ -53,7 +53,7 @@ ${subdomains.map((s) => `- dist/hostinger-subdomains/${s}/  →  /domains/${s}.m
 
 After upload, **delete default.php** in each subdomain folder.
 
-API stays at https://msht.io/api/ (VITE_API_URL=https://msht.io).
+API uses same-origin /api on each host (msht.io, m1.msht.io, …). VITE_API_URL is optional.
 
 ## SFTP sync (SSH port 65002)
 
