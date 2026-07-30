@@ -60,14 +60,17 @@ export function CustomFieldSelect({
   value,
   options,
   onChange,
+  disabled,
 }: {
   value: string;
   options: string[];
   onChange: (v: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <select
       value={value}
+      disabled={disabled}
       onChange={(e) => onChange(e.target.value)}
       className={gradeCellSelectClass}
       title={options.join(" · ")}

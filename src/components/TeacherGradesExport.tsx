@@ -7,7 +7,6 @@ import {
   downloadTeacherGradesWorkbook,
   weeksInExportRange,
 } from "@/lib/grades-export-utils";
-import { loadHalaqaCustomFields } from "@/lib/halaqa-custom-fields";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { Download, FileSpreadsheet } from "lucide-react";
 import { toast } from "sonner";
@@ -89,7 +88,6 @@ export function TeacherGradesExport({
       fromDate,
       toDate,
       isTalqeen,
-      loadHalaqaCustomFields(halaqaId),
     );
     toast.success(`تم تصدير ${students.length} طالب — ${weekPreview.length} أسبوع`);
     setOpen(false);

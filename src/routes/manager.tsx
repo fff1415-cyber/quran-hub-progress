@@ -15,12 +15,12 @@ import { ManagerRecordsPanel } from "@/components/role-workspace/ManagerRecordsP
 import { ManagerSettingsPanel } from "@/components/role-workspace/ManagerSettingsPanel";
 import { ManagerBrandingPanel } from "@/components/role-workspace/ManagerBrandingPanel";
 import { ManagerEvaluationSettingsPanel } from "@/components/role-workspace/ManagerEvaluationSettingsPanel";
-import { ManagerHalaqaFieldsPanel } from "@/components/role-workspace/ManagerHalaqaFieldsPanel";
+import { ManagerHalaqaProgramsViewPanel } from "@/components/role-workspace/ManagerHalaqaProgramsViewPanel";
 import { ManagerWeeklyTestsSettingsPanel } from "@/components/ManagerWeeklyTestsSettingsPanel";
 import { ManagerStaffAttendancePanel } from "@/components/ManagerStaffAttendancePanel";
 import { WeeklyTestsOverviewPanel } from "@/components/WeeklyTestsOverviewPanel";
 import {
-  Crown, CalendarDays, ClipboardList, Send, BarChart3, FolderArchive, MessageSquare, LayoutDashboard, Scale, Columns3, ClipboardCheck, UserCheck, Palette,
+  Crown, CalendarDays, ClipboardList, Send, BarChart3, FolderArchive, MessageSquare, LayoutDashboard, Scale, ClipboardCheck, UserCheck, Palette, BookOpen,
 } from "lucide-react";
 import { Toaster } from "sonner";
 
@@ -103,11 +103,11 @@ function ManagerPage() {
       content: <ManagerRecordsPanel />,
     },
     {
-      id: "halaqa-fields",
-      label: "أعمدة الحلقات",
-      icon: Columns3,
+      id: "halaqa-programs",
+      label: "برامج الحلقات",
+      icon: BookOpen,
       roles: ["manager"],
-      content: <ManagerHalaqaFieldsPanel />,
+      content: <ManagerHalaqaProgramsViewPanel />,
     },
     {
       id: "staff-attendance",

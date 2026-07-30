@@ -20,14 +20,13 @@ import { AppHeader } from "@/components/AppHeader";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Bell, Check, CheckCircle2, ClipboardList, ClipboardCheck, Loader2, Send, Users, X } from "lucide-react";
+import { Bell, Check, CheckCircle2, ClipboardList, ClipboardCheck, BookOpen, Loader2, Send, Users, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { applyPlanInput, fetchStudentPlanSheet } from "@/lib/plans-service";
 import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
-import { AttSelect, CustomFieldSelect } from "@/components/plans/TeacherGradeInputs";
-import { loadHalaqaCustomFields } from "@/lib/halaqa-custom-fields";
+import { AttSelect } from "@/components/plans/TeacherGradeInputs";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -40,6 +39,7 @@ import {
 import { TeacherGradesExport } from "@/components/TeacherGradesExport";
 import { StaffAttendanceCheckInButton } from "@/components/StaffAttendanceCheckInButton";
 import { TeacherWeeklyTestsPanel } from "@/components/TeacherWeeklyTestsPanel";
+import { TeacherHalaqaProgramsPanel } from "@/components/TeacherHalaqaProgramsPanel";
 import { ensureWeeklyTestsSemester } from "@/lib/weekly-tests";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
@@ -47,7 +47,7 @@ export const Route = createFileRoute("/teacher")({
   validateSearch: z.object({
     h: z.number().optional(),
     w: z.number().optional(),
-    view: z.enum(["grades", "tests"]).optional(),
+    view: z.enum(["grades", "tests", "programs"]).optional(),
   }),
   component: TeacherPage,
 });
@@ -102,11 +102,14 @@ function TeacherPage() {
     }
   };
 
-  const setView = (next: "grades" | "tests") => {
+  const setView = (next: "grades" | "tests" | "programs") => {
     if (halaqa) {
       navigate({ to: "/teacher", search: { h: halaqa.id, w: selectedWeek ?? undefined, view: next } });
     }
   };
+
+  const canManagePrograms = role === "teacher";
+  const programsReadOnly = role === "manager";
 
   if (!halaqa) {
     return (
@@ -168,10 +171,13 @@ function TeacherPage() {
             <p className="text-sm">جاري تحميل التقويم الدراسي...</p>
           </div>
         ) : (
-          <Tabs value={view} onValueChange={(v) => setView(v as "grades" | "tests")} dir="rtl">
-            <TabsList className="w-full sm:w-auto h-auto flex gap-1 p-1 mb-4 bg-secondary/50 border border-border rounded-xl">
+          <Tabs value={view} onValueChange={(v) => setView(v as "grades" | "tests" | "programs")} dir="rtl">
+            <TabsList className="w-full sm:w-auto h-auto flex flex-wrap gap-1 p-1 mb-4 bg-secondary/50 border border-border rounded-xl">
               <TabsTrigger value="grades" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 <ClipboardList className="w-4 h-4" /> التحضير والدرجات
+              </TabsTrigger>
+              <TabsTrigger value="programs" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <BookOpen className="w-4 h-4" /> برنامج الحلقة
               </TabsTrigger>
               <TabsTrigger value="tests" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 <ClipboardCheck className="w-4 h-4" /> الاختبارات الأسبوعية
@@ -186,6 +192,18 @@ function TeacherPage() {
                 isTalqeen={halaqa.isTalqeen}
                 viewerRole={isAssistant ? "assistant" : "teacher"}
                 canAssign={!isAssistant}
+              />
+            </TabsContent>
+            <TabsContent value="programs" className="mt-0">
+              <TeacherHalaqaProgramsPanel
+                halaqaId={halaqa.id}
+                halaqaName={halaqa.name}
+                calendar={calendar}
+                weekNum={selectedWeek}
+                onWeekChange={handleWeekChange}
+                viewerRole={isAssistant ? "assistant" : isManager ? "manager" : "teacher"}
+                canManagePrograms={canManagePrograms}
+                readOnly={programsReadOnly}
               />
             </TabsContent>
             <TabsContent value="tests" className="mt-0">
@@ -273,14 +291,12 @@ interface WeekTableProps {
   canAssign: boolean;
 }
 
-/** Fixed pixel widths — core day columns stay constant when custom fields are added. */
 const GRADE_COL = {
   student: 140,
   attendance: 72,
   hifz: 48,
   passFail: 56,
   wajib: 44,
-  custom: 80,
   sard: 48,
   weekPct: 72,
   semesterPct: 80,
@@ -292,7 +308,6 @@ const GRADE_CELL_W = {
   hifz: "w-12 max-w-12",
   pf: "w-14 max-w-14",
   wajib: "w-11 max-w-11",
-  custom: "w-20 max-w-20",
   sard: "w-12 max-w-12",
   weekPct: "w-[72px] max-w-[72px]",
   semesterPct: "w-20 max-w-20",
@@ -300,10 +315,10 @@ const GRADE_CELL_W = {
   student: "w-[140px] max-w-[140px]",
 } as const;
 
-function gradeTableWidthPx(dayCount: number, customCount: number, isTalqeen: boolean): number {
+function gradeTableWidthPx(dayCount: number, isTalqeen: boolean): number {
   const perDay = isTalqeen
-    ? GRADE_COL.attendance + GRADE_COL.wajib + customCount * GRADE_COL.custom
-    : GRADE_COL.attendance + GRADE_COL.hifz + GRADE_COL.passFail * 2 + customCount * GRADE_COL.custom;
+    ? GRADE_COL.attendance + GRADE_COL.wajib
+    : GRADE_COL.attendance + GRADE_COL.hifz + GRADE_COL.passFail * 2;
   return (
     GRADE_COL.student
     + dayCount * perDay
@@ -316,22 +331,14 @@ function gradeTableWidthPx(dayCount: number, customCount: number, isTalqeen: boo
 
 function GradeTableColGroup({
   dayCount,
-  customCount,
   isTalqeen,
 }: {
   dayCount: number;
-  customCount: number;
   isTalqeen: boolean;
 }) {
   const dayCols = isTalqeen
-    ? [GRADE_COL.attendance, GRADE_COL.wajib, ...Array(customCount).fill(GRADE_COL.custom)]
-    : [
-        GRADE_COL.attendance,
-        GRADE_COL.hifz,
-        GRADE_COL.passFail,
-        GRADE_COL.passFail,
-        ...Array(customCount).fill(GRADE_COL.custom),
-      ];
+    ? [GRADE_COL.attendance, GRADE_COL.wajib]
+    : [GRADE_COL.attendance, GRADE_COL.hifz, GRADE_COL.passFail, GRADE_COL.passFail];
 
   return (
     <colgroup>
@@ -356,9 +363,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     ? allStudents.filter((s) => s.assignedTo !== "teacher")
     : allStudents.filter((s) => s.assignedTo !== "assistant");
   const [grades, setGrades] = useState(() => loadGrades());
-  const customFields = useMemo(() => loadHalaqaCustomFields(halaqaId), [halaqaId]);
   const baseDayCols = isTalqeen ? 2 : 4;
-  const dayColSpan = baseDayCols + customFields.length;
+  const dayColSpan = baseDayCols;
   const [transferFor, setTransferFor] = useState<Student | null>(null);
   const [transferReason, setTransferReason] = useState("");
   const [showAssign, setShowAssign] = useState(false);
@@ -540,40 +546,10 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     </button>
   );
 
-  const updateCustomField = (studentId: string, dayKey: string, fieldId: string, value: string) => {
-    update(studentId, (w) => {
-      const prev = w.days[dayKey] ?? emptyWeek().days[dayKey];
-      const custom = { ...(prev.custom ?? {}) };
-      if (value) custom[fieldId] = value;
-      else delete custom[fieldId];
-      return {
-        ...w,
-        days: {
-          ...w.days,
-          [dayKey]: {
-            ...prev,
-            custom: Object.keys(custom).length > 0 ? custom : undefined,
-          },
-        },
-      };
-    });
-  };
-
   const tableWidthPx = useMemo(
-    () => gradeTableWidthPx(visibleDays.length, customFields.length, isTalqeen),
-    [visibleDays.length, customFields.length, isTalqeen],
+    () => gradeTableWidthPx(visibleDays.length, isTalqeen),
+    [visibleDays.length, isTalqeen],
   );
-
-  const renderCustomCells = (s: Student, dayKey: string, entry: DayEntry) =>
-    customFields.map((f) => (
-      <td key={f.id} className={dayCellClass(dayKey, GRADE_CELL_W.custom)}>
-        <CustomFieldSelect
-          value={entry.custom?.[f.id] ?? ""}
-          options={f.options}
-          onChange={(v) => updateCustomField(s.id, dayKey, f.id, v)}
-        />
-      </td>
-    ));
 
   const toggleSard = (s: Student, on: boolean) => {
     update(s.id, (w) => ({ ...w, sard: on }));
@@ -659,7 +635,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       >
         <GradeTableColGroup
           dayCount={visibleDays.length}
-          customCount={customFields.length}
           isTalqeen={isTalqeen}
         />
         <thead>
@@ -686,15 +661,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                     <span className="block">حاضر</span>
                   </th>
                   <th className={subHeaderClass(d.key, GRADE_CELL_W.wajib)}>واجب</th>
-                  {customFields.map((f) => (
-                    <th
-                      key={f.id}
-                      className={cn(subHeaderClass(d.key, GRADE_CELL_W.custom), "text-primary/80 truncate")}
-                      title={f.label}
-                    >
-                      <span className="block truncate">{f.label}</span>
-                    </th>
-                  ))}
                 </React.Fragment>
               ) : (
                 <React.Fragment key={d.key}>
@@ -705,15 +671,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                   <th className={subHeaderClass(d.key, GRADE_CELL_W.hifz)}>حفظ</th>
                   <th className={subHeaderClass(d.key, GRADE_CELL_W.pf)}>ربط</th>
                   <th className={subHeaderClass(d.key, GRADE_CELL_W.pf)}>مراجعة</th>
-                  {customFields.map((f) => (
-                    <th
-                      key={f.id}
-                      className={cn(subHeaderClass(d.key, GRADE_CELL_W.custom), "text-primary/80 truncate")}
-                      title={f.label}
-                    >
-                      <span className="block truncate">{f.label}</span>
-                    </th>
-                  ))}
                 </React.Fragment>
               )
             )}
@@ -756,7 +713,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                       <td className={cn("p-1 text-center", GRADE_CELL_W.wajib, highlightDay(d.key) && "bg-muted/60")}>
                         <Cbx checked={!!e.wajib} onChange={(v) => updateDay(s.id, d.key, { wajib: v })} />
                       </td>
-                      {renderCustomCells(s, d.key, e)}
                     </React.Fragment>
                   ) : (
                     <React.Fragment key={d.key}>
@@ -799,7 +755,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           onPlanPassFailChange={(v) => void handlePlanPassFail(s, d.key, "muraja", v)}
                         />
                       </td>
-                      {renderCustomCells(s, d.key, e)}
                     </React.Fragment>
                   );
                 })}

@@ -12,7 +12,6 @@ import type { AcademicCalendar, AcademicWeekRow } from "@/lib/academic-context";
 import { getSelectableWeeks, resolveWeekForDate } from "@/lib/academic-context";
 import { isoDateToDayKey } from "@/lib/operational-date";
 import { weekLabel } from "@/lib/arabic-numbers";
-import type { HalaqaCustomField } from "@/lib/halaqa-custom-fields";
 import { semesterOverallPercentage, semesterComponentPercentages, studentWeekOverallPercentage } from "@/lib/semester-grading";
 import * as XLSX from "xlsx";
 
@@ -204,33 +203,6 @@ export function countPassedSardInRange(studentId: string, fromIso: string, toIso
   return seen.size;
 }
 
-function latestCustomFieldValues(
-  studentGrades: GradesStore[string] | undefined,
-  calendar: AcademicCalendar,
-  weekNums: number[],
-  fromIso: string,
-  toIso: string,
-  customFields: HalaqaCustomField[],
-): Record<string, string> {
-  const out: Record<string, string> = {};
-  if (!studentGrades || customFields.length === 0) return out;
-
-  const cappedTo = clampToToday(calendar, toIso);
-  for (const wn of weekNums) {
-    const week = studentGrades[wn];
-    if (!week) continue;
-    eachDayInWeekPeriod(calendar, wn, fromIso, cappedTo, (dayKey) => {
-      const e = week.days[dayKey];
-      if (!e?.custom) return;
-      customFields.forEach((f) => {
-        const v = e.custom?.[f.id];
-        if (v) out[f.id] = v;
-      });
-    });
-  }
-  return out;
-}
-
 export function buildTeacherGradesWorkbook(
   students: Student[],
   halaqaName: string,
@@ -238,7 +210,6 @@ export function buildTeacherGradesWorkbook(
   fromIso: string,
   toIso: string,
   isTalqeen: boolean,
-  customFields: HalaqaCustomField[] = [],
 ): XLSX.WorkBook {
   const grades = loadGrades();
   const cappedTo = clampToToday(calendar, toIso);
@@ -254,25 +225,23 @@ export function buildTeacherGradesWorkbook(
           "الطالب", "المستوى", "النوع",
           "نسبة الحضور %", "نسبة الواجب %",
           "نسبة الأسبوع %", "النسبة الكلية %",
-          "سرد مجتاز", ...customFields.map((f) => f.label), "الأسابيع المشمولة",
+          "سرد مجتاز", "الأسابيع المشمولة",
         ]
       : [
           "الطالب", "المستوى", "النوع",
           "نسبة الحضور %", "نسبة الحفظ %", "نسبة المراجعة %", "نسبة الربط %",
           "نسبة الأسبوع %", "النسبة الكلية %",
-          "سرد مجتاز", ...customFields.map((f) => f.label), "الأسابيع المشمولة",
+          "سرد مجتاز", "الأسابيع المشمولة",
         ],
   ];
 
   students.forEach((s) => {
     const row = aggregateStudentPeriod(s, grades, calendar, weekNums, fromIso, cappedTo, isTalqeen);
     const weeksLabel = weekNums.map((w) => weekLabel(w)).join("، ");
-    const customVals = latestCustomFieldValues(grades[s.id], calendar, weekNums, fromIso, cappedTo, customFields);
-    const customCols = customFields.map((f) => customVals[f.id] ?? "—");
     if (!row) {
       const empty = isTalqeen
-        ? [s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي", 0, 0, 0, 0, 0, ...customCols, weeksLabel]
-        : [s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي", 0, 0, 0, 0, 0, 0, 0, ...customCols, weeksLabel];
+        ? [s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي", 0, 0, 0, 0, 0, weeksLabel]
+        : [s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي", 0, 0, 0, 0, 0, 0, 0, weeksLabel];
       summary.push(empty);
       return;
     }
@@ -282,20 +251,20 @@ export function buildTeacherGradesWorkbook(
             s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي",
             row.attendancePercent, row.wajibPercent,
             row.weekPercent, row.overallPercent,
-            row.sardPassed, ...customCols, weeksLabel,
+            row.sardPassed, weeksLabel,
           ]
         : [
             s.name, s.level, s.levelType === "gold" ? "ذهبي" : "فضي",
             row.attendancePercent, row.hifzPercent, row.murajaPercent, row.rabtPercent,
             row.weekPercent, row.overallPercent,
-            row.sardPassed, ...customCols, weeksLabel,
+            row.sardPassed, weeksLabel,
           ],
     );
   });
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "ملخص الطلاب");
 
   const daily: (string | number)[][] = [
-    ["الطالب", "الأسبوع", "اليوم", "التاريخ", "الحضور", "الحفظ", "الربط", "المراجعة", ...customFields.map((f) => f.label)],
+    ["الطالب", "الأسبوع", "اليوم", "التاريخ", "الحضور", "الحفظ", "الربط", "المراجعة"],
   ];
   students.forEach((s) => {
     const studentGrades = grades[s.id];
@@ -306,8 +275,7 @@ export function buildTeacherGradesWorkbook(
       eachDayInWeekPeriod(calendar, wn, fromIso, cappedTo, (dayKey, isoDate) => {
         const e = week.days[dayKey];
         if (!e) return;
-        const hasCustom = customFields.some((f) => e.custom?.[f.id]);
-        if (!e.attendance && !e.hifz && !e.rabt && !e.muraja && !hasCustom) return;
+        if (!e.attendance && !e.hifz && !e.rabt && !e.muraja) return;
         const dayLabel = DAYS.find((d) => d.key === dayKey)?.label ?? dayKey;
         daily.push([
           s.name, weekLabel(wn), dayLabel, isoDate ?? "—",
@@ -315,7 +283,6 @@ export function buildTeacherGradesWorkbook(
           HIFZ_LABELS[e.hifz] || "—",
           e.rabt === "pass" ? "✓" : e.rabt === "fail" ? "✗" : "—",
           e.muraja === "pass" ? "✓" : e.muraja === "fail" ? "✗" : "—",
-          ...customFields.map((f) => e.custom?.[f.id] ?? "—"),
         ]);
       });
     }
@@ -340,9 +307,8 @@ export function downloadTeacherGradesWorkbook(
   fromIso: string,
   toIso: string,
   isTalqeen: boolean,
-  customFields: HalaqaCustomField[] = [],
 ): void {
-  const wb = buildTeacherGradesWorkbook(students, halaqaName, calendar, fromIso, toIso, isTalqeen, customFields);
+  const wb = buildTeacherGradesWorkbook(students, halaqaName, calendar, fromIso, toIso, isTalqeen);
   const cappedTo = clampToToday(calendar, toIso);
   const safeName = halaqaName.replace(/[^\w\u0600-\u06FF-]+/g, "_");
   XLSX.writeFile(wb, `درجات_${safeName}_${fromIso}_${cappedTo}.xlsx`);
