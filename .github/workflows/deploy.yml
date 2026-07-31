@@ -59,9 +59,14 @@ jobs:
           echo "frontend=$front" >> "$GITHUB_OUTPUT"
           echo "api=$api" >> "$GITHUB_OUTPUT"
           echo "ssh_user=$user" >> "$GITHUB_OUTPUT"
+          echo "m1_frontend=/home/${user}/domains/m1.msht.io/public_html/" >> "$GITHUB_OUTPUT"
+          echo "m1_api=/home/${user}/domains/m1.msht.io/public_html/api/" >> "$GITHUB_OUTPUT"
+          echo "m2_frontend=/home/${user}/domains/m2.msht.io/public_html/" >> "$GITHUB_OUTPUT"
+          echo "m2_api=/home/${user}/domains/m2.msht.io/public_html/api/" >> "$GITHUB_OUTPUT"
           echo "Frontend path: $front"
           echo "API path: $api"
           echo "SSH user: $user"
+          echo "m1 frontend: /home/${user}/domains/m1.msht.io/public_html/"
 
       - name: Test server connectivity
         run: |
@@ -185,6 +190,83 @@ jobs:
           echo "::error::API deploy failed. Same FTP secrets as frontend — see Ensure frontend deployed step."
           exit 1
 
+      # Hostinger subdomains (m1.msht.io, m2.msht.io) have separate document roots — sync SPA + API there too
+      - name: Sync m1 subdomain frontend (SFTP)
+        id: sftp_m1_frontend
+        continue-on-error: true
+        if: steps.sftp_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success'
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
+        with:
+          username: ${{ steps.paths.outputs.ssh_user }}
+          server: ${{ secrets.FTP_SERVER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ env.SSH_PORT }}
+          local_path: ./dist/hostinger-subdomains/m1/
+          remote_path: ${{ steps.paths.outputs.m1_frontend }}
+          sftp_only: true
+          sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
+          rsyncArgs: "--delete"
+
+      - name: Sync m1 subdomain API (SFTP)
+        id: sftp_m1_api
+        continue-on-error: true
+        if: steps.sftp_api.outcome == 'success' || steps.ftps_api.outcome == 'success'
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
+        with:
+          username: ${{ steps.paths.outputs.ssh_user }}
+          server: ${{ secrets.FTP_SERVER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ env.SSH_PORT }}
+          local_path: ./api/
+          remote_path: ${{ steps.paths.outputs.m1_api }}
+          sftp_only: true
+          sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
+          rsyncArgs: "--exclude=config.php"
+
+      - name: Sync m2 subdomain frontend (SFTP)
+        id: sftp_m2_frontend
+        continue-on-error: true
+        if: steps.sftp_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success'
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
+        with:
+          username: ${{ steps.paths.outputs.ssh_user }}
+          server: ${{ secrets.FTP_SERVER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ env.SSH_PORT }}
+          local_path: ./dist/hostinger-subdomains/m2/
+          remote_path: ${{ steps.paths.outputs.m2_frontend }}
+          sftp_only: true
+          sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
+          rsyncArgs: "--delete"
+
+      - name: Sync m2 subdomain API (SFTP)
+        id: sftp_m2_api
+        continue-on-error: true
+        if: steps.sftp_api.outcome == 'success' || steps.ftps_api.outcome == 'success'
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
+        with:
+          username: ${{ steps.paths.outputs.ssh_user }}
+          server: ${{ secrets.FTP_SERVER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ env.SSH_PORT }}
+          local_path: ./api/
+          remote_path: ${{ steps.paths.outputs.m2_api }}
+          sftp_only: true
+          sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
+          rsyncArgs: "--exclude=config.php"
+
+      - name: Subdomain deploy summary
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "m1 frontend: ${{ steps.sftp_m1_frontend.outcome || 'skipped' }}"
+          echo "m1 api: ${{ steps.sftp_m1_api.outcome || 'skipped' }}"
+          echo "m2 frontend: ${{ steps.sftp_m2_frontend.outcome || 'skipped' }}"
+          echo "m2 api: ${{ steps.sftp_m2_api.outcome || 'skipped' }}"
+          if [ "${{ steps.sftp_m1_frontend.outcome }}" = "failure" ]; then
+            echo "::warning::m1.msht.io sync failed — set subdomain docroot to msht.io/public_html in hPanel, or upload dist/hostinger-subdomains/m1/ manually"
+          fi
+
       - name: Verify live deploy
         if: steps.sftp_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success'
         continue-on-error: true
@@ -202,6 +284,14 @@ jobs:
             CURL_EXIT=$?
             if [ "$CURL_EXIT" -eq 0 ] && [ "$LIVE" = "$EXPECTED" ]; then
               echo "Deploy verified on msht.io (commit ${EXPECTED:0:7})"
+              if echo "$SERVER_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+                M1=$(curl -fsS --resolve "m1.msht.io:443:${SERVER_IP}" "https://m1.msht.io/deploy-sha.txt" 2>/dev/null)
+                if [ "$M1" = "$EXPECTED" ]; then
+                  echo "Deploy verified on m1.msht.io (commit ${EXPECTED:0:7})"
+                else
+                  echo "::warning::m1.msht.io/deploy-sha.txt='${M1:-}' (expected ${EXPECTED:0:7}…) — check subdomain docroot in hPanel"
+                fi
+              fi
               exit 0
             fi
             if [ "$CURL_EXIT" -eq 6 ]; then
