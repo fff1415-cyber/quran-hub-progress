@@ -31,6 +31,7 @@ interface Props {
   calendar: AcademicCalendar;
   grades: GradesStore;
   weekReport: StudentWeekReport;
+  semesterOverall: number;
   todayStatus: string;
   planData: StudentPlanSheetData | null;
   planLoading: boolean;
@@ -43,6 +44,7 @@ export function StudentPortalPersonalSection({
   calendar,
   grades,
   weekReport,
+  semesterOverall,
   todayStatus,
   planData,
   planLoading,
@@ -93,8 +95,9 @@ export function StudentPortalPersonalSection({
         <div className="mt-4 p-4 rounded-xl bg-secondary/30 border border-border">
           <StudentWeeklyPercentSummary
             report={weekReport}
+            semesterOverall={semesterOverall}
             isTalqeen={halaqa.isTalqeen}
-            weekLabel={weekLabel(weekReport.weekNumber)}
+            weekLabelText={`${weekLabel(weekReport.weekNumber)} — تفصيل نسب هذا الأسبوع`}
           />
         </div>
       )}

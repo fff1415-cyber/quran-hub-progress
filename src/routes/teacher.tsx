@@ -20,7 +20,7 @@ import { AppHeader } from "@/components/AppHeader";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Bell, Check, CheckCircle2, ClipboardList, ClipboardCheck, BookOpen, Loader2, Send, Users, X } from "lucide-react";
+import { Bell, Check, CheckCircle2, ClipboardList, ClipboardCheck, BookOpen, Loader2, Send, Users, X, Sparkles } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { applyPlanInput, fetchStudentPlanSheet } from "@/lib/plans-service";
 import { checkAndHandlePlanCompletion } from "@/lib/plan-completion";
@@ -42,14 +42,16 @@ import { TeacherGradesExport } from "@/components/TeacherGradesExport";
 import { StaffAttendanceCheckInButton } from "@/components/StaffAttendanceCheckInButton";
 import { TeacherWeeklyTestsPanel } from "@/components/TeacherWeeklyTestsPanel";
 import { TeacherHalaqaProgramsPanel } from "@/components/TeacherHalaqaProgramsPanel";
+import { TeacherTarbawiPanel } from "@/components/tarbawi/TeacherTarbawiPanel";
 import { ensureWeeklyTestsSemester } from "@/lib/weekly-tests";
+import { ensureTarbawiSemester } from "@/lib/tarbawi-program";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export const Route = createFileRoute("/teacher")({
   validateSearch: z.object({
     h: z.number().optional(),
     w: z.number().optional(),
-    view: z.enum(["grades", "tests", "programs"]).optional(),
+    view: z.enum(["grades", "tests", "programs", "tarbawi"]).optional(),
   }),
   component: TeacherPage,
 });
@@ -79,8 +81,10 @@ function TeacherPage() {
         if (cancelled) return;
         const reset = ensureGradesSemester(cal.semester?.id ?? null);
         const testsReset = ensureWeeklyTestsSemester(cal.semester?.id ?? null);
+        const tarbawiReset = ensureTarbawiSemester(cal.semester?.id ?? null);
         if (reset) toast.info("بدء فصل دراسي جديد — تم تصفير سجل التحضير");
         if (testsReset) toast.info("بدء فصل دراسي جديد — تم تصفير الاختبارات الأسبوعية");
+        if (tarbawiReset) toast.info("بدء فصل دراسي جديد — تم تصفير البرنامج التربوي");
         setCalendar(cal);
         const selectable = cal.weeks.filter((wk) => wk.week_number <= cal.currentWeekNumber);
         const fromUrl = w && selectable.some((wk) => wk.week_number === w) ? w : null;
@@ -104,7 +108,7 @@ function TeacherPage() {
     }
   };
 
-  const setView = (next: "grades" | "tests" | "programs") => {
+  const setView = (next: "grades" | "tests" | "programs" | "tarbawi") => {
     if (halaqa) {
       navigate({ to: "/teacher", search: { h: halaqa.id, w: selectedWeek ?? undefined, view: next } });
     }
@@ -173,13 +177,16 @@ function TeacherPage() {
             <p className="text-sm">جاري تحميل التقويم الدراسي...</p>
           </div>
         ) : (
-          <Tabs value={view} onValueChange={(v) => setView(v as "grades" | "tests" | "programs")} dir="rtl">
+          <Tabs value={view} onValueChange={(v) => setView(v as "grades" | "tests" | "programs" | "tarbawi")} dir="rtl">
             <TabsList className="w-full sm:w-auto h-auto flex flex-wrap gap-1 p-1 mb-4 bg-secondary/50 border border-border rounded-xl">
               <TabsTrigger value="grades" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 <ClipboardList className="w-4 h-4" /> التحضير والدرجات
               </TabsTrigger>
               <TabsTrigger value="programs" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 <BookOpen className="w-4 h-4" /> برنامج الحلقة
+              </TabsTrigger>
+              <TabsTrigger value="tarbawi" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
+                <Sparkles className="w-4 h-4" /> البرنامج التربوي
               </TabsTrigger>
               <TabsTrigger value="tests" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
                 <ClipboardCheck className="w-4 h-4" /> الاختبارات الأسبوعية
@@ -206,6 +213,16 @@ function TeacherPage() {
                 viewerRole={isAssistant ? "assistant" : isManager ? "manager" : "teacher"}
                 canManagePrograms={canManagePrograms}
                 readOnly={programsReadOnly}
+              />
+            </TabsContent>
+            <TabsContent value="tarbawi" className="mt-0">
+              <TeacherTarbawiPanel
+                halaqaId={halaqa.id}
+                halaqaName={halaqa.name}
+                calendar={calendar}
+                weekNum={selectedWeek}
+                onWeekChange={handleWeekChange}
+                readOnly={isAssistant || programsReadOnly}
               />
             </TabsContent>
             <TabsContent value="tests" className="mt-0">

@@ -4,6 +4,7 @@ import { saveGrades, saveHalaqat, saveLatePermissions, saveMessageTemplates, sav
 import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } from "./weekly-tests";
 import { saveStaffAttendanceSettings, saveStaffCheckIns } from "./staff-attendance";
 import { saveStudentPortalVisibility, type StudentPortalVisibility } from "./student-portal-settings";
+import { saveTarbawiStore, type TarbawiStore, ensureTarbawiSemester } from "./tarbawi-program";
 import type { AcademicPhaseRecord } from "./academic-record";
 import { saveAcademicRecords } from "./academic-record";
 import type { HalaqaProgramsStore, HalaqaProgramGradesStore } from "./halaqa-programs";
@@ -144,6 +145,7 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       const calendar = await fetchActiveCalendar(true);
       const semesterReset = ensureGradesSemester(calendar.semester?.id ?? null);
       const weeklyTestsReset = ensureWeeklyTestsSemester(calendar.semester?.id ?? null);
+      const tarbawiReset = ensureTarbawiSemester(calendar.semester?.id ?? null);
 
       const stateRows = await secureListAppState({ data: { token } });
       const state = new Map(stateRows.map((row) => [row.key, row.value]));
@@ -162,6 +164,7 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       if (state.has("message_templates")) saveMessageTemplates(state.get("message_templates") as Record<MessageTemplateKey, string>);
       if (state.has("late_permissions")) saveLatePermissions(state.get("late_permissions") as LatePermission[]);
       if (state.has("student_portal_settings")) saveStudentPortalVisibility(state.get("student_portal_settings") as StudentPortalVisibility);
+      if (!tarbawiReset && state.has("tarbawi_program")) saveTarbawiStore(state.get("tarbawi_program") as TarbawiStore);
       sessionStorage.removeItem("qs_syncing");
 
       if (semesterReset) {
@@ -259,7 +262,7 @@ export async function deleteRoleAccount(id: string) {
 }
 
 export async function pushAppState(
-  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_programs" | "halaqa_program_grades" | "notifications" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings" | "staff_attendance" | "staff_attendance_settings",
+  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_programs" | "halaqa_program_grades" | "notifications" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings" | "staff_attendance" | "staff_attendance_settings" | "student_portal_settings" | "tarbawi_program",
   value: unknown,
 ) {
   await secureSetAppState({ data: { token: tokenOrThrow(), key, value } });

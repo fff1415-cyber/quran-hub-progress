@@ -15,6 +15,7 @@ import { Route as DailyOperationsRouteImport } from './routes/daily-operations'
 import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as ManagerRouteImport } from './routes/manager'
 import { Route as MusammiRouteImport } from './routes/musammi'
+import { Route as ProgramSupervisorRouteImport } from './routes/program-supervisor'
 import { Route as RegisterRouteImport } from './routes/register'
 import { Route as SecretaryRouteImport } from './routes/secretary'
 import { Route as StaffAttendanceRouteImport } from './routes/staff-attendance'
@@ -50,6 +51,11 @@ const ManagerRoute = ManagerRouteImport.update({
 const MusammiRoute = MusammiRouteImport.update({
   id: '/musammi',
   path: '/musammi',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProgramSupervisorRoute = ProgramSupervisorRouteImport.update({
+  id: '/program-supervisor',
+  path: '/program-supervisor',
   getParentRoute: () => rootRouteImport,
 } as any)
 const RegisterRoute = RegisterRouteImport.update({
@@ -90,6 +96,7 @@ export interface FileRoutesByFullPath {
   '/dashboard': typeof DashboardRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
+  '/program-supervisor': typeof ProgramSupervisorRoute
   '/register': typeof RegisterRoute
   '/secretary': typeof SecretaryRoute
   '/staff-attendance': typeof StaffAttendanceRoute
@@ -104,6 +111,7 @@ export interface FileRoutesByTo {
   '/dashboard': typeof DashboardRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
+  '/program-supervisor': typeof ProgramSupervisorRoute
   '/register': typeof RegisterRoute
   '/secretary': typeof SecretaryRoute
   '/staff-attendance': typeof StaffAttendanceRoute
@@ -119,6 +127,7 @@ export interface FileRoutesById {
   '/dashboard': typeof DashboardRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
+  '/program-supervisor': typeof ProgramSupervisorRoute
   '/register': typeof RegisterRoute
   '/secretary': typeof SecretaryRoute
   '/staff-attendance': typeof StaffAttendanceRoute
@@ -135,6 +144,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/manager'
     | '/musammi'
+    | '/program-supervisor'
     | '/register'
     | '/secretary'
     | '/staff-attendance'
@@ -149,6 +159,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/manager'
     | '/musammi'
+    | '/program-supervisor'
     | '/register'
     | '/secretary'
     | '/staff-attendance'
@@ -163,6 +174,7 @@ export interface FileRouteTypes {
     | '/dashboard'
     | '/manager'
     | '/musammi'
+    | '/program-supervisor'
     | '/register'
     | '/secretary'
     | '/staff-attendance'
@@ -178,6 +190,7 @@ export interface RootRouteChildren {
   DashboardRoute: typeof DashboardRoute
   ManagerRoute: typeof ManagerRoute
   MusammiRoute: typeof MusammiRoute
+  ProgramSupervisorRoute: typeof ProgramSupervisorRoute
   RegisterRoute: typeof RegisterRoute
   SecretaryRoute: typeof SecretaryRoute
   StaffAttendanceRoute: typeof StaffAttendanceRoute
@@ -228,6 +241,13 @@ declare module '@tanstack/react-router' {
       path: '/musammi'
       fullPath: '/musammi'
       preLoaderRoute: typeof MusammiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/program-supervisor': {
+      id: '/program-supervisor'
+      path: '/program-supervisor'
+      fullPath: '/program-supervisor'
+      preLoaderRoute: typeof ProgramSupervisorRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/register': {
@@ -282,6 +302,7 @@ const rootRouteChildren: RootRouteChildren = {
   DashboardRoute: DashboardRoute,
   ManagerRoute: ManagerRoute,
   MusammiRoute: MusammiRoute,
+  ProgramSupervisorRoute: ProgramSupervisorRoute,
   RegisterRoute: RegisterRoute,
   SecretaryRoute: SecretaryRoute,
   StaffAttendanceRoute: StaffAttendanceRoute,

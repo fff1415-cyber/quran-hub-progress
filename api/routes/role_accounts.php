@@ -49,7 +49,7 @@ function handle_upsert_role_account(): void
         error_response('الاسم والرمز والدور مطلوبة');
     }
 
-    $allowedRoles = ['manager', 'secretary', 'supervisor', 'musammi'];
+    $allowedRoles = ['manager', 'secretary', 'supervisor', 'program_supervisor', 'musammi'];
     if (!in_array($role, $allowedRoles, true)) {
         error_response('دور غير صالح');
     }

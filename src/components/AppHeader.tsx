@@ -2,7 +2,7 @@ import { Link, useRouter } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import {
   ArrowRight, LogOut, Menu, Crown, Users, BookOpen, Mic, Eye, GraduationCap,
-  Home, ClipboardList, ChevronDown,
+  Home, ClipboardList, ChevronDown, Sparkles,
 } from "lucide-react";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
@@ -24,6 +24,7 @@ const NAV: NavItem[] = [
   { to: "/manager", label: "لوحة المدير", icon: Crown, roles: ["manager"], search: { tab: "inbox" } },
   { to: "/secretary", label: "السكرتارية", icon: Users, roles: ["secretary"] },
   { to: "/supervisor", label: "الإشراف التعليمي", icon: Eye, roles: ["supervisor"] },
+  { to: "/program-supervisor", label: "البرنامج التربوي", icon: Sparkles, roles: ["program_supervisor"] },
   { to: "/musammi", label: "المسمّع", icon: Mic, roles: ["musammi"] },
   { to: "/teacher", label: "حلقتي", icon: BookOpen, roles: ["teacher", "assistant"] },
   { to: "/student", label: "صفحة الطالب", icon: GraduationCap, roles: ["student", "teacher", "assistant", "supervisor", "musammi", "secretary", "manager"] },
@@ -33,6 +34,7 @@ const NAV: NavItem[] = [
 const MANAGER_CROSS_LINKS: NavItem[] = [
   { to: "/secretary", label: "لوحة السكرتير", icon: ClipboardList, roles: ["manager"] },
   { to: "/supervisor", label: "لوحة المشرف التعليمي", icon: Eye, roles: ["manager"] },
+  { to: "/program-supervisor", label: "لوحة مشرف البرامج", icon: Sparkles, roles: ["manager"] },
   { to: "/musammi", label: "لوحة المسمّع", icon: Mic, roles: ["manager"] },
 ];
 

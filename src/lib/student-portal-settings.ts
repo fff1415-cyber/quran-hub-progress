@@ -29,7 +29,7 @@ export const DEFAULT_STUDENT_PORTAL_VISIBILITY: StudentPortalVisibility = {
 
 export const STUDENT_PORTAL_SECTION_LABELS: Record<keyof StudentPortalVisibility, string> = {
   halaqaWeekly: "متوسط الحلقات (أسبوعي)",
-  complexFaceCounts: "إجمالي أوجه المجمع — حفظ وربط ومراجعة (من بداية الفصل)",
+  complexFaceCounts: "إجمالي أوجه المجمع — حفظ + ربط/مراجعة (من بداية الفصل)",
   honorBoard: "لوحة الشرف — أوائل الأسبوع",
   studentHeader: "معلومات الطالب (الاسم والحلقة)",
   todayAttendance: "حالة الحضور اليوم",

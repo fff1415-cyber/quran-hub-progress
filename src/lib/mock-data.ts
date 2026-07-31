@@ -1,6 +1,6 @@
 // Mock data + localStorage store for مجمع حلقات الشتيوي
 
-export type Role = "manager" | "secretary" | "supervisor" | "teacher" | "assistant" | "musammi" | "student" | "parent";
+export type Role = "manager" | "secretary" | "supervisor" | "program_supervisor" | "teacher" | "assistant" | "musammi" | "student" | "parent";
 
 export interface Halaqa {
   id: number;
@@ -199,7 +199,7 @@ export interface Notification {
   targetHalaqaId?: number;
   actionTab?: "today" | "sard" | "late" | "passed" | "failed" | "transfers";
   /** Role inbox for transfer notifications forwarded from manager. */
-  targetRole?: "manager" | "secretary" | "supervisor";
+  targetRole?: "manager" | "secretary" | "supervisor" | "program_supervisor";
   transferData?: {
     studentId: string;
     halaqaId: number;

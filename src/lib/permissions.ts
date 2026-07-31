@@ -18,6 +18,7 @@ export const DEFAULT_PERMS: Record<string, PermissionKey[]> = {
   manager: PERMISSIONS.map((p) => p.key),
   secretary: ["view_attendance", "send_whatsapp", "force_retry", "manage_students", "import_sheets"],
   supervisor: ["view_attendance", "approve_sard", "force_retry", "manage_plans"],
+  program_supervisor: ["view_attendance", "manage_plans"],
   musammi: [],
   teacher: [],
   assistant: [],

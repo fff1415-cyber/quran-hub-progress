@@ -2,7 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { loginByCode, loginByNationalId } from "@/lib/secure-data.functions";
 import { setToken, syncFromCloud } from "@/lib/cloud-sync";
-import { setPortalMode } from "@/lib/student-portal-auth";
+import { isPortalViewerRole, setPortalMode } from "@/lib/student-portal-auth";
 import { Shield, UserCheck, GraduationCap, Mic, Eye, Loader2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { useTenant } from "@/contexts/TenantContext";
@@ -46,6 +46,7 @@ export function TenantLoginPage() {
           case "manager": navigate({ to: "/manager" }); break;
           case "secretary": navigate({ to: "/secretary" }); break;
           case "supervisor": navigate({ to: "/supervisor" }); break;
+          case "program_supervisor": navigate({ to: "/program-supervisor" }); break;
           case "musammi": navigate({ to: "/musammi" }); break;
           case "teacher":
           case "assistant":
@@ -53,15 +54,36 @@ export function TenantLoginPage() {
             break;
         }
       } else {
-        const student = await loginByNationalId({ data: { nationalId: value.trim() } });
-        setToken(student.token);
-        sessionStorage.setItem("qs_role", "student");
-        sessionStorage.setItem("qs_student", student.studentId);
-        if (student.complexId != null) sessionStorage.setItem("qs_complex", String(student.complexId));
-        else sessionStorage.setItem("qs_complex", String(tenant.id));
-        setPortalMode("student");
-        await syncFromCloud();
-        navigate({ to: "/student", search: { s: student.studentId } });
+        const v = value.trim();
+        const looksLikeNationalId = v.length >= 9;
+
+        if (looksLikeNationalId) {
+          const student = await loginByNationalId({ data: { nationalId: v } });
+          setToken(student.token);
+          sessionStorage.setItem("qs_role", "student");
+          sessionStorage.setItem("qs_student", student.studentId);
+          if (student.complexId != null) sessionStorage.setItem("qs_complex", String(student.complexId));
+          else sessionStorage.setItem("qs_complex", String(tenant.id));
+          setPortalMode("student");
+          await syncFromCloud();
+          navigate({ to: "/student", search: { s: student.studentId } });
+        } else {
+          const auth = await loginByCode({ data: { code: v } });
+          if (!auth.token || !auth.role) throw new Error("فشل تسجيل الدخول");
+          if (!isPortalViewerRole(auth.role)) {
+            throw new Error("رقم العضوية غير صالح — استخدم تبويب الكادر للوحة العمل");
+          }
+          setToken(auth.token);
+          sessionStorage.setItem("qs_role", auth.role);
+          sessionStorage.setItem("qs_name", auth.name);
+          if (auth.complexId != null) sessionStorage.setItem("qs_complex", String(auth.complexId));
+          else sessionStorage.setItem("qs_complex", String(tenant.id));
+          if (auth.halaqaId) sessionStorage.setItem("qs_halaqa", String(auth.halaqaId));
+          else sessionStorage.removeItem("qs_halaqa");
+          setPortalMode("viewer");
+          await syncFromCloud();
+          navigate({ to: "/student" });
+        }
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "تعذّر تسجيل الدخول";
@@ -138,14 +160,16 @@ export function TenantLoginPage() {
 
         <div className="mb-6">
           <label className="block text-sm text-muted-foreground mb-2">
-            {mode === "staff" ? "رقم العضوية" : "رقم هوية الطالب"}
+            {mode === "staff"
+              ? "رقم العضوية"
+              : "رقم هوية الطالب أو رقم العضوية للاطلاع العام"}
           </label>
           <input
-            type={mode === "staff" ? "password" : "text"}
+            type={mode === "staff" || (mode === "student" && value.length > 0 && value.length <= 6) ? "password" : "text"}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !busy && void submit()}
-            placeholder={mode === "staff" ? "••••" : "10 أرقام"}
+            placeholder={mode === "staff" ? "••••" : "هوية أو عضوية"}
             maxLength={mode === "staff" ? 6 : 10}
             inputMode="numeric"
             className="w-full px-4 py-3 rounded-xl bg-input border border-border focus:border-primary focus:outline-none text-center text-2xl tracking-[0.3em] font-bold text-primary"
@@ -180,7 +204,7 @@ export function TenantLoginPage() {
           </div>
           <div className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border/50 col-span-2">
             <GraduationCap className="w-4 h-4 text-primary" />
-            الطالب وولي الأمر — برقم الهوية
+            ولي الأمر — هوية الطالب · أو عضوية للاطلاع العام
           </div>
         </div>
       </div>

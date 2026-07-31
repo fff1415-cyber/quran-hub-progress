@@ -51,12 +51,14 @@ export function StudentPortalHalaqaSection({
             <Layers className="w-5 h-5" /> إجمالي أوجه المجمع
           </h3>
           <p className="text-xs text-muted-foreground mb-5">
-            من بداية الفصل حتى اليوم — حفظ · ربط · مراجعة
+            من بداية الفصل حتى اليوم
           </p>
-          <div className="flex flex-wrap justify-center gap-4 mx-auto max-w-2xl">
+          <div className="flex flex-wrap justify-center gap-4 mx-auto max-w-xl">
             <ComplexFaceCard label="أوجه الحفظ" value={complexFaces.hifz} />
-            <ComplexFaceCard label="أوجه الربط" value={complexFaces.rabt} />
-            <ComplexFaceCard label="أوجه المراجعة" value={complexFaces.muraja} />
+            <ComplexFaceCard
+              label="أوجه الربط والمراجعة"
+              value={complexFaces.rabt + complexFaces.muraja}
+            />
           </div>
         </div>
       )}

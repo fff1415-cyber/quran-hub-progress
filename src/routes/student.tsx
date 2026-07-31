@@ -1,10 +1,11 @@
-import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useEffect, useMemo, useState } from "react";
 import { loadHalaqat, loadStudents, loadGrades } from "@/lib/mock-data";
 import { getCalendarDayKey } from "@/lib/operational-date";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import {
   halaqaWeekAverage,
+  semesterOverallPercentage,
   studentWeekOverallPercentage,
   studentWeekReportPercentages,
   formatOverallPercent,
@@ -12,7 +13,6 @@ import {
 import { fetchStudentPlanSheet } from "@/lib/plans-service";
 import type { StudentPlanSheetData } from "@/lib/plan-types";
 import { AppHeader } from "@/components/AppHeader";
-import { StudentPortalLogin } from "@/components/student-portal/StudentPortalLogin";
 import { StudentPortalPersonalSection } from "@/components/student-portal/StudentPortalPersonalSection";
 import { StudentPortalHalaqaSection } from "@/components/student-portal/StudentPortalHalaqaSection";
 import {
@@ -37,6 +37,7 @@ export const Route = createFileRoute("/student")({
 });
 
 function StudentPage() {
+  const navigate = useNavigate();
   const search = Route.useSearch();
   const halaqat = loadHalaqat();
   const students = loadStudents();
@@ -50,6 +51,12 @@ function StudentPage() {
   const [planLoading, setPlanLoading] = useState(false);
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
   const visibility = loadStudentPortalVisibility();
+
+  useEffect(() => {
+    if (resolveStudentPortalAuth() === "login") {
+      navigate({ to: "/" });
+    }
+  }, [navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,16 +80,12 @@ function StudentPage() {
     }
   }, [search.s]);
 
-  const handleAuthenticated = useCallback((mode: "student" | "viewer", sid?: string) => {
-    setAuthMode(mode);
-    if (mode === "student" && sid) setStudentId(sid);
-  }, []);
-
   const handleLogout = () => {
     clearPortalSession();
     setAuthMode("login");
     setStudentId(null);
     setPlanData(null);
+    navigate({ to: "/" });
   };
 
   const weekNum = calendar?.currentWeekNumber ?? 1;
@@ -128,6 +131,9 @@ function StudentPage() {
     const weekReport = studentWeekReportPercentages(
       s.id, s.levelType, h.isTalqeen, grades, calendar, weekNum,
     );
+    const semesterOverall = semesterOverallPercentage(
+      s.id, s.levelType, h.isTalqeen, grades, calendar,
+    );
 
     const todayKey = getCalendarDayKey();
     let todayStatus = "";
@@ -137,7 +143,7 @@ function StudentPage() {
       if (att) { todayStatus = att; break; }
     }
 
-    return { s, h, weekReport, todayStatus };
+    return { s, h, weekReport, semesterOverall, todayStatus };
   }, [authMode, studentId, students, halaqat, grades, calendar, weekNum]);
 
   useEffect(() => {
@@ -160,6 +166,15 @@ function StudentPage() {
     const role = portalViewerRoleLabel(getSessionRole());
     return name ? `${role} — ${name}` : role;
   }, [authMode]);
+
+  if (authMode === "login") {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
   const showGeneral = authMode === "student" || authMode === "viewer";
   const showPersonal = authMode === "student" && personal;
 
@@ -169,28 +184,22 @@ function StudentPage() {
       <AppHeader title="نتائج الطلاب" subtitle="الطالب وولي الأمر" />
       <main className="max-w-6xl mx-auto px-4 py-8">
 
-        {authMode === "login" && (
-          <StudentPortalLogin onAuthenticated={handleAuthenticated} />
-        )}
-
-        {authMode !== "login" && (
-          <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
-            <p className="text-sm text-muted-foreground">
-              {authMode === "viewer"
-                ? `اطلاع عام — ${viewerName}`
-                : personal
-                  ? `مرحباً ${personal.s.name}`
-                  : "مرحباً"}
-            </p>
-            <button
-              type="button"
-              onClick={handleLogout}
-              className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm border border-border hover:bg-destructive/10 text-destructive"
-            >
-              <LogOut className="w-4 h-4" /> خروج
-            </button>
-          </div>
-        )}
+        <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
+          <p className="text-sm text-muted-foreground">
+            {authMode === "viewer"
+              ? `اطلاع عام — ${viewerName}`
+              : personal
+                ? `مرحباً ${personal.s.name}`
+                : "مرحباً"}
+          </p>
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm border border-border hover:bg-destructive/10 text-destructive"
+          >
+            <LogOut className="w-4 h-4" /> خروج
+          </button>
+        </div>
 
         {showGeneral && !calendar && (
           <div className="glass-card rounded-2xl p-6 mb-6 flex items-center justify-center gap-2 text-muted-foreground">
@@ -246,7 +255,7 @@ function StudentPage() {
 
             {authMode === "viewer" && (
               <p className="text-center text-sm text-muted-foreground py-4 glass-card rounded-xl">
-                الدخول برقم العضوية — النتائج العامة فقط. لتفاصيل الطالب استخدم رقم الهوية.
+                الدخول برقم العضوية — النتائج العامة فقط. لتفاصيل الطالب أدخل رقم الهوية من الصفحة الرئيسية.
               </p>
             )}
           </>
@@ -265,6 +274,7 @@ function StudentPage() {
             calendar={calendar!}
             grades={grades}
             weekReport={personal.weekReport}
+            semesterOverall={personal.semesterOverall}
             todayStatus={personal.todayStatus}
             planData={planData}
             planLoading={planLoading}
