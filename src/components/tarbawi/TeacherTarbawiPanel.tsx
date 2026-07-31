@@ -1,7 +1,9 @@
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import { getSelectableWeeks, formatWeekOptionLabel } from "@/lib/academic-context";
 import { weekLabel } from "@/lib/arabic-numbers";
+import { getToken } from "@/lib/cloud-sync";
+import { secureListAppState } from "@/lib/secure-data.functions";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
@@ -16,15 +18,20 @@ import {
   getTarbawiPlan,
   getTarbawiSettings,
   isPlanDistributed,
+  loadTarbawiStore,
+  mergeTarbawiStores,
   newTarbawiItem,
   paragraphTypeLabel,
   PLAN_SPAN_OPTIONS,
   requiredTarbawiItemCount,
   saveTarbawiPlan,
+  saveTarbawiStore,
   submitTarbawiPlan,
   validateTarbawiPlanEntry,
   type TarbawiHalaqaPlan,
   type TarbawiPlanItem,
+  type TarbawiSettings,
+  type TarbawiStore,
 } from "@/lib/tarbawi-program";
 import { getSessionName } from "@/lib/session-role";
 import { ClipboardList, LayoutGrid, Loader2, Plus, Send, Trash2 } from "lucide-react";
@@ -49,11 +56,41 @@ export function TeacherTarbawiPanel({
 }: Props) {
   const semesterId = calendar.semester?.id ?? "default";
   const semesterWeeks = calendar.semester?.weeks_count ?? calendar.weeks.length;
-  const settings = useMemo(() => getTarbawiSettings(semesterId), [semesterId]);
+  const [settings, setSettings] = useState<TarbawiSettings>(() => getTarbawiSettings(semesterId));
   const spanWeeks = getHalaqaPlanSpan(settings, halaqaId, semesterWeeks);
   const spanSetting = settings.halaqaSpans[halaqaId] ?? "full";
   const spanLabel = PLAN_SPAN_OPTIONS.find((o) => o.value === spanSetting)?.label
     ?? `${spanWeeks} أسبوع`;
+  const supervisorConfigured = spanSetting !== "full" || settings.weeklyRequiredCount !== 2
+    || Object.keys(settings.halaqaSpans).length > 0;
+
+  /** Pull latest supervisor settings from cloud when opening the tab. */
+  useEffect(() => {
+    let cancelled = false;
+    const token = getToken();
+    if (!token) {
+      setSettings(getTarbawiSettings(semesterId));
+      return;
+    }
+    void secureListAppState({ data: { token } })
+      .then((rows) => {
+        if (cancelled) return;
+        const row = rows.find((r) => r.key === "tarbawi_program");
+        if (!row?.value) {
+          setSettings(getTarbawiSettings(semesterId));
+          return;
+        }
+        sessionStorage.setItem("qs_syncing", "1");
+        const { merged } = mergeTarbawiStores(loadTarbawiStore(), row.value as TarbawiStore);
+        saveTarbawiStore(merged);
+        sessionStorage.removeItem("qs_syncing");
+        setSettings(getTarbawiSettings(semesterId));
+      })
+      .catch(() => {
+        if (!cancelled) setSettings(getTarbawiSettings(semesterId));
+      });
+    return () => { cancelled = true; };
+  }, [semesterId, halaqaId]);
 
   const [plan, setPlan] = useState<TarbawiHalaqaPlan>(() => getTarbawiPlan(semesterId, halaqaId));
   const [busy, setBusy] = useState(false);
@@ -69,14 +106,8 @@ export function TeacherTarbawiPanel({
   const requiredCount = requiredTarbawiItemCount(spanWeeks, settings.weeklyRequiredCount);
   const entryItems = plan.items.slice(0, requiredCount);
 
-  const stats = useMemo(
-    () => computeTarbawiStats(plan, spanWeeks, weekNum),
-    [plan, spanWeeks, weekNum],
-  );
-  const semesterStats = useMemo(
-    () => computeTarbawiStats(plan, spanWeeks),
-    [plan, spanWeeks],
-  );
+  const stats = computeTarbawiStats(plan, spanWeeks, weekNum);
+  const semesterStats = computeTarbawiStats(plan, spanWeeks);
 
   const weekItems = plan.items.filter((i) => i.weekNumber === weekNum);
   const selectableWeeks = getSelectableWeeks(calendar).filter((w) => w.week_number <= spanWeeks);
@@ -153,6 +184,11 @@ export function TeacherTarbawiPanel({
               <ClipboardList className="w-5 h-5" /> البرنامج التربوي
             </h3>
             <p className="text-xs text-muted-foreground mt-1">
+              {supervisorConfigured && (
+                <span className="block text-primary/80 mb-0.5">
+                  إعدادات مشرف البرامج: {spanLabel} · {settings.weeklyRequiredCount} فقرات/أسبوع
+                </span>
+              )}
               {canEditPlan && !distributed && "أضف كل الفقرات (نوع + موضوع) ثم وزّعها على الأسابيع"}
               {canEditPlan && distributed && "راجع التوزيع على الأسابيع ثم أرسل للاعتماد"}
               {isApproved && "مرحلة التنفيذ — سجّل التنفيذ والمستفيدين"}

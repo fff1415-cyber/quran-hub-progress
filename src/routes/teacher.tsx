@@ -217,6 +217,7 @@ function TeacherPage() {
             </TabsContent>
             <TabsContent value="tarbawi" className="mt-0">
               <TeacherTarbawiPanel
+                key={`tarbawi-${halaqa.id}-${calendar.semester?.id ?? "default"}`}
                 halaqaId={halaqa.id}
                 halaqaName={halaqa.name}
                 calendar={calendar}
