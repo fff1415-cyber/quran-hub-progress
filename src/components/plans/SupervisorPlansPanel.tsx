@@ -147,7 +147,8 @@ export function SupervisorPlansPanel() {
       }
       await refresh();
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "فشل الاستيراد");
+      const msg = e instanceof Error ? e.message : "فشل الاستيراد";
+      toast.error(msg, { duration: 15000 });
     } finally {
       setImporting(false);
     }

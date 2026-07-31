@@ -90,6 +90,51 @@ function plans_assert_teacher_student_access(PDO $pdo, array $auth, string $stud
     }
 }
 
+/** Roll back an open transaction and return a detailed SQL error for plan endpoints. */
+function plans_abort_with_sql_error(PDO $pdo, PDOException $e, string $context): void
+{
+    if ($pdo->inTransaction()) {
+        try {
+            $pdo->rollBack();
+        } catch (Throwable) {
+            /* ignore rollback failure */
+        }
+    }
+    error_response(plans_pdo_diagnostic_message($e, $context), 500);
+}
+
+/** Human hint + raw MySQL message (table/column/FK names). */
+function plans_pdo_diagnostic_message(PDOException $e, string $context): string
+{
+    if (function_exists('pdo_is_connection_error') && pdo_is_connection_error($e)) {
+        $detail = function_exists('pdo_sql_error_detail') ? pdo_sql_error_detail($e) : $e->getMessage();
+        return "[$context] تعذّر الاتصال بقاعدة البيانات — راجع api/config.php (DB_NAME, DB_USER, DB_PASS) | $detail";
+    }
+
+    if (function_exists('pdo_api_error_message')) {
+        return "[$context] " . pdo_api_error_message($e);
+    }
+
+    $detail = function_exists('pdo_sql_error_detail') ? pdo_sql_error_detail($e) : $e->getMessage();
+    return "[$context] خطأ SQL | $detail";
+}
+
+function plans_assert_import_schema(PDO $pdo): void
+{
+    if (!plans_table_exists($pdo, 'education_plans')) {
+        error_response(
+            'جدول education_plans غير موجود — نفّذ database/migrate-education-plans.sql في phpMyAdmin',
+            503,
+        );
+    }
+    if (!plans_table_exists($pdo, 'plan_segments')) {
+        error_response(
+            'جدول plan_segments غير موجود — نفّذ database/migrate-education-plans.sql في phpMyAdmin',
+            503,
+        );
+    }
+}
+
 /** Add plan_start_date / start_muraja_segment when table predates migrate-plan-assignments-v2.sql */
 function plans_ensure_assignment_v2_columns(PDO $pdo): void
 {
@@ -217,33 +262,37 @@ function handle_list_plans(): void
     $cid = require_complex_id($auth);
     plans_require_roles($auth, ['supervisor', 'secretary', 'teacher', 'assistant']);
     $pdo = db();
-    if (!plans_table_exists($pdo, 'education_plans')) {
-        error_response('نفّذ migrate-education-plans.sql على قاعدة البيانات أولاً', 503);
+    try {
+        plans_assert_import_schema($pdo);
+        plans_ensure_daily_faces_columns($pdo);
+        $tenants = plans_tenant_enabled($pdo);
+        $track = isset($_GET['track']) ? trim((string) $_GET['track']) : '';
+        $sql = 'SELECT id, track, level_number, title, segment_count,
+                daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                faces_per_half, faces_per_one, faces_per_two, created_at
+                FROM education_plans';
+        $params = [];
+        $where = [];
+        if ($tenants) {
+            $where[] = 'complex_id = ?';
+            $params[] = $cid;
+        }
+        if ($track === 'gold' || $track === 'silver') {
+            $where[] = 'track = ?';
+            $params[] = $track;
+        }
+        if (count($where) > 0) {
+            $sql .= ' WHERE ' . implode(' AND ', $where);
+        }
+        $sql .= ' ORDER BY track, level_number';
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($params);
+        json_response(array_map('plan_row', $stmt->fetchAll()));
+    } catch (PDOException $e) {
+        plans_abort_with_sql_error($pdo, $e, 'تحميل قائمة الخطط');
+    } catch (Throwable $e) {
+        error_response('فشل تحميل الخطط: ' . $e->getMessage(), 500);
     }
-    plans_ensure_daily_faces_columns($pdo);
-    $tenants = plans_tenant_enabled($pdo);
-    $track = isset($_GET['track']) ? trim((string) $_GET['track']) : '';
-    $sql = 'SELECT id, track, level_number, title, segment_count,
-            daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
-            faces_per_half, faces_per_one, faces_per_two, created_at
-            FROM education_plans';
-    $params = [];
-    $where = [];
-    if ($tenants) {
-        $where[] = 'complex_id = ?';
-        $params[] = $cid;
-    }
-    if ($track === 'gold' || $track === 'silver') {
-        $where[] = 'track = ?';
-        $params[] = $track;
-    }
-    if (count($where) > 0) {
-        $sql .= ' WHERE ' . implode(' AND ', $where);
-    }
-    $sql .= ' ORDER BY track, level_number';
-    $stmt = $pdo->prepare($sql);
-    $stmt->execute($params);
-    json_response(array_map('plan_row', $stmt->fetchAll()));
 }
 
 function handle_plan_detail(): void
@@ -302,16 +351,16 @@ function handle_import_plans(): void
     if (!is_array($plans) || count($plans) === 0) {
         error_response('لا توجد خطط للاستيراد');
     }
-    $pdo = db();
-    if (!plans_table_exists($pdo, 'education_plans')) {
-        error_response('نفّذ migrate-education-plans.sql على قاعدة البيانات أولاً', 503);
-    }
-    $tenants = plans_tenant_enabled($pdo);
 
+    $pdo = db();
     $imported = 0;
     $segmentsTotal = 0;
-    $pdo->beginTransaction();
+
     try {
+        plans_assert_import_schema($pdo);
+        $tenants = plans_tenant_enabled($pdo);
+
+        $pdo->beginTransaction();
         foreach ($plans as $p) {
             if (!is_array($p)) {
                 continue;
@@ -387,9 +436,17 @@ function handle_import_plans(): void
             $imported++;
         }
         $pdo->commit();
+    } catch (PDOException $e) {
+        plans_abort_with_sql_error($pdo, $e, 'استيراد Excel');
     } catch (Throwable $e) {
-        $pdo->rollBack();
-        error_response('فشل الاستيراد: ' . $e->getMessage(), 500);
+        if ($pdo->inTransaction()) {
+            try {
+                $pdo->rollBack();
+            } catch (Throwable) {
+                /* ignore */
+            }
+        }
+        error_response('فشل استيراد الخطط: ' . $e->getMessage(), 500);
     }
 
     json_response(['ok' => true, 'plans_imported' => $imported, 'segments_imported' => $segmentsTotal]);
@@ -570,6 +627,8 @@ function handle_assign_plan(): void
         ]);
 
         json_response(['ok' => true, 'assignment_id' => $id]);
+    } catch (PDOException $e) {
+        plans_abort_with_sql_error($pdo, $e, 'ربط الطالب بالخطة');
     } catch (Throwable $e) {
         error_response('فشل ربط الطالب: ' . $e->getMessage(), 500);
     }
@@ -735,7 +794,7 @@ function handle_student_plan_sheet(): void
             'completions' => array_map('completion_row', $compStmt->fetchAll()),
         ]);
     } catch (PDOException $e) {
-        error_response(pdo_api_error_message($e), 500);
+        plans_abort_with_sql_error($pdo, $e, 'ورقة خطة الطالب');
     } catch (Throwable $e) {
         error_response('فشل تحميل ورقة الخطة: ' . $e->getMessage(), 500);
     }

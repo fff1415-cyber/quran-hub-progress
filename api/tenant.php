@@ -159,6 +159,24 @@ function pdo_integrity_error_message(PDOException $e): string
     return 'البيانات المدخلة تتعارض مع سجل موجود — تحقق من رمز المجمع ورقم العضوية';
 }
 
+function pdo_sql_error_detail(PDOException $e): string
+{
+    $info = $e->errorInfo ?? [];
+    $sqlState = isset($info[0]) ? (string) $info[0] : '';
+    $driverCode = isset($info[1]) ? (string) $info[1] : '';
+    $driverMsg = isset($info[2]) && is_string($info[2]) && $info[2] !== ''
+        ? $info[2]
+        : $e->getMessage();
+    $parts = [$driverMsg];
+    if ($sqlState !== '') {
+        $parts[] = 'SQLSTATE=' . $sqlState;
+    }
+    if ($driverCode !== '') {
+        $parts[] = 'errno=' . $driverCode;
+    }
+    return implode(' | ', $parts);
+}
+
 function pdo_is_connection_error(PDOException $e): bool
 {
     $msg = strtolower($e->getMessage());
@@ -197,17 +215,17 @@ function pdo_api_error_message(PDOException $e): string
             || str_contains($msg, 'daily_hifz')
             || str_contains($msg, 'start_muraja_segment')
             || str_contains($msg, 'plan_start_date')) {
-            return 'جداول الخطط تحتاج تحديثاً — أعد فتح الورقة أو نفّذ database/migrate-plan-daily-faces.sql';
+            return 'جداول الخطط تحتاج تحديثاً — نفّذ database/migrate-plan-daily-faces.sql | ' . pdo_sql_error_detail($e);
         }
         if (str_contains($msg, 'complex_id')) {
-            return 'قاعدة البيانات تحتاج migrate-multi-tenant.sql — تواصل مع مدير النظام';
+            return 'قاعدة البيانات تحتاج migrate-multi-tenant.sql | ' . pdo_sql_error_detail($e);
         }
-        return 'خطأ في بنية قاعدة البيانات — ' . $e->getMessage();
+        return 'خطأ في بنية قاعدة البيانات — ' . pdo_sql_error_detail($e);
     }
 
     if (pdo_is_integrity_violation($e)) {
-        return pdo_integrity_error_message($e);
+        return pdo_integrity_error_message($e) . ' | ' . pdo_sql_error_detail($e);
     }
 
-    return 'خطأ في قاعدة البيانات — ' . $e->getMessage();
+    return 'خطأ في قاعدة البيانات — ' . pdo_sql_error_detail($e);
 }

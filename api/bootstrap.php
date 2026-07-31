@@ -12,7 +12,7 @@ function api_register_error_handlers(): void
         $message = $e instanceof PDOException && function_exists('pdo_api_error_message')
             ? pdo_api_error_message($e)
             : ($e instanceof PDOException
-                ? 'تعذّر الاتصال بقاعدة البيانات — راجع api/config.php (DB_NAME, DB_USER, DB_PASS) في Hostinger'
+                ? ('خطأ SQL: ' . (function_exists('pdo_sql_error_detail') ? pdo_sql_error_detail($e) : $e->getMessage()))
                 : $e->getMessage());
         echo json_encode(['error' => $message], JSON_UNESCAPED_UNICODE);
         exit;
