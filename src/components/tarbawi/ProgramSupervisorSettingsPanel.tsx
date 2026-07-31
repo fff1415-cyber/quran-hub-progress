@@ -1,18 +1,20 @@
-import { useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { Halaqa } from "@/lib/mock-data";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import {
   defaultTarbawiSettings,
   getTarbawiSettings,
   PLAN_SPAN_OPTIONS,
+  pushTarbawiStoreCloud,
   saveTarbawiSettings,
+  loadTarbawiStore,
   type TarbawiParagraphType,
   type TarbawiPlanSpan,
   type TarbawiSettings,
 } from "@/lib/tarbawi-program";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Plus, Trash2 } from "lucide-react";
+import { Loader2, Plus, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export function ProgramSupervisorSettingsPanel({
@@ -24,21 +26,41 @@ export function ProgramSupervisorSettingsPanel({
 }) {
   const semesterId = calendar.semester?.id ?? "default";
   const [settings, setSettings] = useState<TarbawiSettings>(() => getTarbawiSettings(semesterId));
+  const [cloudBusy, setCloudBusy] = useState(false);
 
-  const save = () => {
-    saveTarbawiSettings({ ...settings, semesterId });
-    toast.success("تم حفظ إعدادات البرنامج التربوي");
-  };
+  useEffect(() => {
+    setSettings(getTarbawiSettings(semesterId));
+  }, [semesterId]);
+
+  /** Persist to localStorage (+ background cloud) on every change. */
+  const persist = useCallback(
+    (updater: (prev: TarbawiSettings) => TarbawiSettings) => {
+      setSettings((prev) => {
+        const draft = updater(prev);
+        return saveTarbawiSettings({ ...draft, semesterId });
+      });
+    },
+    [semesterId],
+  );
+
+  useEffect(() => {
+    const t = window.setTimeout(() => {
+      if (sessionStorage.getItem("qs_token")) {
+        void pushTarbawiStoreCloud(loadTarbawiStore()).catch(() => undefined);
+      }
+    }, 1000);
+    return () => window.clearTimeout(t);
+  }, [settings]);
 
   const setSpan = (halaqaId: number, span: TarbawiPlanSpan) => {
-    setSettings((s) => ({
+    persist((s) => ({
       ...s,
       halaqaSpans: { ...s.halaqaSpans, [halaqaId]: span },
     }));
   };
 
   const updateType = (idx: number, patch: Partial<TarbawiParagraphType>) => {
-    setSettings((s) => {
+    persist((s) => {
       const types = [...s.paragraphTypes];
       types[idx] = { ...types[idx], ...patch };
       return { ...s, paragraphTypes: types };
@@ -46,25 +68,44 @@ export function ProgramSupervisorSettingsPanel({
   };
 
   const addType = () => {
-    setSettings((s) => ({
+    persist((s) => ({
       ...s,
       paragraphTypes: [...s.paragraphTypes, { id: `custom-${Date.now()}`, label: "فقرة جديدة" }],
     }));
   };
 
   const removeType = (id: string) => {
-    setSettings((s) => ({
+    persist((s) => ({
       ...s,
       paragraphTypes: s.paragraphTypes.filter((t) => t.id !== id),
     }));
   };
 
   const resetTypes = () => {
-    setSettings((s) => ({ ...s, paragraphTypes: defaultTarbawiSettings(semesterId).paragraphTypes }));
+    persist((s) => ({
+      ...s,
+      paragraphTypes: defaultTarbawiSettings(semesterId).paragraphTypes,
+    }));
+  };
+
+  const syncCloud = async () => {
+    setCloudBusy(true);
+    try {
+      await pushTarbawiStoreCloud(loadTarbawiStore());
+      toast.success("تم حفظ ومزامنة إعدادات البرنامج التربوي");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "تعذّر مزامنة الإعدادات مع السحابة");
+    } finally {
+      setCloudBusy(false);
+    }
   };
 
   return (
     <div className="space-y-6">
+      <p className="text-xs text-muted-foreground px-1">
+        تُحفظ التغييرات تلقائياً على هذا الجهاز — اضغط «مزامنة» لرفعها للسحابة
+      </p>
+
       <section className="glass-card rounded-2xl p-6 space-y-4">
         <h3 className="font-bold text-primary">الفقرات الإلزامية أسبوعياً</h3>
         <div className="flex items-center gap-3 max-w-xs">
@@ -74,7 +115,7 @@ export function ProgramSupervisorSettingsPanel({
             min={1}
             max={10}
             value={settings.weeklyRequiredCount}
-            onChange={(e) => setSettings((s) => ({
+            onChange={(e) => persist((s) => ({
               ...s,
               weeklyRequiredCount: Number(e.target.value) || 1,
             }))}
@@ -143,7 +184,14 @@ export function ProgramSupervisorSettingsPanel({
         </div>
       </section>
 
-      <Button onClick={save} className="gold-gradient text-primary-foreground font-bold">حفظ الإعدادات</Button>
+      <Button
+        onClick={() => void syncCloud()}
+        disabled={cloudBusy}
+        className="gold-gradient text-primary-foreground font-bold gap-2"
+      >
+        {cloudBusy && <Loader2 className="w-4 h-4 animate-spin" />}
+        مزامنة مع السحابة
+      </Button>
     </div>
   );
 }

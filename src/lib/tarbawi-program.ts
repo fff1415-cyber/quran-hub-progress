@@ -97,17 +97,27 @@ function writeStore(store: TarbawiStore): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(KEY_STORE, JSON.stringify(store));
   if (sessionStorage.getItem("qs_token") && sessionStorage.getItem("qs_syncing") !== "1") {
-    void import("./cloud-sync").then((m) => m.pushAppState("tarbawi_program", store)).catch(() => undefined);
+    void pushTarbawiStoreCloud(store).catch((e) => {
+      console.warn("tarbawi_program cloud sync failed:", e);
+    });
   }
+}
+
+export async function pushTarbawiStoreCloud(store: TarbawiStore): Promise<void> {
+  const { pushAppState } = await import("./cloud-sync");
+  await pushAppState("tarbawi_program", store);
 }
 
 export function ensureTarbawiSemester(semesterId: string | null): boolean {
   if (typeof window === "undefined" || !semesterId) return false;
   const prev = localStorage.getItem(KEY_SEMESTER);
-  if (prev === semesterId) return false;
-  localStorage.setItem(KEY_SEMESTER, semesterId);
-  writeStore({ settingsBySemester: {}, plans: {} });
-  return true;
+  if (prev && prev !== semesterId) {
+    localStorage.setItem(KEY_SEMESTER, semesterId);
+    writeStore({ settingsBySemester: {}, plans: {} });
+    return true;
+  }
+  if (!prev) localStorage.setItem(KEY_SEMESTER, semesterId);
+  return false;
 }
 
 export function saveTarbawiStore(store: TarbawiStore): void {

@@ -175,6 +175,13 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
           /* local reset is enough */
         }
       }
+      if (tarbawiReset) {
+        try {
+          await secureSetAppState({ data: { token, key: "tarbawi_program", value: { settingsBySemester: {}, plans: {} } } });
+        } catch {
+          /* local reset is enough */
+        }
+      }
     }
 
     saveHalaqat(halaqat);
