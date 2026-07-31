@@ -79,7 +79,11 @@ function ProgramSupervisorPage() {
       icon: Settings2,
       roles: ["program_supervisor", "manager"],
       content: calendar ? (
-        <ProgramSupervisorSettingsPanel calendar={calendar} halaqat={loadHalaqat()} />
+        <ProgramSupervisorSettingsPanel
+          key={calendar.semester?.id ?? "default"}
+          calendar={calendar}
+          halaqat={loadHalaqat()}
+        />
       ) : (
         <LoadingBlock />
       ),

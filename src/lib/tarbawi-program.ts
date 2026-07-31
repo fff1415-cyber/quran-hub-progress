@@ -18,6 +18,7 @@ export interface TarbawiSettings {
   weeklyRequiredCount: number;
   /** halaqaId → plan span in weeks (or full semester) */
   halaqaSpans: Record<number, TarbawiPlanSpan>;
+  updatedAt?: string;
 }
 
 export interface TarbawiPlanItem {
@@ -82,12 +83,42 @@ function planKey(semesterId: string, halaqaId: number): string {
   return `${semesterId}:${halaqaId}`;
 }
 
+function normalizeHalaqaSpans(
+  raw: Record<string | number, TarbawiPlanSpan> | undefined,
+): Record<number, TarbawiPlanSpan> {
+  if (!raw) return {};
+  const out: Record<number, TarbawiPlanSpan> = {};
+  for (const [k, v] of Object.entries(raw)) {
+    const id = Number(k);
+    if (Number.isFinite(id) && id > 0 && v) out[id] = v as TarbawiPlanSpan;
+  }
+  return out;
+}
+
+function normalizeSettings(raw: TarbawiSettings): TarbawiSettings {
+  return {
+    semesterId: raw.semesterId,
+    paragraphTypes: (raw.paragraphTypes ?? DEFAULT_PARAGRAPH_TYPES).filter((t) => t?.label?.trim()),
+    weeklyRequiredCount: Math.max(1, Math.min(10, Math.round(raw.weeklyRequiredCount) || 2)),
+    halaqaSpans: normalizeHalaqaSpans(raw.halaqaSpans as Record<string, TarbawiPlanSpan>),
+    updatedAt: raw.updatedAt,
+  };
+}
+
+function normalizeStore(raw: TarbawiStore): TarbawiStore {
+  const settingsBySemester: Record<string, TarbawiSettings> = {};
+  for (const [semId, s] of Object.entries(raw.settingsBySemester ?? {})) {
+    if (s) settingsBySemester[semId] = normalizeSettings({ ...s, semesterId: semId });
+  }
+  return { settingsBySemester, plans: raw.plans ?? {} };
+}
+
 function readStore(): TarbawiStore {
   if (typeof window === "undefined") return { settingsBySemester: {}, plans: {} };
   const raw = localStorage.getItem(KEY_STORE);
   if (!raw) return { settingsBySemester: {}, plans: {} };
   try {
-    return JSON.parse(raw) as TarbawiStore;
+    return normalizeStore(JSON.parse(raw) as TarbawiStore);
   } catch {
     return { settingsBySemester: {}, plans: {} };
   }
@@ -128,6 +159,38 @@ export function loadTarbawiStore(): TarbawiStore {
   return readStore();
 }
 
+/** Merge local + cloud — local wins when newer; never silently drop unsynced local edits. */
+export function mergeTarbawiStores(
+  local: TarbawiStore,
+  cloud: TarbawiStore,
+): { merged: TarbawiStore; pushToCloud: boolean } {
+  const l = normalizeStore(local);
+  const c = normalizeStore(cloud);
+  const settingsBySemester: Record<string, TarbawiSettings> = { ...c.settingsBySemester };
+  const plans: Record<string, TarbawiHalaqaPlan> = { ...c.plans };
+  let pushToCloud = false;
+
+  for (const [semId, localSettings] of Object.entries(l.settingsBySemester)) {
+    const cloudSettings = c.settingsBySemester[semId];
+    const localTs = localSettings.updatedAt ?? "";
+    const cloudTs = cloudSettings?.updatedAt ?? "";
+    if (!cloudSettings || localTs >= cloudTs) {
+      settingsBySemester[semId] = localSettings;
+      if (!cloudSettings || localTs > cloudTs) pushToCloud = true;
+    }
+  }
+
+  for (const [key, localPlan] of Object.entries(l.plans)) {
+    const cloudPlan = c.plans[key];
+    if (!cloudPlan || localPlan.updatedAt > cloudPlan.updatedAt) {
+      plans[key] = localPlan;
+      pushToCloud = true;
+    }
+  }
+
+  return { merged: { settingsBySemester, plans }, pushToCloud };
+}
+
 export function defaultTarbawiSettings(semesterId: string): TarbawiSettings {
   return {
     semesterId,
@@ -139,18 +202,21 @@ export function defaultTarbawiSettings(semesterId: string): TarbawiSettings {
 
 export function getTarbawiSettings(semesterId: string): TarbawiSettings {
   const store = readStore();
-  return store.settingsBySemester[semesterId] ?? defaultTarbawiSettings(semesterId);
+  const saved = store.settingsBySemester[semesterId];
+  if (saved) return { ...saved };
+  return defaultTarbawiSettings(semesterId);
 }
 
 export function saveTarbawiSettings(settings: TarbawiSettings): TarbawiSettings {
   const store = readStore();
-  store.settingsBySemester[settings.semesterId] = {
+  const normalized = normalizeSettings({
     ...settings,
-    weeklyRequiredCount: Math.max(1, Math.min(10, Math.round(settings.weeklyRequiredCount) || 2)),
-    paragraphTypes: settings.paragraphTypes.filter((t) => t.label.trim()),
-  };
+    semesterId: settings.semesterId,
+    updatedAt: new Date().toISOString(),
+  });
+  store.settingsBySemester[settings.semesterId] = normalized;
   writeStore(store);
-  return store.settingsBySemester[settings.semesterId];
+  return normalized;
 }
 
 export function planSpanWeeks(span: TarbawiPlanSpan, semesterWeeks: number): number {

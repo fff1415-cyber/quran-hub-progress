@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 import type { Halaqa } from "@/lib/mock-data";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import {
@@ -28,29 +28,15 @@ export function ProgramSupervisorSettingsPanel({
   const [settings, setSettings] = useState<TarbawiSettings>(() => getTarbawiSettings(semesterId));
   const [cloudBusy, setCloudBusy] = useState(false);
 
-  useEffect(() => {
-    setSettings(getTarbawiSettings(semesterId));
-  }, [semesterId]);
-
-  /** Persist to localStorage (+ background cloud) on every change. */
   const persist = useCallback(
     (updater: (prev: TarbawiSettings) => TarbawiSettings) => {
       setSettings((prev) => {
-        const draft = updater(prev);
-        return saveTarbawiSettings({ ...draft, semesterId });
+        const saved = saveTarbawiSettings({ ...updater(prev), semesterId });
+        return saved;
       });
     },
     [semesterId],
   );
-
-  useEffect(() => {
-    const t = window.setTimeout(() => {
-      if (sessionStorage.getItem("qs_token")) {
-        void pushTarbawiStoreCloud(loadTarbawiStore()).catch(() => undefined);
-      }
-    }, 1000);
-    return () => window.clearTimeout(t);
-  }, [settings]);
 
   const setSpan = (halaqaId: number, span: TarbawiPlanSpan) => {
     persist((s) => ({
@@ -92,6 +78,7 @@ export function ProgramSupervisorSettingsPanel({
     setCloudBusy(true);
     try {
       await pushTarbawiStoreCloud(loadTarbawiStore());
+      setSettings(getTarbawiSettings(semesterId));
       toast.success("تم حفظ ومزامنة إعدادات البرنامج التربوي");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "تعذّر مزامنة الإعدادات مع السحابة");
@@ -103,7 +90,7 @@ export function ProgramSupervisorSettingsPanel({
   return (
     <div className="space-y-6">
       <p className="text-xs text-muted-foreground px-1">
-        تُحفظ التغييرات تلقائياً على هذا الجهاز — اضغط «مزامنة» لرفعها للسحابة
+        تُحفظ التغييرات فوراً — اضغط «مزامنة مع السحابة» قبل استخدام جهاز آخر
       </p>
 
       <section className="glass-card rounded-2xl p-6 space-y-4">

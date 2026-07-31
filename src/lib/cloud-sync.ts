@@ -4,7 +4,7 @@ import { saveGrades, saveHalaqat, saveLatePermissions, saveMessageTemplates, sav
 import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } from "./weekly-tests";
 import { saveStaffAttendanceSettings, saveStaffCheckIns } from "./staff-attendance";
 import { saveStudentPortalVisibility, type StudentPortalVisibility } from "./student-portal-settings";
-import { saveTarbawiStore, type TarbawiStore, ensureTarbawiSemester } from "./tarbawi-program";
+import { saveTarbawiStore, type TarbawiStore, ensureTarbawiSemester, mergeTarbawiStores, loadTarbawiStore } from "./tarbawi-program";
 import type { AcademicPhaseRecord } from "./academic-record";
 import { saveAcademicRecords } from "./academic-record";
 import type { HalaqaProgramsStore, HalaqaProgramGradesStore } from "./halaqa-programs";
@@ -164,7 +164,29 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       if (state.has("message_templates")) saveMessageTemplates(state.get("message_templates") as Record<MessageTemplateKey, string>);
       if (state.has("late_permissions")) saveLatePermissions(state.get("late_permissions") as LatePermission[]);
       if (state.has("student_portal_settings")) saveStudentPortalVisibility(state.get("student_portal_settings") as StudentPortalVisibility);
-      if (!tarbawiReset && state.has("tarbawi_program")) saveTarbawiStore(state.get("tarbawi_program") as TarbawiStore);
+      if (!tarbawiReset && state.has("tarbawi_program")) {
+        const cloud = state.get("tarbawi_program") as TarbawiStore;
+        const local = loadTarbawiStore();
+        const { merged, pushToCloud } = mergeTarbawiStores(local, cloud);
+        saveTarbawiStore(merged);
+        if (pushToCloud) {
+          try {
+            await secureSetAppState({ data: { token, key: "tarbawi_program", value: merged } });
+          } catch {
+            /* local merge kept — will retry on next save */
+          }
+        }
+      } else if (!tarbawiReset && !state.has("tarbawi_program")) {
+        const local = loadTarbawiStore();
+        const hasLocal = Object.keys(local.settingsBySemester).length > 0 || Object.keys(local.plans).length > 0;
+        if (hasLocal) {
+          try {
+            await secureSetAppState({ data: { token, key: "tarbawi_program", value: local } });
+          } catch {
+            /* ignore */
+          }
+        }
+      }
       sessionStorage.removeItem("qs_syncing");
 
       if (semesterReset) {
