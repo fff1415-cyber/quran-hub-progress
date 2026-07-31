@@ -3,9 +3,41 @@ import {
   loadAttendanceArchive,
   loadGrades,
   type GradesStore,
+  type Student,
 } from "@/lib/mock-data";
 import { getElapsedSemesterDays } from "@/lib/semester-grading";
 import { attendanceTypeLabel } from "@/lib/student-profile-data";
+import {
+  aggregateFaceProgress,
+  faceQuotasFromAssignment,
+} from "@/lib/plan-daily-faces";
+import { localGetStudentSheet } from "@/lib/plans-store";
+
+export interface ComplexFaceTotals {
+  hifz: number;
+  rabt: number;
+  muraja: number;
+}
+
+/** Sum hifz / rabt / muraja faces for all students from semester start. */
+export function aggregateComplexFaceTotals(
+  students: Student[],
+  grades: GradesStore,
+  calendar: AcademicCalendar,
+): ComplexFaceTotals {
+  let hifz = 0;
+  let rabt = 0;
+  let muraja = 0;
+  for (const s of students) {
+    const sheet = localGetStudentSheet(s.id);
+    const quotas = faceQuotasFromAssignment(sheet.assignment);
+    const part = aggregateFaceProgress(s.id, grades, calendar, quotas);
+    hifz += part.hifzActual;
+    rabt += part.rabtActual;
+    muraja += part.murajaActual;
+  }
+  return { hifz, rabt, muraja };
+}
 
 export interface PortalAbsenceRow {
   date: string;

@@ -14,16 +14,19 @@ import type { StudentPlanSheetData } from "@/lib/plan-types";
 import { AppHeader } from "@/components/AppHeader";
 import { StudentPortalLogin } from "@/components/student-portal/StudentPortalLogin";
 import { StudentPortalPersonalSection } from "@/components/student-portal/StudentPortalPersonalSection";
+import { StudentPortalHalaqaSection } from "@/components/student-portal/StudentPortalHalaqaSection";
 import {
   clearPortalSession,
   getPortalStudentId,
   resolveStudentPortalAuth,
+  portalViewerRoleLabel,
   type StudentPortalAuthMode,
 } from "@/lib/student-portal-auth";
 import { loadStudentPortalVisibility } from "@/lib/student-portal-settings";
+import { aggregateComplexFaceTotals } from "@/lib/student-portal-data";
 import { weekLabel } from "@/lib/arabic-numbers";
-import { getSessionName } from "@/lib/session-role";
-import { Trophy, BookOpen, Loader2, LogOut } from "lucide-react";
+import { getSessionName, getSessionRole } from "@/lib/session-role";
+import { Trophy, Loader2, LogOut } from "lucide-react";
 import { Toaster } from "sonner";
 
 export const Route = createFileRoute("/student")({
@@ -110,6 +113,11 @@ function StudentPage() {
       .slice(0, 15);
   }, [students, halaqat, grades, calendar, weekNum]);
 
+  const complexFaces = useMemo(() => {
+    if (!calendar) return null;
+    return aggregateComplexFaceTotals(students, grades, calendar);
+  }, [students, grades, calendar]);
+
   const personal = useMemo(() => {
     if (authMode !== "student" || !studentId || !calendar) return null;
     const s = students.find((x) => x.id === studentId);
@@ -146,7 +154,12 @@ function StudentPage() {
     return () => { cancelled = true; };
   }, [studentId, authMode]);
 
-  const viewerName = authMode === "viewer" ? getSessionName("المعلم") : null;
+  const viewerName = useMemo(() => {
+    if (authMode !== "viewer") return null;
+    const name = getSessionName("");
+    const role = portalViewerRoleLabel(getSessionRole());
+    return name ? `${role} — ${name}` : role;
+  }, [authMode]);
   const showGeneral = authMode === "student" || authMode === "viewer";
   const showPersonal = authMode === "student" && personal;
 
@@ -188,20 +201,15 @@ function StudentPage() {
 
         {showGeneral && calendar && (
           <>
-            {visibility.halaqaWeekly && (
-              <section className="glass-card rounded-2xl p-6 mb-6">
-                <h2 className="text-xl font-bold text-primary mb-1 flex items-center gap-2">
-                  <BookOpen className="w-5 h-5" /> متوسط الحلقات — {weekLabel(weekNum)}
-                </h2>
-                <p className="text-xs text-muted-foreground mb-4">
-                  نتائج هذا الأسبوع فقط · {calendar.semester?.name ?? "الفصل الحالي"}
-                </p>
-                <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-                  {halaqaStats.map(({ halaqa, pct }) => (
-                    <Donut key={halaqa.id} pct={pct} label={halaqa.name} />
-                  ))}
-                </div>
-              </section>
+            {(visibility.halaqaWeekly || visibility.complexFaceCounts) && (
+              <StudentPortalHalaqaSection
+                halaqaStats={halaqaStats}
+                calendar={calendar}
+                weekNum={weekNum}
+                complexFaces={complexFaces}
+                showWeekly={visibility.halaqaWeekly}
+                showComplexFaces={visibility.complexFaceCounts}
+              />
             )}
 
             {visibility.honorBoard && (
@@ -238,7 +246,7 @@ function StudentPage() {
 
             {authMode === "viewer" && (
               <p className="text-center text-sm text-muted-foreground py-4 glass-card rounded-xl">
-                الدخول بعضوية المعلم — البيانات العامة فقط. لتفاصيل الطالب استخدم رقم الهوية.
+                الدخول برقم العضوية — النتائج العامة فقط. لتفاصيل الطالب استخدم رقم الهوية.
               </p>
             )}
           </>
@@ -264,36 +272,6 @@ function StudentPage() {
           />
         )}
       </main>
-    </div>
-  );
-}
-
-function Donut({ pct, label }: { pct: number; label: string }) {
-  const r = 36;
-  const c = 2 * Math.PI * r;
-  const dash = (Math.min(pct, 100) / 100) * c;
-  const display = pct % 1 === 0 ? String(Math.round(pct)) : pct.toFixed(1);
-  const gradId = `gold-${label.replace(/\s/g, "")}`;
-  return (
-    <div className="flex flex-col items-center">
-      <div className="relative w-24 h-24">
-        <svg viewBox="0 0 100 100" className="-rotate-90 w-full h-full">
-          <circle cx="50" cy="50" r={r} fill="none" stroke="oklch(0.22 0.03 250)" strokeWidth="10" />
-          <circle
-            cx="50" cy="50" r={r} fill="none"
-            stroke={`url(#${gradId})`} strokeWidth="10"
-            strokeLinecap="round" strokeDasharray={`${dash} ${c}`}
-          />
-          <defs>
-            <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="oklch(0.78 0.13 80)" />
-              <stop offset="100%" stopColor="oklch(0.88 0.09 85)" />
-            </linearGradient>
-          </defs>
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center font-bold gold-text text-sm">{display}%</div>
-      </div>
-      <div className="text-xs text-center text-muted-foreground mt-2 leading-tight">{label}</div>
     </div>
   );
 }

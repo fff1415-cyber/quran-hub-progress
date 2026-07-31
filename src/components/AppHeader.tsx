@@ -26,7 +26,7 @@ const NAV: NavItem[] = [
   { to: "/supervisor", label: "الإشراف التعليمي", icon: Eye, roles: ["supervisor"] },
   { to: "/musammi", label: "المسمّع", icon: Mic, roles: ["musammi"] },
   { to: "/teacher", label: "حلقتي", icon: BookOpen, roles: ["teacher", "assistant"] },
-  { to: "/student", label: "صفحة الطالب", icon: GraduationCap, roles: ["student", "teacher", "assistant"] },
+  { to: "/student", label: "صفحة الطالب", icon: GraduationCap, roles: ["student", "teacher", "assistant", "supervisor", "musammi", "secretary", "manager"] },
 ];
 
 /** Manager-only shortcuts to other role dashboards. */

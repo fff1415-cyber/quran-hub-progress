@@ -1,12 +1,12 @@
 import { useState } from "react";
 import { loginByCode, loginByNationalId } from "@/lib/secure-data.functions";
 import { setToken, syncFromCloud } from "@/lib/cloud-sync";
-import { setPortalMode } from "@/lib/student-portal-auth";
+import { isPortalViewerRole, setPortalMode } from "@/lib/student-portal-auth";
 import { useTenant } from "@/contexts/TenantContext";
-import { IdCard, Loader2, UserCheck } from "lucide-react";
+import { IdCard, KeyRound, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 
-type LoginMode = "student" | "teacher";
+type LoginMode = "student" | "staff";
 
 export function StudentPortalLogin({
   onAuthenticated,
@@ -38,8 +38,8 @@ export function StudentPortalLogin({
       } else {
         const auth = await loginByCode({ data: { code: value.trim() } });
         if (!auth.token || !auth.role) throw new Error("فشل تسجيل الدخول");
-        if (auth.role !== "teacher" && auth.role !== "assistant") {
-          throw new Error("استخدم عضوية المعلم أو المساعد للاطلاع العام فقط");
+        if (!isPortalViewerRole(auth.role)) {
+          throw new Error("رقم العضوية غير صالح للاطلاع — استخدم عضوية الكادر أو هوية الطالب");
         }
         setToken(auth.token);
         sessionStorage.setItem("qs_role", auth.role);
@@ -47,6 +47,7 @@ export function StudentPortalLogin({
         if (auth.complexId != null) sessionStorage.setItem("qs_complex", String(auth.complexId));
         else if (tenant) sessionStorage.setItem("qs_complex", String(tenant.id));
         if (auth.halaqaId) sessionStorage.setItem("qs_halaqa", String(auth.halaqaId));
+        else sessionStorage.removeItem("qs_halaqa");
         setPortalMode("viewer");
         await syncFromCloud();
         onAuthenticated("viewer");
@@ -62,7 +63,7 @@ export function StudentPortalLogin({
     <section className="glass-card rounded-2xl p-8 max-w-lg mx-auto text-center">
       <h2 className="text-xl font-bold text-primary mb-2">الدخول للاطلاع</h2>
       <p className="text-sm text-muted-foreground mb-6">
-        أدخل رقم هوية الطالب أو عضوية المعلم/المساعد لعرض النتائج
+        رقم هوية الطالب لعرض بياناته، أو رقم العضوية للمعلّم/المشرف/الكادر — للنتائج العامة
       </p>
 
       <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-secondary/40 mb-5">
@@ -77,17 +78,17 @@ export function StudentPortalLogin({
         </button>
         <button
           type="button"
-          onClick={() => { setMode("teacher"); setValue(""); }}
+          onClick={() => { setMode("staff"); setValue(""); }}
           className={`py-2.5 rounded-lg text-sm font-bold transition-all flex items-center justify-center gap-1.5 ${
-            mode === "teacher" ? "gold-gradient text-primary-foreground" : "text-muted-foreground"
+            mode === "staff" ? "gold-gradient text-primary-foreground" : "text-muted-foreground"
           }`}
         >
-          <UserCheck className="w-4 h-4" /> عضوية المعلم
+          <KeyRound className="w-4 h-4" /> رقم العضوية
         </button>
       </div>
 
       <input
-        type={mode === "teacher" ? "password" : "text"}
+        type={mode === "staff" ? "password" : "text"}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         onKeyDown={(e) => e.key === "Enter" && !busy && void submit()}
@@ -105,6 +106,12 @@ export function StudentPortalLogin({
       >
         {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : "دخول"}
       </button>
+
+      {mode === "staff" && (
+        <p className="text-[11px] text-muted-foreground mt-4 leading-relaxed">
+          المعلّم · المساعد · المشرف · المسمّع · السكرتير — عرض النتائج العامة فقط
+        </p>
+      )}
     </section>
   );
 }
