@@ -65,7 +65,7 @@ export function ManagerEvaluationSettingsPanel() {
   const onSave = async () => {
     try {
       await save(draft);
-      toast.success("تم حفظ إعدادات لائحة التقييم");
+      toast.success("تم حفظ درجات السرد");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "فشل الحفظ");
     }
@@ -85,7 +85,7 @@ export function ManagerEvaluationSettingsPanel() {
     <section className="glass-card rounded-2xl p-6 space-y-6">
       <div>
         <h2 className="text-lg font-bold text-primary mb-1 flex items-center gap-2">
-          <ClipboardList className="w-5 h-5" /> إعدادات لائحة التقييم
+          <ClipboardList className="w-5 h-5" /> درجات السرد
         </h2>
         <p className="text-xs text-muted-foreground">
           تُطبَّق على تقييم السرد والمراجعة في صفحة المسمّع — لا أرقام ثابتة في الكود

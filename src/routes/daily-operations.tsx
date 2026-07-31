@@ -7,6 +7,6 @@ export const Route = createFileRoute("/daily-operations")({
     if (role === "secretary") {
       throw redirect({ to: "/secretary", search: { tab: "attendance" } });
     }
-    throw redirect({ to: "/manager", search: { tab: "operations" } });
+    throw redirect({ to: "/secretary", search: { tab: "attendance" } });
   },
 });

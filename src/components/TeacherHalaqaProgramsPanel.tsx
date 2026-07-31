@@ -1,24 +1,24 @@
 import { useMemo, useState } from "react";
-import { loadStudents, DAYS } from "@/lib/mock-data";
+import { loadStudents } from "@/lib/mock-data";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import {
   formatWeekOptionLabel,
   getSelectableWeeks,
-  workingDayKeysFromSemester,
 } from "@/lib/academic-context";
 import {
-  formatProgramOptionsInput,
+  defaultNewProgram,
   loadHalaqaPrograms,
   loadHalaqaProgramsAll,
   loadProgramGrades,
-  newProgramId,
-  parseProgramOptionsInput,
+  programLevelLabels,
   programSlots,
+  PROGRAM_DAYS,
   saveHalaqaPrograms,
   saveProgramGrades,
   SCHEDULE_MODE_LABELS,
-  studentProgramWeekScore,
+  studentAllProgramsWeekTotals,
   type HalaqaProgram,
+  type ProgramLevel,
   type ProgramScheduleMode,
 } from "@/lib/halaqa-programs";
 import { downloadHalaqaProgramsWorkbook } from "@/lib/halaqa-programs-export";
@@ -40,7 +40,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BookOpen, Download, Loader2, Plus, Settings2, Trash2 } from "lucide-react";
+import { BookOpen, Download, Plus, Settings2, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -73,11 +73,6 @@ export function TeacherHalaqaProgramsPanel({
   const [exportOpen, setExportOpen] = useState(false);
   const [fromDate, setFromDate] = useState(calendar.semester?.start_date ?? calendar.operationalDate);
   const [toDate, setToDate] = useState(calendar.operationalDate);
-
-  const workingKeys = useMemo(
-    () => workingDayKeysFromSemester(calendar.semester?.working_days),
-    [calendar.semester?.working_days],
-  );
 
   const allStudents = useMemo(
     () => loadStudents().filter((s) => s.halaqaId === halaqaId),
@@ -116,46 +111,43 @@ export function TeacherHalaqaProgramsPanel({
   };
 
   const openNewProgram = () => {
-    setEditing({
-      id: newProgramId(),
-      name: "",
-      scheduleMode: "weekdays",
-      weekdays: [...workingKeys],
-      timesPerWeek: 2,
-      options: ["ممتاز", "جيد", "ضعيف"],
-      maxScore: 100,
-      sortOrder: programs.length,
-      active: true,
-    });
+    setEditing(defaultNewProgram(programs.length));
     setEditorOpen(true);
   };
 
   const openEditProgram = (p: HalaqaProgram) => {
-    setEditing({ ...p });
+    setEditing({
+      ...p,
+      levels: p.levels.map((l) => ({ ...l })),
+      weekdays: [...p.weekdays],
+    });
     setEditorOpen(true);
   };
 
   const saveProgram = () => {
     if (!editing) return;
     const name = editing.name.trim();
-    const options = editing.options.filter(Boolean);
+    const levels = editing.levels
+      .map((l) => ({ label: l.label.trim(), score: Math.max(0, Number(l.score) || 0) }))
+      .filter((l) => l.label);
     if (!name) {
       toast.error("اسم البرنامج مطلوب");
       return;
     }
-    if (options.length === 0) {
-      toast.error("أضف خياراً واحداً على الأقل للقائمة");
+    if (levels.length === 0) {
+      toast.error("أضف مستوى واحداً على الأقل مع درجته");
       return;
     }
     if (editing.scheduleMode === "weekdays" && editing.weekdays.length === 0) {
       toast.error("اختر يوماً واحداً على الأقل");
       return;
     }
+    const payload = { ...editing, name, levels };
     const all = loadHalaqaProgramsAll(halaqaId);
     const exists = all.some((p) => p.id === editing.id);
     const next = exists
-      ? all.map((p) => (p.id === editing.id ? { ...editing, name, options } : p))
-      : [...all, { ...editing, name, options }];
+      ? all.map((p) => (p.id === editing.id ? payload : p))
+      : [...all, payload];
     saveHalaqaPrograms(halaqaId, next);
     refreshPrograms();
     setEditorOpen(false);
@@ -204,7 +196,7 @@ export function TeacherHalaqaProgramsPanel({
             برنامج الحلقة
           </h2>
           <p className="text-xs text-muted-foreground mt-1">
-            مستقل عن الدرجات الرسمية (حضور، حفظ، ربط، مراجعة)
+            مستقل عن الدرجات الرسمية — المجموع والنسبة تجمع كل البرامج معاً
             {readOnly && " — عرض فقط"}
           </p>
         </div>
@@ -238,7 +230,6 @@ export function TeacherHalaqaProgramsPanel({
       {mode === "setup" && canManagePrograms && !readOnly ? (
         <ProgramSetupSection
           programs={loadHalaqaProgramsAll(halaqaId).filter((p) => p.active !== false)}
-          workingKeys={workingKeys}
           onAdd={openNewProgram}
           onEdit={openEditProgram}
           onRemove={removeProgram}
@@ -250,7 +241,6 @@ export function TeacherHalaqaProgramsPanel({
           weekNum={weekNum}
           calendar={calendar}
           selectableWeeks={selectableWeeks}
-          workingKeys={workingKeys}
           grades={grades}
           readOnly={readOnly}
           onWeekChange={onWeekChange}
@@ -261,7 +251,11 @@ export function TeacherHalaqaProgramsPanel({
       <Dialog open={editorOpen} onOpenChange={setEditorOpen}>
         <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto" dir="rtl">
           <DialogHeader>
-            <DialogTitle>{editing && loadHalaqaProgramsAll(halaqaId).some((p) => p.id === editing.id) ? "تعديل برنامج" : "برنامج جديد"}</DialogTitle>
+            <DialogTitle>
+              {editing && loadHalaqaProgramsAll(halaqaId).some((p) => p.id === editing.id)
+                ? "تعديل برنامج"
+                : "برنامج جديد"}
+            </DialogTitle>
           </DialogHeader>
           {editing && (
             <div className="space-y-4 py-2">
@@ -291,9 +285,9 @@ export function TeacherHalaqaProgramsPanel({
               </div>
               {editing.scheduleMode === "weekdays" ? (
                 <div>
-                  <Label>أيام الأسبوع</Label>
+                  <Label>أيام الأسبوع (يشمل الجمعة والسبت)</Label>
                   <div className="flex flex-wrap gap-2 mt-2">
-                    {DAYS.filter((d) => workingKeys.has(d.key)).map((d) => (
+                    {PROGRAM_DAYS.map((d) => (
                       <label key={d.key} className="flex items-center gap-1 text-sm">
                         <input
                           type="checkbox"
@@ -316,7 +310,7 @@ export function TeacherHalaqaProgramsPanel({
                   <Input
                     type="number"
                     min={1}
-                    max={5}
+                    max={7}
                     value={editing.timesPerWeek}
                     onChange={(e) =>
                       setEditing({ ...editing, timesPerWeek: Number(e.target.value) || 1 })
@@ -324,28 +318,10 @@ export function TeacherHalaqaProgramsPanel({
                   />
                 </div>
               )}
-              <div>
-                <Label>خيارات القائمة (افصل بفاصلة)</Label>
-                <Input
-                  value={formatProgramOptionsInput(editing.options)}
-                  onChange={(e) =>
-                    setEditing({ ...editing, options: parseProgramOptionsInput(e.target.value) })
-                  }
-                  placeholder="ممتاز، جيد، ضعيف"
-                />
-              </div>
-              <div>
-                <Label>الدرجة الكلية للبرنامج (للتقرير فقط)</Label>
-                <Input
-                  type="number"
-                  min={1}
-                  max={1000}
-                  value={editing.maxScore}
-                  onChange={(e) =>
-                    setEditing({ ...editing, maxScore: Number(e.target.value) || 100 })
-                  }
-                />
-              </div>
+              <ProgramLevelsEditor
+                levels={editing.levels}
+                onChange={(levels) => setEditing({ ...editing, levels })}
+              />
             </div>
           )}
           <DialogFooter className="gap-2">
@@ -369,7 +345,12 @@ export function TeacherHalaqaProgramsPanel({
             </div>
             <div>
               <Label>إلى تاريخ</Label>
-              <Input type="date" value={toDate} max={calendar.operationalDate} onChange={(e) => setToDate(e.target.value)} />
+              <Input
+                type="date"
+                value={toDate}
+                max={calendar.operationalDate}
+                onChange={(e) => setToDate(e.target.value)}
+              />
             </div>
           </div>
           <DialogFooter>
@@ -381,15 +362,79 @@ export function TeacherHalaqaProgramsPanel({
   );
 }
 
+function ProgramLevelsEditor({
+  levels,
+  onChange,
+}: {
+  levels: ProgramLevel[];
+  onChange: (levels: ProgramLevel[]) => void;
+}) {
+  const updateLevel = (index: number, patch: Partial<ProgramLevel>) => {
+    onChange(levels.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  };
+
+  const addLevel = () => {
+    onChange([...levels, { label: "", score: 0 }]);
+  };
+
+  const removeLevel = (index: number) => {
+    onChange(levels.filter((_, i) => i !== index));
+  };
+
+  return (
+    <div>
+      <Label>مستويات البرنامج ودرجات كل مستوى</Label>
+      <p className="text-xs text-muted-foreground mt-1 mb-2">
+        حدّد اسم كل مستوى (ممتاز، جيد، ضعيف…) ودرجته — أنت تتحكم بالكامل
+      </p>
+      <div className="space-y-2">
+        {levels.map((level, i) => (
+          <div key={i} className="flex gap-2 items-center">
+            <Input
+              value={level.label}
+              onChange={(e) => updateLevel(i, { label: e.target.value })}
+              placeholder="اسم المستوى"
+              className="flex-1"
+            />
+            <Input
+              type="number"
+              min={0}
+              value={level.score}
+              onChange={(e) => updateLevel(i, { score: Number(e.target.value) || 0 })}
+              placeholder="الدرجة"
+              className="w-24"
+              dir="ltr"
+            />
+            <button
+              type="button"
+              onClick={() => removeLevel(i)}
+              className="text-destructive p-2 rounded hover:bg-destructive/10 shrink-0"
+              aria-label="حذف المستوى"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={addLevel}
+        className="mt-2 text-sm text-primary font-bold flex items-center gap-1 hover:underline"
+      >
+        <Plus className="w-4 h-4" />
+        إضافة مستوى
+      </button>
+    </div>
+  );
+}
+
 function ProgramSetupSection({
   programs,
-  workingKeys,
   onAdd,
   onEdit,
   onRemove,
 }: {
   programs: HalaqaProgram[];
-  workingKeys: Set<string>;
   onAdd: () => void;
   onEdit: (p: HalaqaProgram) => void;
   onRemove: (id: string) => void;
@@ -408,7 +453,7 @@ function ProgramSetupSection({
         <p className="text-center text-sm text-muted-foreground py-6">لا توجد برامج — ابدأ بإضافة برنامج</p>
       ) : (
         programs.map((p) => {
-          const slots = programSlots(p, workingKeys);
+          const slots = programSlots(p);
           return (
             <div key={p.id} className="rounded-xl border border-border p-4 bg-secondary/20">
               <div className="flex justify-between items-start gap-2 mb-2">
@@ -418,14 +463,22 @@ function ProgramSetupSection({
                     {SCHEDULE_MODE_LABELS[p.scheduleMode]} · {slots.map((s) => s.label).join("، ") || "—"}
                   </div>
                   <div className="text-xs text-muted-foreground mt-1">
-                    الخيارات: {p.options.join(" · ")}
+                    المستويات: {p.levels.map((l) => `${l.label} (${l.score})`).join(" · ")}
                   </div>
                 </div>
                 <div className="flex gap-1">
-                  <button type="button" onClick={() => onEdit(p)} className="text-xs px-2 py-1 rounded border border-border hover:bg-secondary">
+                  <button
+                    type="button"
+                    onClick={() => onEdit(p)}
+                    className="text-xs px-2 py-1 rounded border border-border hover:bg-secondary"
+                  >
                     تعديل
                   </button>
-                  <button type="button" onClick={() => onRemove(p.id)} className="text-destructive p-1.5 rounded hover:bg-destructive/10">
+                  <button
+                    type="button"
+                    onClick={() => onRemove(p.id)}
+                    className="text-destructive p-1.5 rounded hover:bg-destructive/10"
+                  >
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
@@ -444,7 +497,6 @@ function ProgramFillSection({
   weekNum,
   calendar,
   selectableWeeks,
-  workingKeys,
   grades,
   readOnly,
   onWeekChange,
@@ -455,7 +507,6 @@ function ProgramFillSection({
   weekNum: number;
   calendar: AcademicCalendar;
   selectableWeeks: ReturnType<typeof getSelectableWeeks>;
-  workingKeys: Set<string>;
   grades: ReturnType<typeof loadProgramGrades>;
   readOnly: boolean;
   onWeekChange: (n: number) => void;
@@ -494,57 +545,64 @@ function ProgramFillSection({
             <tr className="bg-secondary/50">
               <th className="p-2 text-right sticky right-0 bg-secondary z-10 min-w-[120px]">الطالب</th>
               {programs.map((p) => {
-                const slots = programSlots(p, workingKeys);
+                const slots = programSlots(p);
                 return (
-                  <th key={p.id} colSpan={slots.length + 1} className="p-2 border-r border-border text-primary text-center">
+                  <th
+                    key={p.id}
+                    colSpan={slots.length}
+                    className="p-2 border-r border-border text-primary text-center"
+                  >
                     {p.name}
                   </th>
                 );
               })}
+              <th colSpan={2} className="p-2 border-r border-border text-primary text-center bg-primary/10">
+                المجموع (كل البرامج)
+              </th>
             </tr>
             <tr className="bg-secondary/30 text-xs text-muted-foreground">
               <th className="sticky right-0 bg-secondary" />
               {programs.flatMap((p) => {
-                const slots = programSlots(p, workingKeys);
-                return [
-                  ...slots.map((sl) => (
-                    <th key={`${p.id}-${sl.key}`} className="p-1 border-r border-border min-w-[72px]">
-                      {sl.label}
-                    </th>
-                  )),
-                  <th key={`${p.id}-pct`} className="p-1 border-r border-border min-w-[56px] text-primary">
-                    %
-                  </th>,
-                ];
+                const slots = programSlots(p);
+                return slots.map((sl) => (
+                  <th key={`${p.id}-${sl.key}`} className="p-1 border-r border-border min-w-[72px]">
+                    {sl.label}
+                  </th>
+                ));
               })}
+              <th className="p-1 border-r border-border min-w-[64px] text-primary font-bold">رقم</th>
+              <th className="p-1 border-r border-border min-w-[56px] text-primary font-bold">%</th>
             </tr>
           </thead>
           <tbody>
-            {students.map((s) => (
-              <tr key={s.id} className="border-b border-border/50 hover:bg-accent/20">
-                <td className="p-2 sticky right-0 bg-card font-medium">{s.name}</td>
-                {programs.flatMap((p) => {
-                  const slots = programSlots(p, workingKeys);
-                  const vals = grades[s.id]?.[weekNum]?.[p.id];
-                  const pct = studentProgramWeekScore(p, slots, vals);
-                  return [
-                    ...slots.map((sl) => (
+            {students.map((s) => {
+              const totals = studentAllProgramsWeekTotals(programs, grades, s.id, weekNum);
+              return (
+                <tr key={s.id} className="border-b border-border/50 hover:bg-accent/20">
+                  <td className="p-2 sticky right-0 bg-card font-medium">{s.name}</td>
+                  {programs.flatMap((p) => {
+                    const slots = programSlots(p);
+                    const vals = grades[s.id]?.[weekNum]?.[p.id];
+                    return slots.map((sl) => (
                       <td key={`${s.id}-${p.id}-${sl.key}`} className="p-1 border-r border-border/30">
                         <CustomFieldSelect
                           value={vals?.[sl.key] ?? ""}
-                          options={p.options}
+                          options={programLevelLabels(p)}
                           disabled={readOnly}
                           onChange={(v) => onCellChange(s.id, p.id, sl.key, v)}
                         />
                       </td>
-                    )),
-                    <td key={`${s.id}-${p.id}-pct`} className="p-1 border-r border-border/30 text-center text-xs font-bold text-primary">
-                      {pct > 0 ? `${pct}%` : "—"}
-                    </td>,
-                  ];
-                })}
-              </tr>
-            ))}
+                    ));
+                  })}
+                  <td className="p-1 border-r border-border/30 text-center text-xs font-bold text-primary bg-primary/5">
+                    {totals.filledSlots > 0 ? totals.earned : "—"}
+                  </td>
+                  <td className="p-1 border-r border-border/30 text-center text-xs font-bold text-primary bg-primary/5">
+                    {totals.filledSlots > 0 ? `${totals.percent}%` : "—"}
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}

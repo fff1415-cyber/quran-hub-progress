@@ -1,32 +1,55 @@
-import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useMemo } from "react";
 import {
-  loadSardQueue, loadNotifications, loadAttendanceArchive, countTransfersForRole,
+  loadSardQueue, loadNotifications, countTransfersForRole,
 } from "@/lib/mock-data";
 import { getSessionName } from "@/lib/session-role";
 import { AppHeader } from "@/components/AppHeader";
-import { SemesterSetupForm } from "@/components/SemesterSetupForm";
-import { SemesterEditForm } from "@/components/SemesterEditForm";
-import { DailyOperations } from "@/components/DailyOperations";
 import { RoleShell, RolePageHeader, type RoleTab } from "@/components/role-workspace/RoleShell";
-import { AdminOverviewPanel } from "@/components/role-workspace/AdminOverviewPanel";
-import { ManagerTransfersPanel } from "@/components/role-workspace/ManagerTransfersPanel";
-import { ManagerRecordsPanel } from "@/components/role-workspace/ManagerRecordsPanel";
-import { ManagerSettingsPanel } from "@/components/role-workspace/ManagerSettingsPanel";
-import { ManagerBrandingPanel } from "@/components/role-workspace/ManagerBrandingPanel";
-import { ManagerEvaluationSettingsPanel } from "@/components/role-workspace/ManagerEvaluationSettingsPanel";
-import { ManagerHalaqaProgramsViewPanel } from "@/components/role-workspace/ManagerHalaqaProgramsViewPanel";
-import { ManagerWeeklyTestsSettingsPanel } from "@/components/ManagerWeeklyTestsSettingsPanel";
-import { ManagerStaffAttendancePanel } from "@/components/ManagerStaffAttendancePanel";
-import { WeeklyTestsOverviewPanel } from "@/components/WeeklyTestsOverviewPanel";
+import { ManagerInboxPanel } from "@/components/role-workspace/ManagerInboxPanel";
+import { ManagerDataPanel } from "@/components/role-workspace/ManagerDataPanel";
+import { ManagerGradesEvaluationPanel } from "@/components/role-workspace/ManagerGradesEvaluationPanel";
+import { ManagerGeneralSettingsPanel } from "@/components/role-workspace/ManagerGeneralSettingsPanel";
+import { ManagerStaffAttendanceMonitorPanel } from "@/components/ManagerStaffAttendanceMonitorPanel";
 import {
-  Crown, CalendarDays, ClipboardList, Send, BarChart3, FolderArchive, MessageSquare, LayoutDashboard, Scale, ClipboardCheck, UserCheck, Palette, BookOpen,
+  Crown, Inbox, Database, UserCheck, GraduationCap, Settings,
 } from "lucide-react";
 import { Toaster } from "sonner";
+
+const MAIN_TABS = ["inbox", "data", "staff", "grades", "settings"] as const;
+type MainTab = (typeof MAIN_TABS)[number];
+
+const DEFAULT_SECTION: Record<MainTab, string> = {
+  inbox: "transfers",
+  data: "import",
+  staff: "monitor",
+  grades: "sard",
+  settings: "branding",
+};
+
+const VALID_SECTIONS: Record<MainTab, string[]> = {
+  inbox: ["transfers", "notifications"],
+  data: ["import", "halaqat", "students", "codes"],
+  staff: ["monitor"],
+  grades: ["sard", "items", "weekly", "staff-settings"],
+  settings: ["branding", "semesters", "messages"],
+};
+
+function resolveMainTab(raw?: string): MainTab {
+  if (raw && MAIN_TABS.includes(raw as MainTab)) return raw as MainTab;
+  return "inbox";
+}
+
+function resolveSection(main: MainTab, raw?: string): string {
+  const allowed = VALID_SECTIONS[main];
+  if (raw && allowed.includes(raw)) return raw;
+  return DEFAULT_SECTION[main];
+}
 
 export const Route = createFileRoute("/manager")({
   validateSearch: (s: Record<string, unknown>) => ({
     tab: typeof s.tab === "string" ? s.tab : undefined,
+    section: typeof s.section === "string" ? s.section : undefined,
   }),
   component: ManagerPage,
 });
@@ -36,124 +59,78 @@ function ManagerPage() {
   const search = Route.useSearch();
   const name = getSessionName("المدير");
 
-  const [queue] = useState(() => loadSardQueue());
-  const archive = loadAttendanceArchive();
-  const [notifs] = useState(() => loadNotifications());
+  const mainTab = resolveMainTab(search.tab);
+  const section = resolveSection(mainTab, search.section);
 
-  const pendingTransfers = countTransfersForRole("manager");
-  const struggling = useMemo(
-    () => notifs.filter((n) => n.type === "transfer" && n.transferStatus === "struggling"),
-    [notifs],
-  );
-  const failedFinal = useMemo(() => queue.filter((q) => q.status === "final_failed"), [queue]);
-  const absenceArchive = useMemo(() => archive.filter((a) => a.type === "absent"), [archive]);
-  const lateArchive = useMemo(() => archive.filter((a) => a.type === "late"), [archive]);
+  const inboxBadge = useMemo(() => {
+    const queue = loadSardQueue();
+    const notifs = loadNotifications();
+    const pendingTransfers = countTransfersForRole("manager");
+    const struggling = notifs.filter((n) => n.type === "transfer" && n.transferStatus === "struggling");
+    const failedFinal = queue.filter((q) => q.status === "final_failed");
+    const unread = notifs.filter((n) => !n.read);
+    return pendingTransfers + struggling.length + failedFinal.length + unread.length;
+  }, []);
+
+  const setMainTab = (tab: string) => {
+    const next = resolveMainTab(tab);
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        tab: next,
+        section: DEFAULT_SECTION[next],
+      }),
+    });
+  };
+
+  const setSection = (nextSection: string) => {
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        tab: mainTab,
+        section: nextSection,
+      }),
+    });
+  };
 
   const tabs: RoleTab[] = [
     {
-      id: "calendar",
-      label: "التقويم",
-      icon: CalendarDays,
+      id: "inbox",
+      label: "صندوق العمل",
+      icon: Inbox,
       roles: ["manager"],
-      content: (
-        <div className="space-y-6">
-          <div className="ring-2 ring-success/25 rounded-2xl">
-            <SemesterEditForm />
-          </div>
-          <div className="ring-2 ring-primary/25 rounded-2xl">
-            <SemesterSetupForm />
-          </div>
-        </div>
-      ),
+      badge: inboxBadge,
+      content: <ManagerInboxPanel section={section} onSectionChange={setSection} />,
     },
     {
-      id: "operations",
-      label: "المتابعة اليومية",
-      icon: ClipboardList,
-      perm: "view_attendance",
-      content: (
-        <div className="glass-card rounded-2xl p-5 md:p-6">
-          <DailyOperations />
-        </div>
-      ),
-    },
-    {
-      id: "transfers",
-      label: "التحويلات",
-      icon: Send,
+      id: "data",
+      label: "البيانات",
+      icon: Database,
       roles: ["manager"],
-      badge: pendingTransfers + struggling.length + failedFinal.length,
-      content: <ManagerTransfersPanel />,
+      content: <ManagerDataPanel section={section} onSectionChange={setSection} />,
     },
     {
-      id: "overview",
-      label: "المتابعة والإشعارات",
-      icon: BarChart3,
-      perm: "view_attendance",
-      roles: ["manager"],
-      content: <AdminOverviewPanel />,
-    },
-    {
-      id: "records",
-      label: "السجلات",
-      icon: FolderArchive,
-      perm: "view_attendance",
-      roles: ["manager"],
-      badge: absenceArchive.length + lateArchive.length,
-      content: <ManagerRecordsPanel />,
-    },
-    {
-      id: "halaqa-programs",
-      label: "برامج الحلقات",
-      icon: BookOpen,
-      roles: ["manager"],
-      content: <ManagerHalaqaProgramsViewPanel />,
-    },
-    {
-      id: "staff-attendance",
-      label: "حضور العاملين",
+      id: "staff",
+      label: "العاملين",
       icon: UserCheck,
       roles: ["manager"],
-      content: <ManagerStaffAttendancePanel />,
+      content: <ManagerStaffAttendanceMonitorPanel />,
     },
     {
-      id: "weekly-tests",
-      label: "الاختبارات الأسبوعية",
-      icon: ClipboardCheck,
+      id: "grades",
+      label: "الدرجات والتقييم",
+      icon: GraduationCap,
       roles: ["manager"],
-      content: (
-        <div className="space-y-6">
-          <ManagerWeeklyTestsSettingsPanel />
-          <WeeklyTestsOverviewPanel />
-        </div>
-      ),
-    },
-    {
-      id: "branding",
-      label: "هوية المجمع",
-      icon: Palette,
-      roles: ["manager"],
-      content: <ManagerBrandingPanel />,
-    },
-    {
-      id: "evaluation-settings",
-      label: "لائحة التقييم",
-      icon: Scale,
-      roles: ["manager"],
-      content: <ManagerEvaluationSettingsPanel />,
+      content: <ManagerGradesEvaluationPanel section={section} onSectionChange={setSection} />,
     },
     {
       id: "settings",
-      label: "إعدادات الرسائل",
-      icon: MessageSquare,
+      label: "الإعدادات",
+      icon: Settings,
       roles: ["manager"],
-      content: <ManagerSettingsPanel />,
+      content: <ManagerGeneralSettingsPanel section={section} onSectionChange={setSection} />,
     },
   ];
-
-  const setTab = (tab: string) => {
-    navigate({ search: (prev) => ({ ...prev, tab }) });
-  };
 
   return (
     <div className="min-h-screen">
@@ -163,23 +140,15 @@ function ManagerPage() {
         <RoleShell
           className="max-w-5xl mx-auto"
           tabs={tabs}
-          defaultTab="operations"
-          activeTab={search.tab}
-          onTabChange={setTab}
+          defaultTab="inbox"
+          activeTab={mainTab}
+          onTabChange={setMainTab}
           header={
-            <>
-              <RolePageHeader
-                icon={Crown}
-                title="لوحة المدير"
-                description="إدارة عليا — كل الأقسام حسب صلاحياتك في مكان واحد"
-                extra={
-                  <Link to="/dashboard" className="inline-flex items-center gap-2 mt-3 px-4 py-2 rounded-lg border border-primary/30 text-primary text-sm font-bold hover:bg-primary/10">
-                    <LayoutDashboard className="w-4 h-4" />
-                    لوحة التحكم — طلاب وحلقات واستيراد
-                  </Link>
-                }
-              />
-            </>
+            <RolePageHeader
+              icon={Crown}
+              title="لوحة المدير"
+              description="قرارات، بيانات، وإعدادات المجمع — التشغيل اليومي عند السكرتير والمشرف"
+            />
           }
         />
       </main>
