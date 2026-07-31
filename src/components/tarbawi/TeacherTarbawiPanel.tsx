@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import { getSelectableWeeks, formatWeekOptionLabel } from "@/lib/academic-context";
 import { weekLabel } from "@/lib/arabic-numbers";
@@ -14,6 +14,7 @@ import {
   clearItemWeekAssignments,
   computeTarbawiStats,
   distributeTarbawiItems,
+  formatPlanSpanLabel,
   getHalaqaPlanSpan,
   getTarbawiPlan,
   getTarbawiSettings,
@@ -22,7 +23,6 @@ import {
   mergeTarbawiStores,
   newTarbawiItem,
   paragraphTypeLabel,
-  PLAN_SPAN_OPTIONS,
   requiredTarbawiItemCount,
   saveTarbawiPlan,
   saveTarbawiStore,
@@ -59,43 +59,57 @@ export function TeacherTarbawiPanel({
   const [settings, setSettings] = useState<TarbawiSettings>(() => getTarbawiSettings(semesterId));
   const spanWeeks = getHalaqaPlanSpan(settings, halaqaId, semesterWeeks);
   const spanSetting = settings.halaqaSpans[halaqaId] ?? "full";
-  const spanLabel = PLAN_SPAN_OPTIONS.find((o) => o.value === spanSetting)?.label
-    ?? `${spanWeeks} أسبوع`;
+  const spanLabel = formatPlanSpanLabel(spanSetting, spanWeeks, semesterWeeks);
   const supervisorConfigured = spanSetting !== "full" || settings.weeklyRequiredCount !== 2
     || Object.keys(settings.halaqaSpans).length > 0;
-
-  /** Pull latest supervisor settings from cloud when opening the tab. */
-  useEffect(() => {
-    let cancelled = false;
-    const token = getToken();
-    if (!token) {
-      setSettings(getTarbawiSettings(semesterId));
-      return;
-    }
-    void secureListAppState({ data: { token } })
-      .then((rows) => {
-        if (cancelled) return;
-        const row = rows.find((r) => r.key === "tarbawi_program");
-        if (!row?.value) {
-          setSettings(getTarbawiSettings(semesterId));
-          return;
-        }
-        sessionStorage.setItem("qs_syncing", "1");
-        const { merged } = mergeTarbawiStores(loadTarbawiStore(), row.value as TarbawiStore);
-        saveTarbawiStore(merged);
-        sessionStorage.removeItem("qs_syncing");
-        setSettings(getTarbawiSettings(semesterId));
-      })
-      .catch(() => {
-        if (!cancelled) setSettings(getTarbawiSettings(semesterId));
-      });
-    return () => { cancelled = true; };
-  }, [semesterId, halaqaId]);
 
   const [plan, setPlan] = useState<TarbawiHalaqaPlan>(() => getTarbawiPlan(semesterId, halaqaId));
   const [busy, setBusy] = useState(false);
 
-  const refreshPlan = () => setPlan(getTarbawiPlan(semesterId, halaqaId));
+  /** Pull tarbawi store from cloud then refresh settings + plan. */
+  const refreshFromCloud = useCallback(async () => {
+    const prevStatus = getTarbawiPlan(semesterId, halaqaId).status;
+    const token = getToken();
+    if (token) {
+      try {
+        const rows = await secureListAppState({ data: { token } });
+        const row = rows.find((r) => r.key === "tarbawi_program");
+        if (row?.value) {
+          sessionStorage.setItem("qs_syncing", "1");
+          const { merged } = mergeTarbawiStores(loadTarbawiStore(), row.value as TarbawiStore);
+          saveTarbawiStore(merged);
+          sessionStorage.removeItem("qs_syncing");
+        }
+      } catch {
+        sessionStorage.removeItem("qs_syncing");
+      }
+    }
+    const nextPlan = getTarbawiPlan(semesterId, halaqaId);
+    setSettings(getTarbawiSettings(semesterId));
+    setPlan(nextPlan);
+    if (prevStatus === "submitted" && nextPlan.status === "approved") {
+      toast.success("تم اعتماد الخطة — يمكنك البدء بالتنفيذ");
+    }
+    return nextPlan;
+  }, [semesterId, halaqaId]);
+
+  useEffect(() => {
+    void refreshFromCloud();
+  }, [refreshFromCloud]);
+
+  /** Poll while waiting for supervisor approval; also refresh when tab regains focus. */
+  useEffect(() => {
+    if (plan.status !== "submitted") return;
+    const id = window.setInterval(() => { void refreshFromCloud(); }, 12000);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void refreshFromCloud();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [plan.status, refreshFromCloud]);
 
   const isApproved = plan.status === "approved";
   const isSubmitted = plan.status === "submitted";
@@ -170,7 +184,9 @@ export function TeacherTarbawiPanel({
         <p className="text-sm text-muted-foreground">
           أُرسلت {plan.submittedAt ? new Date(plan.submittedAt).toLocaleString("ar-SA") : ""} — لا يمكن التنفيذ قبل الاعتماد
         </p>
-        <Button variant="outline" size="sm" onClick={refreshPlan}>تحديث الحالة</Button>
+        <Button variant="outline" size="sm" onClick={() => void refreshFromCloud()}>
+          تحديث الحالة
+        </Button>
       </div>
     );
   }
@@ -191,7 +207,7 @@ export function TeacherTarbawiPanel({
               )}
               {canEditPlan && !distributed && "أضف كل الفقرات (نوع + موضوع) ثم وزّعها على الأسابيع"}
               {canEditPlan && distributed && "راجع التوزيع على الأسابيع ثم أرسل للاعتماد"}
-              {isApproved && "مرحلة التنفيذ — سجّل التنفيذ والمستفيدين"}
+              {isApproved && "مرحلة التنفيذ — سجّل التنفيذ والملقي وعدد المستفيدين"}
               {plan.status === "rejected" && (
                 <span className="text-destructive block mt-1">مرفوض: {plan.rejectionNote}</span>
               )}
@@ -263,7 +279,7 @@ export function TeacherTarbawiPanel({
                 {isApproved && (
                   <>
                     <th className="p-2 border border-border w-16">تنفيذ</th>
-                    <th className="p-2 border border-border">المنفّذ</th>
+                    <th className="p-2 border border-border">الملقي</th>
                     <th className="p-2 border border-border w-24">المستفيدون</th>
                   </>
                 )}

@@ -4,9 +4,11 @@ import type { AcademicCalendar } from "@/lib/academic-context";
 import { weekLabel } from "@/lib/arabic-numbers";
 import {
   computeTarbawiStats,
+  formatPlanSpanLabel,
   getHalaqaPlanSpan,
   getTarbawiPlan,
   getTarbawiSettings,
+  paragraphTypeLabel,
 } from "@/lib/tarbawi-program";
 import { TeacherTarbawiPanel } from "@/components/tarbawi/TeacherTarbawiPanel";
 import {
@@ -25,6 +27,8 @@ export function ProgramSupervisorMonitorPanel({ calendar }: { calendar: Academic
   const halaqa = halaqat.find((h) => h.id === halaqaId);
   const plan = useMemo(() => getTarbawiPlan(semesterId, halaqaId), [semesterId, halaqaId, calendar]);
   const spanWeeks = halaqa ? getHalaqaPlanSpan(settings, halaqaId, semesterWeeks) : 0;
+  const spanSetting = settings.halaqaSpans[halaqaId];
+  const spanLabel = formatPlanSpanLabel(spanSetting, spanWeeks, semesterWeeks);
   const weekStats = useMemo(
     () => computeTarbawiStats(plan, spanWeeks, weekNum),
     [plan, spanWeeks, weekNum],
@@ -37,12 +41,16 @@ export function ProgramSupervisorMonitorPanel({ calendar }: { calendar: Academic
   const statusLabel: Record<string, string> = {
     draft: "مسودة",
     submitted: "بانتظار الاعتماد",
-    approved: "معتمد — تنفيذ",
+    approved: "معتمد — التنفيذ عند المعلّم",
     rejected: "مرفوض",
   };
 
   return (
     <div className="space-y-6">
+      <p className="text-xs text-muted-foreground px-1">
+        متابعة فقط — التنفيذ وتسجيل المستفيدين يتم من صفحة المعلّم
+      </p>
+
       <section className="glass-card rounded-2xl p-5">
         <div className="flex flex-wrap gap-4 items-end mb-4">
           <div>
@@ -78,20 +86,60 @@ export function ProgramSupervisorMonitorPanel({ calendar }: { calendar: Academic
               <DashCard label={`تنفيذ ${weekLabel(weekNum)}`} value={formatOverallPercent(weekStats.pct)} />
               <DashCard label="تنفيذ الخطة (الفصل)" value={formatOverallPercent(semesterStats.pct)} />
               <DashCard label="فقرات منفّذة" value={`${semesterStats.executed}/${semesterStats.total}`} />
-              <DashCard label="مدة الخطة" value={`${spanWeeks} أسب.`} />
+              <DashCard label="مدة الخطة" value={spanLabel} />
             </div>
           </>
         )}
       </section>
 
-      {halaqa && (
-        <SupervisorPlanEditor
-          plan={plan}
+      {halaqa && plan.status === "approved" && (
+        <TeacherTarbawiPanel
+          halaqaId={plan.halaqaId}
           halaqaName={halaqa.name}
           calendar={calendar}
           weekNum={weekNum}
           onWeekChange={setWeekNum}
+          readOnly
         />
+      )}
+
+      {halaqa && plan.status !== "approved" && (
+        <div className="glass-card rounded-2xl p-6 text-sm text-muted-foreground text-center space-y-2">
+          {plan.status === "submitted" && (
+            <p>الخطة بانتظار اعتمادك — راجع تبويب «اعتماد الخطط»</p>
+          )}
+          {plan.status === "draft" && plan.items.length === 0 && (
+            <p>المعلّم لم يرسل خطة بعد</p>
+          )}
+          {plan.status === "draft" && plan.items.length > 0 && (
+            <p>المعلّم يعدّ الخطة — لم تُرسل للاعتماد بعد</p>
+          )}
+          {plan.status === "rejected" && (
+            <p>الخطة مرفوضة — بانتظار تعديل المعلّم</p>
+          )}
+          {plan.items.length > 0 && plan.status !== "submitted" && (
+            <div className="overflow-x-auto mt-4 text-right">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="text-muted-foreground border-b border-border">
+                    <th className="p-2">الأسبوع</th>
+                    <th className="p-2">النوع</th>
+                    <th className="p-2">الموضوع</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plan.items.sort((a, b) => a.weekNumber - b.weekNumber).map((item) => (
+                    <tr key={item.id} className="border-b border-border/30">
+                      <td className="p-2">{item.weekNumber > 0 ? weekLabel(item.weekNumber) : "—"}</td>
+                      <td className="p-2">{paragraphTypeLabel(settings, item.paragraphTypeId)}</td>
+                      <td className="p-2">{item.topic}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
       )}
     </div>
   );
@@ -102,40 +150,6 @@ function DashCard({ label, value }: { label: string; value: string }) {
     <div className="rounded-xl border border-primary/20 bg-primary/5 p-3 text-center">
       <div className="text-[10px] text-muted-foreground">{label}</div>
       <div className="text-lg font-bold gold-text">{value}</div>
-    </div>
-  );
-}
-
-/** Supervisor can view/edit approved plan execution same as teacher panel */
-function SupervisorPlanEditor({
-  plan,
-  halaqaName,
-  calendar,
-  weekNum,
-  onWeekChange,
-}: {
-  plan: ReturnType<typeof getTarbawiPlan>;
-  halaqaName: string;
-  calendar: AcademicCalendar;
-  weekNum: number;
-  onWeekChange: (n: number) => void;
-}) {
-  if (plan.status === "approved") {
-    return (
-      <TeacherTarbawiPanel
-        halaqaId={plan.halaqaId}
-        halaqaName={halaqaName}
-        calendar={calendar}
-        weekNum={weekNum}
-        onWeekChange={onWeekChange}
-        readOnly={false}
-      />
-    );
-  }
-
-  return (
-    <div className="glass-card rounded-2xl p-6 text-sm text-muted-foreground text-center">
-      الخطة لم تُعتمد بعد — راجع تبويب «اعتماد الخطط»
     </div>
   );
 }

@@ -79,7 +79,7 @@ export function ProgramSupervisorSettingsPanel({
     try {
       await pushTarbawiStoreCloud(loadTarbawiStore());
       setSettings(getTarbawiSettings(semesterId));
-      toast.success("تم حفظ ومزامنة إعدادات البرنامج التربوي");
+      toast.success("تم حفظ التعديلات");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "تعذّر مزامنة الإعدادات مع السحابة");
     } finally {
@@ -90,7 +90,7 @@ export function ProgramSupervisorSettingsPanel({
   return (
     <div className="space-y-6">
       <p className="text-xs text-muted-foreground px-1">
-        تُحفظ التغييرات فوراً — اضغط «مزامنة مع السحابة» قبل استخدام جهاز آخر
+        تُحفظ التغييرات فوراً — اضغط «حفظ التعديلات» لحفظها في السحابة
       </p>
 
       <section className="glass-card rounded-2xl p-6 space-y-4">
@@ -177,7 +177,7 @@ export function ProgramSupervisorSettingsPanel({
         className="gold-gradient text-primary-foreground font-bold gap-2"
       >
         {cloudBusy && <Loader2 className="w-4 h-4 animate-spin" />}
-        مزامنة مع السحابة
+        حفظ التعديلات
       </Button>
     </div>
   );

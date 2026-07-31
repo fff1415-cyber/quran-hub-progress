@@ -105,6 +105,21 @@ function normalizeSettings(raw: TarbawiSettings): TarbawiSettings {
   };
 }
 
+const PLAN_STATUS_RANK: Record<TarbawiPlanStatus, number> = {
+  draft: 0,
+  rejected: 1,
+  submitted: 2,
+  approved: 3,
+};
+
+function pickMergedPlan(localPlan: TarbawiHalaqaPlan, cloudPlan: TarbawiHalaqaPlan): TarbawiHalaqaPlan {
+  if (localPlan.updatedAt > cloudPlan.updatedAt) return localPlan;
+  if (cloudPlan.updatedAt > localPlan.updatedAt) return cloudPlan;
+  return PLAN_STATUS_RANK[localPlan.status] >= PLAN_STATUS_RANK[cloudPlan.status]
+    ? localPlan
+    : cloudPlan;
+}
+
 function normalizeStore(raw: TarbawiStore): TarbawiStore {
   const settingsBySemester: Record<string, TarbawiSettings> = {};
   for (const [semId, s] of Object.entries(raw.settingsBySemester ?? {})) {
@@ -135,8 +150,27 @@ function writeStore(store: TarbawiStore): void {
 }
 
 export async function pushTarbawiStoreCloud(store: TarbawiStore): Promise<void> {
-  const { pushAppState } = await import("./cloud-sync");
-  await pushAppState("tarbawi_program", store);
+  const { pushAppState, getToken } = await import("./cloud-sync");
+  const token = getToken();
+  if (!token) {
+    await pushAppState("tarbawi_program", store);
+    return;
+  }
+  try {
+    const { secureListAppState } = await import("./secure-data.functions");
+    const rows = await secureListAppState({ data: { token } });
+    const row = rows.find((r) => r.key === "tarbawi_program");
+    const cloud = (row?.value as TarbawiStore) ?? { settingsBySemester: {}, plans: {} };
+    const { merged } = mergeTarbawiStores(store, cloud);
+    await pushAppState("tarbawi_program", merged);
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem("qs_syncing", "1");
+      localStorage.setItem(KEY_STORE, JSON.stringify(merged));
+      sessionStorage.removeItem("qs_syncing");
+    }
+  } catch {
+    await pushAppState("tarbawi_program", store);
+  }
 }
 
 export function ensureTarbawiSemester(semesterId: string | null): boolean {
@@ -182,9 +216,13 @@ export function mergeTarbawiStores(
 
   for (const [key, localPlan] of Object.entries(l.plans)) {
     const cloudPlan = c.plans[key];
-    if (!cloudPlan || localPlan.updatedAt > cloudPlan.updatedAt) {
+    if (!cloudPlan) {
       plans[key] = localPlan;
       pushToCloud = true;
+    } else {
+      const winner = pickMergedPlan(localPlan, cloudPlan);
+      plans[key] = winner;
+      if (winner === localPlan && localPlan.updatedAt >= cloudPlan.updatedAt) pushToCloud = true;
     }
   }
 
@@ -438,6 +476,19 @@ export function listSubmittedTarbawiPlans(semesterId: string): TarbawiHalaqaPlan
 
 export function paragraphTypeLabel(settings: TarbawiSettings, typeId: string): string {
   return settings.paragraphTypes.find((t) => t.id === typeId)?.label ?? typeId;
+}
+
+export function formatPlanSpanLabel(
+  spanSetting: TarbawiPlanSpan | undefined,
+  spanWeeks: number,
+  semesterWeeks: number,
+): string {
+  if (spanSetting === "full" || spanWeeks >= semesterWeeks) return "كامل الفصل";
+  const opt = PLAN_SPAN_OPTIONS.find((o) => o.value === spanSetting);
+  if (opt) return opt.label;
+  if (spanWeeks === 1) return "أسبوع واحد";
+  if (spanWeeks === 2) return "أسبوعان";
+  return `${spanWeeks} أسابيع`;
 }
 
 export const PLAN_SPAN_OPTIONS: { value: TarbawiPlanSpan; label: string }[] = [
