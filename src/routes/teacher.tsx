@@ -371,6 +371,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const [planStudentIds, setPlanStudentIds] = useState<Set<string>>(new Set());
   const [planSheetStudent, setPlanSheetStudent] = useState<Student | null>(null);
   const [planSheetData, setPlanSheetData] = useState<StudentPlanSheetData | null>(null);
+  const [planSheetError, setPlanSheetError] = useState<string | null>(null);
   const [planSheetLoading, setPlanSheetLoading] = useState(false);
   const senderName = typeof window !== "undefined" ? (sessionStorage.getItem("qs_name") || "المعلم") : "المعلم";
 
@@ -453,11 +454,15 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
   const openPlanSheet = async (s: Student) => {
     setPlanSheetStudent(s);
+    setPlanSheetData(null);
+    setPlanSheetError(null);
     setPlanSheetLoading(true);
     try {
       setPlanSheetData(await fetchStudentPlanSheet(s.id));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "فشل تحميل الخطة");
+      const message = e instanceof Error ? e.message : "فشل تحميل الخطة";
+      setPlanSheetError(message);
+      toast.error(message);
     } finally {
       setPlanSheetLoading(false);
     }
@@ -799,7 +804,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
       {showAssign && <AssignmentDialog halaqaId={halaqaId} onClose={() => setShowAssign(false)} />}
 
-      <Dialog open={!!planSheetStudent} onOpenChange={(o) => !o && setPlanSheetStudent(null)}>
+      <Dialog
+        open={!!planSheetStudent}
+        onOpenChange={(o) => {
+          if (!o) {
+            setPlanSheetStudent(null);
+            setPlanSheetData(null);
+            setPlanSheetError(null);
+          }
+        }}
+      >
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>ورقة الإنجاز التراكمية</DialogTitle>
@@ -810,6 +824,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
               studentName={planSheetStudent.name}
               readOnly
               loading={planSheetLoading}
+              error={planSheetError}
             />
           )}
         </DialogContent>

@@ -17,6 +17,7 @@ interface StudentPlanSheetProps {
   studentName?: string;
   readOnly?: boolean;
   loading?: boolean;
+  error?: string | null;
   className?: string;
 }
 
@@ -25,6 +26,7 @@ export function StudentPlanSheet({
   studentName,
   readOnly = true,
   loading,
+  error,
   className,
 }: StudentPlanSheetProps) {
   const { assignment, plan, segments, completions } = data;
@@ -54,6 +56,15 @@ export function StudentPlanSheet({
       <div className={cn("flex items-center justify-center py-16 text-muted-foreground", className)}>
         <Loader2 className="w-6 h-6 animate-spin ml-2" />
         جاري تحميل الخطة...
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className={cn("text-center py-12 text-destructive text-sm space-y-2", className)}>
+        <p>{studentName ? `${studentName}: ` : ""}تعذّر تحميل ورقة الإنجاز</p>
+        <p className="text-xs text-muted-foreground max-w-md mx-auto">{error}</p>
       </div>
     );
   }

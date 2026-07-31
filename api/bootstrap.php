@@ -9,10 +9,11 @@ function api_register_error_handlers(): void
             http_response_code(500);
             header('Content-Type: application/json; charset=utf-8');
         }
-        $message = $e->getMessage();
-        if ($e instanceof PDOException) {
-            $message = 'تعذّر الاتصال بقاعدة البيانات — راجع api/config.php (DB_NAME, DB_USER, DB_PASS) في Hostinger';
-        }
+        $message = $e instanceof PDOException && function_exists('pdo_api_error_message')
+            ? pdo_api_error_message($e)
+            : ($e instanceof PDOException
+                ? 'تعذّر الاتصال بقاعدة البيانات — راجع api/config.php (DB_NAME, DB_USER, DB_PASS) في Hostinger'
+                : $e->getMessage());
         echo json_encode(['error' => $message], JSON_UNESCAPED_UNICODE);
         exit;
     });

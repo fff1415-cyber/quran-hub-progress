@@ -33,9 +33,14 @@ function plans_tenant_enabled(PDO $pdo): bool
     return plans_column_exists($pdo, 'education_plans', 'complex_id');
 }
 
+function plans_students_tenant_scoped(PDO $pdo, bool $plansTenants): bool
+{
+    return $plansTenants && plans_column_exists($pdo, 'students', 'complex_id');
+}
+
 function plans_assert_student_in_complex(PDO $pdo, string $studentId, int $cid, bool $tenants): void
 {
-    if (!$tenants) {
+    if (!plans_students_tenant_scoped($pdo, $tenants)) {
         return;
     }
     $st = $pdo->prepare('SELECT complex_id FROM students WHERE id = ? LIMIT 1');
@@ -68,7 +73,7 @@ function plans_assert_teacher_student_access(PDO $pdo, array $auth, string $stud
         return;
     }
     $halaqaId = (int) ($auth['halaqaId'] ?? 0);
-    if ($tenants) {
+    if (plans_students_tenant_scoped($pdo, $tenants)) {
         $cid = require_complex_id($auth);
         $st = $pdo->prepare('SELECT halaqa_id FROM students WHERE id = ? AND complex_id = ? LIMIT 1');
         $st->execute([$studentId, $cid]);
@@ -77,8 +82,11 @@ function plans_assert_teacher_student_access(PDO $pdo, array $auth, string $stud
         $st->execute([$studentId]);
     }
     $row = $st->fetch();
-    if (!$row || (int) $row['halaqa_id'] !== $halaqaId) {
-        error_response('Forbidden', 403);
+    if (!$row) {
+        error_response('الطالب غير موجود أو لا ينتمي لهذا المجمع', 404);
+    }
+    if ((int) $row['halaqa_id'] !== $halaqaId) {
+        error_response('لا يمكنك عرض خطة طالب من حلقة أخرى', 403);
     }
 }
 
@@ -123,6 +131,13 @@ function plans_ensure_daily_faces_columns(PDO $pdo): void
     }
     if (plans_table_exists($pdo, 'student_plan_assignments')) {
         $after = 'start_muraja_segment';
+        if (!plans_column_exists($pdo, 'student_plan_assignments', 'start_muraja_segment')) {
+            if (plans_column_exists($pdo, 'student_plan_assignments', 'plan_start_date')) {
+                $after = 'plan_start_date';
+            } else {
+                $after = 'start_segment_index';
+            }
+        }
         foreach ($planCols as $col => $def) {
             if (!plans_column_exists($pdo, 'student_plan_assignments', $col)) {
                 $pdo->exec("ALTER TABLE `student_plan_assignments` ADD COLUMN `$col` $def AFTER `$after`");
@@ -612,6 +627,42 @@ function handle_patch_assignment(): void
     json_response(['ok' => true, 'updated' => $stmt->rowCount()]);
 }
 
+/** @return array<string, mixed>|null */
+function plans_fetch_education_plan(PDO $pdo, string $planId, int $cid, bool $tenants): ?array
+{
+    $cols = 'id, track, level_number, title, segment_count,
+             daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+             faces_per_half, faces_per_one, faces_per_two, created_at';
+
+    if ($tenants) {
+        $stmt = $pdo->prepare("SELECT $cols FROM education_plans WHERE id = ? AND complex_id = ?");
+        $stmt->execute([$planId, $cid]);
+        $plan = $stmt->fetch();
+        if ($plan) {
+            return $plan;
+        }
+
+        $legacy = $pdo->prepare("SELECT $cols, complex_id FROM education_plans WHERE id = ?");
+        $legacy->execute([$planId]);
+        $row = $legacy->fetch();
+        if (!$row) {
+            return null;
+        }
+        $rowCid = isset($row['complex_id']) ? (int) $row['complex_id'] : 0;
+        if ($rowCid === 0) {
+            $pdo->prepare('UPDATE education_plans SET complex_id = ? WHERE id = ?')->execute([$cid, $planId]);
+            unset($row['complex_id']);
+            return $row;
+        }
+        return null;
+    }
+
+    $stmt = $pdo->prepare("SELECT $cols FROM education_plans WHERE id = ?");
+    $stmt->execute([$planId]);
+    $plan = $stmt->fetch();
+    return $plan ?: null;
+}
+
 function handle_student_plan_sheet(): void
 {
     $auth = require_auth();
@@ -645,64 +696,49 @@ function handle_student_plan_sheet(): void
     try {
         plans_ensure_assignment_v2_columns($pdo);
         plans_ensure_daily_faces_columns($pdo);
+
+        $assignStmt = $pdo->prepare(
+            'SELECT id, student_id, plan_id, start_segment_index, plan_start_date, start_muraja_segment,
+                    daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                    faces_per_half, faces_per_one, faces_per_two,
+                    status, assigned_by, assigned_at, frozen_at
+             FROM student_plan_assignments
+             WHERE student_id = ? AND status IN (\'active\', \'frozen\')
+             ORDER BY assigned_at DESC LIMIT 1'
+        );
+        $assignStmt->execute([$studentId]);
+        $assignment = $assignStmt->fetch();
+        if (!$assignment) {
+            json_response(['assignment' => null, 'plan' => null, 'segments' => [], 'completions' => []]);
+            return;
+        }
+
+        $planId = $assignment['plan_id'];
+        $plan = plans_fetch_education_plan($pdo, $planId, $cid, $tenants);
+
+        $segStmt = $pdo->prepare(
+            'SELECT id, plan_id, segment_index, hifz_plan, rabt_plan, muraja_plan
+             FROM plan_segments WHERE plan_id = ? ORDER BY segment_index'
+        );
+        $segStmt->execute([$planId]);
+
+        $compStmt = $pdo->prepare(
+            'SELECT segment_index, task_type, completed_at, recorded_by
+             FROM segment_completions WHERE student_id = ? AND plan_id = ?'
+        );
+        $compStmt->execute([$studentId, $planId]);
+
+        json_response([
+            'assignment' => assignment_row($assignment),
+            'plan' => $plan ? plan_row($plan) : null,
+            'segments' => array_map('segment_row', $segStmt->fetchAll()),
+            'completions' => array_map('completion_row', $compStmt->fetchAll()),
+        ]);
+    } catch (PDOException $e) {
+        error_response(pdo_api_error_message($e), 500);
     } catch (Throwable $e) {
-        error_response('جداول الربط تحتاج تحديثاً: ' . $e->getMessage(), 500);
+        error_response('فشل تحميل ورقة الخطة: ' . $e->getMessage(), 500);
     }
-
-    $assignStmt = $pdo->prepare(
-        'SELECT id, student_id, plan_id, start_segment_index, plan_start_date, start_muraja_segment,
-                daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
-                faces_per_half, faces_per_one, faces_per_two,
-                status, assigned_by, assigned_at, frozen_at
-         FROM student_plan_assignments
-         WHERE student_id = ? AND status IN (\'active\', \'frozen\')
-         ORDER BY assigned_at DESC LIMIT 1'
-    );
-    $assignStmt->execute([$studentId]);
-    $assignment = $assignStmt->fetch();
-    if (!$assignment) {
-        json_response(['assignment' => null, 'plan' => null, 'segments' => [], 'completions' => []]);
-        return;
-    }
-
-    $planId = $assignment['plan_id'];
-    if ($tenants) {
-        $planStmt = $pdo->prepare(
-            'SELECT id, track, level_number, title, segment_count,
-                    daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
-                    faces_per_half, faces_per_one, faces_per_two, created_at
-             FROM education_plans WHERE id = ? AND complex_id = ?'
-        );
-        $planStmt->execute([$planId, $cid]);
-    } else {
-        $planStmt = $pdo->prepare(
-            'SELECT id, track, level_number, title, segment_count,
-                    daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
-                    faces_per_half, faces_per_one, faces_per_two, created_at
-             FROM education_plans WHERE id = ?'
-        );
-        $planStmt->execute([$planId]);
-    }
-    $plan = $planStmt->fetch();
-
-    $segStmt = $pdo->prepare(
-        'SELECT id, plan_id, segment_index, hifz_plan, rabt_plan, muraja_plan
-         FROM plan_segments WHERE plan_id = ? ORDER BY segment_index'
-    );
-    $segStmt->execute([$planId]);
-
-    $compStmt = $pdo->prepare(
-        'SELECT segment_index, task_type, completed_at, recorded_by
-         FROM segment_completions WHERE student_id = ? AND plan_id = ?'
-    );
-    $compStmt->execute([$studentId, $planId]);
-
-    json_response([
-        'assignment' => assignment_row($assignment),
-        'plan' => $plan ? plan_row($plan) : null,
-        'segments' => array_map('segment_row', $segStmt->fetchAll()),
-        'completions' => array_map('completion_row', $compStmt->fetchAll()),
-    ]);
 }
 
 function handle_apply_plan_input(): void

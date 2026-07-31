@@ -59,8 +59,9 @@ function isPlansDbUnavailableError(e: unknown): boolean {
   const m = e.message;
   return (
     m.includes("migrate-education-plans") ||
-    m.includes("جداول الخطط غير") ||
+    m.includes("جداول الخطط") ||
     m.includes("جداول الربط تحتاج") ||
+    m.includes("بنية قاعدة البيانات") ||
     m.includes("HTTP 503")
   );
 }

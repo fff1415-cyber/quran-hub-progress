@@ -158,3 +158,56 @@ function pdo_integrity_error_message(PDOException $e): string
 
     return 'البيانات المدخلة تتعارض مع سجل موجود — تحقق من رمز المجمع ورقم العضوية';
 }
+
+function pdo_is_connection_error(PDOException $e): bool
+{
+    $msg = strtolower($e->getMessage());
+    $info = $e->errorInfo ?? [];
+    $driverCode = isset($info[1]) ? (int) $info[1] : 0;
+
+    return in_array($driverCode, [1045, 2002, 2006, 2013], true)
+        || str_contains($msg, 'access denied')
+        || str_contains($msg, 'connection refused')
+        || str_contains($msg, 'server has gone away')
+        || str_contains($msg, 'getaddrinfo failed');
+}
+
+function pdo_is_schema_error(PDOException $e): bool
+{
+    $info = $e->errorInfo ?? [];
+    $sqlState = isset($info[0]) ? (string) $info[0] : '';
+    $msg = strtolower($e->getMessage());
+
+    return in_array($sqlState, ['42S02', '42S22', '42000'], true)
+        || str_contains($msg, 'unknown column')
+        || str_contains($msg, "doesn't exist");
+}
+
+/** User-facing PDO message — avoids masking SQL/migration errors as connection failures. */
+function pdo_api_error_message(PDOException $e): string
+{
+    if (pdo_is_connection_error($e)) {
+        return 'تعذّر الاتصال بقاعدة البيانات — راجع api/config.php (DB_NAME, DB_USER, DB_PASS) في Hostinger';
+    }
+
+    if (pdo_is_schema_error($e)) {
+        $msg = strtolower($e->getMessage());
+        if (str_contains($msg, 'student_plan_assignments')
+            || str_contains($msg, 'education_plans')
+            || str_contains($msg, 'daily_hifz')
+            || str_contains($msg, 'start_muraja_segment')
+            || str_contains($msg, 'plan_start_date')) {
+            return 'جداول الخطط تحتاج تحديثاً — أعد فتح الورقة أو نفّذ database/migrate-plan-daily-faces.sql';
+        }
+        if (str_contains($msg, 'complex_id')) {
+            return 'قاعدة البيانات تحتاج migrate-multi-tenant.sql — تواصل مع مدير النظام';
+        }
+        return 'خطأ في بنية قاعدة البيانات — ' . $e->getMessage();
+    }
+
+    if (pdo_is_integrity_violation($e)) {
+        return pdo_integrity_error_message($e);
+    }
+
+    return 'خطأ في قاعدة البيانات — ' . $e->getMessage();
+}
