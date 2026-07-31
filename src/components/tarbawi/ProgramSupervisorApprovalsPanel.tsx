@@ -10,6 +10,7 @@ import {
   rejectTarbawiPlan,
   validateTarbawiPlanDraft,
 } from "@/lib/tarbawi-program";
+import { weekLabel } from "@/lib/arabic-numbers";
 import { getSessionName } from "@/lib/session-role";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -91,7 +92,7 @@ export function ProgramSupervisorApprovalsPanel({ calendar }: { calendar: Academ
                 <tbody>
                   {plan.items.sort((a, b) => a.weekNumber - b.weekNumber).map((item) => (
                     <tr key={item.id} className="border-b border-border/30">
-                      <td className="p-2">{item.weekNumber}</td>
+                      <td className="p-2">{weekLabel(item.weekNumber)}</td>
                       <td className="p-2">{paragraphTypeLabel(settings, item.paragraphTypeId)}</td>
                       <td className="p-2">{item.topic}</td>
                     </tr>

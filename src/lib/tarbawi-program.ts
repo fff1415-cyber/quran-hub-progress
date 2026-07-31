@@ -182,7 +182,10 @@ export function saveTarbawiPlan(plan: TarbawiHalaqaPlan): TarbawiHalaqaPlan {
   return next;
 }
 
-export function newTarbawiItem(weekNumber: number): TarbawiPlanItem {
+/** Unassigned during bulk entry — assigned on distribute */
+export const UNASSIGNED_WEEK = 0;
+
+export function newTarbawiItem(weekNumber = UNASSIGNED_WEEK): TarbawiPlanItem {
   return {
     id: uid(),
     weekNumber,
@@ -192,6 +195,46 @@ export function newTarbawiItem(weekNumber: number): TarbawiPlanItem {
     executor: "",
     beneficiaries: 0,
   };
+}
+
+export function requiredTarbawiItemCount(spanWeeks: number, weeklyRequiredCount: number): number {
+  return spanWeeks * weeklyRequiredCount;
+}
+
+export function isPlanDistributed(plan: TarbawiHalaqaPlan): boolean {
+  return plan.items.length > 0 && plan.items.every((i) => i.weekNumber >= 1);
+}
+
+export function clearItemWeekAssignments(items: TarbawiPlanItem[]): TarbawiPlanItem[] {
+  return items.map((i) => ({ ...i, weekNumber: UNASSIGNED_WEEK }));
+}
+
+/** Distribute by entry order: N items per week (N = weeklyRequiredCount). */
+export function distributeTarbawiItems(
+  items: TarbawiPlanItem[],
+  spanWeeks: number,
+  weeklyRequiredCount: number,
+): TarbawiPlanItem[] {
+  const required = requiredTarbawiItemCount(spanWeeks, weeklyRequiredCount);
+  return items.slice(0, required).map((item, index) => ({
+    ...item,
+    weekNumber: Math.floor(index / weeklyRequiredCount) + 1,
+  }));
+}
+
+export function validateTarbawiPlanEntry(
+  plan: TarbawiHalaqaPlan,
+  settings: TarbawiSettings,
+  semesterWeeks: number,
+): string | null {
+  const spanWeeks = getHalaqaPlanSpan(settings, plan.halaqaId, semesterWeeks);
+  const required = requiredTarbawiItemCount(spanWeeks, settings.weeklyRequiredCount);
+  if (plan.items.length < required) {
+    return `أكمل ${required} فقرة للمدة المحددة (موجود ${plan.items.length})`;
+  }
+  const emptyTopic = plan.items.slice(0, required).find((i) => !i.topic.trim());
+  if (emptyTopic) return "أكمل موضوع كل الفقرات قبل التوزيع";
+  return null;
 }
 
 export function validateTarbawiPlanDraft(
@@ -218,10 +261,18 @@ export function submitTarbawiPlan(
   semesterWeeks: number,
   halaqaName: string,
 ): TarbawiHalaqaPlan {
-  const err = validateTarbawiPlanDraft(plan, settings, semesterWeeks);
+  const spanWeeks = getHalaqaPlanSpan(settings, plan.halaqaId, semesterWeeks);
+  let items = plan.items;
+  if (!isPlanDistributed(plan)) {
+    const entryErr = validateTarbawiPlanEntry(plan, settings, semesterWeeks);
+    if (entryErr) throw new Error(entryErr);
+    items = distributeTarbawiItems(plan.items, spanWeeks, settings.weeklyRequiredCount);
+  }
+  const prepared = { ...plan, items };
+  const err = validateTarbawiPlanDraft(prepared, settings, semesterWeeks);
   if (err) throw new Error(err);
   const next = saveTarbawiPlan({
-    ...plan,
+    ...prepared,
     status: "submitted",
     submittedAt: new Date().toISOString(),
     rejectionNote: undefined,
@@ -262,6 +313,7 @@ export function rejectTarbawiPlan(
   const next = saveTarbawiPlan({
     ...plan,
     status: "rejected",
+    items: clearItemWeekAssignments(plan.items),
     rejectionNote: note.trim() || "يُرجى مراجعة الخطة وتعديلها",
   });
   pushNotification({
