@@ -150,12 +150,12 @@ function plans_ensure_daily_faces_columns(PDO $pdo): void
 function plans_face_row(array $row): array
 {
     return [
-        'daily_hifz_faces' => (int) ($row['daily_hifz_faces'] ?? 2),
+        'daily_hifz_faces' => (int) ($row['daily_hifz_faces'] ?? 1),
         'daily_rabt_faces' => (int) ($row['daily_rabt_faces'] ?? 2),
         'daily_muraja_faces' => (int) ($row['daily_muraja_faces'] ?? 2),
         'faces_per_half' => (int) ($row['faces_per_half'] ?? 1),
-        'faces_per_one' => (int) ($row['faces_per_one'] ?? 2),
-        'faces_per_two' => (int) ($row['faces_per_two'] ?? 4),
+        'faces_per_one' => (int) ($row['faces_per_one'] ?? 1),
+        'faces_per_two' => (int) ($row['faces_per_two'] ?? 2),
     ];
 }
 

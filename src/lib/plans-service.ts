@@ -11,7 +11,7 @@ import { getToken } from "@/lib/cloud-sync";
 import {
   localApplyInput,
   localAssignPlan,
-  localClearPlansCache,
+  localClearPlansCatalogCache,
   localDeletePlan,
   localGetStudentSheet,
   localImportPlans,
@@ -20,6 +20,7 @@ import {
   localPatchAssignmentQuotas,
   localPlanDetail,
 } from "@/lib/plans-store";
+import { syncStudentPhaseFromPlan } from "@/lib/student-phase-promote";
 
 function apiUrl(path: string): string {
   return buildRphpUrl(path);
@@ -106,7 +107,7 @@ export async function importPlans(plans: ImportPlanPayload[]): Promise<{
 }> {
   try {
     const result = await planFetch("/plans/import", { method: "POST", body: JSON.stringify({ plans }) });
-    localClearPlansCache();
+    localClearPlansCatalogCache();
     return result;
   } catch (e) {
     if (isPlansDbUnavailableError(e)) {
@@ -140,9 +141,11 @@ export async function assignStudentPlan(
         ...options?.face_quotas,
       }),
     });
-    localClearPlansCache();
     const sheet = await fetchStudentPlanSheet(studentId);
     assertPlanLinkConfirmed(sheet);
+    if (sheet.plan) {
+      await syncStudentPhaseFromPlan(studentId, sheet.plan.track, sheet.plan.level_number);
+    }
   } catch (e) {
     if (isPlansDbUnavailableError(e)) {
       localAssignPlan(studentId, planId, startSegment, assignedBy, options);
@@ -206,8 +209,11 @@ export async function applyPlanInput(
       }),
     });
     return res.applied_segments;
-  } catch {
-    return localApplyInput(studentId, taskType, tap, recordedBy, completedAt);
+  } catch (e) {
+    if (isPlansDbUnavailableError(e)) {
+      return localApplyInput(studentId, taskType, tap, recordedBy, completedAt);
+    }
+    throw e;
   }
 }
 
@@ -218,7 +224,7 @@ export async function deletePlan(planId: string): Promise<{ assignments_removed:
       { method: "DELETE" },
     );
     localDeletePlan(planId);
-    localClearPlansCache();
+    localClearPlansCatalogCache();
     return { assignments_removed: result.assignments_removed ?? 0 };
   } catch (e) {
     if (isPlansDbUnavailableError(e)) {
@@ -234,9 +240,12 @@ export async function fetchPlanDetail(planId: string) {
     return await planFetch<{ plan: EducationPlan; segments: import("@/lib/plan-types").PlanSegment[] }>(
       `/plans/detail?plan_id=${encodeURIComponent(planId)}`,
     );
-  } catch {
-    const { plan, segments } = localPlanDetail(planId);
-    if (!plan) throw new Error("الخطة غير موجودة");
-    return { plan, segments };
+  } catch (e) {
+    if (isPlansDbUnavailableError(e)) {
+      const { plan, segments } = localPlanDetail(planId);
+      if (!plan) throw new Error("الخطة غير موجودة");
+      return { plan, segments };
+    }
+    throw e;
   }
 }

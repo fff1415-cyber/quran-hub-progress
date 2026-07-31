@@ -154,9 +154,14 @@ export function StudentImportPanel() {
 
     toast.success(
       `+${added} جديد · ${updatedCount} محدّث · ${linked} مربوط بخطة` +
-      (linkFailed ? ` · ${linkFailed} بدون خطة` : "") +
+      (linkFailed ? ` · ${linkFailed} بدون خطة (استورد Excel أولاً)` : "") +
       (skipped ? ` · ${skipped} متجاهل` : ""),
     );
+    if (linkFailed > 0) {
+      toast.warning("بعض الطلاب لم تُربط خططهم — تأكد من استيراد ملف Excel للخطط في صفحة المشرف", {
+        duration: 8000,
+      });
+    }
     setPreview([]);
     setUrl("");
     setImporting(false);

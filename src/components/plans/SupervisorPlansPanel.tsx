@@ -15,7 +15,7 @@ import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileSpreadsheet, Link2, Loader2, Snowflake, Search, Trash2 } from "lucide-react";
+import { FileSpreadsheet, Link2, Loader2, Snowflake, Search, Trash2, Sun } from "lucide-react";
 import { toast } from "sonner";
 
 export function PlanStudentLookup({ readOnly = false, refreshKey = 0 }: { readOnly?: boolean; refreshKey?: number }) {
@@ -177,6 +177,12 @@ export function SupervisorPlansPanel() {
   const submitAssign = async () => {
     if (!selectedPlan || !selectedStudent) {
       toast.error("اختر الطالب والخطة");
+      return;
+    }
+    if (selectedStudent.levelType !== selectedPlan.track) {
+      toast.error(
+        `مسار الطالب (${trackLabel(selectedStudent.levelType)}) لا يطابق مسار الخطة (${trackLabel(selectedPlan.track)})`,
+      );
       return;
     }
     const globalPhase = globalPhaseFromPlanLevel(selectedPlan.track, selectedPlan.level_number);
@@ -417,14 +423,34 @@ export function SupervisorPlansPanel() {
               ربط الطالب بالخطة
             </Button>
             {selectedStudent && (
-              <Button
-                type="button"
-                variant="outline"
-                title="تجميد"
-                onClick={() => void patchStudentAssignment(selectedStudent.id, "frozen").then(() => toast.success("تم التجميد"))}
-              >
-                <Snowflake className="w-4 h-4" />
-              </Button>
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  title="تجميد الخطة"
+                  onClick={() => void patchStudentAssignment(selectedStudent.id, "frozen")
+                    .then(() => {
+                      toast.success("تم تجميد الخطة");
+                      setLookupRefresh((k) => k + 1);
+                    })
+                    .catch((e) => toast.error(e instanceof Error ? e.message : "فشل التجميد"))}
+                >
+                  <Snowflake className="w-4 h-4" />
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  title="إلغاء التجميد"
+                  onClick={() => void patchStudentAssignment(selectedStudent.id, "active")
+                    .then(() => {
+                      toast.success("تم إلغاء التجميد — يمكن للمعلّm التنفيذ");
+                      setLookupRefresh((k) => k + 1);
+                    })
+                    .catch((e) => toast.error(e instanceof Error ? e.message : "فشل إلغاء التجميد"))}
+                >
+                  <Sun className="w-4 h-4" />
+                </Button>
+              </>
             )}
           </div>
         </CardContent>

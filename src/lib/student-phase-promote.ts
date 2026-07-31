@@ -1,6 +1,7 @@
 import type { PlanTrack } from "@/lib/plan-types";
 import type { Student } from "@/lib/mock-data";
 import {
+  globalPhaseFromPlanLevel,
   instituteLevelFromGlobalPhase,
   nextGlobalPhase,
 } from "@/lib/plan-level-ranges";
@@ -52,6 +53,16 @@ export async function promoteStudentPhase(studentId: string): Promise<string> {
     /* local saved */
   }
   return String(promoted.newPhase);
+}
+
+export async function syncStudentPhaseFromPlan(
+  studentId: string,
+  track: PlanTrack,
+  planLevelNumber: number,
+): Promise<void> {
+  const globalPhase = globalPhaseFromPlanLevel(track, planLevelNumber);
+  if (globalPhase === null) return;
+  await syncStudentToGlobalPhase(studentId, globalPhase);
 }
 
 export async function syncStudentToGlobalPhase(studentId: string, globalPhase: number): Promise<void> {

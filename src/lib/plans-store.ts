@@ -269,10 +269,16 @@ export function localPlanDetail(planId: string): { plan: EducationPlan | null; s
   return { plan, segments };
 }
 
-export function localClearPlansCache(): void {
+export function localClearPlansCatalogCache(): void {
   if (typeof window === "undefined") return;
   localStorage.removeItem(KEY_PLANS);
   localStorage.removeItem(KEY_SEGMENTS);
+}
+
+/** @deprecated Prefer localClearPlansCatalogCache — assignments/completions stay on MySQL. */
+export function localClearPlansCache(): void {
+  if (typeof window === "undefined") return;
+  localClearPlansCatalogCache();
   localStorage.removeItem(KEY_ASSIGNMENTS);
   localStorage.removeItem(KEY_COMPLETIONS);
 }

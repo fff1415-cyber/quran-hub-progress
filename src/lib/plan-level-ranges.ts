@@ -133,8 +133,11 @@ export function findPlanByGlobalPhase(
   if (key === null) return null;
   const direct = plans.find((p) => p.track === track && p.level_number === key);
   if (direct) return direct;
-  if (track === "gold") {
+  if (track === "gold" && globalPhase >= 1 && globalPhase <= 30) {
     return plans.find((p) => p.track === "gold" && p.level_number === globalPhase) ?? null;
+  }
+  if (track === "silver" && globalPhase >= 1 && globalPhase <= 60) {
+    return plans.find((p) => p.track === "silver" && p.level_number === globalPhase) ?? null;
   }
   return null;
 }

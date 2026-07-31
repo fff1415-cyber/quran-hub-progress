@@ -36,10 +36,14 @@ export function formatPlanTitle(tierName: string, phaseNumber: number): string {
   return `${tier} — المرحلة ${ord}`;
 }
 
+export function isKnownPlanTier(tierName: string): boolean {
+  return (TIER_ORDER[tierName.trim()] ?? 0) >= 1;
+}
+
 /** Stable DB key: tier slot × 1000 + phase (التأهيل/1 → 1001, النجباء/2 → 2002). */
 export function planLevelNumber(tierName: string, phaseNumber: number): number {
   const slot = TIER_ORDER[tierName.trim()] ?? 0;
-  if (slot < 1 || phaseNumber < 1) return phaseNumber;
+  if (slot < 1 || phaseNumber < 1) return 0;
   return slot * 1000 + phaseNumber;
 }
 
@@ -118,6 +122,7 @@ export function parsePlansExcel(buffer: ArrayBuffer): ImportPlanPayload[] {
       const tierName = cell(row, iTier);
       const phaseNumber = Number(row[iPhase]);
       if (!tierName || !Number.isFinite(phaseNumber) || phaseNumber < 1) continue;
+      if (!isKnownPlanTier(tierName)) continue;
 
       key = `${track}:${tierName}:${phaseNumber}`;
       if (!map.has(key)) {

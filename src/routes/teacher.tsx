@@ -385,6 +385,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const [transferReason, setTransferReason] = useState("");
   const [showAssign, setShowAssign] = useState(false);
   const [planStudentIds, setPlanStudentIds] = useState<Set<string>>(new Set());
+  const [frozenPlanStudentIds, setFrozenPlanStudentIds] = useState<Set<string>>(new Set());
+  const [planLinkedIds, setPlanLinkedIds] = useState<Set<string>>(new Set());
   const [planSheetStudent, setPlanSheetStudent] = useState<Student | null>(null);
   const [planSheetData, setPlanSheetData] = useState<StudentPlanSheetData | null>(null);
   const [planSheetError, setPlanSheetError] = useState<string | null>(null);
@@ -452,18 +454,31 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const withPlan = new Set<string>();
+      const active = new Set<string>();
+      const frozen = new Set<string>();
+      const linked = new Set<string>();
       await Promise.all(
         students.map(async (s) => {
           try {
             const sheet = await fetchStudentPlanSheet(s.id);
-            if (sheet.assignment?.status === "active") withPlan.add(s.id);
+            if (!sheet.assignment) return;
+            if (sheet.assignment.status === "active") {
+              active.add(s.id);
+              linked.add(s.id);
+            } else if (sheet.assignment.status === "frozen") {
+              frozen.add(s.id);
+              linked.add(s.id);
+            }
           } catch {
             /* ignore */
           }
         }),
       );
-      if (!cancelled) setPlanStudentIds(withPlan);
+      if (!cancelled) {
+        setPlanStudentIds(active);
+        setFrozenPlanStudentIds(frozen);
+        setPlanLinkedIds(linked);
+      }
     })();
     return () => { cancelled = true; };
   }, [students]);
@@ -713,14 +728,19 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                     {s.assignedTo === "assistant" && viewerRole === "teacher" && (
                       <span className="text-[10px] text-muted-foreground">مع المساعد</span>
                     )}
+                    {frozenPlanStudentIds.has(s.id) && (
+                      <span className="text-[10px] text-warning">الخطة مجمّدة</span>
+                    )}
+                    {planLinkedIds.has(s.id) && (
                     <button
                       type="button"
                       onClick={() => void openPlanSheet(s)}
                       className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline w-fit"
                     >
                       <ClipboardList className="w-3 h-3" />
-                      {planStudentIds.has(s.id) ? "الخطة" : "عرض الخطة"}
+                      {planStudentIds.has(s.id) ? "الخطة" : frozenPlanStudentIds.has(s.id) ? "عرض (مجمّدة)" : "عرض الخطة"}
                     </button>
+                    )}
                   </div>
                 </td>
                 {visibleDays.map((d) => {
