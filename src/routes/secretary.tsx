@@ -9,6 +9,7 @@ import { GradesExport } from "@/components/GradesExport";
 import { RoleShell, RolePageHeader, type RoleTab } from "@/components/role-workspace/RoleShell";
 import {
   SecretaryAttendancePanel,
+  SecretaryAbsenceThresholdPanel,
   SecretaryLatePermitPanel,
   SecretarySardPanel,
 } from "@/components/role-workspace/RoleSections";
@@ -104,7 +105,12 @@ function SecretaryPage() {
       icon: UserX,
       perm: "view_attendance",
       badge: todayCount,
-      content: <SecretaryAttendancePanel />,
+      content: (
+        <div className="space-y-6">
+          <SecretaryAttendancePanel />
+          <SecretaryAbsenceThresholdPanel />
+        </div>
+      ),
     },
     {
       id: "late-permit",

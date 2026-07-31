@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
 import { getSessionName } from "@/lib/session-role";
 import { AppHeader } from "@/components/AppHeader";
@@ -10,6 +10,7 @@ import {
   SupervisorApprovalsPanel,
   SupervisorForceRetryPanel,
   SupervisorPassedPanel,
+  SupervisorPlanCompletedPanel,
 } from "@/components/role-workspace/RoleSections";
 import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTransfersPanel";
 import { SupervisorPlansPanel } from "@/components/plans/SupervisorPlansPanel";
@@ -28,7 +29,14 @@ function SupervisorPage() {
   const navigate = useNavigate({ from: "/supervisor" });
   const search = Route.useSearch();
   const name = getSessionName("المشرف التعليمي");
-  const [queue] = useState(() => loadSardQueue());
+  const [queue, setQueue] = useState(() => loadSardQueue());
+
+  useEffect(() => {
+    const id = setInterval(() => setQueue(loadSardQueue()), 5000);
+    return () => clearInterval(id);
+  }, []);
+
+  const planCompleted = useMemo(() => queue.filter((q) => q.status === "plan_completed"), [queue]);
 
   const awaiting = useMemo(() => queue.filter((q) => q.status === "awaiting_supervisor"), [queue]);
   const scheduled = useMemo(() => queue.filter((q) => q.status === "scheduled"), [queue]);
@@ -42,6 +50,14 @@ function SupervisorPage() {
       icon: GraduationCap,
       roles: ["supervisor"],
       content: <SupervisorPlansPanel />,
+    },
+    {
+      id: "plan-completed",
+      label: "إكمال الخطة",
+      icon: GraduationCap,
+      roles: ["supervisor"],
+      badge: planCompleted.length,
+      content: <SupervisorPlanCompletedPanel />,
     },
     {
       id: "transfers",

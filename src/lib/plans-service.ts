@@ -12,6 +12,7 @@ import {
   localApplyInput,
   localAssignPlan,
   localClearPlansCache,
+  localDeletePlan,
   localGetStudentSheet,
   localImportPlans,
   localListPlans,
@@ -207,6 +208,24 @@ export async function applyPlanInput(
     return res.applied_segments;
   } catch {
     return localApplyInput(studentId, taskType, tap, recordedBy, completedAt);
+  }
+}
+
+export async function deletePlan(planId: string): Promise<{ assignments_removed: number }> {
+  try {
+    const result = await planFetch<{ ok: boolean; assignments_removed: number }>(
+      `/plans?plan_id=${encodeURIComponent(planId)}`,
+      { method: "DELETE" },
+    );
+    localDeletePlan(planId);
+    localClearPlansCache();
+    return { assignments_removed: result.assignments_removed ?? 0 };
+  } catch (e) {
+    if (isPlansDbUnavailableError(e)) {
+      const r = localDeletePlan(planId);
+      return { assignments_removed: r.assignmentsRemoved };
+    }
+    throw e;
   }
 }
 

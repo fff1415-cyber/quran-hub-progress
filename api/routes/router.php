@@ -169,6 +169,10 @@ function route_request(string $method, string $path): void
         handle_apply_plan_input();
         return;
     }
+    if ($path === '/plans' && $method === 'DELETE') {
+        handle_delete_plan();
+        return;
+    }
     if ($path === '/evaluation-settings' && $method === 'GET') {
         handle_get_evaluation_settings();
         return;

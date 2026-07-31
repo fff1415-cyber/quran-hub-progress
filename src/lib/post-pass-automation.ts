@@ -3,6 +3,7 @@ import { completePlanAndAdvance, type PlanAdvanceResult } from "@/lib/plan-progr
 import { syncStudentToGlobalPhase } from "@/lib/student-phase-promote";
 import { fetchStudentPlanSheet } from "@/lib/plans-service";
 import type { PlanTrack } from "@/lib/plan-types";
+import { notifyTeacherHalaqa } from "@/lib/teacher-notifications";
 
 export interface SardPassPayload {
   studentId: string;
@@ -48,6 +49,13 @@ export async function runPostPassAutomation(payload: SardPassPayload): Promise<P
     advance = await completePlanAndAdvance(payload.studentId, assignedBy, payload.track);
     if (advance.newGlobalPhase) {
       await syncStudentToGlobalPhase(payload.studentId, advance.newGlobalPhase);
+    }
+    if (advance.newPlanTitle) {
+      notifyTeacherHalaqa(
+        payload.halaqaId,
+        `بعد اجتياز السرد — انتقل الطالب إلى ${advance.newPlanTitle}`,
+        "info",
+      );
     }
   } catch {
     /* plan API may be unavailable — academic record still saved */

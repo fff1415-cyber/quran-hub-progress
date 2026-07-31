@@ -2,6 +2,7 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { loginByCode, loginByNationalId } from "@/lib/secure-data.functions";
 import { setToken, syncFromCloud } from "@/lib/cloud-sync";
+import { setPortalMode } from "@/lib/student-portal-auth";
 import { Shield, UserCheck, GraduationCap, Mic, Eye, Loader2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { useTenant } from "@/contexts/TenantContext";
@@ -58,6 +59,7 @@ export function TenantLoginPage() {
         sessionStorage.setItem("qs_student", student.studentId);
         if (student.complexId != null) sessionStorage.setItem("qs_complex", String(student.complexId));
         else sessionStorage.setItem("qs_complex", String(tenant.id));
+        setPortalMode("student");
         await syncFromCloud();
         navigate({ to: "/student", search: { s: student.studentId } });
       }

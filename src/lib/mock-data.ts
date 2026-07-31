@@ -325,6 +325,7 @@ export function isAttendanceAcked(studentId: string, date: string, type: "absent
 
 // ---- Sard Queue & History ----
 export type SardStatus =
+  | "plan_completed"     // finished educational plan — supervisor forwards to sard
   | "pending"            // full sard — waiting for musammi
   | "scheduled"          // full sard retry after hifz fail (+2 days)
   | "awaiting_review"    // hifz locked — review scheduled (+2 days), musammi only
@@ -355,6 +356,11 @@ export interface SardQueueItem {
   reviewErrors?: number[];
   reviewWarnings?: number[];
   finalPercent?: number;
+  /** When the student finished the educational plan (plan_completed). */
+  planCompletedAt?: string;
+  /** When supervisor forwarded to musammi — FIFO order for musammi queue. */
+  supervisorForwardedAt?: string;
+  planTitle?: string;
 }
 
 export function loadSardQueue(): SardQueueItem[] {
@@ -367,17 +373,82 @@ export function saveSardQueue(q: SardQueueItem[]) {
   persistShared("sard_queue", q);
 }
 
+const ACTIVE_SARD_STATUSES: SardStatus[] = [
+  "plan_completed",
+  "pending",
+  "scheduled",
+  "awaiting_review",
+  "awaiting_supervisor",
+  "approved_third",
+];
+
+function activeSardForStudent(queue: SardQueueItem[], studentId: string): SardQueueItem | undefined {
+  return queue.find(
+    (q) => q.studentId === studentId && ACTIVE_SARD_STATUSES.includes(q.status),
+  );
+}
+
+/** Student finished plan — awaits supervisor forward to musammi. */
+export function enqueuePlanCompleted(
+  studentId: string,
+  halaqaId: number,
+  week: number,
+  planTitle?: string,
+): SardQueueItem {
+  const queue = loadSardQueue();
+  const existing = activeSardForStudent(queue, studentId);
+  if (existing) return existing;
+
+  const now = new Date().toISOString();
+  const item: SardQueueItem = {
+    id: `sq-${Date.now()}-${Math.random()}`,
+    studentId,
+    halaqaId,
+    week,
+    attempt: 1,
+    status: "plan_completed",
+    phase: "full",
+    createdAt: now,
+    planCompletedAt: now,
+    planTitle,
+  };
+  queue.unshift(item);
+  saveSardQueue(queue);
+  return item;
+}
+
+/** Supervisor sends plan-completed student to musammi queue (FIFO via supervisorForwardedAt). */
+export function forwardPlanToSard(queueItemId: string): SardQueueItem | null {
+  const queue = loadSardQueue();
+  const idx = queue.findIndex((q) => q.id === queueItemId);
+  if (idx === -1) return null;
+  const item = queue[idx];
+  if (item.status !== "plan_completed") return null;
+
+  const now = new Date().toISOString();
+  queue[idx] = {
+    ...item,
+    status: "pending",
+    supervisorForwardedAt: now,
+    createdAt: now,
+  };
+  saveSardQueue(queue);
+  return queue[idx];
+}
+
+/** Musammi queue order — earliest supervisor forward first. */
+export function sortMusammiQueue(items: SardQueueItem[]): SardQueueItem[] {
+  return [...items].sort((a, b) => {
+    const ta = a.supervisorForwardedAt ?? a.createdAt;
+    const tb = b.supervisorForwardedAt ?? b.createdAt;
+    return new Date(ta).getTime() - new Date(tb).getTime();
+  });
+}
+
+/** @deprecated use forwardPlanToSard after plan completion — teacher manual enqueue removed */
 export function enqueueSard(studentId: string, halaqaId: number, week: number) {
   const queue = loadSardQueue();
-  // Skip if already pending/scheduled/awaiting for same student-week
-  const existing = queue.find(
-    (q) =>
-      q.studentId === studentId &&
-      q.week === week &&
-      q.status !== "passed" &&
-      q.status !== "final_failed" &&
-      q.status !== "level_repeat",
-  );
+  const existing = activeSardForStudent(queue, studentId);
   if (existing) return existing;
   const item: SardQueueItem = {
     id: `sq-${Date.now()}-${Math.random()}`,
@@ -386,8 +457,9 @@ export function enqueueSard(studentId: string, halaqaId: number, week: number) {
     status: "pending",
     phase: "full",
     createdAt: new Date().toISOString(),
+    supervisorForwardedAt: new Date().toISOString(),
   };
-  queue.unshift(item);
+  queue.push(item);
   saveSardQueue(queue);
   return item;
 }

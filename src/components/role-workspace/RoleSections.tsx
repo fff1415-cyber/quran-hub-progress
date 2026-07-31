@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import {
   loadHalaqat, loadStudents, loadGrades, loadSardQueue,
   loadLatePermissions, saveLatePermissions, loadMessageTemplates, formatMessage,
-  pushNotification, updateSardItem, DAYS,
+  pushNotification, updateSardItem, forwardPlanToSard, DAYS,
   type WeekRecord, type Student, type GradesStore,
 } from "@/lib/mock-data";
 import {
@@ -13,14 +13,21 @@ import {
 } from "@/lib/sard-phased-flow";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getCalendarDayKey, getCalendarIsoDate } from "@/lib/operational-date";
-import { fetchActiveCalendar } from "@/lib/academic-context";
+import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { getSessionName } from "@/lib/session-role";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
+import { daysSinceLabel, notifyTeacherHalaqa } from "@/lib/teacher-notifications";
+import {
+  listAbsenceAlertRows,
+  processAbsenceThresholdAlerts,
+  thresholdBadgeLabel,
+  type AbsenceThreshold,
+} from "@/lib/semester-absence";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MessageCircle, UserX, Clock, Search, CheckCircle2, AlertTriangle, Check } from "lucide-react";
+import { MessageCircle, UserX, Clock, Search, CheckCircle2, AlertTriangle, Check, GraduationCap, Send } from "lucide-react";
 import { toast } from "sonner";
 
 function matchesSearch(name: string, query: string): boolean {
@@ -105,6 +112,77 @@ export function SecretaryAttendancePanel() {
                       <MessageCircle className="w-4 h-4" /> واتساب
                     </a>
                   </Button>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+export function SecretaryAbsenceThresholdPanel() {
+  const halaqat = loadHalaqat();
+  const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    fetchActiveCalendar(true)
+      .then((cal) => {
+        setCalendar(cal);
+        processAbsenceThresholdAlerts(cal);
+        setTick((t) => t + 1);
+      })
+      .catch(() => setCalendar(null));
+  }, []);
+
+  const rows = useMemo(
+    () => (calendar ? listAbsenceAlertRows(calendar) : []),
+    [calendar, tick],
+  );
+
+  const tone = (t: AbsenceThreshold | null) => {
+    if (t === null || t < 20) return "bg-warning/10 text-warning border-warning/30";
+    if (t < 30) return "bg-orange-500/10 text-orange-600 border-orange-500/30";
+    if (t < 50) return "bg-destructive/10 text-destructive border-destructive/30";
+    return "bg-destructive/20 text-destructive border-destructive/50";
+  };
+
+  return (
+    <Card className="glass-card border-primary/15 shadow-none">
+      <CardHeader>
+        <CardTitle className="text-lg flex items-center gap-2 text-primary">
+          <AlertTriangle className="w-5 h-5" /> تنبيهات الغياب التراكمي
+          <TabBadge count={rows.length} />
+        </CardTitle>
+        <CardDescription>
+          على الفصل كامل — 10% تنبيه أول · 20% ثاني · 30% ثالث + تحويل للمدير · 50% استبعاد + تحويل للمدير
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        {rows.length === 0 ? (
+          <p className="text-muted-foreground text-center py-8 text-sm">لا يوجد طلاب تجاوزوا 10% غياب</p>
+        ) : (
+          <div className="space-y-2">
+            {rows.map(({ student, stats, highestThreshold }) => {
+              const h = halaqat.find((x) => x.id === student.halaqaId);
+              return (
+                <div
+                  key={student.id}
+                  className={`flex items-center justify-between gap-3 p-3 rounded-lg border flex-wrap ${tone(highestThreshold)}`}
+                >
+                  <div>
+                    <div className="font-bold">{student.name}</div>
+                    <div className="text-xs opacity-80 mt-0.5">
+                      {h?.name} · {stats.absences} غياب من {stats.totalSchoolDays} يوم · {stats.percent}%
+                    </div>
+                  </div>
+                  {highestThreshold && (
+                    <Badge variant="outline" className="text-xs font-bold">
+                      {thresholdBadgeLabel(highestThreshold)}
+                    </Badge>
+                  )}
                 </div>
               );
             })}
@@ -314,6 +392,72 @@ export function SupervisorHalaqatPanel() {
   );
 }
 
+export function SupervisorPlanCompletedPanel() {
+  const [queue, setQueue] = useState(() => loadSardQueue());
+  const students = loadStudents();
+  const halaqat = loadHalaqat();
+  const refresh = () => setQueue(loadSardQueue());
+
+  const completed = queue.filter((q) => q.status === "plan_completed");
+
+  const forward = (id: string, studentName: string, halaqaId: number, planTitle?: string) => {
+    const item = forwardPlanToSard(id);
+    if (!item) return;
+    notifyTeacherHalaqa(
+      halaqaId,
+      `حُوّل ${studentName} للسرد${planTitle ? ` — ${planTitle}` : ""}`,
+      "sard",
+    );
+    toast.success(`تم تحويل ${studentName} لقائمة المسمّع`);
+    refresh();
+  };
+
+  return (
+    <section className="glass-card rounded-2xl p-6">
+      <h2 className="text-lg font-bold text-primary mb-2 flex items-center gap-2">
+        <GraduationCap className="w-5 h-5" />
+        أتمّوا الخطة التعليمية ({completed.length})
+      </h2>
+      <p className="text-xs text-muted-foreground mb-4">
+        حوّل الطالب للمسمّع عند الجاهزية — يظهر للمسمّع بالترتيب حسب وقت التحويل
+      </p>
+      {completed.length === 0 ? (
+        <p className="text-muted-foreground text-center py-8 text-sm">لا يوجد طلاب بانتظار التحويل للسرد</p>
+      ) : (
+        <div className="space-y-2">
+          {completed.map((q) => {
+            const s = students.find((x) => x.id === q.studentId);
+            const h = halaqat.find((x) => x.id === q.halaqaId);
+            if (!s || !h) return null;
+            const since = q.planCompletedAt ?? q.createdAt;
+            return (
+              <div
+                key={q.id}
+                className="flex items-center justify-between p-4 rounded-lg bg-success/5 border border-success/20 flex-wrap gap-2"
+              >
+                <div>
+                  <div className="font-bold">{s.name}</div>
+                  <div className="text-xs text-muted-foreground mt-0.5">
+                    {h.name} · {q.planTitle || "خطة تعليمية"} · {weekLabel(q.week)}
+                  </div>
+                  <div className="text-xs text-success font-medium mt-1">{daysSinceLabel(since)}</div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => forward(q.id, s.name, s.halaqaId, q.planTitle)}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm"
+                >
+                  <Send className="w-4 h-4" /> تحويل للسرد
+                </button>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </section>
+  );
+}
+
 export function SupervisorApprovalsPanel() {
   const [queue, setQueue] = useState(() => loadSardQueue());
   const students = loadStudents();
@@ -321,7 +465,7 @@ export function SupervisorApprovalsPanel() {
   const refresh = () => setQueue(loadSardQueue());
   const awaiting = queue.filter((q) => q.status === "awaiting_supervisor");
 
-  const approveThird = (id: string, name: string) => {
+  const approveThird = (id: string, name: string, halaqaId: number) => {
     updateSardItem(id, {
       status: "approved_third",
       attempt: 3,
@@ -336,6 +480,7 @@ export function SupervisorApprovalsPanel() {
       reviewSegmentCount: undefined,
     });
     pushNotification({ message: `وافق المشرف على محاولة ثالثة — ${name}`, type: "sard" });
+    notifyTeacherHalaqa(halaqaId, `وافق المشرف على محاولة سرد ثالثة — ${name}`, "sard");
     toast.success("تمت الموافقة");
     refresh();
   };
@@ -357,7 +502,7 @@ export function SupervisorApprovalsPanel() {
                   <div className="font-bold">{s.name}</div>
                   <div className="text-xs text-muted-foreground">{h.name} · {weekLabel(q.week)}</div>
                 </div>
-                <button onClick={() => approveThird(q.id, s.name)}
+                <button onClick={() => approveThird(q.id, s.name, s.halaqaId)}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm">
                   <Check className="w-4 h-4" /> السماح بمحاولة ثالثة
                 </button>

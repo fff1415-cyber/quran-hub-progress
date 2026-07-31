@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { loadStudents, type Student } from "@/lib/mock-data";
 import { syncFromCloud } from "@/lib/cloud-sync";
-import { fetchPlans, fetchStudentPlanSheet, importPlans, assignStudentPlan, patchStudentAssignment } from "@/lib/plans-service";
+import { fetchPlans, fetchStudentPlanSheet, importPlans, assignStudentPlan, patchStudentAssignment, deletePlan } from "@/lib/plans-service";
 import type { EducationPlan, PlanTrack, StudentPlanSheetData } from "@/lib/plan-types";
 import { DEFAULT_FACE_QUOTAS, faceQuotasFromPlan, normalizeFaceQuotas } from "@/lib/plan-daily-faces";
 import { FaceQuotasFields } from "@/components/plans/FaceQuotasFields";
@@ -15,7 +15,7 @@ import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { FileSpreadsheet, Link2, Loader2, Snowflake, Search } from "lucide-react";
+import { FileSpreadsheet, Link2, Loader2, Snowflake, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
 export function PlanStudentLookup({ readOnly = false, refreshKey = 0 }: { readOnly?: boolean; refreshKey?: number }) {
@@ -106,6 +106,7 @@ export function SupervisorPlansPanel() {
   const [faceQuotas, setFaceQuotas] = useState(DEFAULT_FACE_QUOTAS);
   const [lookupRefresh, setLookupRefresh] = useState(0);
   const [studentsVersion, setStudentsVersion] = useState(0);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const me = getSessionName("المشرف");
 
@@ -205,6 +206,29 @@ export function SupervisorPlansPanel() {
     }
   };
 
+  const removePlan = async (plan: EducationPlan) => {
+    const ok = confirm(
+      `هل تريد حذف الخطة «${plan.title}»\n\nسيتم حذف الخطة وفك الربط الكامل عن جميع الطلاب المرتبطين بها.\n\nلا يمكن التراجع.`,
+    );
+    if (!ok) return;
+    setDeletingId(plan.id);
+    try {
+      const res = await deletePlan(plan.id);
+      toast.success(
+        res.assignments_removed > 0
+          ? `تم الحذف — أُزيل الربط عن ${res.assignments_removed} طالب`
+          : "تم حذف الخطة",
+      );
+      if (selectedPlan?.id === plan.id) setSelectedPlan(null);
+      await refresh();
+      setLookupRefresh((k) => k + 1);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل الحذف");
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <Card className="glass-card border-primary/15 shadow-none">
@@ -239,6 +263,44 @@ export function SupervisorPlansPanel() {
           )}
         </CardContent>
       </Card>
+
+      {plans.length > 0 && (
+        <Card className="glass-card border-primary/15 shadow-none">
+          <CardHeader>
+            <CardTitle className="text-lg">الخطط المحفوظة ({plans.length})</CardTitle>
+            <CardDescription>حذف خطة خاطئة — يفك الربط عن جميع الطلاب</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-2 max-h-64 overflow-y-auto">
+            {plans.map((p) => (
+              <div
+                key={p.id}
+                className="flex items-center justify-between gap-2 p-2 rounded-lg bg-secondary/40 border border-border"
+              >
+                <div className="min-w-0 text-sm">
+                  <div className="font-medium truncate">{p.title}</div>
+                  <div className="text-xs text-muted-foreground">
+                    {trackLabel(p.track)} · {p.segment_count} مقطع
+                  </div>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={deletingId === p.id}
+                  className="shrink-0 text-destructive border-destructive/30 hover:bg-destructive/10"
+                  onClick={() => void removePlan(p)}
+                >
+                  {deletingId === p.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                  ) : (
+                    <Trash2 className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       <Card className="glass-card border-primary/15 shadow-none">
         <CardHeader>

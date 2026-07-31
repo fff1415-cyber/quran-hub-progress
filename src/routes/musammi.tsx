@@ -2,7 +2,7 @@ import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, loadSardQueue, updateSardItem,
-  pushSardHistory, pushNotification,
+  pushSardHistory, pushNotification, sortMusammiQueue,
   type SardQueueItem,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
@@ -27,11 +27,39 @@ import {
 } from "@/lib/sard-phased-flow";
 import { runPostPassAutomation } from "@/lib/post-pass-automation";
 import { promoteStudentPhase } from "@/lib/student-phase-promote";
+import { notifyTeacherHalaqa } from "@/lib/teacher-notifications";
 import { AppHeader } from "@/components/AppHeader";
 import { Mic, Minus, Plus, ArrowRight, Award, CheckCircle2, XCircle, Clock, Lock } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/musammi")({ component: MusammiPage });
+
+function notifyTeacherSard(halaqaId: number, message: string) {
+  notifyTeacherHalaqa(halaqaId, message, "sard");
+}
+
+function notifyTeacherTransfer(
+  studentId: string,
+  halaqaId: number,
+  week: number,
+  studentName: string,
+  reason: string,
+) {
+  notifyTeacherHalaqa(halaqaId, `${studentName}: ${reason}`, "transfer");
+  pushNotification({
+    message: `تحويل للمدير: ${studentName} — ${reason}`,
+    type: "transfer",
+    actionTab: "transfers",
+    transferStatus: "pending",
+    transferData: {
+      studentId,
+      halaqaId,
+      week,
+      reason,
+      fromName: "المسمّع",
+    },
+  });
+}
 
 function MusammiPage() {
   const [queue, setQueue] = useState<SardQueueItem[]>(() => loadSardQueue());
@@ -41,7 +69,10 @@ function MusammiPage() {
 
   const refresh = () => setQueue(loadSardQueue());
 
-  const visible = useMemo(() => queue.filter((q) => isMusammiVisible(q)), [queue]);
+  const visible = useMemo(
+    () => sortMusammiQueue(queue.filter((q) => isMusammiVisible(q))),
+    [queue],
+  );
 
   const active = visible.find((q) => q.id === activeId) || null;
   const activeStudent = active ? students.find((s) => s.id === active.studentId) : null;
@@ -320,21 +351,21 @@ function SardEvaluatorFull({
           scheduledAt: scheduleRetry(settings.retry_delay_days),
           ...resetFullSardAttempt(segmentCount),
         });
-        pushNotification({ message: `الطالب ${studentName} رسب في الحفظ — إعادة السرد كاملاً بعد ${settings.retry_delay_days} يوم`, type: "sard" });
+        notifyTeacherSard(item.halaqaId, `الطالب ${studentName} رسب في السرد — المحاولة الأولى (إعادة بعد ${settings.retry_delay_days} يوم)`);
         toast.error(`راسب في الحفظ — إعادة السرد (حفظ + مراجعة) بعد ${settings.retry_delay_days} يوم`);
       } else if (item.attempt === 2) {
         updateSardItem(item.id, {
           status: "awaiting_supervisor", attempt: 2,
           hifzErrors, hifzWarnings, reviewErrors, reviewWarnings, finalPercent: 0,
         });
-        pushNotification({ message: `الطالب ${studentName} يحتاج موافقة المشرف لإعادة السرد`, type: "sard" });
+        notifyTeacherSard(item.halaqaId, `الطالب ${studentName} رسب في السرد — المحاولة الثانية (بانتظار موافقة المشرف)`);
         toast.warning("ينتقل للمشرف العلمي للموافقة على محاولة ثالثة");
       } else {
         updateSardItem(item.id, {
           status: "final_failed", finalPercent: 0,
           hifzErrors, hifzWarnings, reviewErrors, reviewWarnings,
         });
-        pushNotification({ message: `الطالب ${studentName} رسب في الحفظ — نقل إلى الإدارة`, type: "sard" });
+        notifyTeacherTransfer(item.studentId, item.halaqaId, item.week, studentName, "رسب في السرد — المحاولة الثالثة — نقل للمدير");
         toast.error("رسوب في الحفظ — نقل إلى الإدارة");
       }
       onDone();
@@ -343,10 +374,7 @@ function SardEvaluatorFull({
 
     if (review.failed) {
       updateSardItem(item.id, buildReviewOnlyPatch(item, hifz.score, hifzErrors, hifzWarnings, segmentCount, settings.retry_delay_days));
-      pushNotification({
-        message: `اجتاز ${studentName} الحفظ (${hifz.score}) — جُدولت المراجعة بعد ${settings.retry_delay_days} يوم`,
-        type: "sard",
-      });
+      notifyTeacherSard(item.halaqaId, `اجتاز ${studentName} الحفظ (${hifz.score}) — جُدولت المراجعة بعد ${settings.retry_delay_days} يوم`);
       toast.success(`تم تثبيت الحفظ (${hifz.score}) — مراجعة بعد ${settings.retry_delay_days} يوم`);
       onDone();
       return;
@@ -381,7 +409,7 @@ function SardEvaluatorFull({
           : advance.closedPlanTitle
             ? ` — أُنجزت ${advance.closedPlanTitle}`
             : "";
-        pushNotification({ message: `الطالب ${studentName} اجتاز السرد بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`, type: "sard" });
+        notifyTeacherSard(item.halaqaId, `الطالب ${studentName} اجتاز السرد بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
         toast.success(`اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
       } catch {
         toast.success(`اجتاز بنسبة ${merged.percent}%`);
@@ -391,7 +419,7 @@ function SardEvaluatorFull({
         status: "final_failed", finalPercent: merged.percent, phase: "full",
         hifzErrors, hifzWarnings, reviewErrors, reviewWarnings,
       });
-      pushNotification({ message: `الطالب ${studentName} رسب نهائياً (${merged.percent}%) — نقل للإدارة`, type: "sard" });
+      notifyTeacherTransfer(item.studentId, item.halaqaId, item.week, studentName, `رسب نهائياً في السرد (${merged.percent}%)`);
       toast.error(`رسب نهائياً (${merged.percent}%) — الإدارة تتخذ القرار`);
     }
     onDone();
@@ -479,7 +507,7 @@ function SardEvaluatorReviewOnly({
         reviewErrors: segs.map((s) => s.errors),
         reviewWarnings: segs.map((s) => s.warnings),
       });
-      pushNotification({ message: `رسب ${studentName} في المراجعة — إعادة بعد ${settings.retry_delay_days} يوم (الحفظ مثبت)`, type: "sard" });
+      notifyTeacherSard(item.halaqaId, `رسب ${studentName} في المراجعة — إعادة بعد ${settings.retry_delay_days} يوم (الحفظ مثبت)`);
       toast.warning(`راسب في المراجعة — إعادة بعد ${settings.retry_delay_days} يوم (درجة الحفظ مثبتة)`);
       onDone();
       return;
@@ -516,7 +544,7 @@ function SardEvaluatorReviewOnly({
           : advance.closedPlanTitle
             ? ` — أُنجزت ${advance.closedPlanTitle}`
             : "";
-        pushNotification({ message: `الطالب ${studentName} اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`, type: "sard" });
+        notifyTeacherSard(item.halaqaId, `الطالب ${studentName} اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
         toast.success(`اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
       } catch {
         toast.success(`اجتاز بنسبة ${merged.percent}%`);
@@ -526,7 +554,7 @@ function SardEvaluatorReviewOnly({
         status: "final_failed", finalPercent: merged.percent, phase: "review_only",
         reviewErrors, reviewWarnings,
       });
-      pushNotification({ message: `الطالب ${studentName} رسب نهائياً (${merged.percent}%) — الإدارة تتخذ القرار`, type: "sard" });
+      notifyTeacherTransfer(item.studentId, item.halaqaId, item.week, studentName, `رسب نهائياً في المراجعة (${merged.percent}%)`);
       toast.error(`رسب نهائياً (${merged.percent}%) — نقل للإدارة`);
     }
     onDone();

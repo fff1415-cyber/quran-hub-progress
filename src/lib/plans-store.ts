@@ -276,3 +276,17 @@ export function localClearPlansCache(): void {
   localStorage.removeItem(KEY_ASSIGNMENTS);
   localStorage.removeItem(KEY_COMPLETIONS);
 }
+
+export function localDeletePlan(planId: string): { assignmentsRemoved: number } {
+  const plans = read<EducationPlan[]>(KEY_PLANS, []).filter((p) => p.id !== planId);
+  const segments = read<PlanSegment[]>(KEY_SEGMENTS, []).filter((s) => s.plan_id !== planId);
+  const assignments = read<StudentPlanAssignment[]>(KEY_ASSIGNMENTS, []);
+  const kept = assignments.filter((a) => a.plan_id !== planId);
+  const removed = assignments.length - kept.length;
+  const completions = read<SegmentCompletion[]>(KEY_COMPLETIONS, []).filter((c) => c.plan_id !== planId);
+  write(KEY_PLANS, plans);
+  write(KEY_SEGMENTS, segments);
+  write(KEY_ASSIGNMENTS, kept);
+  write(KEY_COMPLETIONS, completions);
+  return { assignmentsRemoved: removed };
+}

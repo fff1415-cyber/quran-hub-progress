@@ -3,6 +3,7 @@ import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, Notificat
 import { saveGrades, saveHalaqat, saveLatePermissions, saveMessageTemplates, saveNotifications, saveSardHistory, saveSardQueue, saveStudents, ensureGradesSemester } from "./mock-data";
 import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } from "./weekly-tests";
 import { saveStaffAttendanceSettings, saveStaffCheckIns } from "./staff-attendance";
+import { saveStudentPortalVisibility, type StudentPortalVisibility } from "./student-portal-settings";
 import type { AcademicPhaseRecord } from "./academic-record";
 import { saveAcademicRecords } from "./academic-record";
 import type { HalaqaProgramsStore, HalaqaProgramGradesStore } from "./halaqa-programs";
@@ -160,6 +161,7 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       if (state.has("notifications")) saveNotifications(state.get("notifications") as Notification[]);
       if (state.has("message_templates")) saveMessageTemplates(state.get("message_templates") as Record<MessageTemplateKey, string>);
       if (state.has("late_permissions")) saveLatePermissions(state.get("late_permissions") as LatePermission[]);
+      if (state.has("student_portal_settings")) saveStudentPortalVisibility(state.get("student_portal_settings") as StudentPortalVisibility);
       sessionStorage.removeItem("qs_syncing");
 
       if (semesterReset) {

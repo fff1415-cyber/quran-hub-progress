@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  loadSardQueue, loadStudents, loadHalaqat, isLateSard, notifyLateSard,
+  loadSardQueue, loadStudents, loadHalaqat, isLateSard, notifyLateSard, sortMusammiQueue,
   type SardQueueItem,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
@@ -63,7 +63,10 @@ export function ActiveSardList() {
   const students = loadStudents();
   const halaqat = loadHalaqat();
 
-  const visible = useMemo(() => queue.filter((q) => isMusammiVisible(q)), [queue]);
+  const visible = useMemo(
+    () => sortMusammiQueue(queue.filter((q) => isMusammiVisible(q))),
+    [queue],
+  );
 
   return (
     <section className="glass-card rounded-2xl p-6">

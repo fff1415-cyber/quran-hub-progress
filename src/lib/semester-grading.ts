@@ -204,6 +204,13 @@ export interface StudentReportPercentages {
   components: ComponentPercentages;
 }
 
+/** Weekly-only report for student/parent portal. */
+export interface StudentWeekReport {
+  weekNumber: number;
+  weekOverall: number;
+  components: ComponentPercentages;
+}
+
 function ratioPct(earned: number, max: number): number {
   if (max <= 0) return 0;
   return Math.round((earned / max) * 1000) / 10;
@@ -262,6 +269,57 @@ export function studentWeekOverallPercentage(
   weekNum: number,
 ): number {
   return weekPercentage(grades[studentId]?.[weekNum], isTalqeen);
+}
+
+/** Component % for a single academic week (current week on portal). */
+export function studentWeekComponentPercentages(
+  studentId: string,
+  levelType: Student["levelType"],
+  isTalqeen: boolean,
+  grades: GradesStore,
+  calendar: AcademicCalendar,
+  weekNum: number,
+  weights: DailyGradeWeights = DEFAULT_DAILY_GRADE_WEIGHTS,
+): ComponentPercentages {
+  const days = getElapsedSemesterDays(calendar).filter((d) => d.weekNumber === weekNum);
+  const acc = { attE: 0, attM: 0, hifzE: 0, hifzM: 0, murE: 0, murM: 0, rabE: 0, rabM: 0, wajE: 0, wajM: 0 };
+
+  if (days.length > 0) {
+    for (const day of days) {
+      accumulateComponentTotals(lookupDayEntry(grades, studentId, day), levelType, isTalqeen, weights, acc);
+    }
+  } else {
+    const week = grades[studentId]?.[weekNum];
+    if (week) {
+      for (const d of DAYS) {
+        accumulateComponentTotals(week.days[d.key], levelType, isTalqeen, weights, acc);
+      }
+    }
+  }
+
+  return {
+    attendance: ratioPct(acc.attE, acc.attM),
+    hifz: ratioPct(acc.hifzE, acc.hifzM),
+    muraja: ratioPct(acc.murE, acc.murM),
+    rabt: ratioPct(acc.rabE, acc.rabM),
+    wajib: ratioPct(acc.wajE, acc.wajM),
+  };
+}
+
+export function studentWeekReportPercentages(
+  studentId: string,
+  levelType: Student["levelType"],
+  isTalqeen: boolean,
+  grades: GradesStore,
+  calendar: AcademicCalendar,
+  weekNum: number = calendar.currentWeekNumber,
+  weights?: DailyGradeWeights,
+): StudentWeekReport {
+  return {
+    weekNumber: weekNum,
+    weekOverall: studentWeekOverallPercentage(studentId, isTalqeen, grades, weekNum),
+    components: studentWeekComponentPercentages(studentId, levelType, isTalqeen, grades, calendar, weekNum, weights),
+  };
 }
 
 export function studentReportPercentages(

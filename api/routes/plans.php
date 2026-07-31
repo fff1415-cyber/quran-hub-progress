@@ -864,3 +864,71 @@ function handle_apply_plan_input(): void
         'completed_at' => $taskType === 'hifz' ? $completedDate : null,
     ]);
 }
+
+function handle_delete_plan(): void
+{
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
+    plans_require_roles($auth, ['supervisor', 'manager']);
+
+    $planId = trim((string) ($_GET['plan_id'] ?? ''));
+    if ($planId === '') {
+        $input = json_input();
+        $planId = trim((string) ($input['plan_id'] ?? ''));
+    }
+    if ($planId === '') {
+        error_response('plan_id مطلوب');
+    }
+
+    $pdo = db();
+    if (!plans_table_exists($pdo, 'education_plans')) {
+        error_response('جداول الخطط غير مُنشأة بعد', 503);
+    }
+
+    $tenants = plans_tenant_enabled($pdo);
+    if ($tenants) {
+        $chk = $pdo->prepare('SELECT id FROM education_plans WHERE id = ? AND complex_id = ?');
+        $chk->execute([$planId, $cid]);
+    } else {
+        $chk = $pdo->prepare('SELECT id FROM education_plans WHERE id = ?');
+        $chk->execute([$planId]);
+    }
+    if (!$chk->fetch()) {
+        error_response('الخطة غير موجودة', 404);
+    }
+
+    try {
+        $pdo->beginTransaction();
+
+        $pdo->prepare('DELETE FROM segment_completions WHERE plan_id = ?')->execute([$planId]);
+        $unlinked = $pdo->prepare('DELETE FROM student_plan_assignments WHERE plan_id = ?');
+        $unlinked->execute([$planId]);
+        $assignmentsRemoved = $unlinked->rowCount();
+
+        $pdo->prepare('DELETE FROM plan_segments WHERE plan_id = ?')->execute([$planId]);
+
+        if ($tenants) {
+            $del = $pdo->prepare('DELETE FROM education_plans WHERE id = ? AND complex_id = ?');
+            $del->execute([$planId, $cid]);
+        } else {
+            $del = $pdo->prepare('DELETE FROM education_plans WHERE id = ?');
+            $del->execute([$planId]);
+        }
+
+        if ($del->rowCount() === 0) {
+            $pdo->rollBack();
+            error_response('تعذّر حذف الخطة', 500);
+        }
+
+        $pdo->commit();
+        json_response([
+            'ok' => true,
+            'assignments_removed' => $assignmentsRemoved,
+        ]);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) {
+            $pdo->rollBack();
+        }
+        error_response('فشل حذف الخطة: ' . $e->getMessage(), 500);
+    }
+}

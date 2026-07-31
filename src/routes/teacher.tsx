@@ -3,7 +3,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
   loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, DAYS,
-  weekPercentage, enqueueSard, loadNotifications, dismissNotification, pushNotification,
+  weekPercentage, loadNotifications, dismissNotification, pushNotification,
   ensureGradesSemester,
   type WeekRecord, type DayEntry, type Student,
 } from "@/lib/mock-data";
@@ -23,6 +23,8 @@ import {
 import { Bell, Check, CheckCircle2, ClipboardList, ClipboardCheck, BookOpen, Loader2, Send, Users, X } from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { applyPlanInput, fetchStudentPlanSheet } from "@/lib/plans-service";
+import { checkAndHandlePlanCompletion } from "@/lib/plan-completion";
+import { processAbsenceThresholdAlerts } from "@/lib/semester-absence";
 import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
@@ -297,7 +299,6 @@ const GRADE_COL = {
   hifz: 48,
   passFail: 56,
   wajib: 44,
-  sard: 48,
   weekPct: 72,
   semesterPct: 80,
   transfer: 88,
@@ -308,7 +309,6 @@ const GRADE_CELL_W = {
   hifz: "w-12 max-w-12",
   pf: "w-14 max-w-14",
   wajib: "w-11 max-w-11",
-  sard: "w-12 max-w-12",
   weekPct: "w-[72px] max-w-[72px]",
   semesterPct: "w-20 max-w-20",
   transfer: "w-[88px] max-w-[88px]",
@@ -322,7 +322,6 @@ function gradeTableWidthPx(dayCount: number, isTalqeen: boolean): number {
   return (
     GRADE_COL.student
     + dayCount * perDay
-    + GRADE_COL.sard
     + GRADE_COL.weekPct
     + GRADE_COL.semesterPct
     + GRADE_COL.transfer
@@ -348,7 +347,6 @@ function GradeTableColGroup({
           <col key={`d${dayIdx}-c${colIdx}`} style={{ width: w }} />
         )),
       )}
-      <col style={{ width: GRADE_COL.sard }} />
       <col style={{ width: GRADE_COL.weekPct }} />
       <col style={{ width: GRADE_COL.semesterPct }} />
       <col style={{ width: GRADE_COL.transfer }} />
@@ -477,6 +475,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       if (planSheetStudent?.id === s.id) {
         setPlanSheetData(await fetchStudentPlanSheet(s.id));
       }
+      if (await checkAndHandlePlanCompletion(s, weekNum)) {
+        toast.info(`${s.name} أنهى الخطة — بانتظار تحويل المشرف للسرد`);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "فشل تحديث الخطة");
     }
@@ -497,6 +498,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       if (planSheetStudent?.id === s.id) {
         setPlanSheetData(await fetchStudentPlanSheet(s.id));
       }
+      if (await checkAndHandlePlanCompletion(s, weekNum)) {
+        toast.info(`${s.name} أنهى الخطة — بانتظار تحويل المشرف للسرد`);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "فشل تحديث الخطة");
     }
@@ -513,6 +517,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
   const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
     update(studentId, (w) => ({ ...w, days: { ...w.days, [dayKey]: { ...w.days[dayKey], ...patch } } }));
+    if (patch.attendance === "absent") {
+      void fetchActiveCalendar(true).then(processAbsenceThresholdAlerts).catch(() => {});
+    }
   };
 
   const markAllPresentForDay = (dayKey: string) => {
@@ -555,14 +562,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     () => gradeTableWidthPx(visibleDays.length, isTalqeen),
     [visibleDays.length, isTalqeen],
   );
-
-  const toggleSard = (s: Student, on: boolean) => {
-    update(s.id, (w) => ({ ...w, sard: on }));
-    if (on) {
-      enqueueSard(s.id, s.halaqaId, weekNum);
-      toast.success(`تم إحالة الطالب ${s.name} للمسمّع`);
-    }
-  };
 
   const dayHeaderClass = (dayKey: string) =>
     cn(
@@ -651,7 +650,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 {highlightDay(d.key) && <span className="block text-[10px] text-primary font-normal">اليوم</span>}
               </th>
             ))}
-            <th className={cn("p-2 border-r border-border", GRADE_CELL_W.sard)}>السرد</th>
             <th className={cn("p-2 border-r border-border text-muted-foreground", GRADE_CELL_W.weekPct)}>نسبة الأسبوع</th>
             <th className={cn("p-2 border-r border-border text-primary font-bold", GRADE_CELL_W.semesterPct)}>النسبة الكلية</th>
             <th className={cn("p-2 border-r border-border text-warning", GRADE_CELL_W.transfer)}>إرسال للإدارة</th>
@@ -679,7 +677,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 </React.Fragment>
               )
             )}
-            <th className={GRADE_CELL_W.sard} />
             <th className={GRADE_CELL_W.weekPct} />
             <th className={GRADE_CELL_W.semesterPct} />
             <th className={GRADE_CELL_W.transfer} />
@@ -763,9 +760,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                     </React.Fragment>
                   );
                 })}
-                <td className={cn("p-1 text-center border-r border-border/30", GRADE_CELL_W.sard)}>
-                  <Cbx checked={w.sard} onChange={(v) => toggleSard(s, v)} />
-                </td>
                 <td className={cn("p-2 text-center font-bold border-r border-border/30", GRADE_CELL_W.weekPct)}>
                   <span className={weekPct >= 80 ? "text-success" : weekPct >= 50 ? "text-warning" : "text-muted-foreground"}>
                     {weekPct}%
