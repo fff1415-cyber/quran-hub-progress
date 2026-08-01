@@ -38,6 +38,8 @@ Upload `dist/client/` to `public_html/` and `api/` to `public_html/api/`.
 
 **اختبار سريع:** FileZilla → SFTP → Host = IP، Port = 65002. إذا فشل محلياً، الأسرار خاطئة قبل GitHub.
 
+**ملاحظة:** خطوة «Test server connectivity» في GitHub Actions قد تُظهر تحذيراً حتى مع إعداد صحيح — Hostinger يحجب أحياناً فحص المنفذ من سحابة GitHub. النشر يستمر ويُختبر عند خطوة SFTP الفعلية.
+
 ## Subdomains (m1.msht.io, m2.msht.io)
 
 إذا ظهرت **صفحة Hostinger الافتراضية (`default.php`)** أو **`ERR_HTTP2_PROTOCOL_ERROR` على m1 فقط**، فالسبب غالباً أن Hostinger أنشأ **مجلداً منفصلاً** لـ `m1` ولم يُحدَّث أو فيه `default.php`.

@@ -35,9 +35,15 @@ jobs:
           if [ "$missing" -ne 0 ]; then exit 1; fi
           host="${{ secrets.FTP_SERVER }}"
           if echo "$host" | grep -qE '[A-Za-z]'; then
-            echo "::warning::FTP_SERVER='$host' looks like a domain name. Hostinger requires the **server IP** from hPanel → Advanced → SSH Access (e.g. 93.x.x.x)."
+            echo "::error::FTP_SERVER='$host' must be the server **IP address** (numbers only), not a domain."
+            echo "hPanel → Advanced → SSH Access → copy the IP (e.g. 93.x.x.x)."
+            exit 1
           fi
-          echo "All required secrets are present."
+          if ! echo "$host" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::FTP_SERVER='$host' is not a valid IPv4 address."
+            exit 1
+          fi
+          echo "All required secrets are present (FTP_SERVER looks like an IP)."
 
       - name: Resolve Hostinger paths
         id: paths
@@ -69,27 +75,27 @@ jobs:
           echo "m1 frontend: /home/${user}/domains/m1.msht.io/public_html/"
 
       - name: Test server connectivity
+        continue-on-error: true
         run: |
           set +e
           host="${{ secrets.FTP_SERVER }}"
-          echo "Checking deploy ports on $host ..."
+          echo "Checking deploy ports on $host (informational — SFTP step is authoritative)..."
           sftp_ok=0
           ftps_ok=0
-          if nc -z -w 20 "$host" "${SSH_PORT}"; then
+          if nc -z -w 20 "$host" "${SSH_PORT}" 2>/dev/null; then
             echo "Port ${SSH_PORT} (SFTP) is reachable."
             sftp_ok=1
           else
-            echo "::warning::Port ${SSH_PORT} not reachable — SFTP will likely fail. Use FTP_SERVER = IP from hPanel → SSH Access."
+            echo "::warning::Port ${SSH_PORT} not reachable from this runner (Hostinger often blocks port scans from cloud IPs)."
           fi
-          if nc -z -w 20 "$host" 21; then
+          if nc -z -w 20 "$host" 21 2>/dev/null; then
             echo "Port 21 (FTPS) is reachable."
             ftps_ok=1
           else
-            echo "::warning::Port 21 not reachable from GitHub — FTPS fallback may fail (common on Hostinger)."
+            echo "::warning::Port 21 not reachable from this runner."
           fi
           if [ "$sftp_ok" -eq 0 ] && [ "$ftps_ok" -eq 0 ]; then
-            echo "::error::Neither port 65002 nor 21 reachable. Fix FTP_SERVER (must be server IP, not msht.io) and enable SSH Access in hPanel."
-            exit 1
+            echo "::warning::Neither port responded to nc — continuing anyway; SFTP deploy will confirm connectivity."
           fi
 
       - name: Setup Bun
