@@ -45,15 +45,10 @@ echo "→ Main site: $MAIN_DIR"
 for sub in "${SUBS[@]}"; do
   sub="$(echo "$sub" | tr -d ' ')"
   [ -z "$sub" ] && continue
-  PACK="$SUB_BASE/$sub"
   REMOTE="/home/${USER}/domains/${sub}.msht.io/public_html/"
-  if [ ! -d "$PACK" ]; then
-    echo "Skip $sub (no pack at $PACK — run prepare-hostinger-deploy.mjs)"
-    continue
-  fi
   echo "→ Subdomain $sub: $REMOTE"
-  "${RSYNC[@]}" "$PACK/" "${SSH_TARGET}:${REMOTE}"
-  echo "   Delete default.php in File Manager if it still appears."
+  "${RSYNC[@]}" "$CLIENT/" "${SSH_TARGET}:${REMOTE}"
+  echo "   (delete default.php if the subdomain still shows Hostinger placeholder)"
 done
 
 echo "Done."

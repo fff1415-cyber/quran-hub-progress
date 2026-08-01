@@ -40,24 +40,39 @@ Upload `dist/client/` to `public_html/` and `api/` to `public_html/api/`.
 
 ## Subdomains (m1.msht.io, m2.msht.io)
 
-إذا ظهرت **صفحة Hostinger الافتراضية (`default.php`)** على subdomain، فالسبب أن Hostinger أنشأ **مجلداً منفصلاً** لكل subdomain ولا يقرأ `.htaccess` من `public_html` الرئيسي.
+إذا ظهرت **صفحة Hostinger الافتراضية (`default.php`)** أو **`ERR_HTTP2_PROTOCOL_ERROR` على m1 فقط**، فالسبب غالباً أن Hostinger أنشأ **مجلداً منفصلاً** لـ `m1` ولم يُحدَّث أو فيه `default.php`.
 
-### الحل الأفضل (مرة واحدة في hPanel)
+### الحل الأفضل (مرة واحدة في hPanel) — موصى به لـ m1
 
-1. **Domains** → **Subdomains** → تعديل `m1` / `m2`
+1. **Domains** → **Subdomains** → تعديل `m1`
 2. **Document root** = نفس مجلد الدومين الرئيسي:  
    `/home/u112851217/domains/msht.io/public_html/`
-3. احذف `default.php` من أي مجلد subdomain قديم
+3. احذف `default.php` من `/domains/m1.msht.io/public_html/` إن وُجد
+4. في GitHub: **Settings** → **Variables** → `HOSTINGER_UNIFIED_SUBDOMAINS` = `true`  
+   (يتخطى رفع m1 لمجلد منفصل — m1 يخدم من نفس ملفات msht.io)
 
-### أو: نسخ التطبيق لكل subdomain
+### تحقق سريع بعد النشر
+
+| الرابط | المتوقع |
+|--------|---------|
+| `https://msht.io/deploy-sha.txt` | آخر commit |
+| `https://m1.msht.io/deploy-sha.txt` | **نفس** commit |
+| `https://m2.msht.io/deploy-sha.txt` | **نفس** commit |
+
+إذا m2 يطابق و m1 لا → مشكلة **مجلد أو SSL لـ m1** وليس التطبيق.
+
+### أو: نسخ التطبيق لكل subdomain (مجلد منفصل)
+
+GitHub Actions يرفع `dist/client/` تلقائياً إلى:
+- `/domains/m1.msht.io/public_html/`
+- `/domains/m2.msht.io/public_html/`
+
+وينسخ `api/` مع استثناء `config.php` — **تأكد من وجود `api/config.php` على m1** (انسخه من msht.io إن لزم).
 
 ```bash
 npm run build:hostinger
-# ينشئ dist/hostinger-subdomains/m1/ و m2/ — ارفع كل مجلد إلى public_html الخاص بذلك subdomain
-# ثم احذف default.php
-
-# مزامنة عبر SSH (بعد تفعيل SSH في hPanel):
 bash scripts/sync-hostinger-subdomains.sh u112851217@SERVER_IP
+FTP_PASSWORD=... bash scripts/post-deploy-hostinger-subdomains.sh u112851217 SERVER_IP
 ```
 
 راجع `dist/HOSTINGER-SUBDOMAINS.txt` بعد كل build.
