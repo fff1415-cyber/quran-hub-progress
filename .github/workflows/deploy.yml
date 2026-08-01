@@ -366,17 +366,24 @@ jobs:
 
       - name: Verify live deploy
         if: steps.sftp_frontend.outcome == 'success' || steps.rsync_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success'
-        env:
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        continue-on-error: true
         run: |
           set +e
           EXPECTED="${{ github.sha }}"
           SERVER_IP="${{ secrets.FTP_SERVER }}"
-          SEPARATE="${{ vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS }}"
+          EXTRA_SUBS="${{ vars.HOSTINGER_VERIFY_SUBDOMAINS }}"
           CURL_EXTRA=()
           if echo "$SERVER_IP" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
-            CURL_EXTRA=(--resolve "msht.io:443:${SERVER_IP}" --resolve "m1.msht.io:443:${SERVER_IP}" --resolve "m2.msht.io:443:${SERVER_IP}")
-            echo "Using --resolve for msht.io / m1 / m2 → ${SERVER_IP}"
+            CURL_EXTRA=(--resolve "msht.io:443:${SERVER_IP}")
+            if [ -n "$EXTRA_SUBS" ]; then
+              IFS=',' read -ra SUBS <<< "$EXTRA_SUBS"
+              for sub in "${SUBS[@]}"; do
+                sub="$(echo "$sub" | tr -d ' ')"
+                [ -z "$sub" ] && continue
+                CURL_EXTRA+=(--resolve "${sub}:443:${SERVER_IP}")
+              done
+            fi
+            echo "Using --resolve for msht.io → ${SERVER_IP}"
           fi
           verify_host() {
             local host="$1"
@@ -392,22 +399,21 @@ jobs:
           }
           for i in 1 2 3 4 5 6; do
             if verify_host "msht.io" "msht.io"; then
-              M1_OK=0
-              verify_host "m1.msht.io" "m1.msht.io" && M1_OK=1
-              if [ "$SEPARATE" = "true" ]; then
-                verify_host "m2.msht.io" "m2.msht.io" || echo "::warning::m2.msht.io verify failed"
-              fi
-              if [ "$M1_OK" -eq 0 ]; then
-                echo "::error::m1.msht.io not serving latest deploy."
-                echo "Fix: hPanel → Subdomains → m1 → Document root = /home/USER/domains/msht.io/public_html/"
-                echo "See DEPLOY.md § Subdomains"
-                exit 1
+              if [ -n "$EXTRA_SUBS" ]; then
+                IFS=',' read -ra SUBS <<< "$EXTRA_SUBS"
+                for sub in "${SUBS[@]}"; do
+                  sub="$(echo "$sub" | tr -d ' ')"
+                  [ -z "$sub" ] && continue
+                  verify_host "$sub" "$sub" || true
+                done
+              else
+                echo "Subdomain verify skipped (optional: HOSTINGER_VERIFY_SUBDOMAINS=your.msht.io)"
               fi
               exit 0
             fi
             echo "Attempt $i: msht.io not ready yet, waiting…"
             sleep 15
           done
-          echo "::warning::HTTPS verify skipped — upload succeeded but msht.io was not reachable from GitHub Actions."
-          echo "Check manually: https://msht.io/deploy-sha.txt and https://m1.msht.io/deploy-sha.txt"
+          echo "::warning::msht.io deploy-sha not confirmed from GitHub — upload may still have succeeded."
+          echo "Check manually: https://msht.io/deploy-sha.txt (expected ${EXPECTED:0:7}…)"
           exit 0

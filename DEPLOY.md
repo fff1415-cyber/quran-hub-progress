@@ -70,10 +70,13 @@ Upload `dist/client/` to `public_html/` and `api/` to `public_html/api/`.
 | الرابط | المتوقع |
 |--------|---------|
 | `https://msht.io/deploy-sha.txt` | آخر commit |
-| `https://m1.msht.io/deploy-sha.txt` | **نفس** commit |
-| `https://m2.msht.io/deploy-sha.txt` | **نفس** commit |
+| `https://YOUR-SUBDOMAIN.msht.io/deploy-sha.txt` | **نفس** commit (إن docroot موحّد) |
 
-إذا m2 يطابق و m1 لا → مشكلة **document root أو SSL لـ m1** وليس التطبيق.
+**GitHub Actions** يتحقق من `msht.io` فقط. لتحقق subdomain مجمعك، أضف في **Settings → Variables**:
+
+`HOSTINGER_VERIFY_SUBDOMAINS` = `your-subdomain.msht.io` (مثال: `shtawi.msht.io`)
+
+**m1.msht.io** لم يعد مطلوباً إن حذفته — اضبط docroot subdomain الجديد = `public_html` الرئيسي.
 
 ### مزامنة يدوية (SSH)
 
