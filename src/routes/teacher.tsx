@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
-  loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, ensureWeekDays, DAYS,
+  loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, ensureWeekDays, dayEntryFor, DAYS,
   weekPercentage, loadNotifications, dismissNotification, pushNotification,
   ensureGradesSemester,
   type WeekRecord, type DayEntry, type Student,
@@ -593,7 +593,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   };
 
   const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
-    update(studentId, (w) => ({ ...w, days: { ...w.days, [dayKey]: { ...w.days[dayKey], ...patch } } }));
+    update(studentId, (w) => {
+      const base = ensureWeekDays(w);
+      return {
+        ...base,
+        days: {
+          ...base.days,
+          [dayKey]: { ...base.days[dayKey], ...patch },
+        },
+      };
+    });
     if (patch.attendance === "absent") {
       void fetchActiveCalendar(true).then(processAbsenceThresholdAlerts).catch(() => {});
     }
@@ -773,7 +782,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         </thead>
         <tbody>
           {students.map((s) => {
-            const w = grades[s.id]?.[weekNum] || emptyWeek();
+            const w = ensureWeekDays(grades[s.id]?.[weekNum] ?? emptyWeek());
             const weekPct = weekPercentage(w, isTalqeen, s.levelType);
             const semesterPct = semesterOverallPercentage(s.id, s.levelType, isTalqeen, grades, calendar);
             return (
@@ -800,7 +809,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                   </div>
                 </td>
                 {visibleDays.map((d) => {
-                  const e = w.days[d.key];
+                  const e = dayEntryFor(w, d.key);
                   return isTalqeen ? (
                     <React.Fragment key={d.key}>
                       <td className={dayCellClass(d.key, GRADE_CELL_W.att)}>

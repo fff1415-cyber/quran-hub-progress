@@ -667,6 +667,11 @@ export function ensureWeekDays(w: WeekRecord): WeekRecord {
   return changed ? { ...w, days } : w;
 }
 
+export function dayEntryFor(week: WeekRecord | undefined, dayKey: string): DayEntry {
+  const w = ensureWeekDays(week ?? emptyWeek());
+  return w.days[dayKey] ?? { attendance: "", hifz: "", rabt: "", muraja: "", wajib: false };
+}
+
 // Auth lookups moved to server functions — see src/lib/secure-data.functions.ts
 // (loginByCode, loginByNationalId). Credentials are no longer readable
 // from the browser; do not add client-side authenticate* helpers here.
