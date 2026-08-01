@@ -1,6 +1,6 @@
 import type { PlanTaskType } from "@/lib/plan-types";
-import type { HifzValue, Student } from "@/lib/mock-data";
-import { HifzSelect, PassFail } from "@/components/plans/TeacherGradeInputs";
+import { hifzCheckedValue, isHifzChecked, type HifzValue, type Student } from "@/lib/mock-data";
+import { HifzCheckbox, PassFail } from "@/components/plans/TeacherGradeInputs";
 
 interface PlanAwareTaskCellProps {
   student: Student;
@@ -10,7 +10,7 @@ interface PlanAwareTaskCellProps {
   passFailValue: string;
   onHifzChange: (v: HifzValue) => void;
   onPassFailChange: (v: "pass" | "fail" | "") => void;
-  onPlanHifzChange?: (v: HifzValue) => void;
+  onPlanHifzChange?: (checked: boolean) => void;
   onPlanPassFailChange?: (v: "pass" | "fail" | "") => void;
   disabled?: boolean;
 }
@@ -27,20 +27,20 @@ export function PlanAwareTaskCell({
   onPlanPassFailChange,
   disabled,
 }: PlanAwareTaskCellProps) {
+  if (task === "hifz") {
+    return (
+      <HifzCheckbox
+        checked={isHifzChecked(hifzValue)}
+        disabled={disabled}
+        onChange={(next) => {
+          onHifzChange(next ? hifzCheckedValue(student.levelType) : "");
+          if (hasPlan && next) onPlanHifzChange?.(true);
+        }}
+      />
+    );
+  }
+
   if (hasPlan) {
-    if (task === "hifz") {
-      return (
-        <HifzSelect
-          value={hifzValue}
-          goldOnly={student.levelType === "gold"}
-          disabled={disabled}
-          onChange={(v) => {
-            onHifzChange(v);
-            if (v) onPlanHifzChange?.(v);
-          }}
-        />
-      );
-    }
     return (
       <PassFail
         value={passFailValue as "pass" | "fail" | ""}
@@ -52,9 +52,7 @@ export function PlanAwareTaskCell({
       />
     );
   }
-  if (task === "hifz") {
-    return <HifzSelect value={hifzValue} onChange={onHifzChange} />;
-  }
+
   return (
     <PassFail
       value={passFailValue as "pass" | "fail" | ""}

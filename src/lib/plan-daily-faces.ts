@@ -2,7 +2,6 @@ import type { AcademicCalendar } from "@/lib/academic-context";
 import { getElapsedSemesterDays } from "@/lib/semester-grading";
 import type { DailyFaceQuotas, StudentPlanAssignment } from "@/lib/plan-types";
 import type { DayEntry, GradesStore, HifzValue } from "@/lib/mock-data";
-import { DAYS } from "@/lib/mock-data";
 
 /** Fixed hifz tap → faces (not configurable per level). */
 export const FIXED_HIFZ_FACES = {
@@ -89,10 +88,15 @@ export function aggregateFaceProgress(
   toIso?: string,
 ): FaceProgressSummary {
   const days = getElapsedSemesterDays(calendar);
+  if (days.length === 0) {
+    return aggregateFaceProgressAllWeeks(studentId, grades, quotas);
+  }
+
   const from = fromIso ?? (days[0]?.iso ?? calendar.operationalDate);
   const to = toIso ?? calendar.operationalDate;
 
   const inRange = days.filter((d) => d.iso >= from && d.iso <= to);
+  const weekNumsInRange = new Set(inRange.map((d) => d.weekNumber));
   let hifzActual = 0;
   let rabtActual = 0;
   let murajaActual = 0;
@@ -103,6 +107,21 @@ export function aggregateFaceProgress(
     hifzActual += part.hifz;
     rabtActual += part.rabt;
     murajaActual += part.muraja;
+  }
+
+  const countedDayKeys = new Set(inRange.map((d) => `${d.weekNumber}:${d.dayKey}`));
+  for (const wn of weekNumsInRange) {
+    const week = grades[studentId]?.[wn];
+    if (!week?.days) continue;
+    for (const [dayKey, entry] of Object.entries(week.days)) {
+      if (countedDayKeys.has(`${wn}:${dayKey}`)) continue;
+      const part = facesFromDayEntry(entry, quotas);
+      if (!part.hifz && !part.rabt && !part.muraja) continue;
+      hifzActual += part.hifz;
+      rabtActual += part.rabt;
+      murajaActual += part.muraja;
+    }
+    hifzActual += week.compensationFaces ?? 0;
   }
 
   const workingDays = inRange.length;
@@ -129,8 +148,8 @@ export function aggregateFaceProgressAllWeeks(
   let dayCount = 0;
   const weeks = grades[studentId] ?? {};
   for (const week of Object.values(weeks)) {
-    for (const d of DAYS) {
-      const entry = week.days[d.key];
+    hifzActual += week.compensationFaces ?? 0;
+    for (const [dayKey, entry] of Object.entries(week.days ?? {})) {
       if (!entry) continue;
       const hasData = !!(entry.hifz || entry.rabt || entry.muraja || entry.attendance);
       if (!hasData) continue;

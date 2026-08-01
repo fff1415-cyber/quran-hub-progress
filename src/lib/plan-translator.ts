@@ -130,8 +130,15 @@ export function nextSegmentForTask(
   }
 
   if (task === "muraja" && phase === 1) {
-    const start = assignment.start_muraja_segment ?? assignment.start_segment_index;
-    for (const seg of allSegmentIndexes.filter((i) => i >= start).sort((a, b) => a - b)) {
+    const officialStart = assignment.start_muraja_segment ?? 16;
+    // Before segment 16: muraja follows completed hifz (same as rabt).
+    for (const seg of ordered) {
+      if (seg >= officialStart) break;
+      if (!hifzDone.has(seg)) continue;
+      if (!taskDone.has(seg)) return seg;
+    }
+    // Official muraja track from segment 16+.
+    for (const seg of allSegmentIndexes.filter((i) => i >= officialStart).sort((a, b) => a - b)) {
       if (!taskDone.has(seg)) return seg;
     }
     return null;

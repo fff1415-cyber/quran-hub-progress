@@ -172,7 +172,7 @@ export function aggregateStudentPeriod(
     ...stats,
     weeksIncluded: weekNums,
     overallPercent: semesterOverallPercentage(student.id, student.levelType, isTalqeen, grades, calendar),
-    weekPercent: studentWeekOverallPercentage(student.id, isTalqeen, grades, calendar.currentWeekNumber),
+    weekPercent: studentWeekOverallPercentage(student.id, isTalqeen, grades, calendar.currentWeekNumber, student.levelType),
     attendancePercent: components.attendance,
     hifzPercent: components.hifz,
     murajaPercent: components.muraja,

@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
-import { loadHalaqat, loadStudents, loadGrades } from "@/lib/mock-data";
+import { loadHalaqat, loadStudents, loadGrades, type GradesStore } from "@/lib/mock-data";
 import { getCalendarDayKey } from "@/lib/operational-date";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
+import { syncFromCloud } from "@/lib/cloud-sync";
 import {
   halaqaWeekAverage,
   semesterOverallPercentage,
@@ -41,7 +42,8 @@ function StudentPage() {
   const search = Route.useSearch();
   const halaqat = loadHalaqat();
   const students = loadStudents();
-  const grades = loadGrades();
+  const [grades, setGrades] = useState<GradesStore>(() => loadGrades());
+  const [gradesReady, setGradesReady] = useState(false);
   const [authMode, setAuthMode] = useState<StudentPortalAuthMode>(() => resolveStudentPortalAuth());
   const [studentId, setStudentId] = useState<string | null>(() => {
     if (resolveStudentPortalAuth() !== "student") return null;
@@ -57,6 +59,21 @@ function StudentPage() {
       navigate({ to: "/" });
     }
   }, [navigate]);
+
+  useEffect(() => {
+    let cancelled = false;
+    void (async () => {
+      try {
+        await syncFromCloud();
+      } finally {
+        if (!cancelled) {
+          setGrades(loadGrades());
+          setGradesReady(true);
+        }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -108,7 +125,7 @@ function StudentPage() {
         return {
           student: s,
           halaqa: h,
-          pct: studentWeekOverallPercentage(s.id, h.isTalqeen, grades, weekNum),
+          pct: studentWeekOverallPercentage(s.id, h.isTalqeen, grades, weekNum, s.levelType),
         };
       })
       .filter((x): x is NonNullable<typeof x> => !!x)
@@ -201,14 +218,14 @@ function StudentPage() {
           </button>
         </div>
 
-        {showGeneral && !calendar && (
+        {showGeneral && (!calendar || !gradesReady) && (
           <div className="glass-card rounded-2xl p-6 mb-6 flex items-center justify-center gap-2 text-muted-foreground">
             <Loader2 className="w-5 h-5 animate-spin" />
             جاري تحميل التقويم...
           </div>
         )}
 
-        {showGeneral && calendar && (
+        {showGeneral && calendar && gradesReady && (
           <>
             {(visibility.halaqaWeekly || visibility.complexFaceCounts) && (
               <StudentPortalHalaqaSection
@@ -261,7 +278,7 @@ function StudentPage() {
           </>
         )}
 
-        {authMode === "student" && !personal && calendar && (
+        {authMode === "student" && !personal && calendar && gradesReady && (
           <div className="glass-card rounded-2xl p-6 mt-6 text-center text-muted-foreground">
             <p>تعذّر تحميل بيانات الطالب. جرّب تسجيل الخروج والدخول مرة أخرى.</p>
           </div>

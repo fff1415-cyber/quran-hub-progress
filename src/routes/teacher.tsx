@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
-  loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, DAYS,
+  loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, ensureWeekDays, DAYS,
   weekPercentage, loadNotifications, dismissNotification, pushNotification,
   ensureGradesSemester,
   type WeekRecord, type DayEntry, type Student,
@@ -14,7 +14,6 @@ import {
   workingDayKeysFromSemester,
   type AcademicCalendar,
 } from "@/lib/academic-context";
-import { weekLabel } from "@/lib/arabic-numbers";
 import { cn } from "@/lib/utils";
 import { AppHeader } from "@/components/AppHeader";
 import {
@@ -28,7 +27,8 @@ import { processAbsenceThresholdAlerts } from "@/lib/semester-absence";
 import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
-import { AttSelect } from "@/components/plans/TeacherGradeInputs";
+import { AttSelect, CompensationSelect } from "@/components/plans/TeacherGradeInputs";
+import { hifzCheckedValue } from "@/lib/mock-data";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -319,7 +319,7 @@ const GRADE_COL = {
   wajib: 44,
   weekPct: 72,
   semesterPct: 80,
-  transfer: 88,
+  compensation: 56,
 } as const;
 
 const GRADE_CELL_W = {
@@ -329,7 +329,7 @@ const GRADE_CELL_W = {
   wajib: "w-11 max-w-11",
   weekPct: "w-[72px] max-w-[72px]",
   semesterPct: "w-20 max-w-20",
-  transfer: "w-[88px] max-w-[88px]",
+  compensation: "w-14 max-w-14",
   student: "w-[140px] max-w-[140px]",
 } as const;
 
@@ -342,7 +342,7 @@ function gradeTableWidthPx(dayCount: number, isTalqeen: boolean): number {
     + dayCount * perDay
     + GRADE_COL.weekPct
     + GRADE_COL.semesterPct
-    + GRADE_COL.transfer
+    + (isTalqeen ? 0 : GRADE_COL.compensation)
   );
 }
 
@@ -367,7 +367,7 @@ function GradeTableColGroup({
       )}
       <col style={{ width: GRADE_COL.weekPct }} />
       <col style={{ width: GRADE_COL.semesterPct }} />
-      <col style={{ width: GRADE_COL.transfer }} />
+      <col style={{ width: GRADE_COL.compensation }} />
     </colgroup>
   );
 }
@@ -388,7 +388,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const [grades, setGrades] = useState(() => loadGrades());
   const baseDayCols = isTalqeen ? 2 : 4;
   const dayColSpan = baseDayCols;
-  const [transferFor, setTransferFor] = useState<Student | null>(null);
+  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferStudentId, setTransferStudentId] = useState("");
   const [transferReason, setTransferReason] = useState("");
   const [showAssign, setShowAssign] = useState(false);
   const [planStudentIds, setPlanStudentIds] = useState<Set<string>>(new Set());
@@ -410,10 +411,12 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     () => workingDayKeysFromSemester(calendar.semester?.working_days),
     [calendar.semester?.working_days],
   );
-  const visibleDays = useMemo(
-    () => DAYS.filter((d) => workingKeys.has(d.key)),
-    [workingKeys],
-  );
+  const visibleDays = useMemo(() => {
+    const keys = new Set(workingKeys);
+    keys.add("fri");
+    keys.add("sat");
+    return DAYS.filter((d) => keys.has(d.key));
+  }, [workingKeys]);
   const isCurrentWeek = weekNum === calendar.currentWeekNumber;
   const todayKey = calendar.currentDayKey;
 
@@ -426,16 +429,17 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   }, [isCurrentWeek, todayKey, weekNum]);
 
   const submitTransfer = () => {
-    if (!transferFor) return;
+    const student = students.find((s) => s.id === transferStudentId);
+    if (!student) { toast.error("اختر الطالب"); return; }
     const reason = transferReason.trim();
     if (!reason) { toast.error("اكتب سبب التحويل"); return; }
     pushNotification({
-      message: `تحويل من ${senderName}: الطالب ${transferFor.name} — ${reason}`,
+      message: `تحويل من ${senderName}: الطالب ${student.name} — ${reason}`,
       type: "transfer",
       actionTab: "transfers",
       transferData: {
-        studentId: transferFor.id,
-        halaqaId: transferFor.halaqaId,
+        studentId: student.id,
+        halaqaId: student.halaqaId,
         week: weekNum,
         reason,
         fromName: senderName,
@@ -443,7 +447,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       transferStatus: "pending",
     });
     toast.success("تم إرسال الطالب للإدارة");
-    setTransferFor(null);
+    setShowTransferModal(false);
+    setTransferStudentId("");
     setTransferReason("");
   };
 
@@ -452,7 +457,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     const g = { ...grades };
     students.forEach((s) => {
       if (!g[s.id]) g[s.id] = {};
-      if (!g[s.id][weekNum]) { g[s.id][weekNum] = emptyWeek(); changed = true; }
+      if (!g[s.id][weekNum]) {
+        g[s.id][weekNum] = emptyWeek();
+        changed = true;
+      } else {
+        const normalized = ensureWeekDays(g[s.id][weekNum]);
+        if (normalized !== g[s.id][weekNum]) {
+          g[s.id][weekNum] = normalized;
+          changed = true;
+        }
+      }
     });
     if (changed) { setGrades(g); saveGrades(g); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -518,9 +532,10 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }
   };
 
-  const handlePlanHifz = async (s: Student, dayKey: string, tap: TapValue) => {
-    if (!tap) return;
-    updateDay(s.id, dayKey, { hifz: tap });
+  const handlePlanHifz = async (s: Student, dayKey: string) => {
+    const gradeVal = hifzCheckedValue(s.levelType);
+    const tap: TapValue = s.levelType === "gold" ? "one" : "half";
+    updateDay(s.id, dayKey, { hifz: gradeVal });
     try {
       const segs = await applyPlanInput(s.id, "hifz", tap, senderName);
       toast.success(`تم تسجيل ${segs.length} مقطع — حفظ`);
@@ -565,6 +580,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     g[studentId][weekNum] = fn(g[studentId][weekNum]);
     setGrades(g);
     saveGrades(g);
+  };
+
+  const updateCompensation = (studentId: string, faces: number) => {
+    update(studentId, (w) => ({ ...w, compensationFaces: faces }));
+  };
+
+  const openTransferModal = () => {
+    setTransferStudentId(students[0]?.id ?? "");
+    setTransferReason("");
+    setShowTransferModal(true);
   };
 
   const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
@@ -658,6 +683,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           )}
         </div>
         <div className="flex items-center gap-2 shrink-0">
+          {!isTalqeen && students.length > 0 && (
+            <button
+              type="button"
+              onClick={openTransferModal}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/15 text-warning border border-warning/40 text-sm font-bold hover:bg-warning/25"
+            >
+              <Send className="w-4 h-4" />
+              إرسال المتعثرين
+            </button>
+          )}
           {canAssign && (
             <button
               type="button"
@@ -704,7 +739,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
             ))}
             <th className={cn("p-2 border-r border-border text-muted-foreground", GRADE_CELL_W.weekPct)}>نسبة الأسبوع</th>
             <th className={cn("p-2 border-r border-border text-primary font-bold", GRADE_CELL_W.semesterPct)}>النسبة الكلية</th>
-            <th className={cn("p-2 border-r border-border text-warning", GRADE_CELL_W.transfer)}>إرسال للإدارة</th>
+            {!isTalqeen && (
+              <th className={cn("p-2 border-r border-border text-success", GRADE_CELL_W.compensation)}>تعويض</th>
+            )}
           </tr>
           <tr className="bg-secondary/30 text-xs text-muted-foreground">
             <th className={cn("sticky right-0 bg-secondary", GRADE_CELL_W.student)} />
@@ -731,13 +768,13 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
             )}
             <th className={GRADE_CELL_W.weekPct} />
             <th className={GRADE_CELL_W.semesterPct} />
-            <th className={GRADE_CELL_W.transfer} />
+            {!isTalqeen && <th className={GRADE_CELL_W.compensation} />}
           </tr>
         </thead>
         <tbody>
           {students.map((s) => {
             const w = grades[s.id]?.[weekNum] || emptyWeek();
-            const weekPct = weekPercentage(w, isTalqeen);
+            const weekPct = weekPercentage(w, isTalqeen, s.levelType);
             const semesterPct = semesterOverallPercentage(s.id, s.levelType, isTalqeen, grades, calendar);
             return (
               <tr key={s.id} className="border-b border-border/50 hover:bg-accent/30">
@@ -787,7 +824,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           passFailValue=""
                           onHifzChange={(v) => updateDay(s.id, d.key, { hifz: v })}
                           onPassFailChange={() => {}}
-                          onPlanHifzChange={(v) => void handlePlanHifz(s, d.key, v)}
+                          onPlanHifzChange={() => void handlePlanHifz(s, d.key)}
                         />
                       </td>
                       <td className={dayCellClass(d.key, GRADE_CELL_W.pf)}>
@@ -827,15 +864,14 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                     {formatOverallPercent(semesterPct)}
                   </span>
                 </td>
-                <td className={cn("p-1 text-center", GRADE_CELL_W.transfer)}>
-                  <button
-                    onClick={() => { setTransferFor(s); setTransferReason(""); }}
-                    title="إرسال للإدارة"
-                    className="inline-flex items-center gap-1 px-2 py-1 rounded-md bg-warning/15 text-warning border border-warning/40 hover:bg-warning/25 text-xs"
-                  >
-                    <Send className="w-3.5 h-3.5" /> إرسال
-                  </button>
-                </td>
+                {!isTalqeen && (
+                  <td className={cn("p-1 text-center", GRADE_CELL_W.compensation)}>
+                    <CompensationSelect
+                      value={w.compensationFaces ?? 0}
+                      onChange={(v) => updateCompensation(s.id, v)}
+                    />
+                  </td>
+                )}
               </tr>
             );
           })}
@@ -881,15 +917,26 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         </DialogContent>
       </Dialog>
 
-      {transferFor && (
+      {showTransferModal && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="glass-card rounded-2xl max-w-md w-full p-5">
             <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-bold text-warning flex items-center gap-2"><Send className="w-5 h-5" /> إرسال للإدارة</h3>
-              <button onClick={() => setTransferFor(null)} className="p-1.5 hover:bg-secondary rounded-lg"><X className="w-4 h-4" /></button>
+              <h3 className="text-lg font-bold text-warning flex items-center gap-2"><Send className="w-5 h-5" /> إرسال المتعثرين</h3>
+              <button onClick={() => setShowTransferModal(false)} className="p-1.5 hover:bg-secondary rounded-lg"><X className="w-4 h-4" /></button>
             </div>
-            <p className="text-sm mb-2">الطالب: <span className="font-bold">{transferFor.name}</span> · {weekLabel(weekNum)}</p>
-            <p className="text-xs text-muted-foreground mb-3">اكتب سبب التحويل للمدير. سيُرفق تقرير كامل عن أداء الطالب تلقائياً.</p>
+            <p className="text-xs text-muted-foreground mb-3">اختر الطالب واكتب سبب التحويل للمدير. سيُرفق تقرير كامل عن أداء الطالب تلقائياً.</p>
+            <label className="text-xs text-muted-foreground mb-1 block">الطالب</label>
+            <select
+              value={transferStudentId}
+              onChange={(e) => setTransferStudentId(e.target.value)}
+              className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm mb-3"
+            >
+              <option value="">— اختر —</option>
+              {students.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            <label className="text-xs text-muted-foreground mb-1 block">السبب</label>
             <textarea
               value={transferReason}
               onChange={(e) => setTransferReason(e.target.value)}
@@ -899,7 +946,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
             />
             <div className="flex gap-2 mt-4">
               <button onClick={submitTransfer} className="flex-1 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold">إرسال</button>
-              <button onClick={() => setTransferFor(null)} className="px-4 py-2 rounded-lg border border-border">إلغاء</button>
+              <button onClick={() => setShowTransferModal(false)} className="px-4 py-2 rounded-lg border border-border">إلغاء</button>
             </div>
           </div>
         </div>

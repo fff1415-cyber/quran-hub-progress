@@ -1,6 +1,7 @@
 import type { HifzValue } from "@/lib/mock-data";
-import { HIFZ_LABELS } from "@/lib/mock-data";
+import { COMPENSATION_FACE_OPTIONS, HIFZ_LABELS } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+import { Check } from "lucide-react";
 
 /** Fixed-width selects for the halaqa grade table (width set by colgroup). */
 export const gradeCellSelectClass =
@@ -30,6 +31,33 @@ export function AttSelect({
   );
 }
 
+export function HifzCheckbox({
+  checked,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      title={checked ? "قرأ مقطعاً واحداً" : "لم يقرأ"}
+      className={cn(
+        "w-6 h-6 mx-auto rounded border-2 flex items-center justify-center transition-all",
+        checked ? "bg-primary border-primary" : "border-border bg-input hover:border-primary/50",
+        disabled && "opacity-50 cursor-not-allowed",
+      )}
+    >
+      {checked && <Check className="w-4 h-4 text-primary-foreground" />}
+    </button>
+  );
+}
+
+/** @deprecated Use HifzCheckbox — kept for legacy exports/reports. */
 export function HifzSelect({
   value,
   onChange,
@@ -78,6 +106,30 @@ export function CustomFieldSelect({
       <option value="">—</option>
       {options.map((opt) => (
         <option key={opt} value={opt}>{opt}</option>
+      ))}
+    </select>
+  );
+}
+
+export function CompensationSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <select
+      value={String(value)}
+      disabled={disabled}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className={cn(gradeCellSelectClass, "font-bold text-center")}
+      title="أوجه حفظ زائدة (تعويض)"
+    >
+      {COMPENSATION_FACE_OPTIONS.map((opt) => (
+        <option key={opt.value} value={opt.value}>{opt.label}</option>
       ))}
     </select>
   );

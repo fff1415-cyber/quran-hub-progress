@@ -498,8 +498,21 @@ function plans_next_segment_for_task(
     }
 
     if ($taskType === 'muraja' && $phase === 1) {
-        $start = $startMuraja ?? $startHifz;
-        $murOrdered = array_values(array_filter($allSegs, static fn ($s) => $s >= $start));
+        $officialStart = $startMuraja ?? 16;
+        // Before segment 16: muraja follows completed hifz (same as rabt).
+        foreach ($ordered as $seg) {
+            if ($seg >= $officialStart) {
+                break;
+            }
+            if (!in_array($seg, $hifzDone, true)) {
+                continue;
+            }
+            if (!in_array($seg, $taskDone, true)) {
+                return $seg;
+            }
+        }
+        // Official muraja track from segment 16+.
+        $murOrdered = array_values(array_filter($allSegs, static fn ($s) => $s >= $officialStart));
         sort($murOrdered);
         foreach ($murOrdered as $seg) {
             if (!in_array($seg, $taskDone, true)) {

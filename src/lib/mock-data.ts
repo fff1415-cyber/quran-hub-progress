@@ -47,6 +47,8 @@ export interface WeekRecord {
   testMuraja: boolean;
   testRabt: boolean;
   sard: boolean;
+  /** Extra hifz faces (½–5) recorded as weekly compensation. */
+  compensationFaces?: number;
 }
 
 export type GradesStore = Record<string, Record<number, WeekRecord>>;
@@ -121,7 +123,12 @@ export const DAYS = [
   { key: "tue", label: "الثلاثاء" },
   { key: "wed", label: "الأربعاء" },
   { key: "thu", label: "الخميس" },
-];
+  { key: "fri", label: "الجمعة" },
+  { key: "sat", label: "السبت" },
+] as const;
+
+/** Official school week (Sun–Thu) — used for percentage denominators. */
+export const OFFICIAL_SCHOOL_DAYS = DAYS.slice(0, 5);
 
 // ---- localStorage layer ----
 const KEY_STUDENTS = "qshatawi_students_v2";
@@ -537,6 +544,36 @@ export function saveSardHistory(list: SardHistoryItem[]) {
 export const HIFZ_SCORES: Record<HifzValue, number> = { "": 0, half: 15, one: 20, two: 25 };
 export const HIFZ_LABELS: Record<HifzValue, string> = { "": "—", half: "½", one: "١", two: "٢" };
 
+/** Checkbox-on grade value: gold = one segment (1 face), silver = one segment (½ face slot). */
+export function hifzCheckedValue(levelType: Student["levelType"]): HifzValue {
+  return levelType === "gold" ? "one" : "half";
+}
+
+export function isHifzChecked(hifz: HifzValue): boolean {
+  return hifz !== "";
+}
+
+export const COMPENSATION_FACE_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: "—" },
+  { value: 0.5, label: "½" },
+  { value: 1, label: "1" },
+  { value: 1.5, label: "1½" },
+  { value: 2, label: "2" },
+  { value: 2.5, label: "2½" },
+  { value: 3, label: "3" },
+  { value: 3.5, label: "3½" },
+  { value: 4, label: "4" },
+  { value: 4.5, label: "4½" },
+  { value: 5, label: "5" },
+];
+
+/** Bonus points for weekly compensation faces (1 face = one segment hifz score). */
+export function compensationPoints(faces: number, levelType: Student["levelType"]): number {
+  if (faces <= 0) return 0;
+  const perFace = levelType === "gold" ? HIFZ_SCORES.one : HIFZ_SCORES.half;
+  return Math.round(faces * perFace);
+}
+
 export function dayScore(d: DayEntry, isTalqeen: boolean): number {
   const att = d.attendance === "present" ? 15 : d.attendance === "late" ? 10 : d.attendance === "excused" ? 5 : 0;
   if (isTalqeen) return att + (d.wajib ? 15 : 0);
@@ -546,7 +583,11 @@ export function dayScore(d: DayEntry, isTalqeen: boolean): number {
   return att + hifz + rabt + mur;
 }
 
-export function weekPercentage(w: WeekRecord | undefined, isTalqeen: boolean): number {
+export function weekPercentage(
+  w: WeekRecord | undefined,
+  isTalqeen: boolean,
+  levelType?: Student["levelType"],
+): number {
   if (!w) return 0;
   let total = 0;
   const maxPerDay = isTalqeen ? 30 : 70; // 15+15 talqeen ; 15+25+15+15 = 70 regular
@@ -554,7 +595,10 @@ export function weekPercentage(w: WeekRecord | undefined, isTalqeen: boolean): n
     const entry = w.days[d.key];
     if (entry) total += dayScore(entry, isTalqeen);
   });
-  const max = maxPerDay * 5;
+  if (!isTalqeen && levelType && w.compensationFaces && w.compensationFaces > 0) {
+    total += compensationPoints(w.compensationFaces, levelType);
+  }
+  const max = maxPerDay * OFFICIAL_SCHOOL_DAYS.length;
   return Math.round((total / max) * 100);
 }
 
@@ -607,7 +651,20 @@ export function emptyWeek(): WeekRecord {
   DAYS.forEach((d) => {
     days[d.key] = { attendance: "", hifz: "", rabt: "", muraja: "", wajib: false };
   });
-  return { days, testMuraja: false, testRabt: false, sard: false };
+  return { days, testMuraja: false, testRabt: false, sard: false, compensationFaces: 0 };
+}
+
+/** Ensure fri/sat slots exist on weeks saved before weekend columns were added. */
+export function ensureWeekDays(w: WeekRecord): WeekRecord {
+  const days = { ...w.days };
+  let changed = false;
+  for (const d of DAYS) {
+    if (!days[d.key]) {
+      days[d.key] = { attendance: "", hifz: "", rabt: "", muraja: "", wajib: false };
+      changed = true;
+    }
+  }
+  return changed ? { ...w, days } : w;
 }
 
 // Auth lookups moved to server functions — see src/lib/secure-data.functions.ts

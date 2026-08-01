@@ -7,7 +7,7 @@ import { generateAcademicWeeks } from "@/lib/calendar-generator";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import { isoDateToDayKey } from "@/lib/operational-date";
 import type { DayEntry, GradesStore, HifzValue, Student } from "@/lib/mock-data";
-import { DAYS, weekPercentage, type WeekRecord } from "@/lib/mock-data";
+import { DAYS, weekPercentage, compensationPoints, type WeekRecord } from "@/lib/mock-data";
 
 export interface DailyGradeWeights {
   attendance_present: number;
@@ -165,10 +165,19 @@ export function semesterOverallPercentage(
 
   let earned = 0;
   let max = 0;
+  const weekNumsSeen = new Set<number>();
   for (const day of days) {
     const part = dayScoreBreakdown(lookupDayEntry(grades, studentId, day), levelType, isTalqeen, weights);
     earned += part.earned;
     max += part.max;
+    weekNumsSeen.add(day.weekNumber);
+  }
+
+  if (!isTalqeen) {
+    for (const wn of weekNumsSeen) {
+      const comp = grades[studentId]?.[wn]?.compensationFaces ?? 0;
+      if (comp > 0) earned += compensationPoints(comp, levelType);
+    }
   }
 
   if (max <= 0) return 0;
@@ -267,8 +276,9 @@ export function studentWeekOverallPercentage(
   isTalqeen: boolean,
   grades: GradesStore,
   weekNum: number,
+  levelType?: Student["levelType"],
 ): number {
-  return weekPercentage(grades[studentId]?.[weekNum], isTalqeen);
+  return weekPercentage(grades[studentId]?.[weekNum], isTalqeen, levelType);
 }
 
 /** Component % for a single academic week (current week on portal). */
@@ -317,7 +327,7 @@ export function studentWeekReportPercentages(
 ): StudentWeekReport {
   return {
     weekNumber: weekNum,
-    weekOverall: studentWeekOverallPercentage(studentId, isTalqeen, grades, weekNum),
+    weekOverall: studentWeekOverallPercentage(studentId, isTalqeen, grades, weekNum, levelType),
     components: studentWeekComponentPercentages(studentId, levelType, isTalqeen, grades, calendar, weekNum, weights),
   };
 }
@@ -332,7 +342,7 @@ export function studentReportPercentages(
 ): StudentReportPercentages {
   return {
     overall: semesterOverallPercentage(studentId, levelType, isTalqeen, grades, calendar, weights),
-    weekOverall: studentWeekOverallPercentage(studentId, isTalqeen, grades, calendar.currentWeekNumber),
+    weekOverall: studentWeekOverallPercentage(studentId, isTalqeen, grades, calendar.currentWeekNumber, levelType),
     components: semesterComponentPercentages(studentId, levelType, isTalqeen, grades, calendar, weights),
   };
 }
@@ -345,7 +355,7 @@ export function halaqaWeekAverage(
 ): number {
   if (students.length === 0) return 0;
   const sum = students.reduce(
-    (acc, s) => acc + studentWeekOverallPercentage(s.id, isTalqeen, grades, weekNum),
+    (acc, s) => acc + studentWeekOverallPercentage(s.id, isTalqeen, grades, weekNum, s.levelType),
     0,
   );
   return Math.round((sum / students.length) * 10) / 10;
