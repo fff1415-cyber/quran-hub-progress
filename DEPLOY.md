@@ -40,6 +40,8 @@ Upload `dist/client/` to `public_html/` and `api/` to `public_html/api/`.
 
 **ملاحظة:** خطوة «Test server connectivity» في GitHub Actions قد تُظهر تحذيراً حتى مع إعداد صحيح — Hostinger يحجب أحياناً فحص المنفذ من سحابة GitHub. النشر يستمر ويُختبر عند خطوة SFTP الفعلية.
 
+إذا فشل SFTP Action: يُجرّب workflow **rsync عبر SSH** (3 محاولات) ثم FTPS. راجع خطوة «Preflight SFTP login» في Actions لمعرفة إن كانت كلمة المرور أو SSH معطّلة.
+
 ## Subdomains (m1.msht.io, m2.msht.io)
 
 إذا ظهرت **صفحة Hostinger الافتراضية (`default.php`)** أو **`ERR_HTTP2_PROTOCOL_ERROR` على m1 فقط**، فالسبب غالباً أن Hostinger أنشأ **مجلداً منفصلاً** لـ `m1` ولم يُحدَّث أو فيه `default.php`.

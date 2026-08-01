@@ -74,6 +74,22 @@ jobs:
           echo "SSH user: $user"
           echo "m1 frontend: /home/${user}/domains/m1.msht.io/public_html/"
 
+      - name: Preflight SFTP login
+        continue-on-error: true
+        env:
+          SSHPASS: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          sudo apt-get install -y sshpass openssh-client >/dev/null
+          set +e
+          sshpass -e sftp -P "${{ env.SSH_PORT }}" -o StrictHostKeyChecking=no -o ConnectTimeout=30 -o BatchMode=no \
+            "${{ steps.paths.outputs.ssh_user }}@${{ secrets.FTP_SERVER }}" <<< $'pwd\nbye\n'
+          code=$?
+          if [ "$code" -ne 0 ]; then
+            echo "::warning::Preflight SFTP login failed (exit $code) — check FTP_PASSWORD and SSH Access in hPanel"
+          else
+            echo "Preflight SFTP login OK"
+          fi
+
       - name: Test server connectivity
         continue-on-error: true
         run: |
@@ -128,8 +144,22 @@ jobs:
           sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
           rsyncArgs: "--delete"
 
-      - name: Sync frontend (FTPS fallback)
+      - name: Sync frontend (rsync fallback, 3 retries)
+        id: rsync_frontend
         if: steps.sftp_frontend.outcome == 'failure'
+        continue-on-error: true
+        env:
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          sudo apt-get install -y sshpass rsync openssh-client >/dev/null
+          bash scripts/deploy-hostinger-ci.sh \
+            "${{ steps.paths.outputs.ssh_user }}" \
+            "${{ secrets.FTP_SERVER }}" \
+            "./dist/client/" \
+            "${{ steps.paths.outputs.frontend }}"
+
+      - name: Sync frontend (FTPS fallback)
+        if: steps.sftp_frontend.outcome == 'failure' && steps.rsync_frontend.outcome != 'success'
         id: ftps_frontend
         continue-on-error: true
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -145,15 +175,24 @@ jobs:
           state-name: .ftp-deploy-frontend-v4-state.json
 
       - name: Ensure frontend deployed
-        if: always() && steps.sftp_frontend.outcome == 'failure' && (steps.ftps_frontend.outcome == 'failure' || steps.ftps_frontend.outcome == 'skipped')
+        if: always()
         run: |
-          echo "Deploy results: SFTP=${{ steps.sftp_frontend.outcome }}, FTPS=${{ steps.ftps_frontend.outcome || 'skipped' }}"
-          echo "::error::Frontend deploy failed. Check GitHub Secrets:"
+          echo "Deploy results: SFTP=${{ steps.sftp_frontend.outcome }}, rsync=${{ steps.rsync_frontend.outcome || 'skipped' }}, FTPS=${{ steps.ftps_frontend.outcome || 'skipped' }}"
+          ok=0
+          [ "${{ steps.sftp_frontend.outcome }}" = "success" ] && ok=1
+          [ "${{ steps.rsync_frontend.outcome }}" = "success" ] && ok=1
+          [ "${{ steps.ftps_frontend.outcome }}" = "success" ] && ok=1
+          if [ "$ok" -eq 1 ]; then
+            echo "Frontend deploy succeeded"
+            exit 0
+          fi
+          echo "::error::Frontend deploy failed (SFTP, rsync, and FTPS). Check GitHub Secrets:"
           echo "  FTP_SERVER = server IP from hPanel → SSH Access (NOT msht.io)"
           echo "  FTP_USERNAME = SSH username (e.g. u112851217)"
           echo "  FTP_PASSWORD = main Hostinger account password"
           echo "  FTP_SERVER_DIR = /domains/msht.io/public_html/"
           echo "Enable SSH Access in hPanel → Advanced → SSH Access."
+          echo "Test locally: FileZilla SFTP → Host=IP, Port=65002"
           exit 1
 
       - name: Sync PHP API (SFTP primary)
@@ -171,8 +210,21 @@ jobs:
           sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
           rsyncArgs: "--exclude=config.php"
 
-      - name: Sync PHP API (FTPS fallback)
+      - name: Sync PHP API (rsync fallback, 3 retries)
+        id: rsync_api
         if: steps.sftp_api.outcome == 'failure'
+        continue-on-error: true
+        env:
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          sudo apt-get install -y sshpass rsync openssh-client >/dev/null
+          bash scripts/deploy-hostinger-api-ci.sh \
+            "${{ steps.paths.outputs.ssh_user }}" \
+            "${{ secrets.FTP_SERVER }}" \
+            "${{ steps.paths.outputs.api }}/"
+
+      - name: Sync PHP API (FTPS fallback)
+        if: steps.sftp_api.outcome == 'failure' && steps.rsync_api.outcome != 'success'
         id: ftps_api
         continue-on-error: true
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -190,9 +242,17 @@ jobs:
             **/config.php
 
       - name: Ensure API deployed
-        if: always() && steps.sftp_api.outcome == 'failure' && (steps.ftps_api.outcome == 'failure' || steps.ftps_api.outcome == 'skipped')
+        if: always()
         run: |
-          echo "API deploy results: SFTP=${{ steps.sftp_api.outcome }}, FTPS=${{ steps.ftps_api.outcome || 'skipped' }}"
+          echo "API deploy results: SFTP=${{ steps.sftp_api.outcome }}, rsync=${{ steps.rsync_api.outcome || 'skipped' }}, FTPS=${{ steps.ftps_api.outcome || 'skipped' }}"
+          ok=0
+          [ "${{ steps.sftp_api.outcome }}" = "success" ] && ok=1
+          [ "${{ steps.rsync_api.outcome }}" = "success" ] && ok=1
+          [ "${{ steps.ftps_api.outcome }}" = "success" ] && ok=1
+          if [ "$ok" -eq 1 ]; then
+            echo "API deploy succeeded"
+            exit 0
+          fi
           echo "::error::API deploy failed. Same FTP secrets as frontend — see Ensure frontend deployed step."
           exit 1
 
@@ -201,7 +261,7 @@ jobs:
       - name: Sync m1 subdomain frontend (SFTP)
         id: sftp_m1_frontend
         continue-on-error: true
-        if: (steps.sftp_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
+        if: (steps.sftp_frontend.outcome == 'success' || steps.rsync_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
         uses: wlixcc/SFTP-Deploy-Action@v1.2.5
         with:
           username: ${{ steps.paths.outputs.ssh_user }}
@@ -217,7 +277,7 @@ jobs:
       - name: Sync m1 subdomain API (SFTP)
         id: sftp_m1_api
         continue-on-error: true
-        if: (steps.sftp_api.outcome == 'success' || steps.ftps_api.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
+        if: (steps.sftp_api.outcome == 'success' || steps.rsync_api.outcome == 'success' || steps.ftps_api.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
         uses: wlixcc/SFTP-Deploy-Action@v1.2.5
         with:
           username: ${{ steps.paths.outputs.ssh_user }}
@@ -245,7 +305,7 @@ jobs:
       - name: Sync m2 subdomain frontend (SFTP)
         id: sftp_m2_frontend
         continue-on-error: true
-        if: (steps.sftp_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
+        if: (steps.sftp_frontend.outcome == 'success' || steps.rsync_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
         uses: wlixcc/SFTP-Deploy-Action@v1.2.5
         with:
           username: ${{ steps.paths.outputs.ssh_user }}
@@ -261,7 +321,7 @@ jobs:
       - name: Sync m2 subdomain API (SFTP)
         id: sftp_m2_api
         continue-on-error: true
-        if: (steps.sftp_api.outcome == 'success' || steps.ftps_api.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
+        if: (steps.sftp_api.outcome == 'success' || steps.rsync_api.outcome == 'success' || steps.ftps_api.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
         uses: wlixcc/SFTP-Deploy-Action@v1.2.5
         with:
           username: ${{ steps.paths.outputs.ssh_user }}
@@ -275,7 +335,7 @@ jobs:
           rsyncArgs: "--exclude=config.php"
 
       - name: Ensure m1 subdomain deployed
-        if: always() && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true' && (steps.sftp_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success')
+        if: always() && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true' && (steps.sftp_frontend.outcome == 'success' || steps.rsync_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success')
         run: |
           echo "m1 frontend: ${{ steps.sftp_m1_frontend.outcome || 'skipped' }}"
           echo "m1 api: ${{ steps.sftp_m1_api.outcome || 'skipped' }}"
@@ -305,7 +365,7 @@ jobs:
           fi
 
       - name: Verify live deploy
-        if: steps.sftp_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success'
+        if: steps.sftp_frontend.outcome == 'success' || steps.rsync_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success'
         env:
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
