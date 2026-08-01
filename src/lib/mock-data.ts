@@ -127,8 +127,47 @@ export const DAYS = [
   { key: "sat", label: "السبت" },
 ] as const;
 
-/** Official school week (Sun–Thu) — used for percentage denominators. */
+/** Official school week (Sun–Thu) — default when semester working_days unset. */
 export const OFFICIAL_SCHOOL_DAYS = DAYS.slice(0, 5);
+
+function defaultWorkingDayKeys(workingDayKeys?: Iterable<string>): string[] {
+  if (workingDayKeys) return [...workingDayKeys];
+  return OFFICIAL_SCHOOL_DAYS.map((d) => d.key);
+}
+
+export function emptyDayEntry(): DayEntry {
+  return { attendance: "", hifz: "", rabt: "", muraja: "", wajib: false };
+}
+
+export function emptyWeek(workingDayKeys?: Iterable<string>): WeekRecord {
+  const days: Record<string, DayEntry> = {};
+  for (const key of defaultWorkingDayKeys(workingDayKeys)) {
+    days[key] = emptyDayEntry();
+  }
+  return { days, testMuraja: false, testRabt: false, sard: false, compensationFaces: 0 };
+}
+
+/** Ensure all semester working-day slots exist (not extra fri/sat unless configured). */
+export function ensureWeekDays(w: WeekRecord, workingDayKeys?: Iterable<string>): WeekRecord {
+  const days = { ...w.days };
+  let changed = false;
+  for (const key of defaultWorkingDayKeys(workingDayKeys)) {
+    if (!days[key]) {
+      days[key] = emptyDayEntry();
+      changed = true;
+    }
+  }
+  return changed ? { ...w, days } : w;
+}
+
+export function dayEntryFor(
+  week: WeekRecord | undefined,
+  dayKey: string,
+  workingDayKeys?: Iterable<string>,
+): DayEntry {
+  const w = ensureWeekDays(week ?? emptyWeek(workingDayKeys), workingDayKeys);
+  return w.days[dayKey] ?? emptyDayEntry();
+}
 
 // ---- localStorage layer ----
 const KEY_STUDENTS = "qshatawi_students_v2";
@@ -644,32 +683,6 @@ export function studentStats(studentId: string, grades: GradesStore): StudentSta
     });
   });
   return stats;
-}
-
-export function emptyWeek(): WeekRecord {
-  const days: Record<string, DayEntry> = {};
-  DAYS.forEach((d) => {
-    days[d.key] = { attendance: "", hifz: "", rabt: "", muraja: "", wajib: false };
-  });
-  return { days, testMuraja: false, testRabt: false, sard: false, compensationFaces: 0 };
-}
-
-/** Ensure fri/sat slots exist on weeks saved before weekend columns were added. */
-export function ensureWeekDays(w: WeekRecord): WeekRecord {
-  const days = { ...w.days };
-  let changed = false;
-  for (const d of DAYS) {
-    if (!days[d.key]) {
-      days[d.key] = { attendance: "", hifz: "", rabt: "", muraja: "", wajib: false };
-      changed = true;
-    }
-  }
-  return changed ? { ...w, days } : w;
-}
-
-export function dayEntryFor(week: WeekRecord | undefined, dayKey: string): DayEntry {
-  const w = ensureWeekDays(week ?? emptyWeek());
-  return w.days[dayKey] ?? { attendance: "", hifz: "", rabt: "", muraja: "", wajib: false };
 }
 
 // Auth lookups moved to server functions — see src/lib/secure-data.functions.ts

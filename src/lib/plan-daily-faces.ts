@@ -1,7 +1,9 @@
 import type { AcademicCalendar } from "@/lib/academic-context";
+import { workingDayKeysFromSemester } from "@/lib/academic-context";
 import { getElapsedSemesterDays } from "@/lib/semester-grading";
 import type { DailyFaceQuotas, StudentPlanAssignment } from "@/lib/plan-types";
 import type { DayEntry, GradesStore, HifzValue } from "@/lib/mock-data";
+import { OFFICIAL_SCHOOL_DAYS } from "@/lib/mock-data";
 
 /** Fixed hifz tap → faces (not configurable per level). */
 export const FIXED_HIFZ_FACES = {
@@ -97,6 +99,7 @@ export function aggregateFaceProgress(
 
   const inRange = days.filter((d) => d.iso >= from && d.iso <= to);
   const weekNumsInRange = new Set(inRange.map((d) => d.weekNumber));
+  const workingKeys = workingDayKeysFromSemester(calendar.semester?.working_days);
   let hifzActual = 0;
   let rabtActual = 0;
   let murajaActual = 0;
@@ -114,6 +117,7 @@ export function aggregateFaceProgress(
     const week = grades[studentId]?.[wn];
     if (!week?.days) continue;
     for (const [dayKey, entry] of Object.entries(week.days)) {
+      if (!workingKeys.has(dayKey)) continue;
       if (countedDayKeys.has(`${wn}:${dayKey}`)) continue;
       const part = facesFromDayEntry(entry, quotas);
       if (!part.hifz && !part.rabt && !part.muraja) continue;
@@ -147,10 +151,11 @@ export function aggregateFaceProgressAllWeeks(
   let murajaActual = 0;
   let dayCount = 0;
   const weeks = grades[studentId] ?? {};
+  const officialKeys = new Set(OFFICIAL_SCHOOL_DAYS.map((d) => d.key));
   for (const week of Object.values(weeks)) {
     hifzActual += week.compensationFaces ?? 0;
     for (const [dayKey, entry] of Object.entries(week.days ?? {})) {
-      if (!entry) continue;
+      if (!entry || !officialKeys.has(dayKey)) continue;
       const hasData = !!(entry.hifz || entry.rabt || entry.muraja || entry.attendance);
       if (!hasData) continue;
       dayCount++;

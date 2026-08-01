@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
-  loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, ensureWeekDays, dayEntryFor, DAYS,
+  loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, emptyDayEntry, ensureWeekDays, dayEntryFor, DAYS,
   weekPercentage, loadNotifications, dismissNotification, pushNotification,
   ensureGradesSemester,
   type WeekRecord, type DayEntry, type Student,
@@ -411,12 +411,11 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     () => workingDayKeysFromSemester(calendar.semester?.working_days),
     [calendar.semester?.working_days],
   );
-  const visibleDays = useMemo(() => {
-    const keys = new Set(workingKeys);
-    keys.add("fri");
-    keys.add("sat");
-    return DAYS.filter((d) => keys.has(d.key));
-  }, [workingKeys]);
+  const visibleDays = useMemo(
+    () => DAYS.filter((d) => workingKeys.has(d.key)),
+    [workingKeys],
+  );
+  const workingKeysList = useMemo(() => [...workingKeys], [workingKeys]);
   const isCurrentWeek = weekNum === calendar.currentWeekNumber;
   const todayKey = calendar.currentDayKey;
 
@@ -458,10 +457,10 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     students.forEach((s) => {
       if (!g[s.id]) g[s.id] = {};
       if (!g[s.id][weekNum]) {
-        g[s.id][weekNum] = emptyWeek();
+        g[s.id][weekNum] = emptyWeek(workingKeysList);
         changed = true;
       } else {
-        const normalized = ensureWeekDays(g[s.id][weekNum]);
+        const normalized = ensureWeekDays(g[s.id][weekNum], workingKeysList);
         if (normalized !== g[s.id][weekNum]) {
           g[s.id][weekNum] = normalized;
           changed = true;
@@ -470,7 +469,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     });
     if (changed) { setGrades(g); saveGrades(g); }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekNum, halaqaId]);
+  }, [weekNum, halaqaId, workingKeysList]);
 
   useEffect(() => {
     if (!studentIdsKey) {
@@ -576,7 +575,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const update = (studentId: string, fn: (w: WeekRecord) => WeekRecord) => {
     const g = { ...grades };
     if (!g[studentId]) g[studentId] = {};
-    if (!g[studentId][weekNum]) g[studentId][weekNum] = emptyWeek();
+    if (!g[studentId][weekNum]) g[studentId][weekNum] = emptyWeek(workingKeysList);
     g[studentId][weekNum] = fn(g[studentId][weekNum]);
     setGrades(g);
     saveGrades(g);
@@ -594,7 +593,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
   const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
     update(studentId, (w) => {
-      const base = ensureWeekDays(w);
+      const base = ensureWeekDays(w, workingKeysList);
       return {
         ...base,
         days: {
@@ -613,9 +612,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     let updated = 0;
     students.forEach((s) => {
       if (!g[s.id]) g[s.id] = {};
-      if (!g[s.id][weekNum]) g[s.id][weekNum] = emptyWeek();
+      if (!g[s.id][weekNum]) g[s.id][weekNum] = emptyWeek(workingKeysList);
       const week = g[s.id][weekNum];
-      const prev = week.days[dayKey] ?? emptyWeek().days[dayKey];
+      const prev = week.days[dayKey] ?? emptyDayEntry();
       if (prev.attendance === "present") return;
       g[s.id][weekNum] = {
         ...week,
@@ -782,7 +781,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         </thead>
         <tbody>
           {students.map((s) => {
-            const w = ensureWeekDays(grades[s.id]?.[weekNum] ?? emptyWeek());
+            const w = ensureWeekDays(grades[s.id]?.[weekNum] ?? emptyWeek(workingKeysList), workingKeysList);
             const weekPct = weekPercentage(w, isTalqeen, s.levelType);
             const semesterPct = semesterOverallPercentage(s.id, s.levelType, isTalqeen, grades, calendar);
             return (
@@ -809,7 +808,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                   </div>
                 </td>
                 {visibleDays.map((d) => {
-                  const e = dayEntryFor(w, d.key);
+                  const e = dayEntryFor(w, d.key, workingKeysList);
                   return isTalqeen ? (
                     <React.Fragment key={d.key}>
                       <td className={dayCellClass(d.key, GRADE_CELL_W.att)}>
