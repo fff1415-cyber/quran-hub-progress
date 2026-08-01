@@ -33,7 +33,7 @@ export const STUDENT_PORTAL_SECTION_LABELS: Record<keyof StudentPortalVisibility
   honorBoard: "لوحة الشرف — أوائل الأسبوع",
   studentHeader: "معلومات الطالب (الاسم والحلقة)",
   todayAttendance: "حالة الحضور اليوم",
-  weeklyPercentages: "النسب الأسبوعية للطالب",
+  weeklyPercentages: "النسب الفصلية للطالب",
   faceCounts: "عدد الأوجه المحفوظة والربط/مراجعة (من بداية الفصل)",
   absenceRecord: "سجل الغياب والاستئذان",
   academicResults: "المراحل المجتازة (السرد)",

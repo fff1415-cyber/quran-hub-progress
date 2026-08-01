@@ -1,12 +1,13 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ArrowRight, Loader2, RefreshCw } from "lucide-react";
+import { ArrowRight, CheckCircle2, Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import {
   apexDomain,
   fetchNextSubdomain,
   registerNewComplex,
   tenantOrigin,
+  type TenantResolveResult,
 } from "@/lib/tenant";
 import { useTenant } from "@/contexts/TenantContext";
 import { PlatformBrandHeader } from "@/components/platform/PlatformBrandHeader";
@@ -24,6 +25,16 @@ function RegisterComplexPage() {
   const [contactPhone, setContactPhone] = useState("");
   const [managerCode, setManagerCode] = useState("");
   const [busy, setBusy] = useState(false);
+  const [created, setCreated] = useState<TenantResolveResult | null>(null);
+
+  const copyComplexLink = async (url: string) => {
+    try {
+      await navigator.clipboard.writeText(url);
+      toast.success("تم نسخ الرابط");
+    } catch {
+      toast.error("تعذّر النسخ — انسخ الرابط يدوياً");
+    }
+  };
 
   const loadNextSubdomain = async () => {
     setSubdomainLoading(true);
@@ -105,8 +116,8 @@ function RegisterComplexPage() {
         contact_phone: phone,
         manager_code: code,
       });
-      toast.success(`تم تسجيل «${result.name}» — استخدم رقم العضوية للدخول`);
-      window.location.href = result.url;
+      setCreated(result);
+      toast.success(`تم تسجيل «${result.name}» بنجاح`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "تعذّر التسجيل");
     } finally {
@@ -125,6 +136,50 @@ function RegisterComplexPage() {
 
         <PlatformBrandHeader compact />
 
+        {created ? (
+          <div className="text-center space-y-5">
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-success/15 text-success mx-auto">
+              <CheckCircle2 className="w-9 h-9" />
+            </div>
+            <div>
+              <h2 className="display text-xl font-bold mb-1">تم إنشاء المجمع</h2>
+              <p className="text-muted-foreground text-sm">{created.name}</p>
+            </div>
+
+            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-right">
+              <p className="text-sm font-bold text-primary mb-2">انسخ رابط مجمعك الخاص</p>
+              <div className="flex items-center gap-2" dir="ltr">
+                <input
+                  readOnly
+                  value={created.url}
+                  className="flex-1 min-w-0 px-3 py-2.5 rounded-lg bg-input border border-border text-sm font-mono"
+                  onFocus={(e) => e.target.select()}
+                />
+                <button
+                  type="button"
+                  onClick={() => void copyComplexLink(created.url)}
+                  className="shrink-0 inline-flex items-center gap-1.5 px-3 py-2.5 rounded-lg border border-primary/40 bg-card text-primary font-bold text-sm hover:bg-primary/10"
+                  title="نسخ الرابط"
+                >
+                  <Copy className="w-4 h-4" />
+                  نسخ
+                </button>
+              </div>
+              <p className="text-xs text-muted-foreground mt-2">
+                احفظ هذا الرابط — بوابة دخول مجمعك · عضوية المدير: {managerCode}
+              </p>
+            </div>
+
+            <a
+              href={created.url}
+              className="w-full inline-flex items-center justify-center gap-2 py-4 rounded-xl gold-gradient text-primary-foreground font-bold"
+            >
+              <ExternalLink className="w-4 h-4" />
+              الذهاب إلى بوابة المجمع
+            </a>
+          </div>
+        ) : (
+          <>
         <h2 className="display text-xl font-bold text-center mb-6">تسجيل مجمع جديد</h2>
 
         <div className="space-y-4">
@@ -213,6 +268,8 @@ function RegisterComplexPage() {
             {busy ? "جاري التسجيل..." : "إنشاء المجمع والمتابعة"}
           </button>
         </div>
+          </>
+        )}
       </div>
     </div>
   );

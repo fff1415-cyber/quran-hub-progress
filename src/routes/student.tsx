@@ -7,8 +7,11 @@ import { syncFromCloud } from "@/lib/cloud-sync";
 import {
   halaqaWeekAverage,
   semesterOverallPercentage,
+  semesterComponentPercentages,
+  semesterTimeProgressPercent,
+  getTotalSemesterWorkingDays,
+  getElapsedSemesterDays,
   studentWeekOverallPercentage,
-  studentWeekReportPercentages,
   formatOverallPercent,
 } from "@/lib/semester-grading";
 import { fetchStudentPlanSheet } from "@/lib/plans-service";
@@ -145,12 +148,15 @@ function StudentPage() {
     const h = halaqat.find((x) => x.id === s.halaqaId);
     if (!h) return null;
 
-    const weekReport = studentWeekReportPercentages(
-      s.id, s.levelType, h.isTalqeen, grades, calendar, weekNum,
+    const semesterComponents = semesterComponentPercentages(
+      s.id, s.levelType, h.isTalqeen, grades, calendar,
     );
     const semesterOverall = semesterOverallPercentage(
       s.id, s.levelType, h.isTalqeen, grades, calendar,
     );
+    const expectedProgress = semesterTimeProgressPercent(calendar);
+    const elapsedDays = getElapsedSemesterDays(calendar).length;
+    const totalDays = getTotalSemesterWorkingDays(calendar);
 
     const todayKey = getCalendarDayKey();
     let todayStatus = "";
@@ -160,7 +166,16 @@ function StudentPage() {
       if (att) { todayStatus = att; break; }
     }
 
-    return { s, h, weekReport, semesterOverall, todayStatus };
+    return {
+      s,
+      h,
+      semesterComponents,
+      semesterOverall,
+      expectedProgress,
+      elapsedDays,
+      totalDays,
+      todayStatus,
+    };
   }, [authMode, studentId, students, halaqat, grades, calendar, weekNum]);
 
   useEffect(() => {
@@ -290,8 +305,11 @@ function StudentPage() {
             halaqa={personal.h}
             calendar={calendar!}
             grades={grades}
-            weekReport={personal.weekReport}
+            semesterComponents={personal.semesterComponents}
             semesterOverall={personal.semesterOverall}
+            expectedProgress={personal.expectedProgress}
+            elapsedDays={personal.elapsedDays}
+            totalDays={personal.totalDays}
             todayStatus={personal.todayStatus}
             planData={planData}
             planLoading={planLoading}

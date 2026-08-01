@@ -141,6 +141,29 @@ export function getElapsedSemesterDays(calendar: AcademicCalendar): SemesterDayR
   return out;
 }
 
+/** Total working days in the full semester calendar. */
+export function getTotalSemesterWorkingDays(calendar: AcademicCalendar): number {
+  const sem = calendar.semester;
+  if (!sem?.start_date) return 0;
+
+  const weeks = generateAcademicWeeks({
+    startDate: sem.start_date,
+    weeksCount: sem.weeks_count,
+    workingDays: sem.working_days,
+    excludedDates: sem.excluded_dates,
+  });
+
+  return weeks.reduce((n, w) => n + w.workingDayDates.length, 0);
+}
+
+/** % of semester timeline elapsed (working days passed ÷ total). */
+export function semesterTimeProgressPercent(calendar: AcademicCalendar): number {
+  const total = getTotalSemesterWorkingDays(calendar);
+  if (total <= 0) return 0;
+  const elapsed = getElapsedSemesterDays(calendar).length;
+  return Math.round((elapsed / total) * 1000) / 10;
+}
+
 function lookupDayEntry(
   grades: GradesStore,
   studentId: string,

@@ -4,7 +4,7 @@ import type { Halaqa } from "@/lib/mock-data";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import type { StudentPlanSheetData } from "@/lib/plan-types";
 import type { StudentPortalVisibility } from "@/lib/student-portal-settings";
-import type { StudentWeekReport } from "@/lib/semester-grading";
+import type { ComponentPercentages } from "@/lib/semester-grading";
 import {
   aggregateFaceProgress,
   faceQuotasFromAssignment,
@@ -30,8 +30,11 @@ interface Props {
   halaqa: Halaqa;
   calendar: AcademicCalendar;
   grades: GradesStore;
-  weekReport: StudentWeekReport;
+  semesterComponents: ComponentPercentages;
   semesterOverall: number;
+  expectedProgress: number;
+  elapsedDays: number;
+  totalDays: number;
   todayStatus: string;
   planData: StudentPlanSheetData | null;
   planLoading: boolean;
@@ -43,8 +46,11 @@ export function StudentPortalPersonalSection({
   halaqa,
   calendar,
   grades,
-  weekReport,
+  semesterComponents,
   semesterOverall,
+  expectedProgress,
+  elapsedDays,
+  totalDays,
   todayStatus,
   planData,
   planLoading,
@@ -94,10 +100,13 @@ export function StudentPortalPersonalSection({
       {visibility.weeklyPercentages && (
         <div className="mt-4 p-4 rounded-xl bg-secondary/30 border border-border">
           <StudentWeeklyPercentSummary
-            report={weekReport}
+            components={semesterComponents}
             semesterOverall={semesterOverall}
+            expectedProgress={expectedProgress}
             isTalqeen={halaqa.isTalqeen}
-            weekLabelText={`${weekLabel(weekReport.weekNumber)} — تفصيل نسب هذا الأسبوع`}
+            semesterLabel={calendar.semester?.name ?? "الفصل الحالي"}
+            elapsedDays={elapsedDays}
+            totalDays={totalDays}
           />
         </div>
       )}
