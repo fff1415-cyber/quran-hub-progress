@@ -375,9 +375,16 @@ function GradeTableColGroup({
 function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewerRole, canAssign }: WeekTableProps) {
   const tableRef = useRef<HTMLDivElement>(null);
   const allStudents = useMemo(() => loadStudents().filter((s) => s.halaqaId === halaqaId), [halaqaId]);
-  const students = viewerRole === "assistant"
-    ? allStudents.filter((s) => s.assignedTo !== "teacher")
-    : allStudents.filter((s) => s.assignedTo !== "assistant");
+  const students = useMemo(
+    () => (viewerRole === "assistant"
+      ? allStudents.filter((s) => s.assignedTo !== "teacher")
+      : allStudents.filter((s) => s.assignedTo !== "assistant")),
+    [allStudents, viewerRole],
+  );
+  const studentIdsKey = useMemo(
+    () => students.map((s) => s.id).sort().join(","),
+    [students],
+  );
   const [grades, setGrades] = useState(() => loadGrades());
   const baseDayCols = isTalqeen ? 2 : 4;
   const dayColSpan = baseDayCols;
@@ -452,28 +459,39 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   }, [weekNum, halaqaId]);
 
   useEffect(() => {
+    if (!studentIdsKey) {
+      setPlanStudentIds(new Set());
+      setFrozenPlanStudentIds(new Set());
+      setPlanLinkedIds(new Set());
+      return;
+    }
     let cancelled = false;
-    (async () => {
+    void (async () => {
       const active = new Set<string>();
       const frozen = new Set<string>();
       const linked = new Set<string>();
-      await Promise.all(
-        students.map(async (s) => {
-          try {
-            const sheet = await fetchStudentPlanSheet(s.id);
-            if (!sheet.assignment) return;
-            if (sheet.assignment.status === "active") {
-              active.add(s.id);
-              linked.add(s.id);
-            } else if (sheet.assignment.status === "frozen") {
-              frozen.add(s.id);
-              linked.add(s.id);
+      const batchSize = 5;
+      for (let i = 0; i < students.length; i += batchSize) {
+        if (cancelled) return;
+        const chunk = students.slice(i, i + batchSize);
+        await Promise.all(
+          chunk.map(async (s) => {
+            try {
+              const sheet = await fetchStudentPlanSheet(s.id);
+              if (!sheet.assignment) return;
+              if (sheet.assignment.status === "active") {
+                active.add(s.id);
+                linked.add(s.id);
+              } else if (sheet.assignment.status === "frozen") {
+                frozen.add(s.id);
+                linked.add(s.id);
+              }
+            } catch {
+              /* ignore — plan status is optional UI hint */
             }
-          } catch {
-            /* ignore */
-          }
-        }),
-      );
+          }),
+        );
+      }
       if (!cancelled) {
         setPlanStudentIds(active);
         setFrozenPlanStudentIds(frozen);
@@ -481,7 +499,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       }
     })();
     return () => { cancelled = true; };
-  }, [students]);
+    // studentIdsKey is stable; students is memoized — avoids infinite refetch loop
+  }, [studentIdsKey, students]);
 
   const openPlanSheet = async (s: Student) => {
     setPlanSheetStudent(s);

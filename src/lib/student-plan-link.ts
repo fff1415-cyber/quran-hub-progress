@@ -6,7 +6,7 @@ import {
   type InstituteLevel,
 } from "@/lib/plan-level-ranges";
 import { normalizeFaceQuotas } from "@/lib/plan-daily-faces";
-import type { PlanTrack } from "@/lib/plan-types";
+import type { EducationPlan, PlanTrack } from "@/lib/plan-types";
 import { assignStudentPlan, fetchPlans } from "@/lib/plans-service";
 
 export interface LinkStudentPlanOptions {
@@ -21,6 +21,8 @@ export interface LinkStudentPlanOptions {
   assignedBy: string;
   /** Skip plan link if plan not found (import continues). */
   optional?: boolean;
+  /** Pre-loaded catalog (bulk import — one fetchPlans per track). */
+  plansCache?: EducationPlan[];
 }
 
 export async function linkStudentToPlan(opts: LinkStudentPlanOptions): Promise<{ ok: boolean; message?: string }> {
@@ -30,7 +32,7 @@ export async function linkStudentToPlan(opts: LinkStudentPlanOptions): Promise<{
     throw new Error(check.message);
   }
 
-  const plans = await fetchPlans(opts.track);
+  const plans = opts.plansCache ?? (await fetchPlans(opts.track));
   const plan = findPlanByGlobalPhase(plans, opts.track, opts.globalPhase);
   if (!plan) {
     const msg = `لا توجد خطة للمسار ${opts.track === "gold" ? "ذهبي" : "فضي"} — مرحلة ${opts.globalPhase}`;

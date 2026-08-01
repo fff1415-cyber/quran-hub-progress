@@ -9,6 +9,7 @@ import {
   pushHalaqat, deleteHalaqa, pushStudents, deleteStudent, patchStudent,
 } from "@/lib/cloud-sync";
 import { linkStudentToPlan } from "@/lib/student-plan-link";
+import { fetchPlans } from "@/lib/plans-service";
 import {
   INSTITUTE_LEVELS, validateLevelAndPhase, instituteLevelFromGlobalPhase,
 } from "@/lib/plan-level-ranges";
@@ -94,7 +95,8 @@ export function StudentImportPanel() {
     const existingStudents = loadStudents();
     const studentsByNid = new Map(existingStudents.map((s) => [s.nationalId, s]));
     const updated: Student[] = [...existingStudents];
-    let added = 0, updatedCount = 0, skipped = 0, linked = 0, linkFailed = 0;
+    const linkQueue: { student: Student; row: SheetRow }[] = [];
+    let added = 0, updatedCount = 0, skipped = 0;
 
     for (const row of preview) {
       const halaqa = halaqatByName.get(normalizeArabic(row.halaqaName));
@@ -120,24 +122,7 @@ export function StudentImportPanel() {
       }
 
       if (row.instituteLevel || row.phaseNumber > 0) {
-        try {
-          const res = await linkStudentToPlan({
-            studentId: student.id,
-            track: row.levelType,
-            instituteLevel: student.instituteLevel || row.instituteLevel,
-            globalPhase: student.phaseNumber ?? row.phaseNumber,
-            startHifzSegment: row.startHifzSegment,
-            dailyRabtFaces: row.dailyRabtFaces,
-            dailyMurajaFaces: row.dailyMurajaFaces,
-            planStartDate: row.planStartDate || null,
-            assignedBy,
-            optional: true,
-          });
-          if (res.ok) linked++;
-          else linkFailed++;
-        } catch {
-          linkFailed++;
-        }
+        linkQueue.push({ student, row });
       }
     }
 
@@ -150,6 +135,33 @@ export function StudentImportPanel() {
       toast.error(e instanceof Error ? e.message : "تعذّر الحفظ في السحابة");
       setImporting(false);
       return;
+    }
+
+    let linked = 0;
+    let linkFailed = 0;
+    if (linkQueue.length > 0) {
+      const [goldPlans, silverPlans] = await Promise.all([fetchPlans("gold"), fetchPlans("silver")]);
+      for (const { student, row } of linkQueue) {
+        try {
+          const res = await linkStudentToPlan({
+            studentId: student.id,
+            track: row.levelType,
+            instituteLevel: student.instituteLevel || row.instituteLevel,
+            globalPhase: student.phaseNumber ?? row.phaseNumber,
+            startHifzSegment: row.startHifzSegment,
+            dailyRabtFaces: row.dailyRabtFaces,
+            dailyMurajaFaces: row.dailyMurajaFaces,
+            planStartDate: row.planStartDate || null,
+            assignedBy,
+            optional: true,
+            plansCache: row.levelType === "gold" ? goldPlans : silverPlans,
+          });
+          if (res.ok) linked++;
+          else linkFailed++;
+        } catch {
+          linkFailed++;
+        }
+      }
     }
 
     toast.success(
