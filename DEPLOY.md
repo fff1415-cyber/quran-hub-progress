@@ -42,14 +42,24 @@ Upload `dist/client/` to `public_html/` and `api/` to `public_html/api/`.
 
 إذا ظهرت **صفحة Hostinger الافتراضية (`default.php`)** أو **`ERR_HTTP2_PROTOCOL_ERROR` على m1 فقط**، فالسبب غالباً أن Hostinger أنشأ **مجلداً منفصلاً** لـ `m1` ولم يُحدَّث أو فيه `default.php`.
 
-### الحل الأفضل (مرة واحدة في hPanel) — موصى به لـ m1
+### الحل الأفضل (مرة واحدة في hPanel) — الافتراضي
 
 1. **Domains** → **Subdomains** → تعديل `m1`
 2. **Document root** = نفس مجلد الدومين الرئيسي:  
    `/home/u112851217/domains/msht.io/public_html/`
 3. احذف `default.php` من `/domains/m1.msht.io/public_html/` إن وُجد
-4. في GitHub: **Settings** → **Variables** → `HOSTINGER_UNIFIED_SUBDOMAINS` = `true`  
-   (يتخطى رفع m1 لمجلد منفصل — m1 يخدم من نفس ملفات msht.io)
+
+**لا حاجة لمتغيّر GitHub** — النشر الافتراضي يرفع إلى `msht.io/public_html` فقط، و m1/m2 يقرآن من نفس المجلد.
+
+### أو: مجلدات subdomain منفصلة (متقدّم)
+
+إذا أردت مجلداً مستقلاً لكل subdomain:
+
+1. في GitHub: **Settings** → **Variables** → `HOSTINGER_SEPARATE_SUBDOMAIN_DIRS` = `true`
+2. تأكد أن المسارات موجودة على السيرفر:
+   - `/domains/m1.msht.io/public_html/`
+   - `/domains/m2.msht.io/public_html/`
+3. انسخ `api/config.php` إلى m1/m2 إن لزم
 
 ### تحقق سريع بعد النشر
 
@@ -59,15 +69,9 @@ Upload `dist/client/` to `public_html/` and `api/` to `public_html/api/`.
 | `https://m1.msht.io/deploy-sha.txt` | **نفس** commit |
 | `https://m2.msht.io/deploy-sha.txt` | **نفس** commit |
 
-إذا m2 يطابق و m1 لا → مشكلة **مجلد أو SSL لـ m1** وليس التطبيق.
+إذا m2 يطابق و m1 لا → مشكلة **document root أو SSL لـ m1** وليس التطبيق.
 
-### أو: نسخ التطبيق لكل subdomain (مجلد منفصل)
-
-GitHub Actions يرفع `dist/client/` تلقائياً إلى:
-- `/domains/m1.msht.io/public_html/`
-- `/domains/m2.msht.io/public_html/`
-
-وينسخ `api/` مع استثناء `config.php` — **تأكد من وجود `api/config.php` على m1** (انسخه من msht.io إن لزم).
+### مزامنة يدوية (SSH)
 
 ```bash
 npm run build:hostinger
