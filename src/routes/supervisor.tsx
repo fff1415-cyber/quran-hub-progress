@@ -3,24 +3,59 @@ import { useEffect, useMemo, useState } from "react";
 import { loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
 import { getSessionName } from "@/lib/session-role";
 import { AppHeader } from "@/components/AppHeader";
-import { LateSardList, ActiveSardList } from "@/components/SardLists";
 import { RoleShell, RolePageHeader, type RoleTab } from "@/components/role-workspace/RoleShell";
 import {
-  SupervisorHalaqatPanel,
-  SupervisorApprovalsPanel,
-  SupervisorForceRetryPanel,
-  SupervisorPassedPanel,
-  SupervisorPlanCompletedPanel,
-} from "@/components/role-workspace/RoleSections";
-import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTransfersPanel";
-import { SupervisorPlansPanel } from "@/components/plans/SupervisorPlansPanel";
-import { Eye, BookOpen, Mic, CheckCircle2, Zap, Award, Send, GraduationCap, ClipboardCheck } from "lucide-react";
-import { WeeklyTestsOverviewPanel } from "@/components/WeeklyTestsOverviewPanel";
+  SupervisorSardPanel,
+  SupervisorPlansPanelGroup,
+  SupervisorOversightPanel,
+} from "@/components/role-workspace/SupervisorPanels";
+import { Eye, Mic, GraduationCap, BookOpen } from "lucide-react";
 import { Toaster } from "sonner";
+
+const MAIN_TABS = ["sard", "plans", "oversight"] as const;
+type MainTab = (typeof MAIN_TABS)[number];
+
+const DEFAULT_SECTION: Record<MainTab, string> = {
+  sard: "sard",
+  plans: "plans",
+  oversight: "halaqat",
+};
+
+const VALID_SECTIONS: Record<MainTab, string[]> = {
+  sard: ["sard", "approvals", "force-retry", "passed"],
+  plans: ["plans", "plan-completed"],
+  oversight: ["halaqat", "weekly-tests", "transfers"],
+};
+
+const LEGACY_TAB: Record<string, { main: MainTab; section: string }> = {
+  sard: { main: "sard", section: "sard" },
+  approvals: { main: "sard", section: "approvals" },
+  "force-retry": { main: "sard", section: "force-retry" },
+  passed: { main: "sard", section: "passed" },
+  plans: { main: "plans", section: "plans" },
+  "plan-completed": { main: "plans", section: "plan-completed" },
+  halaqat: { main: "oversight", section: "halaqat" },
+  "weekly-tests": { main: "oversight", section: "weekly-tests" },
+  transfers: { main: "oversight", section: "transfers" },
+};
+
+function resolveMainTab(raw?: string): MainTab {
+  if (raw && MAIN_TABS.includes(raw as MainTab)) return raw as MainTab;
+  if (raw && LEGACY_TAB[raw]) return LEGACY_TAB[raw].main;
+  return "sard";
+}
+
+function resolveSection(main: MainTab, tabRaw?: string, sectionRaw?: string): string {
+  if (sectionRaw && VALID_SECTIONS[main].includes(sectionRaw)) return sectionRaw;
+  if (tabRaw && LEGACY_TAB[tabRaw]?.main === main) return LEGACY_TAB[tabRaw].section;
+  if (tabRaw && VALID_SECTIONS[main].includes(tabRaw)) return tabRaw;
+  return DEFAULT_SECTION[main];
+}
 
 export const Route = createFileRoute("/supervisor")({
   validateSearch: (s: Record<string, unknown>) => ({
     tab: typeof s.tab === "string" ? s.tab : undefined,
+    section: typeof s.section === "string" ? s.section : undefined,
   }),
   component: SupervisorPage,
 });
@@ -36,92 +71,83 @@ function SupervisorPage() {
     return () => clearInterval(id);
   }, []);
 
-  const planCompleted = useMemo(() => queue.filter((q) => q.status === "plan_completed"), [queue]);
+  const mainTab = resolveMainTab(search.tab);
+  const section = resolveSection(mainTab, search.tab, search.section);
 
+  const planCompleted = useMemo(() => queue.filter((q) => q.status === "plan_completed"), [queue]);
   const awaiting = useMemo(() => queue.filter((q) => q.status === "awaiting_supervisor"), [queue]);
   const scheduled = useMemo(() => queue.filter((q) => q.status === "scheduled"), [queue]);
   const passed = useMemo(() => queue.filter((q) => q.status === "passed"), [queue]);
   const forwardedTransfers = countTransfersForRole("supervisor");
 
+  const setMainTab = (tab: string) => {
+    const next = resolveMainTab(tab);
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        tab: next,
+        section: DEFAULT_SECTION[next],
+      }),
+    });
+  };
+
+  const setSection = (nextSection: string) => {
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        tab: mainTab,
+        section: nextSection,
+      }),
+    });
+  };
+
   const tabs: RoleTab[] = [
-    {
-      id: "plans",
-      label: "الخطط التعليمية",
-      icon: GraduationCap,
-      roles: ["supervisor"],
-      content: <SupervisorPlansPanel />,
-    },
-    {
-      id: "plan-completed",
-      label: "إكمال الخطة",
-      icon: GraduationCap,
-      roles: ["supervisor"],
-      badge: planCompleted.length,
-      content: <SupervisorPlanCompletedPanel />,
-    },
-    {
-      id: "transfers",
-      label: "التحويلات",
-      icon: Send,
-      perm: "view_attendance",
-      badge: forwardedTransfers,
-      content: <ForwardedTransfersPanel role="supervisor" />,
-    },
-    {
-      id: "weekly-tests",
-      label: "الاختبارات الأسبوعية",
-      icon: ClipboardCheck,
-      perm: "view_attendance",
-      content: <WeeklyTestsOverviewPanel />,
-    },
-    {
-      id: "halaqat",
-      label: "الحلقات",
-      icon: BookOpen,
-      perm: "view_attendance",
-      content: <SupervisorHalaqatPanel />,
-    },
     {
       id: "sard",
       label: "السرد",
       icon: Mic,
       perm: "view_attendance",
+      badge: awaiting.length + scheduled.length,
       content: (
-        <div className="space-y-6">
-          <ActiveSardList />
-          <LateSardList />
-        </div>
+        <SupervisorSardPanel
+          section={section}
+          onSectionChange={setSection}
+          awaitingCount={awaiting.length}
+          scheduledCount={scheduled.length}
+          passedCount={passed.length}
+        />
       ),
     },
     {
-      id: "approvals",
-      label: "موافقات",
-      icon: CheckCircle2,
-      perm: "approve_sard",
-      badge: awaiting.length,
-      content: <SupervisorApprovalsPanel />,
+      id: "plans",
+      label: "الخطط",
+      icon: GraduationCap,
+      roles: ["supervisor"],
+      perm: "manage_plans",
+      badge: planCompleted.length,
+      content: (
+        <SupervisorPlansPanelGroup
+          section={section}
+          onSectionChange={setSection}
+          planCompletedCount={planCompleted.length}
+        />
+      ),
     },
     {
-      id: "force-retry",
-      label: "إعادة فورية",
-      icon: Zap,
-      perm: "force_retry",
-      badge: scheduled.length,
-      content: <SupervisorForceRetryPanel />,
-    },
-    {
-      id: "passed",
-      label: "المجتازون",
-      icon: Award,
+      id: "oversight",
+      label: "المتابعة والإشراف",
+      icon: BookOpen,
       perm: "view_attendance",
-      badge: passed.length,
-      content: <SupervisorPassedPanel />,
+      badge: forwardedTransfers,
+      content: (
+        <SupervisorOversightPanel
+          section={section}
+          onSectionChange={setSection}
+          forwardedTransfers={forwardedTransfers}
+        />
+      ),
     },
   ];
-
-  const setTab = (tab: string) => {
-    navigate({ search: (prev) => ({ ...prev, tab }) });
-  };
 
   return (
     <div className="min-h-screen">
@@ -131,9 +157,9 @@ function SupervisorPage() {
         <RoleShell
           className="max-w-5xl mx-auto"
           tabs={tabs}
-          defaultTab="halaqat"
-          activeTab={search.tab}
-          onTabChange={setTab}
+          defaultTab="sard"
+          activeTab={mainTab}
+          onTabChange={setMainTab}
           header={
             <RolePageHeader
               icon={Eye}

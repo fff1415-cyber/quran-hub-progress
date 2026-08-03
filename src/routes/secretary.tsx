@@ -5,26 +5,61 @@ import { getCalendarDayKey } from "@/lib/operational-date";
 import { fetchActiveCalendar } from "@/lib/academic-context";
 import { getSessionName } from "@/lib/session-role";
 import { AppHeader } from "@/components/AppHeader";
-import { GradesExport } from "@/components/GradesExport";
 import { RoleShell, RolePageHeader, type RoleTab } from "@/components/role-workspace/RoleShell";
 import {
-  SecretaryAttendancePanel,
-  SecretaryAbsenceThresholdPanel,
-  SecretaryLatePermitPanel,
-  SecretarySardPanel,
-} from "@/components/role-workspace/RoleSections";
-import { SecretaryStudentProfilesPanel } from "@/components/role-workspace/SecretaryStudentProfilesPanel";
-import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTransfersPanel";
-import { PlanStudentLookup } from "@/components/plans/SupervisorPlansPanel";
-import { StudentImportPanel, StudentsManagementPanel } from "@/components/admin/StudentsAdminPanel";
-import { Clipboard, UserX, Clock, Mic, Send, GraduationCap, Users, ClipboardCheck, FileSpreadsheet } from "lucide-react";
-import { WeeklyTestsOverviewPanel } from "@/components/WeeklyTestsOverviewPanel";
+  SecretaryDailyPanel,
+  SecretaryStudentsPanel,
+  SecretaryReportsPanel,
+} from "@/components/role-workspace/SecretaryPanels";
+import { Clipboard, CalendarDays, Users, BarChart3 } from "lucide-react";
 import { Toaster } from "sonner";
 import type { WeekRecord } from "@/lib/mock-data";
+
+const MAIN_TABS = ["daily", "students", "reports"] as const;
+type MainTab = (typeof MAIN_TABS)[number];
+
+const DEFAULT_SECTION: Record<MainTab, string> = {
+  daily: "attendance",
+  students: "profiles",
+  reports: "plans",
+};
+
+const VALID_SECTIONS: Record<MainTab, string[]> = {
+  daily: ["attendance", "transfers", "late-permit"],
+  students: ["profiles", "students", "import", "export"],
+  reports: ["plans", "weekly-tests", "sard"],
+};
+
+/** Legacy flat tab ids → new main + section (bookmarks / daily-operations redirect). */
+const LEGACY_TAB: Record<string, { main: MainTab; section: string }> = {
+  attendance: { main: "daily", section: "attendance" },
+  transfers: { main: "daily", section: "transfers" },
+  "late-permit": { main: "daily", section: "late-permit" },
+  profiles: { main: "students", section: "profiles" },
+  students: { main: "students", section: "students" },
+  import: { main: "students", section: "import" },
+  plans: { main: "reports", section: "plans" },
+  "weekly-tests": { main: "reports", section: "weekly-tests" },
+  sard: { main: "reports", section: "sard" },
+};
+
+function resolveMainTab(raw?: string): MainTab {
+  if (raw && MAIN_TABS.includes(raw as MainTab)) return raw as MainTab;
+  if (raw && LEGACY_TAB[raw]) return LEGACY_TAB[raw].main;
+  return "daily";
+}
+
+function resolveSection(main: MainTab, tabRaw?: string, sectionRaw?: string): string {
+  if (sectionRaw && VALID_SECTIONS[main].includes(sectionRaw)) return sectionRaw;
+  if (tabRaw && LEGACY_TAB[tabRaw]?.main === main) return LEGACY_TAB[tabRaw].section;
+  if (tabRaw && VALID_SECTIONS[main].includes(tabRaw)) return tabRaw;
+  return DEFAULT_SECTION[main];
+}
 
 export const Route = createFileRoute("/secretary")({
   validateSearch: (s: Record<string, unknown>) => ({
     tab: typeof s.tab === "string" ? s.tab : undefined,
+    section: typeof s.section === "string" ? s.section : undefined,
   }),
   component: SecretaryPage,
 });
@@ -43,6 +78,9 @@ function SecretaryPage() {
     fetchActiveCalendar().then((cal) => setCurrentWeek(cal.currentWeekNumber)).catch(() => {});
   }, []);
 
+  const mainTab = resolveMainTab(search.tab);
+  const section = resolveSection(mainTab, search.tab, search.section);
+
   const todayCount = useMemo(() => {
     return students.filter((s) => {
       const w: WeekRecord | undefined = grades[s.id]?.[currentWeek];
@@ -53,85 +91,68 @@ function SecretaryPage() {
 
   const passedSard = useMemo(() => queue.filter((q) => q.status === "passed"), [queue]);
   const finalFailed = useMemo(() => queue.filter((q) => q.status === "final_failed"), [queue]);
+  const sardBadge = passedSard.length + finalFailed.length;
   const forwardedTransfers = countTransfersForRole("secretary");
+
+  const setMainTab = (tab: string) => {
+    const next = resolveMainTab(tab);
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        tab: next,
+        section: DEFAULT_SECTION[next],
+      }),
+    });
+  };
+
+  const setSection = (nextSection: string) => {
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        tab: mainTab,
+        section: nextSection,
+      }),
+    });
+  };
 
   const tabs: RoleTab[] = [
     {
-      id: "profiles",
-      label: "ملفات الطلاب",
-      icon: Users,
+      id: "daily",
+      label: "المتابعة اليومية",
+      icon: CalendarDays,
       perm: "view_attendance",
-      content: <SecretaryStudentProfilesPanel />,
-    },
-    {
-      id: "students",
-      label: "إدارة الطلاب",
-      icon: Users,
-      perm: "manage_students",
-      content: <StudentsManagementPanel />,
-    },
-    {
-      id: "import",
-      label: "استيراد الطلاب",
-      icon: FileSpreadsheet,
-      perm: "import_sheets",
-      content: <StudentImportPanel />,
-    },
-    {
-      id: "plans",
-      label: "الخطط التراكمية",
-      icon: GraduationCap,
-      perm: "view_attendance",
-      content: <PlanStudentLookup readOnly />,
-    },
-    {
-      id: "transfers",
-      label: "التحويلات",
-      icon: Send,
-      perm: "view_attendance",
-      badge: forwardedTransfers,
-      content: <ForwardedTransfersPanel role="secretary" />,
-    },
-    {
-      id: "weekly-tests",
-      label: "الاختبارات الأسبوعية",
-      icon: ClipboardCheck,
-      perm: "view_attendance",
-      content: <WeeklyTestsOverviewPanel readOnly />,
-    },
-    {
-      id: "attendance",
-      label: "الغياب والتأخر",
-      icon: UserX,
-      perm: "view_attendance",
-      badge: todayCount,
+      badge: todayCount + forwardedTransfers,
       content: (
-        <div className="space-y-6">
-          <SecretaryAttendancePanel />
-          <SecretaryAbsenceThresholdPanel />
-        </div>
+        <SecretaryDailyPanel
+          section={section}
+          onSectionChange={setSection}
+          todayCount={todayCount}
+          forwardedTransfers={forwardedTransfers}
+        />
       ),
     },
     {
-      id: "late-permit",
-      label: "إذن الدخول",
-      icon: Clock,
-      perm: "force_retry",
-      content: <SecretaryLatePermitPanel />,
+      id: "students",
+      label: "الطلاب والبيانات",
+      icon: Users,
+      perm: "view_attendance",
+      content: <SecretaryStudentsPanel section={section} onSectionChange={setSection} />,
     },
     {
-      id: "sard",
-      label: "السرد",
-      icon: Mic,
+      id: "reports",
+      label: "التقارير والخطط",
+      icon: BarChart3,
       perm: "view_attendance",
-      badge: passedSard.length + finalFailed.length,
-      content: <SecretarySardPanel />,
+      badge: sardBadge,
+      content: (
+        <SecretaryReportsPanel
+          section={section}
+          onSectionChange={setSection}
+          sardBadge={sardBadge}
+        />
+      ),
     },
   ];
-
-  const setTab = (tab: string) => {
-    navigate({ search: (prev) => ({ ...prev, tab }) });
-  };
 
   return (
     <div className="min-h-screen">
@@ -141,18 +162,15 @@ function SecretaryPage() {
         <RoleShell
           className="max-w-5xl mx-auto"
           tabs={tabs}
-          defaultTab="profiles"
-          activeTab={search.tab}
-          onTabChange={setTab}
+          defaultTab="daily"
+          activeTab={mainTab}
+          onTabChange={setMainTab}
           header={
-            <>
-              <RolePageHeader
-                icon={Clipboard}
-                title="لوحة السكرتير"
-                description="متابعة الغياب والتأخر والسرد — أقسام حسب صلاحياتك"
-              />
-              <GradesExport />
-            </>
+            <RolePageHeader
+              icon={Clipboard}
+              title="لوحة السكرتير"
+              description="متابعة الغياب والتأخر والسرد — أقسام حسب صلاحياتك"
+            />
           }
         />
       </main>

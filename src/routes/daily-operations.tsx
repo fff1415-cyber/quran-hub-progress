@@ -5,8 +5,8 @@ export const Route = createFileRoute("/daily-operations")({
   beforeLoad: () => {
     const role = getSessionRole();
     if (role === "secretary") {
-      throw redirect({ to: "/secretary", search: { tab: "attendance" } });
+      throw redirect({ to: "/secretary", search: { tab: "daily", section: "attendance" } });
     }
-    throw redirect({ to: "/secretary", search: { tab: "attendance" } });
+    throw redirect({ to: "/secretary", search: { tab: "daily", section: "attendance" } });
   },
 });

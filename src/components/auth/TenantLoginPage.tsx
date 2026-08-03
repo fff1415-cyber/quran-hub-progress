@@ -44,8 +44,8 @@ export function TenantLoginPage() {
 
         switch (auth.role) {
           case "manager": navigate({ to: "/manager" }); break;
-          case "secretary": navigate({ to: "/secretary" }); break;
-          case "supervisor": navigate({ to: "/supervisor" }); break;
+          case "secretary": navigate({ to: "/secretary", search: { tab: "daily", section: "attendance" } }); break;
+          case "supervisor": navigate({ to: "/supervisor", search: { tab: "sard", section: "sard" } }); break;
           case "program_supervisor": navigate({ to: "/program-supervisor" }); break;
           case "musammi": navigate({ to: "/musammi" }); break;
           case "teacher":
