@@ -9,6 +9,7 @@ import {
 import { useEffect } from "react";
 import { syncFromCloud } from "@/lib/cloud-sync";
 import { EvaluationSettingsProvider } from "@/contexts/EvaluationSettingsContext";
+import { GradeInputSettingsProvider } from "@/contexts/GradeInputSettingsContext";
 import { TenantProvider } from "@/contexts/TenantContext";
 
 import appCss from "../styles.css?url";
@@ -69,7 +70,9 @@ function RootComponent() {
     <QueryClientProvider client={queryClient}>
       <TenantProvider>
         <EvaluationSettingsProvider>
-          <Outlet />
+          <GradeInputSettingsProvider>
+            <Outlet />
+          </GradeInputSettingsProvider>
         </EvaluationSettingsProvider>
       </TenantProvider>
     </QueryClientProvider>

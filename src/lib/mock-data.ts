@@ -615,38 +615,52 @@ export function compensationPoints(faces: number, levelType: Student["levelType"
   return Math.round(faces * perFace);
 }
 
-export function dayScore(d: DayEntry, isTalqeen: boolean): number {
+export function dayScore(d: DayEntry, isTalqeen: boolean, levelType?: Student["levelType"]): number {
   const att = d.attendance === "present" ? 15 : d.attendance === "late" ? 10 : d.attendance === "excused" ? 5 : 0;
   if (isTalqeen) return att + (d.wajib ? 15 : 0);
-  const hifz = HIFZ_SCORES[d.hifz];
+  const hifzSlot = levelType === "gold" ? HIFZ_SCORES.one : HIFZ_SCORES.half;
+  const hifz = d.hifz !== "" ? hifzSlot : 0;
   const rabt = d.rabt === "pass" ? 15 : d.rabt === "fail" ? 5 : 0;
   const mur = d.muraja === "pass" ? 15 : d.muraja === "fail" ? 5 : 0;
   return att + hifz + rabt + mur;
 }
 
+/** Max points per school day (attendance + hifz slot + rabt + muraja). */
+export function maxDayScore(isTalqeen: boolean, levelType: Student["levelType"] = "silver"): number {
+  if (isTalqeen) return 30;
+  const hifzSlot = levelType === "gold" ? HIFZ_SCORES.one : HIFZ_SCORES.half;
+  return 15 + hifzSlot + 15 + 15;
+}
+
 export function weekPercentage(
   w: WeekRecord | undefined,
   isTalqeen: boolean,
-  levelType?: Student["levelType"],
+  levelType: Student["levelType"] = "silver",
 ): number {
   if (!w) return 0;
   let total = 0;
-  const maxPerDay = isTalqeen ? 30 : 70; // 15+15 talqeen ; 15+25+15+15 = 70 regular
+  const maxPerDay = maxDayScore(isTalqeen, levelType);
   DAYS.forEach((d) => {
     const entry = w.days[d.key];
-    if (entry) total += dayScore(entry, isTalqeen);
+    if (entry) total += dayScore(entry, isTalqeen, levelType);
   });
-  if (!isTalqeen && levelType && w.compensationFaces && w.compensationFaces > 0) {
+  if (!isTalqeen && w.compensationFaces && w.compensationFaces > 0) {
     total += compensationPoints(w.compensationFaces, levelType);
   }
   const max = maxPerDay * OFFICIAL_SCHOOL_DAYS.length;
+  if (max <= 0) return 0;
   return Math.round((total / max) * 100);
 }
 
-export function studentOverallPercentage(studentId: string, isTalqeen: boolean, grades: GradesStore): number {
+export function studentOverallPercentage(
+  studentId: string,
+  isTalqeen: boolean,
+  grades: GradesStore,
+  levelType: Student["levelType"] = "silver",
+): number {
   const weeks = grades[studentId];
   if (!weeks) return 0;
-  const arr = Object.values(weeks).map((w) => weekPercentage(w, isTalqeen));
+  const arr = Object.values(weeks).map((w) => weekPercentage(w, isTalqeen, levelType));
   if (arr.length === 0) return 0;
   return Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
 }

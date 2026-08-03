@@ -604,6 +604,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       if (planSheetStudent?.id === s.id) {
         setPlanSheetData(await fetchStudentPlanSheet(s.id));
       }
+      if (planStudentIds.has(s.id) && (await checkAndHandlePlanCompletion(s, weekNum))) {
+        toast.info(`${s.name} أنهى الخطة — بانتظار تحويل المشرف للسرد`);
+      }
       if (faces > 0) {
         toast.success(`تعويض ${faces} — ${newTracked.length} مقطع في الخطة`);
       } else if (tracked.length > 0) {

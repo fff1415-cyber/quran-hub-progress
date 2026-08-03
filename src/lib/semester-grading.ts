@@ -99,7 +99,7 @@ export function dayScoreBreakdown(
     return { earned: attEarned + wajibEarned, max: attMax + weights.talqeen_wajib };
   }
 
-  const hifzEarned = hifzPoints(d.hifz, weights);
+  const hifzEarned = d.hifz !== "" ? hifzMax : 0;
   const hifzMax = hifzFullMax(levelType, weights);
   const rabtEarned = d.rabt === "pass" ? weights.rabt_pass : d.rabt === "fail" ? weights.rabt_fail : 0;
   const rabtMax = weights.rabt_pass;
@@ -266,7 +266,7 @@ export function semesterOverallPercentage(
 ): number {
   const days = getElapsedSemesterDays(calendar);
   if (days.length === 0) {
-    return fallbackWeeklyAverage(studentId, isTalqeen, grades);
+    return fallbackWeeklyAverage(studentId, isTalqeen, grades, levelType);
   }
 
   let earned = 0;
@@ -346,8 +346,9 @@ function accumulateComponentTotals(
     acc.wajM += weights.talqeen_wajib;
     return;
   }
-  acc.hifzE += hifzPoints(d.hifz, weights);
-  acc.hifzM += hifzFullMax(levelType, weights);
+  const hifzMax = hifzFullMax(levelType, weights);
+  acc.hifzE += d.hifz !== "" ? hifzMax : 0;
+  acc.hifzM += hifzMax;
   acc.murE += d.muraja === "pass" ? weights.muraja_pass : d.muraja === "fail" ? weights.muraja_fail : 0;
   acc.murM += weights.muraja_pass;
   acc.rabE += d.rabt === "pass" ? weights.rabt_pass : d.rabt === "fail" ? weights.rabt_fail : 0;
@@ -495,10 +496,11 @@ export function fallbackWeeklyAverage(
   studentId: string,
   isTalqeen: boolean,
   grades: GradesStore,
+  levelType: Student["levelType"] = "silver",
 ): number {
   const weeks = grades[studentId];
   if (!weeks) return 0;
-  const arr = Object.values(weeks).map((w) => weekPercentage(w, isTalqeen));
+  const arr = Object.values(weeks).map((w) => weekPercentage(w, isTalqeen, levelType));
   if (arr.length === 0) return 0;
   return Math.round(arr.reduce((a, b) => a + b, 0) / arr.length);
 }

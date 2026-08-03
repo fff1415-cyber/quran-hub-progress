@@ -43,6 +43,7 @@ export function PlanAwareTaskCell({
   if (hasPlan) {
     return (
       <PassFail
+        field={task}
         value={passFailValue as "pass" | "fail" | ""}
         disabled={disabled}
         onChange={(v) => {
@@ -55,6 +56,7 @@ export function PlanAwareTaskCell({
 
   return (
     <PassFail
+      field={task}
       value={passFailValue as "pass" | "fail" | ""}
       onChange={onPassFailChange}
     />

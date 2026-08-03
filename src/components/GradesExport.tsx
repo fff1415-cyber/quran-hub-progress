@@ -63,7 +63,7 @@ export function GradesExport() {
       for (let w = lo; w <= hi; w++) {
         const week = grades[s.id]?.[w];
         if (!week) continue;
-        const pct = weekPercentage(week, !!h?.isTalqeen);
+        const pct = weekPercentage(week, !!h?.isTalqeen, s.levelType);
         let abs=0, late=0, exc=0, hifz=0, mp=0, mf=0, rp=0, rf=0;
         DAYS.forEach((d) => {
           const e = week.days[d.key]; if (!e) return;
@@ -111,10 +111,11 @@ export function GradesExport() {
     const report = calendar
       ? studentReportPercentages(s.id, s.levelType, isTalqeen, grades, calendar)
       : {
-          overall: fallbackWeeklyAverage(s.id, isTalqeen, grades),
+          overall: fallbackWeeklyAverage(s.id, isTalqeen, grades, s.levelType),
           weekOverall: weekPercentage(
             grades[s.id]?.[Math.max(...Object.keys(grades[s.id] || {}).map(Number), 0)],
             isTalqeen,
+            s.levelType,
           ),
           components: { attendance: 0, hifz: 0, muraja: 0, rabt: 0, wajib: 0 },
         };
@@ -137,7 +138,7 @@ export function GradesExport() {
     const weeks = grades[s.id] || {};
     Object.keys(weeks).map(Number).sort((a, b) => a - b).forEach((w) => {
       const week = weeks[w];
-      weekRows.push([weekLabel(w), weekPercentage(week, isTalqeen)]);
+      weekRows.push([weekLabel(w), weekPercentage(week, isTalqeen, s.levelType)]);
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(weekRows), "الأسابيع");
 
@@ -167,7 +168,7 @@ export function GradesExport() {
       return studentReportPercentages(selectedStudent.id, selectedStudent.levelType, isTalqeen, grades, calendar);
     }
     return {
-      overall: fallbackWeeklyAverage(selectedStudent.id, isTalqeen, grades),
+      overall: fallbackWeeklyAverage(selectedStudent.id, isTalqeen, grades, selectedStudent.levelType),
       weekOverall: 0,
       components: { attendance: 0, hifz: 0, muraja: 0, rabt: 0, wajib: 0 },
     };
