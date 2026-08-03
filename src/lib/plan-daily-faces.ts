@@ -1,9 +1,7 @@
 import type { AcademicCalendar } from "@/lib/academic-context";
-import { workingDayKeysFromSemester } from "@/lib/academic-context";
 import { getElapsedSemesterDays } from "@/lib/semester-grading";
 import type { DailyFaceQuotas, StudentPlanAssignment } from "@/lib/plan-types";
 import type { DayEntry, GradesStore, HifzValue } from "@/lib/mock-data";
-import { OFFICIAL_SCHOOL_DAYS } from "@/lib/mock-data";
 
 /** Fixed hifz tap → faces (not configurable per level). */
 export const FIXED_HIFZ_FACES = {
@@ -81,6 +79,29 @@ export function facesFromDayEntry(
   };
 }
 
+function sumFacesFromAllGradeEntries(
+  studentId: string,
+  grades: GradesStore,
+  quotas: Pick<DailyFaceQuotas, "daily_rabt_faces" | "daily_muraja_faces">,
+): Pick<FaceProgressSummary, "hifzActual" | "rabtActual" | "murajaActual"> {
+  let hifzActual = 0;
+  let rabtActual = 0;
+  let murajaActual = 0;
+  const weeks = grades[studentId] ?? {};
+
+  for (const week of Object.values(weeks)) {
+    hifzActual += week.compensationFaces ?? 0;
+    for (const entry of Object.values(week.days ?? {})) {
+      const part = facesFromDayEntry(entry, quotas);
+      hifzActual += part.hifz;
+      rabtActual += part.rabt;
+      murajaActual += part.muraja;
+    }
+  }
+
+  return { hifzActual, rabtActual, murajaActual };
+}
+
 export function aggregateFaceProgress(
   studentId: string,
   grades: GradesStore,
@@ -90,46 +111,63 @@ export function aggregateFaceProgress(
   toIso?: string,
 ): FaceProgressSummary {
   const days = getElapsedSemesterDays(calendar);
+  const q = normalizeTaskQuotas(quotas);
+
   if (days.length === 0) {
     return aggregateFaceProgressAllWeeks(studentId, grades, quotas);
   }
 
   const from = fromIso ?? (days[0]?.iso ?? calendar.operationalDate);
   const to = toIso ?? calendar.operationalDate;
-
   const inRange = days.filter((d) => d.iso >= from && d.iso <= to);
-  const weekNumsInRange = new Set(inRange.map((d) => d.weekNumber));
-  const workingKeys = workingDayKeysFromSemester(calendar.semester?.working_days);
+  const workingDays = inRange.length;
+
+  const useFullSemesterRange =
+    !fromIso &&
+    !toIso &&
+    from === (days[0]?.iso ?? from) &&
+    to === calendar.operationalDate;
+
+  if (useFullSemesterRange) {
+    const totals = sumFacesFromAllGradeEntries(studentId, grades, q);
+    return {
+      workingDays,
+      ...totals,
+      hifzTarget: workingDays * 1,
+      rabtTarget: workingDays * q.daily_rabt_faces,
+      murajaTarget: workingDays * q.daily_muraja_faces,
+    };
+  }
+
   let hifzActual = 0;
   let rabtActual = 0;
   let murajaActual = 0;
 
   for (const day of inRange) {
     const week = grades[studentId]?.[day.weekNumber];
-    const part = facesFromDayEntry(week?.days[day.dayKey], quotas);
+    const part = facesFromDayEntry(week?.days[day.dayKey], q);
     hifzActual += part.hifz;
     rabtActual += part.rabt;
     murajaActual += part.muraja;
   }
 
   const countedDayKeys = new Set(inRange.map((d) => `${d.weekNumber}:${d.dayKey}`));
+  const weekNumsInRange = new Set(inRange.map((d) => d.weekNumber));
+
   for (const wn of weekNumsInRange) {
     const week = grades[studentId]?.[wn];
     if (!week?.days) continue;
+    hifzActual += week.compensationFaces ?? 0;
     for (const [dayKey, entry] of Object.entries(week.days)) {
-      if (!workingKeys.has(dayKey)) continue;
       if (countedDayKeys.has(`${wn}:${dayKey}`)) continue;
-      const part = facesFromDayEntry(entry, quotas);
+      const part = facesFromDayEntry(entry, q);
       if (!part.hifz && !part.rabt && !part.muraja) continue;
       hifzActual += part.hifz;
       rabtActual += part.rabt;
       murajaActual += part.muraja;
     }
-    hifzActual += week.compensationFaces ?? 0;
   }
 
-  const workingDays = inRange.length;
-  const q = normalizeTaskQuotas(quotas);
   return {
     workingDays,
     hifzActual,
@@ -146,31 +184,19 @@ export function aggregateFaceProgressAllWeeks(
   grades: GradesStore,
   quotas: Pick<DailyFaceQuotas, "daily_rabt_faces" | "daily_muraja_faces">,
 ): FaceProgressSummary {
-  let hifzActual = 0;
-  let rabtActual = 0;
-  let murajaActual = 0;
+  const totals = sumFacesFromAllGradeEntries(studentId, grades, quotas);
+  const q = normalizeTaskQuotas(quotas);
   let dayCount = 0;
   const weeks = grades[studentId] ?? {};
-  const officialKeys = new Set(OFFICIAL_SCHOOL_DAYS.map((d) => d.key));
   for (const week of Object.values(weeks)) {
-    hifzActual += week.compensationFaces ?? 0;
-    for (const [dayKey, entry] of Object.entries(week.days ?? {})) {
-      if (!entry || !officialKeys.has(dayKey)) continue;
-      const hasData = !!(entry.hifz || entry.rabt || entry.muraja || entry.attendance);
-      if (!hasData) continue;
-      dayCount++;
-      const part = facesFromDayEntry(entry, quotas);
-      hifzActual += part.hifz;
-      rabtActual += part.rabt;
-      murajaActual += part.muraja;
+    for (const entry of Object.values(week.days ?? {})) {
+      if (!entry) continue;
+      if (entry.hifz || entry.rabt || entry.muraja || entry.attendance) dayCount += 1;
     }
   }
-  const q = normalizeTaskQuotas(quotas);
   return {
     workingDays: dayCount,
-    hifzActual,
-    rabtActual,
-    murajaActual,
+    ...totals,
     hifzTarget: dayCount * 1,
     rabtTarget: dayCount * q.daily_rabt_faces,
     murajaTarget: dayCount * q.daily_muraja_faces,

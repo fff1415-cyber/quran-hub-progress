@@ -164,6 +164,89 @@ export function semesterTimeProgressPercent(calendar: AcademicCalendar): number 
   return Math.round((elapsed / total) * 1000) / 10;
 }
 
+function dayAttendanceDone(d: DayEntry): boolean {
+  return d.attendance === "present" || d.attendance === "late" || d.attendance === "excused";
+}
+
+/** A working day is fully achieved when all required fields for that day are complete. */
+export function isDayFullyComplete(
+  entry: DayEntry | undefined,
+  isTalqeen: boolean,
+): boolean {
+  const d = entry ?? EMPTY_DAY;
+  if (isTalqeen) return dayAttendanceDone(d) && d.wajib;
+  return dayAttendanceDone(d) && !!d.hifz && d.rabt === "pass" && d.muraja === "pass";
+}
+
+export interface SemesterDayCompletionReport {
+  overall: number;
+  components: ComponentPercentages;
+  expectedProgress: number;
+  completedDays: number;
+  elapsedDays: number;
+  totalDays: number;
+}
+
+/**
+ * Portal progress: actual = completed days ÷ total semester days;
+ * expected = elapsed days ÷ total semester days.
+ * Each component counts how many elapsed working days achieved that part.
+ */
+export function semesterDayCompletionReport(
+  studentId: string,
+  isTalqeen: boolean,
+  grades: GradesStore,
+  calendar: AcademicCalendar,
+): SemesterDayCompletionReport {
+  const totalDays = getTotalSemesterWorkingDays(calendar);
+  const elapsed = getElapsedSemesterDays(calendar);
+  const elapsedDays = elapsed.length;
+  const expectedProgress = semesterTimeProgressPercent(calendar);
+
+  const empty: SemesterDayCompletionReport = {
+    overall: 0,
+    components: { attendance: 0, hifz: 0, muraja: 0, rabt: 0, wajib: 0 },
+    expectedProgress,
+    completedDays: 0,
+    elapsedDays,
+    totalDays,
+  };
+
+  if (totalDays <= 0) return empty;
+
+  let fullComplete = 0;
+  let attComplete = 0;
+  let hifzComplete = 0;
+  let rabtComplete = 0;
+  let murComplete = 0;
+  let wajibComplete = 0;
+
+  for (const day of elapsed) {
+    const d = lookupDayEntry(grades, studentId, day) ?? EMPTY_DAY;
+    if (dayAttendanceDone(d)) attComplete += 1;
+    if (d.hifz) hifzComplete += 1;
+    if (d.rabt === "pass") rabtComplete += 1;
+    if (d.muraja === "pass") murComplete += 1;
+    if (d.wajib) wajibComplete += 1;
+    if (isDayFullyComplete(d, isTalqeen)) fullComplete += 1;
+  }
+
+  return {
+    overall: ratioPct(fullComplete, totalDays),
+    components: {
+      attendance: ratioPct(attComplete, totalDays),
+      hifz: ratioPct(hifzComplete, totalDays),
+      muraja: ratioPct(murComplete, totalDays),
+      rabt: ratioPct(rabtComplete, totalDays),
+      wajib: ratioPct(wajibComplete, totalDays),
+    },
+    expectedProgress,
+    completedDays: fullComplete,
+    elapsedDays,
+    totalDays,
+  };
+}
+
 function lookupDayEntry(
   grades: GradesStore,
   studentId: string,

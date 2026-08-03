@@ -6,11 +6,7 @@ import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-conte
 import { syncFromCloud } from "@/lib/cloud-sync";
 import {
   halaqaWeekAverage,
-  semesterOverallPercentage,
-  semesterComponentPercentages,
-  semesterTimeProgressPercent,
-  getTotalSemesterWorkingDays,
-  getElapsedSemesterDays,
+  semesterDayCompletionReport,
   studentWeekOverallPercentage,
   formatOverallPercent,
 } from "@/lib/semester-grading";
@@ -27,7 +23,7 @@ import {
   type StudentPortalAuthMode,
 } from "@/lib/student-portal-auth";
 import { loadStudentPortalVisibility } from "@/lib/student-portal-settings";
-import { aggregateComplexFaceTotals } from "@/lib/student-portal-data";
+import { aggregateComplexFaceTotals, aggregateDailyComplexAttendance } from "@/lib/student-portal-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { Trophy, Loader2, LogOut } from "lucide-react";
@@ -141,6 +137,11 @@ function StudentPage() {
     return aggregateComplexFaceTotals(students, grades, calendar);
   }, [students, grades, calendar]);
 
+  const dailyAttendance = useMemo(() => {
+    if (!calendar) return null;
+    return aggregateDailyComplexAttendance(students, grades, calendar);
+  }, [students, grades, calendar]);
+
   const personal = useMemo(() => {
     if (authMode !== "student" || !studentId || !calendar) return null;
     const s = students.find((x) => x.id === studentId);
@@ -148,15 +149,9 @@ function StudentPage() {
     const h = halaqat.find((x) => x.id === s.halaqaId);
     if (!h) return null;
 
-    const semesterComponents = semesterComponentPercentages(
-      s.id, s.levelType, h.isTalqeen, grades, calendar,
+    const completion = semesterDayCompletionReport(
+      s.id, h.isTalqeen, grades, calendar,
     );
-    const semesterOverall = semesterOverallPercentage(
-      s.id, s.levelType, h.isTalqeen, grades, calendar,
-    );
-    const expectedProgress = semesterTimeProgressPercent(calendar);
-    const elapsedDays = getElapsedSemesterDays(calendar).length;
-    const totalDays = getTotalSemesterWorkingDays(calendar);
 
     const todayKey = getCalendarDayKey();
     let todayStatus = "";
@@ -169,11 +164,12 @@ function StudentPage() {
     return {
       s,
       h,
-      semesterComponents,
-      semesterOverall,
-      expectedProgress,
-      elapsedDays,
-      totalDays,
+      semesterComponents: completion.components,
+      semesterOverall: completion.overall,
+      expectedProgress: completion.expectedProgress,
+      elapsedDays: completion.elapsedDays,
+      totalDays: completion.totalDays,
+      completedDays: completion.completedDays,
       todayStatus,
     };
   }, [authMode, studentId, students, halaqat, grades, calendar, weekNum]);
@@ -242,13 +238,15 @@ function StudentPage() {
 
         {showGeneral && calendar && gradesReady && (
           <>
-            {(visibility.halaqaWeekly || visibility.complexFaceCounts) && (
+            {(visibility.halaqaWeekly || visibility.dailyComplexAttendance || visibility.complexFaceCounts) && (
               <StudentPortalHalaqaSection
                 halaqaStats={halaqaStats}
                 calendar={calendar}
                 weekNum={weekNum}
+                dailyAttendance={dailyAttendance}
                 complexFaces={complexFaces}
                 showWeekly={visibility.halaqaWeekly}
+                showDailyAttendance={visibility.dailyComplexAttendance}
                 showComplexFaces={visibility.complexFaceCounts}
               />
             )}
@@ -310,6 +308,7 @@ function StudentPage() {
             expectedProgress={personal.expectedProgress}
             elapsedDays={personal.elapsedDays}
             totalDays={personal.totalDays}
+            completedDays={personal.completedDays}
             todayStatus={personal.todayStatus}
             planData={planData}
             planLoading={planLoading}

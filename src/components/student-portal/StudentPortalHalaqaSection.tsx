@@ -1,9 +1,11 @@
+import type { ReactNode } from "react";
 import type { Halaqa } from "@/lib/mock-data";
 import type { AcademicCalendar } from "@/lib/academic-context";
-import type { ComplexFaceTotals } from "@/lib/student-portal-data";
+import type { ComplexFaceTotals, DailyComplexAttendance } from "@/lib/student-portal-data";
 import { formatFaceCount } from "@/lib/plan-daily-faces";
+import { formatOverallPercent } from "@/lib/semester-grading";
 import { weekLabel } from "@/lib/arabic-numbers";
-import { BookOpen, Layers } from "lucide-react";
+import { BookOpen, Layers, Users } from "lucide-react";
 
 interface HalaqaStat {
   halaqa: Halaqa;
@@ -14,18 +16,24 @@ export function StudentPortalHalaqaSection({
   halaqaStats,
   calendar,
   weekNum,
+  dailyAttendance,
   complexFaces,
   showWeekly,
+  showDailyAttendance,
   showComplexFaces,
 }: {
   halaqaStats: HalaqaStat[];
   calendar: AcademicCalendar;
   weekNum: number;
+  dailyAttendance: DailyComplexAttendance | null;
   complexFaces: ComplexFaceTotals | null;
   showWeekly: boolean;
+  showDailyAttendance: boolean;
   showComplexFaces: boolean;
 }) {
-  if (!showWeekly && !showComplexFaces) return null;
+  const showComplexStats = (showDailyAttendance && dailyAttendance) || (showComplexFaces && complexFaces);
+
+  if (!showWeekly && !showComplexStats) return null;
 
   return (
     <section className="glass-card rounded-2xl p-6 mb-6">
@@ -45,20 +53,42 @@ export function StudentPortalHalaqaSection({
         </div>
       )}
 
-      {showComplexFaces && complexFaces && (
+      {showComplexStats && (
         <div className={`${showWeekly ? "mt-8 pt-8 border-t border-border" : ""} text-center`}>
           <h3 className="text-lg font-bold text-primary mb-1 flex items-center justify-center gap-2">
-            <Layers className="w-5 h-5" /> إجمالي أوجه المجمع
+            <Layers className="w-5 h-5" /> إحصائيات المجمع
           </h3>
           <p className="text-xs text-muted-foreground mb-5">
-            من بداية الفصل حتى اليوم
+            حضور اليوم · أوجه الفصل من بدايته حتى اليوم
           </p>
-          <div className="flex flex-wrap justify-center gap-4 mx-auto max-w-xl">
-            <ComplexFaceCard label="أوجه الحفظ" value={complexFaces.hifz} />
-            <ComplexFaceCard
-              label="أوجه الربط والمراجعة"
-              value={complexFaces.rabt + complexFaces.muraja}
-            />
+          <div className="flex flex-wrap justify-center gap-4 mx-auto max-w-3xl">
+            {showDailyAttendance && dailyAttendance && (
+              <ComplexStatCard
+                label="نسبة الحضور اليوم"
+                sublabel={`${dailyAttendance.present} من ${dailyAttendance.total} طالب`}
+                icon={Users}
+              >
+                <span className="text-2xl font-bold text-primary">
+                  {formatOverallPercent(dailyAttendance.percent)}
+                </span>
+              </ComplexStatCard>
+            )}
+            {showComplexFaces && complexFaces && (
+              <>
+                <ComplexStatCard label="أوجه الحفظ" sublabel="تراكمي — الفصل">
+                  <span className="text-2xl font-bold text-primary">
+                    {formatFaceCount(complexFaces.hifz)}
+                    <span className="text-sm font-normal text-muted-foreground mr-1">وجه</span>
+                  </span>
+                </ComplexStatCard>
+                <ComplexStatCard label="أوجه الربط والمراجعة" sublabel="تراكمي — الفصل">
+                  <span className="text-2xl font-bold text-primary">
+                    {formatFaceCount(complexFaces.rabt + complexFaces.muraja)}
+                    <span className="text-sm font-normal text-muted-foreground mr-1">وجه</span>
+                  </span>
+                </ComplexStatCard>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -66,14 +96,27 @@ export function StudentPortalHalaqaSection({
   );
 }
 
-function ComplexFaceCard({ label, value }: { label: string; value: number }) {
+function ComplexStatCard({
+  label,
+  sublabel,
+  icon: Icon,
+  children,
+}: {
+  label: string;
+  sublabel?: string;
+  icon?: typeof Users;
+  children: ReactNode;
+}) {
   return (
-    <div className="rounded-xl border border-primary/25 bg-primary/5 px-6 py-4 min-w-[140px]">
+    <div className="rounded-xl border border-primary/25 bg-primary/5 px-6 py-4 min-w-[140px] text-center">
+      {Icon && (
+        <div className="flex justify-center mb-1">
+          <Icon className="w-4 h-4 text-primary" />
+        </div>
+      )}
       <div className="text-xs text-muted-foreground mb-1">{label}</div>
-      <div className="text-2xl font-bold gold-text">
-        {formatFaceCount(value)}
-        <span className="text-sm font-normal text-muted-foreground mr-1">وجه</span>
-      </div>
+      {children}
+      {sublabel && <div className="text-[10px] text-muted-foreground mt-1">{sublabel}</div>}
     </div>
   );
 }
@@ -88,7 +131,7 @@ function Donut({ pct, label }: { pct: number; label: string }) {
     <div className="flex flex-col items-center w-[7.5rem]">
       <div className="relative w-24 h-24">
         <svg viewBox="0 0 100 100" className="-rotate-90 w-full h-full">
-          <circle cx="50" cy="50" r={r} fill="none" stroke="oklch(0.22 0.03 250)" strokeWidth="10" />
+          <circle cx="50" cy="50" r={r} fill="none" stroke="var(--border)" strokeWidth="10" />
           <circle
             cx="50" cy="50" r={r} fill="none"
             stroke={`url(#${gradId})`} strokeWidth="10"
@@ -96,12 +139,12 @@ function Donut({ pct, label }: { pct: number; label: string }) {
           />
           <defs>
             <linearGradient id={gradId} x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="oklch(0.78 0.13 80)" />
-              <stop offset="100%" stopColor="oklch(0.88 0.09 85)" />
+              <stop offset="0%" stopColor="var(--primary)" />
+              <stop offset="100%" stopColor="color-mix(in oklch, var(--primary) 70%, var(--card))" />
             </linearGradient>
           </defs>
         </svg>
-        <div className="absolute inset-0 flex items-center justify-center font-bold gold-text text-sm">{display}%</div>
+        <div className="absolute inset-0 flex items-center justify-center font-bold text-primary text-sm">{display}%</div>
       </div>
       <div className="text-xs text-center text-muted-foreground mt-2 leading-tight">{label}</div>
     </div>

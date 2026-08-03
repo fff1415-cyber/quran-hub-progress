@@ -3,6 +3,7 @@ const APP_STATE_KEY = "student_portal_settings";
 
 export interface StudentPortalVisibility {
   halaqaWeekly: boolean;
+  dailyComplexAttendance: boolean;
   complexFaceCounts: boolean;
   honorBoard: boolean;
   studentHeader: boolean;
@@ -16,6 +17,7 @@ export interface StudentPortalVisibility {
 
 export const DEFAULT_STUDENT_PORTAL_VISIBILITY: StudentPortalVisibility = {
   halaqaWeekly: true,
+  dailyComplexAttendance: true,
   complexFaceCounts: true,
   honorBoard: true,
   studentHeader: true,
@@ -29,7 +31,8 @@ export const DEFAULT_STUDENT_PORTAL_VISIBILITY: StudentPortalVisibility = {
 
 export const STUDENT_PORTAL_SECTION_LABELS: Record<keyof StudentPortalVisibility, string> = {
   halaqaWeekly: "متوسط الحلقات (أسبوعي)",
-  complexFaceCounts: "إجمالي أوجه المجمع — حفظ + ربط/مراجعة (من بداية الفصل)",
+  dailyComplexAttendance: "نسبة حضور المجمع اليوم — كل الحلق (حاضر + متأخر)",
+  complexFaceCounts: "عدد أوجه المجمع — حفظ + ربط/مراجعة (من بداية الفصل)",
   honorBoard: "لوحة الشرف — أوائل الأسبوع",
   studentHeader: "معلومات الطالب (الاسم والحلقة)",
   todayAttendance: "حالة الحضور اليوم",

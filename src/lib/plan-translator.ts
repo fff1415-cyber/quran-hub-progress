@@ -35,6 +35,18 @@ export function levelUnit(track: PlanTrack): string {
   return track === "gold" ? "جزء" : "مرحلة";
 }
 
+/** Hifz plan segments owed by weekly compensation faces. */
+export function compensationHifzSegmentTarget(faces: number, track: PlanTrack): number {
+  if (faces <= 0) return 0;
+  if (track === "gold") return Math.floor(faces);
+  return Math.round(faces * 2);
+}
+
+/** Tap used to advance one compensation hifz segment on the plan. */
+export function compensationHifzTap(track: PlanTrack): TapValue {
+  return track === "gold" ? "one" : "half";
+}
+
 /** Next segment indices to complete for a task (client-side preview). */
 export function nextSegmentsToApply(
   track: PlanTrack,

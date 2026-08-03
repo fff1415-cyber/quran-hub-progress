@@ -21,7 +21,7 @@ import {
 } from "@/components/ui/select";
 import { Bell, Check, CheckCircle2, ClipboardList, ClipboardCheck, BookOpen, Loader2, Send, Users, X, Sparkles } from "lucide-react";
 import { Toaster, toast } from "sonner";
-import { applyPlanInput, fetchStudentPlanSheet } from "@/lib/plans-service";
+import { applyPlanInput, fetchStudentPlanSheet, syncCompensationToPlan } from "@/lib/plans-service";
 import { checkAndHandlePlanCompletion } from "@/lib/plan-completion";
 import { processAbsenceThresholdAlerts } from "@/lib/semester-absence";
 import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
@@ -32,17 +32,17 @@ import { hifzCheckedValue } from "@/lib/mock-data";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import {
-  semesterOverallPercentage,
   halaqaSemesterAverage,
   formatOverallPercent,
-  overallPercentColorClass,
 } from "@/lib/semester-grading";
 import { TeacherGradesExport } from "@/components/TeacherGradesExport";
 import { StaffAttendanceCheckInButton } from "@/components/StaffAttendanceCheckInButton";
 import { TeacherWeeklyTestsPanel } from "@/components/TeacherWeeklyTestsPanel";
 import { TeacherHalaqaProgramsPanel } from "@/components/TeacherHalaqaProgramsPanel";
 import { TeacherTarbawiPanel } from "@/components/tarbawi/TeacherTarbawiPanel";
+import { SemesterBreakdownPopover } from "@/components/teacher/SemesterBreakdownPopover";
 import { ensureWeeklyTestsSemester } from "@/lib/weekly-tests";
 import { ensureTarbawiSemester } from "@/lib/tarbawi-program";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
@@ -365,9 +365,9 @@ function GradeTableColGroup({
           <col key={`d${dayIdx}-c${colIdx}`} style={{ width: w }} />
         )),
       )}
+      {!isTalqeen && <col style={{ width: GRADE_COL.compensation }} />}
       <col style={{ width: GRADE_COL.weekPct }} />
       <col style={{ width: GRADE_COL.semesterPct }} />
-      <col style={{ width: GRADE_COL.compensation }} />
     </colgroup>
   );
 }
@@ -388,7 +388,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const [grades, setGrades] = useState(() => loadGrades());
   const baseDayCols = isTalqeen ? 2 : 4;
   const dayColSpan = baseDayCols;
-  const [showTransferModal, setShowTransferModal] = useState(false);
+  const [transferOpen, setTransferOpen] = useState(false);
   const [transferStudentId, setTransferStudentId] = useState("");
   const [transferReason, setTransferReason] = useState("");
   const [showAssign, setShowAssign] = useState(false);
@@ -446,9 +446,17 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       transferStatus: "pending",
     });
     toast.success("تم إرسال الطالب للإدارة");
-    setShowTransferModal(false);
+    setTransferOpen(false);
     setTransferStudentId("");
     setTransferReason("");
+  };
+
+  const handleTransferOpenChange = (open: boolean) => {
+    setTransferOpen(open);
+    if (open) {
+      setTransferStudentId(students[0]?.id ?? "");
+      setTransferReason("");
+    }
   };
 
   useEffect(() => {
@@ -581,14 +589,29 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     saveGrades(g);
   };
 
-  const updateCompensation = (studentId: string, faces: number) => {
-    update(studentId, (w) => ({ ...w, compensationFaces: faces }));
-  };
-
-  const openTransferModal = () => {
-    setTransferStudentId(students[0]?.id ?? "");
-    setTransferReason("");
-    setShowTransferModal(true);
+  const handleCompensationChange = async (s: Student, faces: number) => {
+    const tracked = grades[s.id]?.[weekNum]?.compensationPlanSegments ?? [];
+    try {
+      let newTracked: number[] = [];
+      if (planStudentIds.has(s.id)) {
+        newTracked = await syncCompensationToPlan(s, faces, tracked, senderName);
+      }
+      update(s.id, (w) => ({
+        ...w,
+        compensationFaces: faces,
+        compensationPlanSegments: newTracked,
+      }));
+      if (planSheetStudent?.id === s.id) {
+        setPlanSheetData(await fetchStudentPlanSheet(s.id));
+      }
+      if (faces > 0) {
+        toast.success(`تعويض ${faces} — ${newTracked.length} مقطع في الخطة`);
+      } else if (tracked.length > 0) {
+        toast.success("تم إلغاء التعويض وتراجع المقاطع");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل تحديث التعويض");
+    }
   };
 
   const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
@@ -670,8 +693,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
   return (
     <div className="glass-card rounded-2xl p-4 overflow-x-auto" ref={tableRef}>
-      <div className="flex items-center justify-between mb-4 px-2 gap-3 flex-wrap">
-        <div className="flex items-center gap-3 flex-wrap min-w-0">
+      <div className="mb-4 px-2 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap min-w-0 sm:justify-self-start">
           <Select value={String(weekNum)} onValueChange={(v) => onWeekChange(Number(v))}>
             <SelectTrigger className="w-[min(100%,320px)] font-bold">
               <SelectValue placeholder="اختر الأسبوع" />
@@ -685,22 +708,95 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
             </SelectContent>
           </Select>
           {isCurrentWeek && (
-            <span className="text-xs text-primary font-bold px-2 py-1 rounded-md bg-primary/10">
+            <span className="text-xs text-primary font-bold px-2 py-1 rounded-md bg-primary/10 whitespace-nowrap">
               اليوم: {DAYS.find((d) => d.key === todayKey)?.label ?? todayKey}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2 shrink-0">
-          {!isTalqeen && students.length > 0 && (
-            <button
-              type="button"
-              onClick={openTransferModal}
-              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/15 text-warning border border-warning/40 text-sm font-bold hover:bg-warning/25"
+
+        {!isTalqeen && students.length > 0 ? (
+          <Popover open={transferOpen} onOpenChange={handleTransferOpenChange}>
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-warning/15 text-warning border border-warning/40 text-sm font-bold hover:bg-warning/25 shadow-sm sm:justify-self-center w-full sm:w-auto"
+              >
+                <Send className="w-4 h-4 shrink-0" />
+                إرسال المتعثرين للإدارة
+              </button>
+            </PopoverTrigger>
+            <PopoverContent
+              side="bottom"
+              align="center"
+              sideOffset={8}
+              className="w-[min(100vw-2rem,22rem)] p-0 overflow-hidden shadow-lg border-warning/30"
+              onOpenAutoFocus={(e) => e.preventDefault()}
             >
-              <Send className="w-4 h-4" />
-              إرسال المتعثرين
-            </button>
-          )}
+              <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border bg-warning/10">
+                <h3 className="text-sm font-bold text-warning flex items-center gap-1.5">
+                  <Send className="w-4 h-4 shrink-0" />
+                  إرسال متعثر للإدارة
+                </h3>
+                <button
+                  type="button"
+                  onClick={() => setTransferOpen(false)}
+                  className="p-1 rounded-md hover:bg-secondary text-muted-foreground"
+                  aria-label="إغلاق"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+              <div className="p-3 space-y-3">
+                <p className="text-[11px] text-muted-foreground leading-relaxed">
+                  اختر الطالب واكتب سبب التحويل. يُرفق تقرير أدائه تلقائياً.
+                </p>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">الطالب</label>
+                  <select
+                    value={transferStudentId}
+                    onChange={(e) => setTransferStudentId(e.target.value)}
+                    className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm"
+                  >
+                    <option value="">— اختر —</option>
+                    {students.map((s) => (
+                      <option key={s.id} value={s.id}>{s.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">السبب</label>
+                  <textarea
+                    value={transferReason}
+                    onChange={(e) => setTransferReason(e.target.value)}
+                    rows={3}
+                    placeholder="اكتب سبب التحويل..."
+                    className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm resize-none"
+                  />
+                </div>
+                <div className="flex gap-2 pt-1">
+                  <button
+                    type="button"
+                    onClick={submitTransfer}
+                    className="flex-1 px-3 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm"
+                  >
+                    إرسال
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setTransferOpen(false)}
+                    className="px-3 py-2 rounded-lg border border-border text-sm hover:bg-secondary"
+                  >
+                    إلغاء
+                  </button>
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        ) : (
+          <span className="hidden sm:block" aria-hidden />
+        )}
+
+        <div className="flex items-center gap-2 flex-wrap sm:justify-self-end justify-center">
           {canAssign && (
             <button
               type="button"
@@ -711,7 +807,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
               تقسيم الطلاب
             </button>
           )}
-          <span className="flex items-center gap-2 text-sm text-success">
+          <span className="flex items-center gap-2 text-sm text-success whitespace-nowrap">
             <CheckCircle2 className="w-4 h-4" /> حفظ تلقائي
           </span>
         </div>
@@ -745,11 +841,11 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 {highlightDay(d.key) && <span className="block text-[10px] text-primary font-normal">اليوم</span>}
               </th>
             ))}
-            <th className={cn("p-2 border-r border-border text-muted-foreground", GRADE_CELL_W.weekPct)}>نسبة الأسبوع</th>
-            <th className={cn("p-2 border-r border-border text-primary font-bold", GRADE_CELL_W.semesterPct)}>النسبة الكلية</th>
             {!isTalqeen && (
               <th className={cn("p-2 border-r border-border text-success", GRADE_CELL_W.compensation)}>تعويض</th>
             )}
+            <th className={cn("p-2 border-r border-border text-muted-foreground", GRADE_CELL_W.weekPct)}>نسبة الأسبوع</th>
+            <th className={cn("p-2 border-r border-border text-primary font-bold", GRADE_CELL_W.semesterPct)}>النسبة الكلية</th>
           </tr>
           <tr className="bg-secondary/30 text-xs text-muted-foreground">
             <th className={cn("sticky right-0 bg-secondary", GRADE_CELL_W.student)} />
@@ -774,16 +870,15 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 </React.Fragment>
               )
             )}
+            {!isTalqeen && <th className={GRADE_CELL_W.compensation} />}
             <th className={GRADE_CELL_W.weekPct} />
             <th className={GRADE_CELL_W.semesterPct} />
-            {!isTalqeen && <th className={GRADE_CELL_W.compensation} />}
           </tr>
         </thead>
         <tbody>
           {students.map((s) => {
             const w = ensureWeekDays(grades[s.id]?.[weekNum] ?? emptyWeek(workingKeysList), workingKeysList);
             const weekPct = weekPercentage(w, isTalqeen, s.levelType);
-            const semesterPct = semesterOverallPercentage(s.id, s.levelType, isTalqeen, grades, calendar);
             return (
               <tr key={s.id} className="border-b border-border/50 hover:bg-accent/30">
                 <td className={cn("p-2 sticky right-0 bg-card font-medium", GRADE_CELL_W.student)}>
@@ -862,24 +957,27 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                     </React.Fragment>
                   );
                 })}
+                {!isTalqeen && (
+                  <td className={cn("p-1 text-center border-r border-border/30", GRADE_CELL_W.compensation)}>
+                    <CompensationSelect
+                      value={w.compensationFaces ?? 0}
+                      onChange={(v) => void handleCompensationChange(s, v)}
+                    />
+                  </td>
+                )}
                 <td className={cn("p-2 text-center font-bold border-r border-border/30", GRADE_CELL_W.weekPct)}>
                   <span className={weekPct >= 80 ? "text-success" : weekPct >= 50 ? "text-warning" : "text-muted-foreground"}>
                     {weekPct}%
                   </span>
                 </td>
-                <td className={cn("p-2 text-center font-bold border-r border-border/30", GRADE_CELL_W.semesterPct)}>
-                  <span className={overallPercentColorClass(semesterPct)}>
-                    {formatOverallPercent(semesterPct)}
-                  </span>
+                <td className={cn("p-2 text-center border-r border-border/30", GRADE_CELL_W.semesterPct)}>
+                  <SemesterBreakdownPopover
+                    studentId={s.id}
+                    isTalqeen={isTalqeen}
+                    grades={grades}
+                    calendar={calendar}
+                  />
                 </td>
-                {!isTalqeen && (
-                  <td className={cn("p-1 text-center", GRADE_CELL_W.compensation)}>
-                    <CompensationSelect
-                      value={w.compensationFaces ?? 0}
-                      onChange={(v) => updateCompensation(s.id, v)}
-                    />
-                  </td>
-                )}
               </tr>
             );
           })}
@@ -925,40 +1023,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         </DialogContent>
       </Dialog>
 
-      {showTransferModal && (
-        <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="glass-card rounded-2xl max-w-md w-full p-5">
-            <div className="flex items-center justify-between mb-3">
-              <h3 className="text-lg font-bold text-warning flex items-center gap-2"><Send className="w-5 h-5" /> إرسال المتعثرين</h3>
-              <button onClick={() => setShowTransferModal(false)} className="p-1.5 hover:bg-secondary rounded-lg"><X className="w-4 h-4" /></button>
-            </div>
-            <p className="text-xs text-muted-foreground mb-3">اختر الطالب واكتب سبب التحويل للمدير. سيُرفق تقرير كامل عن أداء الطالب تلقائياً.</p>
-            <label className="text-xs text-muted-foreground mb-1 block">الطالب</label>
-            <select
-              value={transferStudentId}
-              onChange={(e) => setTransferStudentId(e.target.value)}
-              className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm mb-3"
-            >
-              <option value="">— اختر —</option>
-              {students.map((s) => (
-                <option key={s.id} value={s.id}>{s.name}</option>
-              ))}
-            </select>
-            <label className="text-xs text-muted-foreground mb-1 block">السبب</label>
-            <textarea
-              value={transferReason}
-              onChange={(e) => setTransferReason(e.target.value)}
-              rows={4}
-              placeholder="السبب..."
-              className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm"
-            />
-            <div className="flex gap-2 mt-4">
-              <button onClick={submitTransfer} className="flex-1 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold">إرسال</button>
-              <button onClick={() => setShowTransferModal(false)} className="px-4 py-2 rounded-lg border border-border">إلغاء</button>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

@@ -937,6 +937,64 @@ function handle_apply_plan_input(): void
     ]);
 }
 
+function handle_remove_plan_completions(): void
+{
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
+    plans_require_roles($auth, ['teacher', 'assistant', 'manager']);
+    $input = json_input();
+    $studentId = trim((string) ($input['student_id'] ?? ''));
+    $taskType = trim((string) ($input['task_type'] ?? 'hifz'));
+    $segmentIndexes = $input['segment_indexes'] ?? [];
+
+    if ($studentId === '' || $taskType !== 'hifz') {
+        error_response('بيانات غير صالحة');
+    }
+    if (!is_array($segmentIndexes) || count($segmentIndexes) === 0) {
+        json_response(['ok' => true, 'removed' => 0]);
+        return;
+    }
+
+    $pdo = db();
+    $tenants = plans_tenant_enabled($pdo);
+    $role = (string) ($auth['role'] ?? '');
+    if ($role === 'teacher' || $role === 'assistant') {
+        plans_assert_teacher_student_access($pdo, $auth, $studentId, $tenants);
+    } else {
+        plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
+    }
+
+    if (!plans_table_exists($pdo, 'segment_completions')) {
+        error_response('جداول الخطط غير مُنشأة بعد', 503);
+    }
+
+    $assignStmt = $pdo->prepare(
+        'SELECT plan_id FROM student_plan_assignments WHERE student_id = ? AND status = \'active\' ORDER BY assigned_at DESC LIMIT 1'
+    );
+    $assignStmt->execute([$studentId]);
+    $assignment = $assignStmt->fetch();
+    if (!$assignment) {
+        error_response('الطالب غير مربوط بخطة نشطة');
+    }
+    $planId = $assignment['plan_id'];
+
+    $indexes = array_values(array_unique(array_map('intval', $segmentIndexes)));
+    $indexes = array_filter($indexes, static fn ($n) => $n > 0);
+    if (count($indexes) === 0) {
+        json_response(['ok' => true, 'removed' => 0]);
+        return;
+    }
+
+    $placeholders = implode(',', array_fill(0, count($indexes), '?'));
+    $params = array_merge([$studentId, $planId, $taskType], $indexes);
+    $stmt = $pdo->prepare(
+        "DELETE FROM segment_completions WHERE student_id = ? AND plan_id = ? AND task_type = ? AND segment_index IN ($placeholders)"
+    );
+    $stmt->execute($params);
+
+    json_response(['ok' => true, 'removed' => $stmt->rowCount()]);
+}
+
 function handle_delete_plan(): void
 {
     $auth = require_auth();

@@ -49,6 +49,8 @@ export interface WeekRecord {
   sard: boolean;
   /** Extra hifz faces (½–5) recorded as weekly compensation. */
   compensationFaces?: number;
+  /** Plan hifz segment indexes applied via weekly compensation (for revert on decrease). */
+  compensationPlanSegments?: number[];
 }
 
 export type GradesStore = Record<string, Record<number, WeekRecord>>;
@@ -144,7 +146,7 @@ export function emptyWeek(workingDayKeys?: Iterable<string>): WeekRecord {
   for (const key of defaultWorkingDayKeys(workingDayKeys)) {
     days[key] = emptyDayEntry();
   }
-  return { days, testMuraja: false, testRabt: false, sard: false, compensationFaces: 0 };
+  return { days, testMuraja: false, testRabt: false, sard: false, compensationFaces: 0, compensationPlanSegments: [] };
 }
 
 /** Ensure all semester working-day slots exist (not extra fri/sat unless configured). */

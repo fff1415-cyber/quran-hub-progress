@@ -19,8 +19,14 @@ import {
   localPatchAssignment,
   localPatchAssignmentQuotas,
   localPlanDetail,
+  localRemoveHifzCompletions,
 } from "@/lib/plans-store";
 import { syncStudentPhaseFromPlan } from "@/lib/student-phase-promote";
+import {
+  compensationHifzSegmentTarget,
+  compensationHifzTap,
+} from "@/lib/plan-translator";
+import type { Student } from "@/lib/mock-data";
 
 function apiUrl(path: string): string {
   return buildRphpUrl(path);
@@ -215,6 +221,54 @@ export async function applyPlanInput(
     }
     throw e;
   }
+}
+
+export async function removePlanHifzCompletions(
+  studentId: string,
+  segmentIndexes: number[],
+): Promise<void> {
+  if (segmentIndexes.length === 0) return;
+  try {
+    await planFetch<{ ok: boolean }>("/plans/remove-completions", {
+      method: "POST",
+      body: JSON.stringify({
+        student_id: studentId,
+        task_type: "hifz",
+        segment_indexes: segmentIndexes,
+      }),
+    });
+  } catch (e) {
+    if (isPlansDbUnavailableError(e)) {
+      localRemoveHifzCompletions(studentId, segmentIndexes);
+      return;
+    }
+    throw e;
+  }
+  localRemoveHifzCompletions(studentId, segmentIndexes);
+}
+
+/** Sync plan hifz completions to match weekly compensation faces (add or revert). */
+export async function syncCompensationToPlan(
+  student: Student,
+  faces: number,
+  trackedSegments: number[],
+  recordedBy: string,
+): Promise<number[]> {
+  const target = compensationHifzSegmentTarget(faces, student.levelType);
+  const tracked = [...trackedSegments];
+
+  if (target > tracked.length) {
+    const tap = compensationHifzTap(student.levelType);
+    for (let i = tracked.length; i < target; i += 1) {
+      const applied = await applyPlanInput(student.id, "hifz", tap, recordedBy);
+      tracked.push(...applied);
+    }
+  } else if (target < tracked.length) {
+    const toRemove = tracked.splice(target);
+    await removePlanHifzCompletions(student.id, toRemove);
+  }
+
+  return tracked;
 }
 
 export async function deletePlan(planId: string): Promise<{ assignments_removed: number }> {

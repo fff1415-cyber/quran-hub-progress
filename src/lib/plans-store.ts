@@ -261,6 +261,24 @@ export function localApplyInput(
   return toApply;
 }
 
+export function localRemoveHifzCompletions(studentId: string, segmentIndexes: number[]): void {
+  if (segmentIndexes.length === 0) return;
+  const sheet = localGetStudentSheet(studentId);
+  if (!sheet.plan) return;
+  const removeSet = new Set(segmentIndexes);
+  const allComp = read<StoredCompletion[]>(KEY_COMPLETIONS, []);
+  const filtered = allComp.filter(
+    (c) =>
+      !(
+        c.student_id === studentId
+        && c.plan_id === sheet.plan!.id
+        && c.task_type === "hifz"
+        && removeSet.has(c.segment_index)
+      ),
+  );
+  write(KEY_COMPLETIONS, filtered);
+}
+
 export function localPlanDetail(planId: string): { plan: EducationPlan | null; segments: PlanSegment[] } {
   const plan = localListPlans().find((p) => p.id === planId) ?? null;
   const segments = read<PlanSegment[]>(KEY_SEGMENTS, [])

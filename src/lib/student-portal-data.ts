@@ -39,6 +39,37 @@ export function aggregateComplexFaceTotals(
   return { hifz, rabt, muraja };
 }
 
+export interface DailyComplexAttendance {
+  total: number;
+  present: number;
+  percent: number;
+}
+
+/** Today’s attendance across all students in all halaqat (present + late). */
+export function aggregateDailyComplexAttendance(
+  students: Student[],
+  grades: GradesStore,
+  calendar: AcademicCalendar,
+): DailyComplexAttendance {
+  const total = students.length;
+  if (total === 0) return { total: 0, present: 0, percent: 0 };
+
+  const weekNum = calendar.currentWeekNumber;
+  const todayKey = calendar.currentDayKey;
+  let present = 0;
+
+  for (const s of students) {
+    const att = grades[s.id]?.[weekNum]?.days[todayKey]?.attendance;
+    if (att === "present" || att === "late") present += 1;
+  }
+
+  return {
+    total,
+    present,
+    percent: Math.round((present / total) * 1000) / 10,
+  };
+}
+
 export interface PortalAbsenceRow {
   date: string;
   dayKey: string;

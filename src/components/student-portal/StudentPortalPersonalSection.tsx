@@ -35,6 +35,7 @@ interface Props {
   expectedProgress: number;
   elapsedDays: number;
   totalDays: number;
+  completedDays: number;
   todayStatus: string;
   planData: StudentPlanSheetData | null;
   planLoading: boolean;
@@ -51,6 +52,7 @@ export function StudentPortalPersonalSection({
   expectedProgress,
   elapsedDays,
   totalDays,
+  completedDays,
   todayStatus,
   planData,
   planLoading,
@@ -107,6 +109,7 @@ export function StudentPortalPersonalSection({
             semesterLabel={calendar.semester?.name ?? "الفصل الحالي"}
             elapsedDays={elapsedDays}
             totalDays={totalDays}
+            completedDays={completedDays}
           />
         </div>
       )}
