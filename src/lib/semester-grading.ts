@@ -99,8 +99,8 @@ export function dayScoreBreakdown(
     return { earned: attEarned + wajibEarned, max: attMax + weights.talqeen_wajib };
   }
 
-  const hifzEarned = d.hifz !== "" ? hifzMax : 0;
   const hifzMax = hifzFullMax(levelType, weights);
+  const hifzEarned = d.hifz !== "" ? hifzMax : 0;
   const rabtEarned = d.rabt === "pass" ? weights.rabt_pass : d.rabt === "fail" ? weights.rabt_fail : 0;
   const rabtMax = weights.rabt_pass;
   const murEarned = d.muraja === "pass" ? weights.muraja_pass : d.muraja === "fail" ? weights.muraja_fail : 0;
