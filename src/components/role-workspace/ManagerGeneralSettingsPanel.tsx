@@ -1,10 +1,11 @@
 import { SemesterEditForm } from "@/components/SemesterEditForm";
 import { SemesterSetupForm } from "@/components/SemesterSetupForm";
 import { ManagerBrandingPanel } from "@/components/role-workspace/ManagerBrandingPanel";
+import { KioskSettingsPanel } from "@/components/role-workspace/KioskSettingsPanel";
 import { ManagerSettingsPanel } from "@/components/role-workspace/ManagerSettingsPanel";
 import { ManagerStudentPortalPanel } from "@/components/role-workspace/ManagerStudentPortalPanel";
 import { ManagerSubTabs } from "@/components/role-workspace/ManagerSubTabs";
-import { CalendarDays, MessageSquare, Palette, GraduationCap } from "lucide-react";
+import { CalendarDays, MessageSquare, Palette, GraduationCap, QrCode } from "lucide-react";
 
 type Props = {
   section: string;
@@ -33,6 +34,12 @@ export function ManagerGeneralSettingsPanel({ section, onSectionChange }: Props)
           </div>
         </div>
       ),
+    },
+    {
+      id: "kiosk",
+      label: "كيوسك التحضير",
+      icon: QrCode,
+      content: <KioskSettingsPanel />,
     },
     {
       id: "messages",

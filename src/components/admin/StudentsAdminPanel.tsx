@@ -14,9 +14,11 @@ import {
   INSTITUTE_LEVELS, validateLevelAndPhase, instituteLevelFromGlobalPhase,
 } from "@/lib/plan-level-ranges";
 import { getSessionName } from "@/lib/session-role";
-import { Plus, Trash2, FileSpreadsheet, Download, Loader2, Pencil, CheckSquare, Square } from "lucide-react";
+import { Plus, Trash2, FileSpreadsheet, Download, Loader2, Pencil, CheckSquare, Square, QrCode, Printer } from "lucide-react";
 import { toast } from "sonner";
 import { DEFAULT_FACE_QUOTAS } from "@/lib/plan-daily-faces";
+import { printSingleStudentQrCard, printStudentQrCards } from "@/lib/student-qr-cards";
+import { useTenant } from "@/contexts/TenantContext";
 
 function sheetRowToStudent(row: SheetRow, halaqaId: number, existing?: Student): Student {
   const phase = row.phaseNumber > 0 ? row.phaseNumber : 1;
@@ -250,11 +252,14 @@ type EditForm = Omit<Student, "id"> & {
 };
 
 export function StudentsManagementPanel() {
+  const { brandName, logoUrl } = useTenant();
   const [students, setStudents] = useState<Student[]>(() => loadStudents());
   const [saving, setSaving] = useState(false);
   const [q, setQ] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [printHalaqaId, setPrintHalaqaId] = useState<number | "all">("all");
+  const [printing, setPrinting] = useState(false);
   const halaqat = loadHalaqat();
 
   const emptyForm = (): EditForm => ({
@@ -407,6 +412,67 @@ export function StudentsManagementPanel() {
     }
   };
 
+  const printCards = async (list: Student[]) => {
+    if (list.length === 0) {
+      toast.error("لا يوجد طلاب للطباعة");
+      return;
+    }
+    setPrinting(true);
+    try {
+      const ok = await printStudentQrCards(
+        list.map((s) => ({
+          id: s.id,
+          name: s.name,
+          halaqaName: halaqat.find((h) => h.id === s.halaqaId)?.name,
+        })),
+        {
+          brandName,
+          logoUrl,
+          subtitle:
+            printHalaqaId === "all"
+              ? `بطاقات QR — ${list.length} طالب`
+              : `حلقة ${halaqat.find((h) => h.id === printHalaqaId)?.name ?? ""}`,
+        },
+      );
+      if (!ok) {
+        toast.error("تعذّر فتح نافذة الطباعة — تحقق من مانع النوافذ المنبثقة");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل إنشاء البطاقات");
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const printOneCard = async (student: Student) => {
+    setPrinting(true);
+    try {
+      const ok = await printSingleStudentQrCard(
+        {
+          id: student.id,
+          name: student.name,
+          halaqaName: halaqat.find((h) => h.id === student.halaqaId)?.name,
+        },
+        { brandName, logoUrl },
+      );
+      if (!ok) {
+        toast.error("تعذّر فتح نافذة الطباعة");
+      }
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل طباعة البطاقة");
+    } finally {
+      setPrinting(false);
+    }
+  };
+
+  const studentsForBulkPrint = useMemo(() => {
+    const base = printHalaqaId === "all" ? students : students.filter((s) => s.halaqaId === printHalaqaId);
+    if (selected.size > 0) {
+      return base.filter((s) => selected.has(s.id));
+    }
+    return base;
+  }, [printHalaqaId, selected, students]);
+
   return (
     <div className="space-y-4">
       <div className="glass-card rounded-2xl p-5">
@@ -449,6 +515,25 @@ export function StudentsManagementPanel() {
           <h3 className="font-bold text-primary">الطلاب ({filtered.length} / {students.length})</h3>
           <div className="flex gap-2 flex-wrap items-center">
             <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="بحث…" className="px-3 py-1.5 rounded-lg bg-input border border-border text-sm" />
+            <select
+              value={printHalaqaId === "all" ? "all" : String(printHalaqaId)}
+              onChange={(e) => setPrintHalaqaId(e.target.value === "all" ? "all" : Number(e.target.value))}
+              className="px-2 py-1.5 rounded-lg bg-input border border-border text-xs"
+            >
+              <option value="all">كل الحلقات — طباعة QR</option>
+              {halaqat.map((h) => (
+                <option key={h.id} value={h.id}>{h.name}</option>
+              ))}
+            </select>
+            <button
+              type="button"
+              disabled={printing}
+              onClick={() => void printCards(studentsForBulkPrint)}
+              className="text-xs px-2 py-1 rounded border border-primary/30 text-primary flex items-center gap-1 disabled:opacity-60"
+            >
+              {printing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Printer className="w-3.5 h-3.5" />}
+              طباعة QR ({studentsForBulkPrint.length})
+            </button>
             <button type="button" onClick={toggleAll} className="text-xs px-2 py-1 rounded border border-border flex items-center gap-1">
               {allFilteredSelected ? <CheckSquare className="w-3.5 h-3.5" /> : <Square className="w-3.5 h-3.5" />}
               {allFilteredSelected ? "إلغاء الكل" : "تحديد الكل"}
@@ -479,6 +564,15 @@ export function StudentsManagementPanel() {
                   </div>
                 </div>
                 <div className="flex gap-1 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => void printOneCard(s)}
+                    disabled={printing}
+                    className="p-1.5 rounded hover:bg-primary/15 text-primary"
+                    title="طباعة بطاقة QR"
+                  >
+                    <QrCode className="w-3.5 h-3.5" />
+                  </button>
                   <button type="button" onClick={() => startEdit(s)} className="p-1.5 rounded hover:bg-primary/15 text-primary" title="تعديل">
                     <Pencil className="w-3.5 h-3.5" />
                   </button>

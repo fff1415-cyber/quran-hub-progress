@@ -13,6 +13,7 @@ import { Route as IndexRouteImport } from './routes/index'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as DailyOperationsRouteImport } from './routes/daily-operations'
 import { Route as DashboardRouteImport } from './routes/dashboard'
+import { Route as KioskRouteImport } from './routes/kiosk'
 import { Route as ManagerRouteImport } from './routes/manager'
 import { Route as MusammiRouteImport } from './routes/musammi'
 import { Route as ProgramSupervisorRouteImport } from './routes/program-supervisor'
@@ -41,6 +42,11 @@ const DailyOperationsRoute = DailyOperationsRouteImport.update({
 const DashboardRoute = DashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const KioskRoute = KioskRouteImport.update({
+  id: '/kiosk',
+  path: '/kiosk',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ManagerRoute = ManagerRouteImport.update({
@@ -94,6 +100,7 @@ export interface FileRoutesByFullPath {
   '/admin': typeof AdminRoute
   '/daily-operations': typeof DailyOperationsRoute
   '/dashboard': typeof DashboardRoute
+  '/kiosk': typeof KioskRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
   '/program-supervisor': typeof ProgramSupervisorRoute
@@ -109,6 +116,7 @@ export interface FileRoutesByTo {
   '/admin': typeof AdminRoute
   '/daily-operations': typeof DailyOperationsRoute
   '/dashboard': typeof DashboardRoute
+  '/kiosk': typeof KioskRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
   '/program-supervisor': typeof ProgramSupervisorRoute
@@ -125,6 +133,7 @@ export interface FileRoutesById {
   '/admin': typeof AdminRoute
   '/daily-operations': typeof DailyOperationsRoute
   '/dashboard': typeof DashboardRoute
+  '/kiosk': typeof KioskRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
   '/program-supervisor': typeof ProgramSupervisorRoute
@@ -142,6 +151,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/daily-operations'
     | '/dashboard'
+    | '/kiosk'
     | '/manager'
     | '/musammi'
     | '/program-supervisor'
@@ -157,6 +167,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/daily-operations'
     | '/dashboard'
+    | '/kiosk'
     | '/manager'
     | '/musammi'
     | '/program-supervisor'
@@ -172,6 +183,7 @@ export interface FileRouteTypes {
     | '/admin'
     | '/daily-operations'
     | '/dashboard'
+    | '/kiosk'
     | '/manager'
     | '/musammi'
     | '/program-supervisor'
@@ -188,6 +200,7 @@ export interface RootRouteChildren {
   AdminRoute: typeof AdminRoute
   DailyOperationsRoute: typeof DailyOperationsRoute
   DashboardRoute: typeof DashboardRoute
+  KioskRoute: typeof KioskRoute
   ManagerRoute: typeof ManagerRoute
   MusammiRoute: typeof MusammiRoute
   ProgramSupervisorRoute: typeof ProgramSupervisorRoute
@@ -227,6 +240,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof DashboardRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/kiosk': {
+      id: '/kiosk'
+      path: '/kiosk'
+      fullPath: '/kiosk'
+      preLoaderRoute: typeof KioskRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/manager': {
@@ -300,6 +320,7 @@ const rootRouteChildren: RootRouteChildren = {
   AdminRoute: AdminRoute,
   DailyOperationsRoute: DailyOperationsRoute,
   DashboardRoute: DashboardRoute,
+  KioskRoute: KioskRoute,
   ManagerRoute: ManagerRoute,
   MusammiRoute: MusammiRoute,
   ProgramSupervisorRoute: ProgramSupervisorRoute,

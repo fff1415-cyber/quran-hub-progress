@@ -14,6 +14,7 @@ require_once __DIR__ . '/health.php';
 require_once __DIR__ . '/tenant_info.php';
 require_once __DIR__ . '/tenant_resolve.php';
 require_once __DIR__ . '/complex_branding.php';
+require_once __DIR__ . '/kiosk.php';
 
 function route_request(string $method, string $path): void
 {
@@ -183,6 +184,22 @@ function route_request(string $method, string $path): void
     }
     if ($path === '/evaluation-settings' && $method === 'PUT') {
         handle_put_evaluation_settings();
+        return;
+    }
+    if ($path === '/kiosk/session' && $method === 'GET') {
+        handle_kiosk_session();
+        return;
+    }
+    if ($path === '/kiosk/check-in' && $method === 'POST') {
+        handle_kiosk_check_in();
+        return;
+    }
+    if ($path === '/kiosk/settings' && $method === 'GET') {
+        handle_kiosk_get_settings();
+        return;
+    }
+    if ($path === '/kiosk/settings' && $method === 'PUT') {
+        handle_kiosk_put_settings();
         return;
     }
 
