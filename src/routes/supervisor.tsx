@@ -24,7 +24,7 @@ const DEFAULT_SECTION: Record<MainTab, string> = {
 const VALID_SECTIONS: Record<MainTab, string[]> = {
   sard: ["sard", "approvals", "force-retry", "passed"],
   plans: ["plans", "plan-completed"],
-  oversight: ["halaqat", "weekly-tests", "transfers"],
+  oversight: ["halaqat", "halaqa-results", "weekly-tests", "transfers"],
 };
 
 const LEGACY_TAB: Record<string, { main: MainTab; section: string }> = {
@@ -35,6 +35,7 @@ const LEGACY_TAB: Record<string, { main: MainTab; section: string }> = {
   plans: { main: "plans", section: "plans" },
   "plan-completed": { main: "plans", section: "plan-completed" },
   halaqat: { main: "oversight", section: "halaqat" },
+  "halaqa-results": { main: "oversight", section: "halaqa-results" },
   "weekly-tests": { main: "oversight", section: "weekly-tests" },
   transfers: { main: "oversight", section: "transfers" },
 };

@@ -6,10 +6,52 @@ require_once __DIR__ . '/complex_branding.php';
 
 const KIOSK_DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
 
-/** @return array{enabled: bool, token: string} */
+/** @return array<string, mixed> */
 function kiosk_default_settings(): array
 {
-    return ['enabled' => false, 'token' => ''];
+    return [
+        'enabled' => false,
+        'token' => '',
+        'open_minutes_after_asr' => 0,
+        'present_minutes_after_asr' => 20,
+        'close_minutes_after_asr' => 55,
+        'city' => 'Buraydah',
+        'country' => 'Saudi Arabia',
+        'prayer_method' => 4,
+    ];
+}
+
+/** @param array<string, mixed> $decoded */
+function kiosk_normalize_settings(array $decoded): array
+{
+    $defaults = kiosk_default_settings();
+    $open = (int) ($decoded['open_minutes_after_asr'] ?? $defaults['open_minutes_after_asr']);
+    $present = (int) ($decoded['present_minutes_after_asr'] ?? $defaults['present_minutes_after_asr']);
+    $close = (int) ($decoded['close_minutes_after_asr'] ?? $defaults['close_minutes_after_asr']);
+    $method = (int) ($decoded['prayer_method'] ?? $defaults['prayer_method']);
+    $city = trim((string) ($decoded['city'] ?? $defaults['city']));
+    $country = trim((string) ($decoded['country'] ?? $defaults['country']));
+
+    $openMin = max(0, min(180, $open >= 0 ? $open : 0));
+    $presentMin = max(0, min(180, $present >= 0 ? $present : 20));
+    $closeMin = max(1, min(180, $close > 0 ? $close : 55));
+    if ($presentMin < $openMin) {
+        $presentMin = $openMin;
+    }
+    if ($closeMin < $presentMin) {
+        $closeMin = $presentMin;
+    }
+
+    return [
+        'enabled' => !empty($decoded['enabled']),
+        'token' => (string) ($decoded['token'] ?? ''),
+        'open_minutes_after_asr' => $openMin,
+        'present_minutes_after_asr' => $presentMin,
+        'close_minutes_after_asr' => $closeMin,
+        'city' => $city !== '' ? $city : (string) $defaults['city'],
+        'country' => $country !== '' ? $country : (string) $defaults['country'],
+        'prayer_method' => max(1, min(15, $method > 0 ? $method : 4)),
+    ];
 }
 
 function kiosk_settings_key(): string
@@ -35,18 +77,13 @@ function kiosk_load_settings(PDO $pdo, int $complexId): array
     if (!is_array($decoded)) {
         return kiosk_default_settings();
     }
-    return [
-        'enabled' => !empty($decoded['enabled']),
-        'token' => (string) ($decoded['token'] ?? ''),
-    ];
+    return kiosk_normalize_settings($decoded);
 }
 
 function kiosk_save_settings(PDO $pdo, int $complexId, array $settings): void
 {
-    $payload = json_encode([
-        'enabled' => !empty($settings['enabled']),
-        'token' => (string) ($settings['token'] ?? ''),
-    ], JSON_UNESCAPED_UNICODE);
+    $normalized = kiosk_normalize_settings($settings);
+    $payload = json_encode($normalized, JSON_UNESCAPED_UNICODE);
     $tenants = app_state_tenant_enabled($pdo);
     if ($tenants) {
         $sql = 'INSERT INTO app_state (`complex_id`, `key`, value) VALUES (:complex_id, :key, :value)
@@ -139,14 +176,197 @@ function kiosk_working_day_keys(array $workingDays): array
     return $keys;
 }
 
+function kiosk_timezone(): DateTimeZone
+{
+    return new DateTimeZone('Asia/Riyadh');
+}
+
+function kiosk_now(): DateTimeImmutable
+{
+    return new DateTimeImmutable('now', kiosk_timezone());
+}
+
+function kiosk_asr_cache_key(int $complexId, string $isoDate): string
+{
+    return 'kiosk_asr_' . $complexId . '_' . $isoDate;
+}
+
+function kiosk_load_asr_cache(PDO $pdo, int $complexId, string $isoDate): ?string
+{
+    $key = kiosk_asr_cache_key($complexId, $isoDate);
+    $tenants = app_state_tenant_enabled($pdo);
+    if ($tenants) {
+        $stmt = $pdo->prepare('SELECT value FROM app_state WHERE complex_id = ? AND `key` = ? LIMIT 1');
+        $stmt->execute([$complexId, $key]);
+    } else {
+        $stmt = $pdo->prepare('SELECT value FROM app_state WHERE `key` = ? LIMIT 1');
+        $stmt->execute([$key]);
+    }
+    $raw = $stmt->fetchColumn();
+    if ($raw === false || $raw === '') {
+        return null;
+    }
+    $hhmm = trim((string) $raw);
+    return preg_match('/^\d{2}:\d{2}$/', $hhmm) ? $hhmm : null;
+}
+
+function kiosk_save_asr_cache(PDO $pdo, int $complexId, string $isoDate, string $hhmm): void
+{
+    $key = kiosk_asr_cache_key($complexId, $isoDate);
+    $tenants = app_state_tenant_enabled($pdo);
+    if ($tenants) {
+        $sql = 'INSERT INTO app_state (`complex_id`, `key`, value) VALUES (:complex_id, :key, :value)
+                ON DUPLICATE KEY UPDATE value = VALUES(value)';
+        $pdo->prepare($sql)->execute([':complex_id' => $complexId, ':key' => $key, ':value' => $hhmm]);
+    } else {
+        $sql = 'INSERT INTO app_state (`key`, value) VALUES (:key, :value)
+                ON DUPLICATE KEY UPDATE value = VALUES(value)';
+        $pdo->prepare($sql)->execute([':key' => $key, ':value' => $hhmm]);
+    }
+}
+
+/** @param array<string, mixed> $settings */
+function kiosk_fetch_asr_hhmm(PDO $pdo, int $complexId, string $isoDate, array $settings): ?string
+{
+    $cached = kiosk_load_asr_cache($pdo, $complexId, $isoDate);
+    if ($cached !== null) {
+        return $cached;
+    }
+
+    $parts = explode('-', $isoDate);
+    if (count($parts) !== 3) {
+        return null;
+    }
+    [$y, $mo, $d] = $parts;
+    $city = (string) ($settings['city'] ?? 'Buraydah');
+    $country = (string) ($settings['country'] ?? 'Saudi Arabia');
+    $method = (int) ($settings['prayer_method'] ?? 4);
+    $url = 'https://api.aladhan.com/v1/timingsByCity/'
+        . rawurlencode("{$d}-{$mo}-{$y}")
+        . '?city=' . rawurlencode($city)
+        . '&country=' . rawurlencode($country)
+        . '&method=' . $method;
+
+    $ctx = stream_context_create(['http' => ['timeout' => 10, 'ignore_errors' => true]]);
+    $raw = @file_get_contents($url, false, $ctx);
+    if ($raw === false || $raw === '') {
+        return null;
+    }
+    $json = json_decode($raw, true);
+    if (!is_array($json)) {
+        return null;
+    }
+    $asr = $json['data']['timings']['Asr'] ?? null;
+    if (!is_string($asr) || $asr === '') {
+        return null;
+    }
+    $hhmm = substr(explode(' ', trim($asr))[0], 0, 5);
+    if (!preg_match('/^\d{2}:\d{2}$/', $hhmm)) {
+        return null;
+    }
+    kiosk_save_asr_cache($pdo, $complexId, $isoDate, $hhmm);
+    return $hhmm;
+}
+
+function kiosk_datetime_from_hhmm(string $isoDate, string $hhmm): ?DateTimeImmutable
+{
+    $dt = DateTimeImmutable::createFromFormat('Y-m-d H:i', "{$isoDate} {$hhmm}", kiosk_timezone());
+    return $dt instanceof DateTimeImmutable ? $dt : null;
+}
+
+/** @param array<string, mixed> $settings */
+function kiosk_scan_window(PDO $pdo, int $complexId, array $settings): array
+{
+    $now = kiosk_now();
+    $iso = $now->format('Y-m-d');
+    $settings = kiosk_normalize_settings($settings);
+    $openMinutes = (int) $settings['open_minutes_after_asr'];
+    $presentMinutes = (int) $settings['present_minutes_after_asr'];
+    $closeMinutes = (int) $settings['close_minutes_after_asr'];
+    $city = (string) $settings['city'];
+
+    $emptyWindow = [
+        'openMinutesAfterAsr' => $openMinutes,
+        'presentMinutesAfterAsr' => $presentMinutes,
+        'closeMinutesAfterAsr' => $closeMinutes,
+        'secondsUntilOpen' => 0,
+        'secondsUntilPresentEnd' => 0,
+        'secondsUntilClose' => 0,
+        'timezone' => 'Asia/Riyadh',
+        'city' => $city,
+    ];
+
+    $asr = kiosk_fetch_asr_hhmm($pdo, $complexId, $iso, $settings);
+    if ($asr === null) {
+        return [
+            'phase' => 'unknown',
+            'message' => 'تعذّر جلب وقت العصر — تحقق من اتصال الخادم',
+            'asrTime' => null,
+            'openAt' => null,
+            'presentUntilAt' => null,
+            'closeAt' => null,
+            ...$emptyWindow,
+        ];
+    }
+
+    $asrAt = kiosk_datetime_from_hhmm($iso, $asr);
+    if ($asrAt === null) {
+        return [
+            'phase' => 'unknown',
+            'message' => 'تعذّر حساب وقت التحضير',
+            'asrTime' => $asr,
+            'openAt' => null,
+            'presentUntilAt' => null,
+            'closeAt' => null,
+            ...$emptyWindow,
+        ];
+    }
+
+    $openAt = $asrAt->modify("+{$openMinutes} minutes");
+    $presentUntilAt = $asrAt->modify("+{$presentMinutes} minutes");
+    $closeAt = $asrAt->modify("+{$closeMinutes} minutes");
+
+    $openTs = $openAt->getTimestamp();
+    $presentTs = $presentUntilAt->getTimestamp();
+    $closeTs = $closeAt->getTimestamp();
+    $nowTs = $now->getTimestamp();
+
+    if ($nowTs < $openTs) {
+        $phase = 'before';
+        $message = 'لم يُفتح وقت التحضير بعد';
+    } elseif ($nowTs > $closeTs) {
+        $phase = 'closed';
+        $message = 'انتهى وقت التحضير الذاتي';
+    } elseif ($nowTs > $presentTs) {
+        $phase = 'late';
+        $message = '';
+    } else {
+        $phase = 'present';
+        $message = '';
+    }
+
+    return [
+        'phase' => $phase,
+        'message' => $message,
+        'asrTime' => $asr,
+        'openAt' => $openAt->format('H:i'),
+        'presentUntilAt' => $presentUntilAt->format('H:i'),
+        'closeAt' => $closeAt->format('H:i'),
+        ...$emptyWindow,
+        'secondsUntilOpen' => max(0, $openTs - $nowTs),
+        'secondsUntilPresentEnd' => max(0, $presentTs - $nowTs),
+        'secondsUntilClose' => max(0, $closeTs - $nowTs),
+    ];
+}
+
 function kiosk_today_day_key(): string
 {
-    return KIOSK_DAY_KEYS[(int) date('w')] ?? 'sun';
+    return KIOSK_DAY_KEYS[(int) kiosk_now()->format('w')] ?? 'sun';
 }
 
 function kiosk_today_iso(): string
 {
-    return date('Y-m-d');
+    return kiosk_now()->format('Y-m-d');
 }
 
 function kiosk_resolve_week_number(array $weeks, string $isoDate): int
@@ -283,9 +503,11 @@ function handle_kiosk_session(): void
     $token = kiosk_token_from_request();
     $ctx = kiosk_require_token($pdo, $token);
     $cid = $ctx['complex_id'];
+    $settings = kiosk_normalize_settings($ctx['settings']);
     json_response([
         'ok' => true,
         ...kiosk_branding_payload($pdo, $cid),
+        'scanWindow' => kiosk_scan_window($pdo, $cid, $settings),
     ]);
 }
 
@@ -298,6 +520,7 @@ function handle_kiosk_check_in(): void
     $token = kiosk_token_from_request();
     $ctx = kiosk_require_token($pdo, $token);
     $cid = $ctx['complex_id'];
+    $settings = kiosk_normalize_settings($ctx['settings']);
 
     $input = json_input();
     $studentId = trim((string) ($input['studentId'] ?? $input['student_id'] ?? ''));
@@ -329,6 +552,32 @@ function handle_kiosk_check_in(): void
         return;
     }
 
+    $window = kiosk_scan_window($pdo, $cid, $settings);
+    if ($window['phase'] === 'before') {
+        json_response([
+            'status' => 'window_not_open',
+            'message' => (string) ($window['message'] ?: 'لم يُفتح وقت التحضير بعد'),
+            'studentName' => $student['name'],
+        ]);
+        return;
+    }
+    if ($window['phase'] === 'closed') {
+        json_response([
+            'status' => 'window_closed',
+            'message' => (string) ($window['message'] ?: 'انتهى وقت التحضير الذاتي'),
+            'studentName' => $student['name'],
+        ]);
+        return;
+    }
+    if ($window['phase'] === 'unknown') {
+        json_response([
+            'status' => 'error',
+            'message' => (string) ($window['message'] ?: 'تعذّر التحقق من وقت التحضير'),
+        ]);
+        return;
+    }
+
+    $attendance = $window['phase'] === 'late' ? 'late' : 'present';
     $iso = kiosk_today_iso();
     $weekNum = kiosk_resolve_week_number($cal['weeks'], $iso);
     $weekKey = (string) $weekNum;
@@ -353,7 +602,7 @@ function handle_kiosk_check_in(): void
     }
 
     $current = $week['days'][$dayKey]['attendance'] ?? '';
-    if ($current === 'present') {
+    if ($current === 'present' || $current === 'late') {
         json_response([
             'status' => 'already_checked_in',
             'message' => 'تم تحضيرك مسبقاً',
@@ -361,7 +610,7 @@ function handle_kiosk_check_in(): void
         ]);
         return;
     }
-    if ($current === 'late' || $current === 'excused') {
+    if ($current === 'excused') {
         json_response([
             'status' => 'already_checked_in',
             'message' => 'مسجّل مسبقاً اليوم',
@@ -370,9 +619,21 @@ function handle_kiosk_check_in(): void
         return;
     }
 
-    $week['days'][$dayKey]['attendance'] = 'present';
+    $week['days'][$dayKey]['attendance'] = $attendance;
     $grades[$sid][$weekKey] = $week;
     kiosk_save_grades($pdo, $cid, $grades);
+
+    if ($attendance === 'late') {
+        json_response([
+            'status' => 'success_late',
+            'message' => 'تم تسجيل التأخر',
+            'studentName' => $student['name'],
+            'week' => $weekNum,
+            'dayKey' => $dayKey,
+            'attendance' => 'late',
+        ]);
+        return;
+    }
 
     json_response([
         'status' => 'success',
@@ -380,6 +641,7 @@ function handle_kiosk_check_in(): void
         'studentName' => $student['name'],
         'week' => $weekNum,
         'dayKey' => $dayKey,
+        'attendance' => 'present',
     ]);
 }
 
@@ -401,6 +663,7 @@ function handle_kiosk_get_settings(): void
     json_response([
         'settings' => $settings,
         'kioskUrl' => $kioskUrl,
+        'scanWindow' => kiosk_scan_window($pdo, $cid, $settings),
         ...$brand,
     ]);
 }
@@ -423,7 +686,22 @@ function handle_kiosk_put_settings(): void
         $token = bin2hex(random_bytes(24));
     }
 
-    $next = ['enabled' => $enabled, 'token' => $token];
+    $next = kiosk_normalize_settings([
+        'enabled' => $enabled,
+        'token' => $token,
+        'open_minutes_after_asr' => array_key_exists('open_minutes_after_asr', $input)
+            ? $input['open_minutes_after_asr']
+            : ($current['open_minutes_after_asr'] ?? 0),
+        'present_minutes_after_asr' => array_key_exists('present_minutes_after_asr', $input)
+            ? $input['present_minutes_after_asr']
+            : ($current['present_minutes_after_asr'] ?? 20),
+        'close_minutes_after_asr' => array_key_exists('close_minutes_after_asr', $input)
+            ? $input['close_minutes_after_asr']
+            : ($current['close_minutes_after_asr'] ?? 55),
+        'city' => $input['city'] ?? ($current['city'] ?? 'Buraydah'),
+        'country' => $input['country'] ?? ($current['country'] ?? 'Saudi Arabia'),
+        'prayer_method' => $input['prayer_method'] ?? ($current['prayer_method'] ?? 4),
+    ]);
     kiosk_save_settings($pdo, $cid, $next);
 
     handle_kiosk_get_settings();

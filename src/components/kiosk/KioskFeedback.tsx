@@ -18,6 +18,12 @@ const STATUS_STYLES: Record<
     text: "text-emerald-700",
     label: "تم التحضير",
   },
+  success_late: {
+    ring: "ring-amber-400/60",
+    bg: "bg-amber-500/15",
+    text: "text-amber-800",
+    label: "تأخر مسجّل",
+  },
   already_checked_in: {
     ring: "ring-amber-400/60",
     bg: "bg-amber-500/15",
@@ -29,6 +35,18 @@ const STATUS_STYLES: Record<
     bg: "bg-amber-500/15",
     text: "text-amber-800",
     label: "يوم غير دراسي",
+  },
+  window_not_open: {
+    ring: "ring-sky-400/60",
+    bg: "bg-sky-500/15",
+    text: "text-sky-900",
+    label: "لم يُفتح بعد",
+  },
+  window_closed: {
+    ring: "ring-red-400/60",
+    bg: "bg-red-500/15",
+    text: "text-red-700",
+    label: "انتهى الوقت",
   },
   invalid_qr: {
     ring: "ring-red-400/60",

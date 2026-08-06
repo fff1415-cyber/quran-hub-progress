@@ -5,6 +5,7 @@ import { TenantLogo } from "@/components/TenantLogo";
 import {
   buildKioskPageUrl,
   fetchKioskSettings,
+  formatKioskClock,
   saveKioskSettings,
   type KioskSettingsResponse,
 } from "@/lib/kiosk-service";
@@ -14,6 +15,9 @@ export function KioskSettingsPanel() {
   const [busy, setBusy] = useState(false);
   const [data, setData] = useState<KioskSettingsResponse | null>(null);
   const [enabled, setEnabled] = useState(false);
+  const [openMinutes, setOpenMinutes] = useState(0);
+  const [presentMinutes, setPresentMinutes] = useState(20);
+  const [closeMinutes, setCloseMinutes] = useState(55);
 
   const load = async () => {
     setLoading(true);
@@ -21,6 +25,9 @@ export function KioskSettingsPanel() {
       const next = await fetchKioskSettings();
       setData(next);
       setEnabled(next.settings.enabled);
+      setOpenMinutes(next.settings.openMinutesAfterAsr);
+      setPresentMinutes(next.settings.presentMinutesAfterAsr);
+      setCloseMinutes(next.settings.closeMinutesAfterAsr);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "تعذّر تحميل إعدادات الكيوسك");
     } finally {
@@ -32,12 +39,27 @@ export function KioskSettingsPanel() {
     void load();
   }, []);
 
-  const persist = async (input: { enabled?: boolean; regenerate?: boolean }) => {
+  const persist = async (input: {
+    enabled?: boolean;
+    regenerate?: boolean;
+    openMinutesAfterAsr?: number;
+    presentMinutesAfterAsr?: number;
+    closeMinutesAfterAsr?: number;
+  }) => {
     setBusy(true);
     try {
-      const next = await saveKioskSettings(input);
+      const next = await saveKioskSettings({
+        enabled: input.enabled ?? enabled,
+        regenerate: input.regenerate,
+        openMinutesAfterAsr: input.openMinutesAfterAsr ?? openMinutes,
+        presentMinutesAfterAsr: input.presentMinutesAfterAsr ?? presentMinutes,
+        closeMinutesAfterAsr: input.closeMinutesAfterAsr ?? closeMinutes,
+      });
       setData(next);
       setEnabled(next.settings.enabled);
+      setOpenMinutes(next.settings.openMinutesAfterAsr);
+      setPresentMinutes(next.settings.presentMinutesAfterAsr);
+      setCloseMinutes(next.settings.closeMinutesAfterAsr);
       toast.success(input.regenerate ? "تم تجديد الرابط" : "تم حفظ الإعدادات");
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "تعذّر الحفظ");
@@ -69,6 +91,7 @@ export function KioskSettingsPanel() {
   }
 
   const kioskUrl = data?.kioskUrl || (data?.settings.token ? buildKioskPageUrl(data.settings.token) : "");
+  const windowInfo = data?.scanWindow;
 
   return (
     <div className="space-y-6">
@@ -89,7 +112,7 @@ export function KioskSettingsPanel() {
               كيوسك التحضير الذاتي
             </h3>
             <p className="text-sm text-muted-foreground mt-1">
-              رابط مستقل للتحضير عبر مسح بطاقات QR — يحمل شعار وهوية {data?.brandName ?? "المجمع"}.
+              تحكم بفتح التسجيل، نافذة الحضور، نافذة التأخر، ووقت الإغلاق — توقيت بريدة.
             </p>
           </div>
         </div>
@@ -106,6 +129,69 @@ export function KioskSettingsPanel() {
             className="w-5 h-5 accent-primary"
           />
         </label>
+
+        <div className="grid sm:grid-cols-3 gap-3">
+          <div className="rounded-xl border border-border p-4 space-y-2">
+            <label className="text-sm font-medium block">فتح التسجيل بعد العصر (د)</label>
+            <p className="text-xs text-muted-foreground">0 = عند العصر مباشرة</p>
+            <input
+              type="number"
+              min={0}
+              max={180}
+              value={openMinutes}
+              onChange={(e) => setOpenMinutes(Number(e.target.value) || 0)}
+              className="w-full px-3 py-2 rounded-lg bg-input border border-border"
+            />
+          </div>
+          <div className="rounded-xl border border-border p-4 space-y-2">
+            <label className="text-sm font-medium block">نهاية الحضور / بداية التأخر (د)</label>
+            <p className="text-xs text-muted-foreground">بعدها يُسجّل متأخر</p>
+            <input
+              type="number"
+              min={0}
+              max={180}
+              value={presentMinutes}
+              onChange={(e) => setPresentMinutes(Number(e.target.value) || 0)}
+              className="w-full px-3 py-2 rounded-lg bg-input border border-border"
+            />
+          </div>
+          <div className="rounded-xl border border-border p-4 space-y-2">
+            <label className="text-sm font-medium block">إغلاق المسح بعد العصر (د)</label>
+            <p className="text-xs text-muted-foreground">بعدها يُقفل الكيوسك</p>
+            <input
+              type="number"
+              min={1}
+              max={180}
+              value={closeMinutes}
+              onChange={(e) => setCloseMinutes(Number(e.target.value) || 55)}
+              className="w-full px-3 py-2 rounded-lg bg-input border border-border"
+            />
+          </div>
+        </div>
+
+        <p className="text-xs text-muted-foreground rounded-lg bg-secondary/40 px-3 py-2">
+          الترتيب: فتح ≤ حضور ≤ إغلاق. مثال: 0 / 20 / 55 → يفتح عند العصر، حاضر 20 د، متأخر حتى 55 د.
+        </p>
+
+        {windowInfo ? (
+          <div className="text-xs text-muted-foreground rounded-lg bg-secondary/40 px-3 py-2 space-y-0.5">
+            <p>
+              اليوم — العصر {formatKioskClock(windowInfo.asrTime)} · فتح {formatKioskClock(windowInfo.openAt)} ·
+              حضور حتى {formatKioskClock(windowInfo.presentUntilAt)} · إغلاق {formatKioskClock(windowInfo.closeAt)}
+            </p>
+            <p>
+              {windowInfo.phase === "present"
+                ? "مفتوح — نافذة حضور"
+                : windowInfo.phase === "late"
+                  ? "مفتوح — نافذة تأخر"
+                  : windowInfo.phase === "before"
+                    ? "لم يُفتح بعد"
+                    : windowInfo.phase === "closed"
+                      ? "مغلق"
+                      : "—"}
+            </p>
+          </div>
+        ) : null}
 
         <div className="flex flex-wrap gap-2">
           <button

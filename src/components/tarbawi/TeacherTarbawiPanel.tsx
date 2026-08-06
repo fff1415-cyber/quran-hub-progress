@@ -1,15 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AcademicCalendar } from "@/lib/academic-context";
-import { getSelectableWeeks, formatWeekOptionLabel } from "@/lib/academic-context";
-import { weekLabel } from "@/lib/arabic-numbers";
 import { getToken } from "@/lib/cloud-sync";
 import { secureListAppState } from "@/lib/secure-data.functions";
-import {
-  Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
-} from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   clearItemWeekAssignments,
   computeTarbawiStats,
@@ -26,6 +20,7 @@ import {
   requiredTarbawiItemCount,
   saveTarbawiPlan,
   saveTarbawiStore,
+  submitTarbawiContentChange,
   submitTarbawiPlan,
   validateTarbawiPlanEntry,
   type TarbawiHalaqaPlan,
@@ -33,7 +28,7 @@ import {
   type TarbawiSettings,
   type TarbawiStore,
 } from "@/lib/tarbawi-program";
-import { getSessionName } from "@/lib/session-role";
+import { TeacherTarbawiDraftWeekBoard, TeacherTarbawiWeekBoard } from "@/components/tarbawi/TeacherTarbawiWeekBoard";
 import { ClipboardList, LayoutGrid, Loader2, Plus, Send, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -51,7 +46,6 @@ export function TeacherTarbawiPanel({
   halaqaName,
   calendar,
   weekNum,
-  onWeekChange,
   readOnly = false,
 }: Props) {
   const semesterId = calendar.semester?.id ?? "default";
@@ -65,10 +59,11 @@ export function TeacherTarbawiPanel({
 
   const [plan, setPlan] = useState<TarbawiHalaqaPlan>(() => getTarbawiPlan(semesterId, halaqaId));
   const [busy, setBusy] = useState(false);
+  const [contentDraftItems, setContentDraftItems] = useState<TarbawiPlanItem[] | null>(null);
 
-  /** Pull tarbawi store from cloud then refresh settings + plan. */
   const refreshFromCloud = useCallback(async () => {
     const prevStatus = getTarbawiPlan(semesterId, halaqaId).status;
+    const hadContentPending = !!getTarbawiPlan(semesterId, halaqaId).contentChangeRequest;
     const token = getToken();
     if (token) {
       try {
@@ -90,6 +85,10 @@ export function TeacherTarbawiPanel({
     if (prevStatus === "submitted" && nextPlan.status === "approved") {
       toast.success("تم اعتماد الخطة — يمكنك البدء بالتنفيذ");
     }
+    if (hadContentPending && !nextPlan.contentChangeRequest) {
+      setContentDraftItems(null);
+      toast.success("تم اعتماد تعديل الفقرات");
+    }
     return nextPlan;
   }, [semesterId, halaqaId]);
 
@@ -97,9 +96,8 @@ export function TeacherTarbawiPanel({
     void refreshFromCloud();
   }, [refreshFromCloud]);
 
-  /** Poll while waiting for supervisor approval; also refresh when tab regains focus. */
   useEffect(() => {
-    if (plan.status !== "submitted") return;
+    if (plan.status !== "submitted" && !plan.contentChangeRequest) return;
     const id = window.setInterval(() => { void refreshFromCloud(); }, 12000);
     const onVisible = () => {
       if (document.visibilityState === "visible") void refreshFromCloud();
@@ -109,26 +107,43 @@ export function TeacherTarbawiPanel({
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [plan.status, refreshFromCloud]);
+  }, [plan.status, plan.contentChangeRequest, refreshFromCloud]);
 
   const isApproved = plan.status === "approved";
   const isSubmitted = plan.status === "submitted";
   const isDraft = plan.status === "draft" || plan.status === "rejected";
   const canEditPlan = isDraft && !readOnly;
   const canExecute = isApproved && !readOnly;
+  const contentChangePending = !!plan.contentChangeRequest;
   const distributed = isPlanDistributed(plan);
   const requiredCount = requiredTarbawiItemCount(spanWeeks, settings.weeklyRequiredCount);
   const entryItems = plan.items.slice(0, requiredCount);
 
-  const stats = computeTarbawiStats(plan, spanWeeks, weekNum);
   const semesterStats = computeTarbawiStats(plan, spanWeeks);
+  const weekStats = semesterStats.byWeek;
 
-  const weekItems = plan.items.filter((i) => i.weekNumber === weekNum);
-  const selectableWeeks = getSelectableWeeks(calendar).filter((w) => w.week_number <= spanWeeks);
+  const displayPlan = contentDraftItems
+    ? { ...plan, items: contentDraftItems }
+    : plan;
+
+  const hasContentDraft = contentDraftItems !== null
+    && JSON.stringify(contentDraftItems.map(({ paragraphTypeId, topic, id }) => ({ id, paragraphTypeId, topic })))
+      !== JSON.stringify(plan.items.map(({ paragraphTypeId, topic, id }) => ({ id, paragraphTypeId, topic })));
 
   const persist = (items: TarbawiPlanItem[]) => {
     const next = saveTarbawiPlan({ ...plan, items });
     setPlan(next);
+  };
+
+  const handleBoardPlanChange = (updated: TarbawiHalaqaPlan) => {
+    setPlan(updated);
+    setContentDraftItems((prev) => {
+      if (!prev) return null;
+      return prev.map((item) => {
+        const u = updated.items.find((i) => i.id === item.id);
+        return u ? { ...item, weekNumber: u.weekNumber, executed: u.executed, executor: u.executor, beneficiaries: u.beneficiaries } : item;
+      });
+    });
   };
 
   const updateItem = (id: string, patch: Partial<TarbawiPlanItem>) => {
@@ -176,6 +191,21 @@ export function TeacherTarbawiPanel({
     }
   };
 
+  const handleSubmitContentChange = () => {
+    if (!contentDraftItems) return;
+    setBusy(true);
+    try {
+      const next = submitTarbawiContentChange(plan, contentDraftItems, halaqaName);
+      setPlan(next);
+      setContentDraftItems(null);
+      toast.success("أُرسلت التعديلات لمشرف البرامج");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "تعذّر الإرسال");
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (isSubmitted) {
     return (
       <div className="glass-card rounded-2xl p-8 text-center space-y-3">
@@ -206,8 +236,9 @@ export function TeacherTarbawiPanel({
                 </span>
               )}
               {canEditPlan && !distributed && "أضف كل الفقرات (نوع + موضوع) ثم وزّعها على الأسابيع"}
-              {canEditPlan && distributed && "راجع التوزيع على الأسابيع ثم أرسل للاعتماد"}
-              {isApproved && "مرحلة التنفيذ — سجّل التنفيذ والملقي وعدد المستفيدين"}
+              {canEditPlan && distributed && "راجع التوزيع على الأسابيع (اسحب لنقل الفقرات) ثم أرسل للاعتماد"}
+              {isApproved && !contentChangePending && "مرحلة التنفيذ — اسحب لنقل الفقر بين الأسابيع، أو عدّل النوع/الموضوع عبر أيقونة القلم"}
+              {isApproved && contentChangePending && "تعديل الفقرات بانتظار اعتماد مشرف البرامج — نقل الأسبوع بالسحب متاح"}
               {plan.status === "rejected" && (
                 <span className="text-destructive block mt-1">مرفوض: {plan.rejectionNote}</span>
               )}
@@ -215,15 +246,36 @@ export function TeacherTarbawiPanel({
           </div>
           <div className="flex flex-wrap gap-2 text-center">
             {isApproved && (
-              <>
-                <StatPill label="تنفيذ الأسبوع" value={`${stats.pct}%`} />
-                <StatPill label="تنفيذ الفصل" value={`${semesterStats.pct}%`} />
-              </>
+              <StatPill label="تنفيذ الفصل" value={`${semesterStats.pct}%`} />
             )}
             <StatPill label="مدة الخطة" value={spanLabel} />
             <StatPill label="فقرات/أسبوع" value={String(settings.weeklyRequiredCount)} />
           </div>
         </div>
+
+        {contentChangePending && (
+          <div className="mb-4 p-3 rounded-xl bg-warning/10 border border-warning/30 text-sm flex flex-wrap items-center justify-between gap-2">
+            <span>تعديل الفقرات (نوع/موضوع) بانتظار اعتماد المشرف</span>
+            <Button variant="outline" size="sm" onClick={() => void refreshFromCloud()}>
+              تحديث
+            </Button>
+          </div>
+        )}
+
+        {hasContentDraft && !contentChangePending && (
+          <div className="mb-4 p-3 rounded-xl bg-primary/10 border border-primary/30 flex flex-wrap items-center justify-between gap-2">
+            <span className="text-sm">لديك تعديلات على الفقرات لم تُرسل بعد</span>
+            <div className="flex gap-2">
+              <Button variant="outline" size="sm" onClick={() => setContentDraftItems(null)}>
+                تجاهل
+              </Button>
+              <Button size="sm" className="gap-1" disabled={busy} onClick={handleSubmitContentChange}>
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                إرسال التعديلات للاعتماد
+              </Button>
+            </div>
+          </div>
+        )}
 
         {canEditPlan && (
           <div className="mb-4 p-4 rounded-xl bg-primary/5 border border-primary/20 space-y-2">
@@ -249,241 +301,134 @@ export function TeacherTarbawiPanel({
           </div>
         )}
 
-        {isApproved && (
-          <div className="flex flex-wrap items-center gap-3 mb-4">
-            <span className="text-sm text-muted-foreground">الأسبوع:</span>
-            <Select value={String(weekNum)} onValueChange={(v) => onWeekChange(Number(v))}>
-              <SelectTrigger className="w-[200px]">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {selectableWeeks.map((w) => (
-                  <SelectItem key={w.week_number} value={String(w.week_number)}>
-                    {formatWeekOptionLabel(w)}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm border-collapse min-w-[640px]">
-            <thead>
-              <tr className="bg-primary/10 text-right">
-                {(distributed || isApproved) && (
-                  <th className="p-2 border border-border w-24">الأسبوع</th>
-                )}
-                <th className="p-2 border border-border">نوع الفقرة</th>
-                <th className="p-2 border border-border">الموضوع</th>
-                {isApproved && (
-                  <>
-                    <th className="p-2 border border-border w-16">تنفيذ</th>
-                    <th className="p-2 border border-border">الملقي</th>
-                    <th className="p-2 border border-border w-24">المستفيدون</th>
-                  </>
-                )}
-                {canEditPlan && !distributed && <th className="p-2 border border-border w-12" />}
-              </tr>
-            </thead>
-            <tbody>
-              {renderTableRows({
-                plan,
-                canEditPlan,
-                distributed,
-                isApproved,
-                weekNum,
-                settings,
-                canExecute,
-                entryItems,
-                weekItems,
-                updateItem,
-                removeItem,
-              })}
-            </tbody>
-          </table>
-        </div>
-
         {canEditPlan && !distributed && (
-          <div className="flex flex-wrap gap-2 mt-4">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addItem}
-              disabled={entryItems.length >= requiredCount}
-              className="gap-1"
-            >
-              <Plus className="w-4 h-4" /> إضافة فقرة
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="gap-1"
-              disabled={entryItems.length < requiredCount}
-              onClick={handleDistribute}
-            >
-              <LayoutGrid className="w-4 h-4" />
-              توزيع على الأسابيع
-            </Button>
-          </div>
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse min-w-[480px]">
+                <thead>
+                  <tr className="bg-primary/10 text-right">
+                    <th className="p-2 border border-border">نوع الفقرة</th>
+                    <th className="p-2 border border-border">الموضوع</th>
+                    <th className="p-2 border border-border w-12" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {entryItems.length === 0 ? (
+                    <tr>
+                      <td colSpan={3} className="p-6 text-center text-muted-foreground border border-border">
+                        ابدأ بإضافة الفقرات — نوع الفقرة والموضوع فقط
+                      </td>
+                    </tr>
+                  ) : (
+                    entryItems.map((item) => (
+                      <tr key={item.id} className="bg-secondary/20">
+                        <td className="p-2 border border-border">
+                          <select
+                            className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm"
+                            value={item.paragraphTypeId}
+                            onChange={(e) => updateItem(item.id, { paragraphTypeId: e.target.value })}
+                          >
+                            {settings.paragraphTypes.map((t) => (
+                              <option key={t.id} value={t.id}>{t.label}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="p-2 border border-border">
+                          <Input
+                            value={item.topic}
+                            onChange={(e) => updateItem(item.id, { topic: e.target.value })}
+                            placeholder="موضوع البرنامج"
+                            className="h-8"
+                          />
+                        </td>
+                        <td className="p-2 border border-border">
+                          <button
+                            type="button"
+                            onClick={() => removeItem(item.id)}
+                            className="p-1 text-destructive hover:bg-destructive/10 rounded"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+            <div className="flex flex-wrap gap-2 mt-4">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={addItem}
+                disabled={entryItems.length >= requiredCount}
+                className="gap-1"
+              >
+                <Plus className="w-4 h-4" /> إضافة فقرة
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="gap-1"
+                disabled={entryItems.length < requiredCount}
+                onClick={handleDistribute}
+              >
+                <LayoutGrid className="w-4 h-4" />
+                توزيع على الأسابيع
+              </Button>
+            </div>
+          </>
         )}
 
         {canEditPlan && distributed && (
-          <div className="flex flex-wrap gap-2 mt-4">
-            <Button type="button" variant="outline" size="sm" onClick={handleEditList}>
-              تعديل القائمة
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              className="gap-1 gold-gradient text-primary-foreground"
-              disabled={busy}
-              onClick={handleSubmit}
-            >
-              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-              إرسال الخطة للاعتماد
-            </Button>
-          </div>
+          <>
+            <TeacherTarbawiDraftWeekBoard
+              plan={plan}
+              settings={settings}
+              calendar={calendar}
+              spanWeeks={spanWeeks}
+              currentWeekNum={weekNum}
+              canEditPlan={canEditPlan}
+              onPlanChange={(p) => setPlan(p)}
+            />
+            <div className="flex flex-wrap gap-2 mt-4">
+              <Button type="button" variant="outline" size="sm" onClick={handleEditList}>
+                تعديل القائمة
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                className="gap-1 gold-gradient text-primary-foreground"
+                disabled={busy}
+                onClick={handleSubmit}
+              >
+                {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                إرسال الخطة للاعتماد
+              </Button>
+            </div>
+          </>
         )}
 
         {isApproved && (
-          <p className="text-xs text-muted-foreground mt-3">
-            نفّذ فقرات {weekLabel(weekNum)} — حدّد المنفّذ وعدد المستفيدين
-          </p>
+          <TeacherTarbawiWeekBoard
+            plan={displayPlan}
+            settings={settings}
+            calendar={calendar}
+            spanWeeks={spanWeeks}
+            currentWeekNum={weekNum}
+            weekStats={weekStats}
+            canExecute={canExecute}
+            canReorder={!readOnly}
+            canEditContent={!readOnly}
+            contentChangePending={contentChangePending}
+            onPlanChange={handleBoardPlanChange}
+            onContentDraft={(items) => setContentDraftItems(items)}
+          />
         )}
       </div>
     </div>
   );
-}
-
-function renderTableRows({
-  plan,
-  canEditPlan,
-  distributed,
-  isApproved,
-  weekNum,
-  settings,
-  canExecute,
-  entryItems,
-  weekItems,
-  updateItem,
-  removeItem,
-}: {
-  plan: TarbawiHalaqaPlan;
-  canEditPlan: boolean;
-  distributed: boolean;
-  isApproved: boolean;
-  weekNum: number;
-  settings: ReturnType<typeof getTarbawiSettings>;
-  canExecute: boolean;
-  entryItems: TarbawiPlanItem[];
-  weekItems: TarbawiPlanItem[];
-  updateItem: (id: string, patch: Partial<TarbawiPlanItem>) => void;
-  removeItem: (id: string) => void;
-}) {
-  let rows: TarbawiPlanItem[];
-
-  if (isApproved) {
-    rows = weekItems;
-  } else if (distributed) {
-    rows = [...plan.items].sort((a, b) => a.weekNumber - b.weekNumber || 0);
-  } else {
-    rows = entryItems;
-  }
-
-  if (rows.length === 0) {
-    return (
-      <tr>
-        <td
-          colSpan={canEditPlan && !distributed ? 3 : isApproved ? 6 : 4}
-          className="p-6 text-center text-muted-foreground border border-border"
-        >
-          {canEditPlan && !distributed
-            ? "ابدأ بإضافة الفقرات — نوع الفقرة والموضوع فقط"
-            : "لا توجد فقرات"}
-        </td>
-      </tr>
-    );
-  }
-
-  return rows.map((item) => (
-    <tr key={item.id} className="bg-secondary/20">
-      {(distributed || isApproved) && (
-        <td className="p-2 border border-border text-center font-medium">
-          {weekLabel(item.weekNumber)}
-        </td>
-      )}
-      <td className="p-2 border border-border">
-        {canEditPlan && !distributed ? (
-          <select
-            className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm"
-            value={item.paragraphTypeId}
-            onChange={(e) => updateItem(item.id, { paragraphTypeId: e.target.value })}
-          >
-            {settings.paragraphTypes.map((t) => (
-              <option key={t.id} value={t.id}>{t.label}</option>
-            ))}
-          </select>
-        ) : (
-          paragraphTypeLabel(settings, item.paragraphTypeId)
-        )}
-      </td>
-      <td className="p-2 border border-border">
-        {canEditPlan && !distributed ? (
-          <Input
-            value={item.topic}
-            onChange={(e) => updateItem(item.id, { topic: e.target.value })}
-            placeholder="موضوع البرنامج"
-            className="h-8"
-          />
-        ) : (
-          item.topic
-        )}
-      </td>
-      {isApproved && (
-        <>
-          <td className="p-2 border border-border text-center">
-            <Checkbox
-              checked={item.executed}
-              disabled={!canExecute}
-              onCheckedChange={(v) => updateItem(item.id, { executed: !!v })}
-            />
-          </td>
-          <td className="p-2 border border-border">
-            <Input
-              value={item.executor}
-              disabled={!canExecute}
-              onChange={(e) => updateItem(item.id, { executor: e.target.value })}
-              placeholder={getSessionName("")}
-              className="h-8"
-            />
-          </td>
-          <td className="p-2 border border-border">
-            <Input
-              type="number"
-              min={0}
-              value={item.beneficiaries || ""}
-              disabled={!canExecute}
-              onChange={(e) => updateItem(item.id, { beneficiaries: Number(e.target.value) || 0 })}
-              className="h-8"
-            />
-          </td>
-        </>
-      )}
-      {canEditPlan && !distributed && (
-        <td className="p-2 border border-border">
-          <button
-            type="button"
-            onClick={() => removeItem(item.id)}
-            className="p-1 text-destructive hover:bg-destructive/10 rounded"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        </td>
-      )}
-    </tr>
-  ));
 }
 
 function StatPill({ label, value }: { label: string; value: string }) {

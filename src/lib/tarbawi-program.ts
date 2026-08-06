@@ -12,6 +12,12 @@ export type TarbawiPlanSpan = "full" | 2 | 4 | 6 | 8 | 10 | 12;
 
 export type TarbawiPlanStatus = "draft" | "submitted" | "approved" | "rejected";
 
+export interface TarbawiContentChangeRequest {
+  items: TarbawiPlanItem[];
+  submittedAt: string;
+  note?: string;
+}
+
 export interface TarbawiSettings {
   semesterId: string;
   paragraphTypes: TarbawiParagraphType[];
@@ -40,6 +46,7 @@ export interface TarbawiHalaqaPlan {
   approvedAt?: string;
   approvedBy?: string;
   rejectionNote?: string;
+  contentChangeRequest?: TarbawiContentChangeRequest;
   updatedAt: string;
 }
 
@@ -367,6 +374,87 @@ export function validateTarbawiPlanDraft(
     }
   }
   return null;
+}
+
+export function moveTarbawiItemToWeek(
+  plan: TarbawiHalaqaPlan,
+  itemId: string,
+  weekNumber: number,
+): TarbawiHalaqaPlan {
+  if (weekNumber < 1) return plan;
+  return saveTarbawiPlan({
+    ...plan,
+    items: plan.items.map((i) => (i.id === itemId ? { ...i, weekNumber } : i)),
+  });
+}
+
+export function submitTarbawiContentChange(
+  plan: TarbawiHalaqaPlan,
+  items: TarbawiPlanItem[],
+  halaqaName: string,
+): TarbawiHalaqaPlan {
+  if (plan.status !== "approved") {
+    throw new Error("التعديل على الفقرات متاح بعد اعتماد الخطة فقط");
+  }
+  const next = saveTarbawiPlan({
+    ...plan,
+    contentChangeRequest: {
+      items: items.map((i) => ({ ...i })),
+      submittedAt: new Date().toISOString(),
+    },
+  });
+  pushNotification({
+    message: `تعديل فقرات البرنامج التربوي لحلقة «${halaqaName}» بانتظار الاعتماد`,
+    type: "info",
+    targetRole: "program_supervisor",
+  });
+  return next;
+}
+
+export function approveTarbawiContentChange(
+  plan: TarbawiHalaqaPlan,
+  approverName: string,
+  halaqaName: string,
+): TarbawiHalaqaPlan {
+  const req = plan.contentChangeRequest;
+  if (!req) throw new Error("لا يوجد طلب تعديل");
+  const next = saveTarbawiPlan({
+    ...plan,
+    items: req.items.map((i) => ({ ...i })),
+    contentChangeRequest: undefined,
+    approvedAt: new Date().toISOString(),
+    approvedBy: approverName,
+  });
+  pushNotification({
+    message: `تم اعتماد تعديل فقرات البرنامج التربوي لحلقة «${halaqaName}»`,
+    type: "info",
+    targetHalaqaId: plan.halaqaId,
+  });
+  return next;
+}
+
+export function rejectTarbawiContentChange(
+  plan: TarbawiHalaqaPlan,
+  note: string,
+  halaqaName: string,
+): TarbawiHalaqaPlan {
+  const next = saveTarbawiPlan({
+    ...plan,
+    contentChangeRequest: undefined,
+  });
+  pushNotification({
+    message: `رُفض تعديل فقرات البرنامج التربوي لحلقة «${halaqaName}»: ${note.trim() || "يُرجى المراجعة"}`,
+    type: "info",
+    targetHalaqaId: plan.halaqaId,
+  });
+  return next;
+}
+
+export function listContentChangeTarbawiPlans(semesterId: string): TarbawiHalaqaPlan[] {
+  const store = readStore();
+  return Object.values(store.plans).filter(
+    (p) => p.semesterId === semesterId && p.status === "approved" && p.contentChangeRequest,
+  );
 }
 
 export function submitTarbawiPlan(

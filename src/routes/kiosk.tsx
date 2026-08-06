@@ -1,11 +1,32 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { TenantLogo } from "@/components/TenantLogo";
 import { KioskScanner } from "@/components/kiosk/KioskScanner";
-import { fetchKioskSession, type KioskSession } from "@/lib/kiosk-service";
+import {
+  fetchKioskSession,
+  type KioskScanWindow,
+  type KioskSession,
+} from "@/lib/kiosk-service";
 import { applyTenantTheme } from "@/lib/tenant";
 import type { BrandThemeKey } from "@/lib/brand-themes";
+
+const EMPTY_WINDOW: KioskScanWindow = {
+  phase: "unknown",
+  message: "",
+  asrTime: null,
+  openAt: null,
+  presentUntilAt: null,
+  closeAt: null,
+  openMinutesAfterAsr: 0,
+  presentMinutesAfterAsr: 20,
+  closeMinutesAfterAsr: 55,
+  secondsUntilOpen: 0,
+  secondsUntilPresentEnd: 0,
+  secondsUntilClose: 0,
+  timezone: "Asia/Riyadh",
+  city: "Buraydah",
+};
 
 export const Route = createFileRoute("/kiosk")({
   validateSearch: (search: Record<string, unknown>) => ({
@@ -19,7 +40,41 @@ function KioskPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [branding, setBranding] = useState<KioskSession | null>(null);
+  const [scanWindow, setScanWindow] = useState<KioskScanWindow>(EMPTY_WINDOW);
+  const [windowFetchedAt, setWindowFetchedAt] = useState(() => Date.now());
   const [sessionReady, setSessionReady] = useState(false);
+  const tokenRef = useRef(token);
+
+  useEffect(() => {
+    tokenRef.current = token;
+  }, [token]);
+
+  const applySession = useCallback((session: KioskSession) => {
+    setBranding(session);
+    setScanWindow(session.scanWindow);
+    setWindowFetchedAt(Date.now());
+    applyTenantTheme({
+      primary_color: session.primaryColor,
+      theme_key: session.themeKey as BrandThemeKey,
+    });
+    if (typeof document !== "undefined") {
+      document.title = `تحضير — ${session.brandName}`;
+    }
+  }, []);
+
+  const refreshWindow = useCallback(async () => {
+    const t = tokenRef.current;
+    if (!t) {
+      return;
+    }
+    try {
+      const session = await fetchKioskSession(t);
+      applySession(session);
+      setError(null);
+    } catch {
+      /* keep last known window on poll failure */
+    }
+  }, [applySession]);
 
   useEffect(() => {
     if (!token) {
@@ -35,14 +90,7 @@ function KioskPage() {
         if (cancelled) {
           return;
         }
-        setBranding(session);
-        applyTenantTheme({
-          primary_color: session.primaryColor,
-          theme_key: session.themeKey as BrandThemeKey,
-        });
-        if (typeof document !== "undefined") {
-          document.title = `تحضير — ${session.brandName}`;
-        }
+        applySession(session);
         setError(null);
       } catch (e) {
         if (!cancelled) {
@@ -58,7 +106,7 @@ function KioskPage() {
     return () => {
       cancelled = true;
     };
-  }, [token]);
+  }, [applySession, token]);
 
   if (loading) {
     return (
@@ -102,7 +150,10 @@ function KioskPage() {
         <KioskScanner
           token={token}
           sessionReady={sessionReady}
+          scanWindow={scanWindow}
+          windowFetchedAt={windowFetchedAt}
           onActivateSession={async () => setSessionReady(true)}
+          onRefreshWindow={refreshWindow}
         />
       </main>
 
