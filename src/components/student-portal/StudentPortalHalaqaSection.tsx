@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 import type { Halaqa } from "@/lib/mock-data";
 import type { AcademicCalendar } from "@/lib/academic-context";
-import type { ComplexFaceTotals, DailyComplexAttendance } from "@/lib/student-portal-data";
-import { formatFaceCount } from "@/lib/plan-daily-faces";
+import type { ComplexFaceTotals, ComplexFaceTargets, DailyComplexAttendance } from "@/lib/student-portal-data";
+import { formatFaceCount, facePct } from "@/lib/plan-daily-faces";
 import { formatOverallPercent } from "@/lib/semester-grading";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { BookOpen, Layers, Users } from "lucide-react";
@@ -18,6 +18,7 @@ export function StudentPortalHalaqaSection({
   weekNum,
   dailyAttendance,
   complexFaces,
+  complexFaceTargets,
   showWeekly,
   showDailyAttendance,
   showComplexFaces,
@@ -27,6 +28,7 @@ export function StudentPortalHalaqaSection({
   weekNum: number;
   dailyAttendance: DailyComplexAttendance | null;
   complexFaces: ComplexFaceTotals | null;
+  complexFaceTargets?: ComplexFaceTargets | null;
   showWeekly: boolean;
   showDailyAttendance: boolean;
   showComplexFaces: boolean;
@@ -80,12 +82,23 @@ export function StudentPortalHalaqaSection({
                     {formatFaceCount(complexFaces.hifz)}
                     <span className="text-sm font-normal text-muted-foreground mr-1">وجه</span>
                   </span>
+                  {complexFaceTargets && (
+                    <div className="text-[10px] text-muted-foreground mt-1">
+                      / {formatFaceCount(complexFaceTargets.hifz)} ({facePct(complexFaces.hifz, complexFaceTargets.hifz)}%)
+                    </div>
+                  )}
                 </ComplexStatCard>
                 <ComplexStatCard label="أوجه الربط والمراجعة" sublabel="تراكمي — الفصل">
                   <span className="text-2xl font-bold text-primary">
                     {formatFaceCount(complexFaces.rabt + complexFaces.muraja)}
                     <span className="text-sm font-normal text-muted-foreground mr-1">وجه</span>
                   </span>
+                  {complexFaceTargets && (
+                    <div className="text-[10px] text-muted-foreground mt-1">
+                      / {formatFaceCount(complexFaceTargets.rabt + complexFaceTargets.muraja)} (
+                      {facePct(complexFaces.rabt + complexFaces.muraja, complexFaceTargets.rabt + complexFaceTargets.muraja)}%)
+                    </div>
+                  )}
                 </ComplexStatCard>
               </>
             )}

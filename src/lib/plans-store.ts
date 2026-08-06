@@ -12,7 +12,7 @@ import type {
   TapValue,
 } from "@/lib/plan-types";
 import { nextSegmentsToApply, nextSegmentForTask, segmentsForTap } from "@/lib/plan-translator";
-import { DEFAULT_FACE_QUOTAS, normalizeFaceQuotas, faceQuotasFromPlan } from "@/lib/plan-daily-faces";
+import { resolveFaceQuotas, normalizeFaceQuotas } from "@/lib/plan-daily-faces";
 import { getCalendarIsoDate } from "@/lib/operational-date";
 
 const KEY_PLANS = "qshatawi_education_plans_v1";
@@ -42,8 +42,10 @@ function write<T>(key: string, value: T): void {
   localStorage.setItem(key, JSON.stringify(value));
 }
 
-function withFaceDefaults<T extends Partial<import("@/lib/plan-types").DailyFaceQuotas>>(row: T): T & import("@/lib/plan-types").DailyFaceQuotas {
-  return { ...row, ...normalizeFaceQuotas(row) };
+function withFaceDefaults<T extends Partial<import("@/lib/plan-types").DailyFaceQuotas> & { track?: import("@/lib/plan-types").PlanTrack }>(
+  row: T,
+): T & import("@/lib/plan-types").DailyFaceQuotas {
+  return { ...row, ...(row.track ? resolveFaceQuotas(row.track) : normalizeFaceQuotas(row)) };
 }
 
 export function localListPlans(): EducationPlan[] {
@@ -113,11 +115,12 @@ export function localAssignPlan(
 ): void {
   const plans = localListPlans();
   const plan = plans.find((p) => p.id === planId);
-  const quotas = normalizeFaceQuotas(options?.face_quotas ?? (plan ? faceQuotasFromPlan(plan) : undefined));
+  const quotas = plan ? resolveFaceQuotas(plan.track) : normalizeFaceQuotas(undefined);
   const list = read<StudentPlanAssignment[]>(KEY_ASSIGNMENTS, []);
+  const now = new Date().toISOString();
   const next = list.map((a) =>
     a.student_id === studentId && a.status === "active"
-      ? { ...a, status: "transferred" as const }
+      ? { ...a, status: "transferred" as const, transferred_at: now }
       : a,
   );
   next.push({
@@ -137,10 +140,12 @@ export function localAssignPlan(
 
 export function localPatchAssignmentQuotas(
   studentId: string,
-  quotas: Partial<import("@/lib/plan-types").DailyFaceQuotas>,
+  _quotas: Partial<import("@/lib/plan-types").DailyFaceQuotas>,
 ): void {
   const list = read<StudentPlanAssignment[]>(KEY_ASSIGNMENTS, []);
-  const normalized = normalizeFaceQuotas(quotas);
+  const active = list.find((a) => a.student_id === studentId && ["active", "frozen"].includes(a.status));
+  const plan = active ? localListPlans().find((p) => p.id === active.plan_id) : undefined;
+  const normalized = plan ? resolveFaceQuotas(plan.track) : normalizeFaceQuotas(undefined);
   write(
     KEY_ASSIGNMENTS,
     list.map((a) => {
@@ -163,6 +168,7 @@ export function localPatchAssignment(
         ...a,
         status,
         frozen_at: status === "frozen" ? new Date().toISOString() : null,
+        transferred_at: status === "transferred" ? new Date().toISOString() : a.transferred_at,
       };
     }),
   );

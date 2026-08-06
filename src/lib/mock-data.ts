@@ -51,6 +51,8 @@ export interface WeekRecord {
   compensationFaces?: number;
   /** Plan hifz segment indexes applied via weekly compensation (for revert on decrease). */
   compensationPlanSegments?: number[];
+  /** Extra muraja faces (10–60) recorded as weekly compensation. */
+  compensationMurajaFaces?: number;
 }
 
 export type GradesStore = Record<string, Record<number, WeekRecord>>;
@@ -146,7 +148,15 @@ export function emptyWeek(workingDayKeys?: Iterable<string>): WeekRecord {
   for (const key of defaultWorkingDayKeys(workingDayKeys)) {
     days[key] = emptyDayEntry();
   }
-  return { days, testMuraja: false, testRabt: false, sard: false, compensationFaces: 0, compensationPlanSegments: [] };
+  return {
+    days,
+    testMuraja: false,
+    testRabt: false,
+    sard: false,
+    compensationFaces: 0,
+    compensationPlanSegments: [],
+    compensationMurajaFaces: 0,
+  };
 }
 
 /** Ensure all semester working-day slots exist (not extra fri/sat unless configured). */
@@ -409,6 +419,14 @@ export interface SardQueueItem {
   /** When supervisor forwarded to musammi — FIFO order for musammi queue. */
   supervisorForwardedAt?: string;
   planTitle?: string;
+  /** When sard was passed (full ISO). */
+  passedAt?: string;
+  /** Plan closed on pass (previous plan title). */
+  closedPlanTitle?: string;
+  /** Next plan after auto-advance. */
+  newPlanTitle?: string;
+  newPlanStartDate?: string;
+  newPlanAssignedAt?: string;
 }
 
 export function loadSardQueue(): SardQueueItem[] {
@@ -606,6 +624,16 @@ export const COMPENSATION_FACE_OPTIONS: { value: number; label: string }[] = [
   { value: 4, label: "4" },
   { value: 4.5, label: "4½" },
   { value: 5, label: "5" },
+];
+
+export const COMPENSATION_MURAJA_FACE_OPTIONS: { value: number; label: string }[] = [
+  { value: 0, label: "—" },
+  { value: 10, label: "10" },
+  { value: 20, label: "20" },
+  { value: 30, label: "30" },
+  { value: 40, label: "40" },
+  { value: 50, label: "50" },
+  { value: 60, label: "60" },
 ];
 
 /** Bonus points for weekly compensation faces (1 face = one segment hifz score). */

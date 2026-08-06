@@ -1,7 +1,8 @@
 import type { AcademicCalendar } from "@/lib/academic-context";
-import { getElapsedSemesterDays } from "@/lib/semester-grading";
-import type { DailyFaceQuotas, StudentPlanAssignment } from "@/lib/plan-types";
-import type { DayEntry, GradesStore, HifzValue } from "@/lib/mock-data";
+import { getElapsedSemesterDays, getTotalSemesterWorkingDays } from "@/lib/semester-grading";
+import type { DailyFaceQuotas, PlanTrack, StudentPlanAssignment } from "@/lib/plan-types";
+import type { DayEntry, GradesStore, HifzValue, Student } from "@/lib/mock-data";
+import type { EducationPlan } from "@/lib/plan-types";
 
 /** Fixed hifz tap → faces (not configurable per level). */
 export const FIXED_HIFZ_FACES = {
@@ -10,9 +11,19 @@ export const FIXED_HIFZ_FACES = {
   two: 2,
 } as const;
 
+/** Official daily face quotas by track (option A — fixed, not per-plan editable). */
+export const TRACK_FACE_QUOTAS: Record<
+  PlanTrack,
+  Pick<DailyFaceQuotas, "daily_hifz_faces" | "daily_rabt_faces" | "daily_muraja_faces">
+> = {
+  silver: { daily_hifz_faces: 0.5, daily_rabt_faces: 10, daily_muraja_faces: 10 },
+  gold: { daily_hifz_faces: 1, daily_rabt_faces: 20, daily_muraja_faces: 20 },
+};
+
+/** @deprecated use TRACK_FACE_QUOTAS — kept for legacy imports */
 export const DEFAULT_FACE_QUOTAS: Pick<DailyFaceQuotas, "daily_rabt_faces" | "daily_muraja_faces"> = {
-  daily_rabt_faces: 2,
-  daily_muraja_faces: 2,
+  daily_rabt_faces: TRACK_FACE_QUOTAS.gold.daily_rabt_faces,
+  daily_muraja_faces: TRACK_FACE_QUOTAS.gold.daily_muraja_faces,
 };
 
 export interface FaceProgressSummary {
@@ -25,16 +36,45 @@ export interface FaceProgressSummary {
   murajaTarget: number;
 }
 
+/** Single source of truth — all face targets derive from student track. */
+export function resolveFaceQuotas(levelType: PlanTrack | Student["levelType"]): DailyFaceQuotas {
+  const t = TRACK_FACE_QUOTAS[levelType];
+  return {
+    daily_hifz_faces: t.daily_hifz_faces,
+    daily_rabt_faces: t.daily_rabt_faces,
+    daily_muraja_faces: t.daily_muraja_faces,
+    faces_per_half: FIXED_HIFZ_FACES.half,
+    faces_per_one: FIXED_HIFZ_FACES.one,
+    faces_per_two: FIXED_HIFZ_FACES.two,
+  };
+}
+
+export function termFaceTargets(
+  quotas: Pick<DailyFaceQuotas, "daily_hifz_faces" | "daily_rabt_faces" | "daily_muraja_faces">,
+  termDays: number,
+): Pick<FaceProgressSummary, "hifzTarget" | "rabtTarget" | "murajaTarget"> {
+  return {
+    hifzTarget: termDays * quotas.daily_hifz_faces,
+    rabtTarget: termDays * quotas.daily_rabt_faces,
+    murajaTarget: termDays * quotas.daily_muraja_faces,
+  };
+}
+
 function clampInt(n: number, fallback: number): number {
   const v = Math.round(Number(n));
   if (!Number.isFinite(v) || v < 0) return fallback;
   return Math.min(v, 999);
 }
 
-/** Only rabt/muraja daily targets are configurable; hifz uses fixed taps. */
+/** Legacy normalizer — prefer resolveFaceQuotas(track). */
 export function normalizeTaskQuotas(
   raw: Partial<Pick<DailyFaceQuotas, "daily_rabt_faces" | "daily_muraja_faces">> | null | undefined,
+  track?: PlanTrack,
 ): Pick<DailyFaceQuotas, "daily_rabt_faces" | "daily_muraja_faces"> {
+  if (track) {
+    const t = TRACK_FACE_QUOTAS[track];
+    return { daily_rabt_faces: t.daily_rabt_faces, daily_muraja_faces: t.daily_muraja_faces };
+  }
   const d = DEFAULT_FACE_QUOTAS;
   return {
     daily_rabt_faces: clampInt(raw?.daily_rabt_faces ?? d.daily_rabt_faces, d.daily_rabt_faces),
@@ -42,21 +82,32 @@ export function normalizeTaskQuotas(
   };
 }
 
-/** Full quotas object for DB / assignment (hifz fields are fixed defaults). */
-export function normalizeFaceQuotas(raw: Partial<DailyFaceQuotas> | null | undefined): DailyFaceQuotas {
+export function normalizeFaceQuotas(
+  raw: Partial<DailyFaceQuotas> | null | undefined,
+  track?: PlanTrack,
+): DailyFaceQuotas {
+  if (track) return resolveFaceQuotas(track);
   const tasks = normalizeTaskQuotas(raw);
   return {
     ...tasks,
-    daily_hifz_faces: 1,
+    daily_hifz_faces: TRACK_FACE_QUOTAS.gold.daily_hifz_faces,
     faces_per_half: FIXED_HIFZ_FACES.half,
     faces_per_one: FIXED_HIFZ_FACES.one,
     faces_per_two: FIXED_HIFZ_FACES.two,
   };
 }
 
-export function faceQuotasFromAssignment(assignment: StudentPlanAssignment | null | undefined): DailyFaceQuotas {
-  if (!assignment) return normalizeFaceQuotas(undefined);
-  return normalizeFaceQuotas(assignment);
+/** @deprecated Pass levelType via resolveFaceQuotas — assignment DB values are not authoritative. */
+export function faceQuotasFromAssignment(
+  assignment: StudentPlanAssignment | null | undefined,
+  levelType?: PlanTrack | Student["levelType"],
+): DailyFaceQuotas {
+  if (levelType) return resolveFaceQuotas(levelType);
+  return normalizeFaceQuotas(assignment ?? undefined);
+}
+
+export function faceQuotasFromPlan(plan: EducationPlan): DailyFaceQuotas {
+  return resolveFaceQuotas(plan.track);
 }
 
 export function hifzFacesFromTap(tap: HifzValue): number {
@@ -71,18 +122,17 @@ export function facesFromDayEntry(
   quotas: Pick<DailyFaceQuotas, "daily_rabt_faces" | "daily_muraja_faces">,
 ): { hifz: number; rabt: number; muraja: number } {
   const e = entry ?? { attendance: "", hifz: "", rabt: "", muraja: "" };
-  const q = normalizeTaskQuotas(quotas);
   return {
     hifz: hifzFacesFromTap(e.hifz),
-    rabt: e.rabt === "pass" ? q.daily_rabt_faces : 0,
-    muraja: e.muraja === "pass" ? q.daily_muraja_faces : 0,
+    rabt: e.rabt === "pass" ? quotas.daily_rabt_faces : 0,
+    muraja: e.muraja === "pass" ? quotas.daily_muraja_faces : 0,
   };
 }
 
 function sumFacesFromAllGradeEntries(
   studentId: string,
   grades: GradesStore,
-  quotas: Pick<DailyFaceQuotas, "daily_rabt_faces" | "daily_muraja_faces">,
+  quotas: DailyFaceQuotas,
 ): Pick<FaceProgressSummary, "hifzActual" | "rabtActual" | "murajaActual"> {
   let hifzActual = 0;
   let rabtActual = 0;
@@ -91,6 +141,7 @@ function sumFacesFromAllGradeEntries(
 
   for (const week of Object.values(weeks)) {
     hifzActual += week.compensationFaces ?? 0;
+    murajaActual += week.compensationMurajaFaces ?? 0;
     for (const entry of Object.values(week.days ?? {})) {
       const part = facesFromDayEntry(entry, quotas);
       hifzActual += part.hifz;
@@ -102,16 +153,19 @@ function sumFacesFromAllGradeEntries(
   return { hifzActual, rabtActual, murajaActual };
 }
 
+function periodFaceTargets(quotas: DailyFaceQuotas, dayCount: number) {
+  return termFaceTargets(quotas, dayCount);
+}
+
 export function aggregateFaceProgress(
   studentId: string,
   grades: GradesStore,
   calendar: AcademicCalendar,
-  quotas: Pick<DailyFaceQuotas, "daily_rabt_faces" | "daily_muraja_faces">,
+  quotas: DailyFaceQuotas,
   fromIso?: string,
   toIso?: string,
 ): FaceProgressSummary {
   const days = getElapsedSemesterDays(calendar);
-  const q = normalizeTaskQuotas(quotas);
 
   if (days.length === 0) {
     return aggregateFaceProgressAllWeeks(studentId, grades, quotas);
@@ -129,13 +183,12 @@ export function aggregateFaceProgress(
     to === calendar.operationalDate;
 
   if (useFullSemesterRange) {
-    const totals = sumFacesFromAllGradeEntries(studentId, grades, q);
+    const totals = sumFacesFromAllGradeEntries(studentId, grades, quotas);
+    const termDays = getTotalSemesterWorkingDays(calendar);
     return {
       workingDays,
       ...totals,
-      hifzTarget: workingDays * 1,
-      rabtTarget: workingDays * q.daily_rabt_faces,
-      murajaTarget: workingDays * q.daily_muraja_faces,
+      ...termFaceTargets(quotas, termDays),
     };
   }
 
@@ -145,7 +198,7 @@ export function aggregateFaceProgress(
 
   for (const day of inRange) {
     const week = grades[studentId]?.[day.weekNumber];
-    const part = facesFromDayEntry(week?.days[day.dayKey], q);
+    const part = facesFromDayEntry(week?.days[day.dayKey], quotas);
     hifzActual += part.hifz;
     rabtActual += part.rabt;
     murajaActual += part.muraja;
@@ -158,9 +211,10 @@ export function aggregateFaceProgress(
     const week = grades[studentId]?.[wn];
     if (!week?.days) continue;
     hifzActual += week.compensationFaces ?? 0;
+    murajaActual += week.compensationMurajaFaces ?? 0;
     for (const [dayKey, entry] of Object.entries(week.days)) {
       if (countedDayKeys.has(`${wn}:${dayKey}`)) continue;
-      const part = facesFromDayEntry(entry, q);
+      const part = facesFromDayEntry(entry, quotas);
       if (!part.hifz && !part.rabt && !part.muraja) continue;
       hifzActual += part.hifz;
       rabtActual += part.rabt;
@@ -173,19 +227,16 @@ export function aggregateFaceProgress(
     hifzActual,
     rabtActual,
     murajaActual,
-    hifzTarget: workingDays * 1,
-    rabtTarget: workingDays * q.daily_rabt_faces,
-    murajaTarget: workingDays * q.daily_muraja_faces,
+    ...periodFaceTargets(quotas, workingDays),
   };
 }
 
 export function aggregateFaceProgressAllWeeks(
   studentId: string,
   grades: GradesStore,
-  quotas: Pick<DailyFaceQuotas, "daily_rabt_faces" | "daily_muraja_faces">,
+  quotas: DailyFaceQuotas,
 ): FaceProgressSummary {
   const totals = sumFacesFromAllGradeEntries(studentId, grades, quotas);
-  const q = normalizeTaskQuotas(quotas);
   let dayCount = 0;
   const weeks = grades[studentId] ?? {};
   for (const week of Object.values(weeks)) {
@@ -197,18 +248,8 @@ export function aggregateFaceProgressAllWeeks(
   return {
     workingDays: dayCount,
     ...totals,
-    hifzTarget: dayCount * 1,
-    rabtTarget: dayCount * q.daily_rabt_faces,
-    murajaTarget: dayCount * q.daily_muraja_faces,
+    ...periodFaceTargets(quotas, dayCount),
   };
-}
-
-import type { EducationPlan } from "@/lib/plan-types";
-
-export function faceQuotasFromPlan(
-  plan: EducationPlan,
-): Pick<DailyFaceQuotas, "daily_rabt_faces" | "daily_muraja_faces"> {
-  return normalizeTaskQuotas(plan);
 }
 
 export function facePct(actual: number, target: number): number {

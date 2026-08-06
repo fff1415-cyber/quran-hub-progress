@@ -1,46 +1,38 @@
-import type { DailyFaceQuotas } from "@/lib/plan-types";
-import { Input } from "@/components/ui/input";
+import type { DailyFaceQuotas, PlanTrack } from "@/lib/plan-types";
+import { TRACK_FACE_QUOTAS, resolveFaceQuotas } from "@/lib/plan-daily-faces";
+import { trackLabel } from "@/lib/plan-translator";
 
 interface FaceQuotasFieldsProps {
-  value: Pick<DailyFaceQuotas, "daily_rabt_faces" | "daily_muraja_faces">;
-  onChange: (v: Pick<DailyFaceQuotas, "daily_rabt_faces" | "daily_muraja_faces">) => void;
+  track: PlanTrack;
   compact?: boolean;
 }
 
-export function FaceQuotasFields({ value, onChange, compact }: FaceQuotasFieldsProps) {
-  const set = (key: "daily_rabt_faces" | "daily_muraja_faces", raw: string) => {
-    onChange({ ...value, [key]: Math.max(0, Number(raw) || 0) });
-  };
+/** Read-only — daily face quotas are fixed by track (option A). */
+export function FaceQuotasFields({ track, compact }: FaceQuotasFieldsProps) {
+  const q: DailyFaceQuotas = resolveFaceQuotas(track);
 
   return (
     <div className="space-y-2">
       <p className="text-xs text-muted-foreground">
-        أوجه الربط والمراجعة يومياً — الحفظ ثابت (½=نصف وجه · 1=وجه · 2=وجهين)
+        حصص يومية ثابتة لمسار {trackLabel(track)} — لا تُعدَّل يدوياً
       </p>
-      <div className={`grid gap-3 sm:grid-cols-2 ${compact ? "" : ""}`}>
-        <div>
-          <label className="text-xs text-muted-foreground mb-1 block">أوجه الربط / يوم</label>
-          <Input
-            type="number"
-            min={0}
-            max={999}
-            value={value.daily_rabt_faces}
-            onChange={(e) => set("daily_rabt_faces", e.target.value)}
-            className={compact ? "h-8 text-sm" : undefined}
-          />
-        </div>
-        <div>
-          <label className="text-xs text-muted-foreground mb-1 block">أوجه المراجعة / يوم</label>
-          <Input
-            type="number"
-            min={0}
-            max={999}
-            value={value.daily_muraja_faces}
-            onChange={(e) => set("daily_muraja_faces", e.target.value)}
-            className={compact ? "h-8 text-sm" : undefined}
-          />
-        </div>
+      <div className={`grid gap-3 sm:grid-cols-3 ${compact ? "text-sm" : ""}`}>
+        <QuotaPill label="حفظ/يوم" value={q.daily_hifz_faces} />
+        <QuotaPill label="ربط/يوم" value={q.daily_rabt_faces} />
+        <QuotaPill label="مراجعة/يوم" value={q.daily_muraja_faces} />
       </div>
+      <p className="text-[10px] text-muted-foreground">
+        مستهدف الترم = الحصة × أيام العمل · فضي: {TRACK_FACE_QUOTAS.silver.daily_hifz_faces}/{TRACK_FACE_QUOTAS.silver.daily_rabt_faces}/{TRACK_FACE_QUOTAS.silver.daily_muraja_faces} · ذهبي: {TRACK_FACE_QUOTAS.gold.daily_hifz_faces}/{TRACK_FACE_QUOTAS.gold.daily_rabt_faces}/{TRACK_FACE_QUOTAS.gold.daily_muraja_faces}
+      </p>
+    </div>
+  );
+}
+
+function QuotaPill({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-lg border border-border bg-secondary/30 px-3 py-2 text-center">
+      <div className="text-[10px] text-muted-foreground">{label}</div>
+      <div className="font-bold text-primary">{value % 1 === 0 ? value : value.toFixed(1)}</div>
     </div>
   );
 }

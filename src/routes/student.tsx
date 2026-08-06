@@ -23,7 +23,7 @@ import {
   type StudentPortalAuthMode,
 } from "@/lib/student-portal-auth";
 import { loadStudentPortalVisibility } from "@/lib/student-portal-settings";
-import { aggregateComplexFaceTotals, aggregateDailyComplexAttendance } from "@/lib/student-portal-data";
+import { aggregateComplexFaceTotals, aggregateComplexFaceTargets, aggregateDailyComplexAttendance } from "@/lib/student-portal-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { Trophy, Loader2, LogOut } from "lucide-react";
@@ -137,6 +137,11 @@ function StudentPage() {
     return aggregateComplexFaceTotals(students, grades, calendar);
   }, [students, grades, calendar]);
 
+  const complexFaceTargets = useMemo(() => {
+    if (!calendar) return null;
+    return aggregateComplexFaceTargets(students, calendar);
+  }, [students, calendar]);
+
   const dailyAttendance = useMemo(() => {
     if (!calendar) return null;
     return aggregateDailyComplexAttendance(students, grades, calendar);
@@ -245,6 +250,7 @@ function StudentPage() {
                 weekNum={weekNum}
                 dailyAttendance={dailyAttendance}
                 complexFaces={complexFaces}
+                complexFaceTargets={complexFaceTargets}
                 showWeekly={visibility.halaqaWeekly}
                 showDailyAttendance={visibility.dailyComplexAttendance}
                 showComplexFaces={visibility.complexFaceCounts}

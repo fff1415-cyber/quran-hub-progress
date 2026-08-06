@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import { formatWeekOptionLabel, getSelectableWeeks } from "@/lib/academic-context";
 import { weekLabel } from "@/lib/arabic-numbers";
@@ -25,7 +25,16 @@ type EditTarget = {
   topic: string;
 };
 
-type Props = {
+type TableRow = {
+  item: TarbawiPlanItem;
+  weekNumber: number;
+  weekTitle: string;
+  isFirstInWeek: boolean;
+  weekRowSpan: number;
+  isCurrentWeek: boolean;
+};
+
+type BoardProps = {
   plan: TarbawiHalaqaPlan;
   settings: TarbawiSettings;
   calendar: AcademicCalendar;
@@ -40,6 +49,221 @@ type Props = {
   onContentDraft: (items: TarbawiPlanItem[]) => void;
 };
 
+function buildTableRows(
+  items: TarbawiPlanItem[],
+  calendar: AcademicCalendar,
+  spanWeeks: number,
+  currentWeekNum: number,
+): TableRow[] {
+  const selectableWeeks = getSelectableWeeks(calendar).filter((w) => w.week_number <= spanWeeks);
+  const rows: TableRow[] = [];
+
+  for (const w of selectableWeeks) {
+    const weekNum = w.week_number;
+    const weekItems = items.filter((i) => i.weekNumber === weekNum);
+    if (weekItems.length === 0) continue;
+
+    weekItems.forEach((item, idx) => {
+      rows.push({
+        item,
+        weekNumber: weekNum,
+        weekTitle: formatWeekOptionLabel(w),
+        isFirstInWeek: idx === 0,
+        weekRowSpan: weekItems.length,
+        isCurrentWeek: weekNum === currentWeekNum,
+      });
+    });
+  }
+
+  return rows;
+}
+
+function TarbawiPlanTable({
+  rows,
+  settings,
+  showExecution,
+  canExecute,
+  canReorder,
+  canEditContent,
+  contentChangePending,
+  reorderMode,
+  dragItemId,
+  onDragStart,
+  onDragEnd,
+  onDropOnWeek,
+  onOpenContentEdit,
+  onUpdateExecution,
+}: {
+  rows: TableRow[];
+  settings: TarbawiSettings;
+  showExecution: boolean;
+  canExecute: boolean;
+  canReorder: boolean;
+  canEditContent: boolean;
+  contentChangePending: boolean;
+  reorderMode: boolean;
+  dragItemId: string | null;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+  onDropOnWeek: (weekNumber: number) => void;
+  onOpenContentEdit: (item: TarbawiPlanItem) => void;
+  onUpdateExecution: (id: string, patch: Partial<TarbawiPlanItem>) => void;
+}) {
+  const hasActions = canReorder || canEditContent;
+
+  return (
+    <div className="overflow-x-auto rounded-xl border border-border">
+      <table className="w-full text-sm border-collapse min-w-[720px]">
+        <thead>
+          <tr className="bg-primary/20 text-primary text-right">
+            <th className="p-2.5 border border-primary/30 font-bold w-[120px]">الأسبوع</th>
+            <th className="p-2.5 border border-primary/30 font-bold min-w-[120px]">نوع الفقرة</th>
+            <th className="p-2.5 border border-primary/30 font-bold min-w-[180px]">الموضوع (البرنامج)</th>
+            {showExecution && (
+              <>
+                <th className="p-2.5 border border-primary/30 font-bold min-w-[120px]">المنفّذ</th>
+                <th className="p-2.5 border border-primary/30 font-bold w-[100px]">عدد المستفيدين</th>
+                <th className="p-2.5 border border-primary/30 font-bold w-[72px] text-center">التنفيذ</th>
+              </>
+            )}
+            {hasActions && (
+              <th className="p-2.5 border border-primary/30 font-bold w-[56px]" />
+            )}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 ? (
+            <tr>
+              <td
+                colSpan={(showExecution ? 6 : 3) + (hasActions ? 1 : 0)}
+                className="p-8 text-center text-muted-foreground border border-border"
+              >
+                لا فقرات موزّعة بعد
+              </td>
+            </tr>
+          ) : (
+            rows.map((row) => (
+              <tr
+                key={row.item.id}
+                draggable={reorderMode && canReorder}
+                onDragStart={() => onDragStart(row.item.id)}
+                onDragEnd={onDragEnd}
+                onDragOver={(e) => {
+                  if (reorderMode && canReorder) e.preventDefault();
+                }}
+                onDrop={() => onDropOnWeek(row.weekNumber)}
+                className={cn(
+                  "border-b border-border/60 transition-colors",
+                  row.isCurrentWeek ? "bg-primary/10" : "bg-secondary/15",
+                  reorderMode && canReorder && "cursor-grab active:cursor-grabbing",
+                  dragItemId === row.item.id && "opacity-50",
+                )}
+              >
+                {row.isFirstInWeek && (
+                  <td
+                    rowSpan={row.weekRowSpan}
+                    className={cn(
+                      "p-2.5 border border-border/50 align-middle text-center font-bold text-sm vertical-align-middle",
+                      row.isCurrentWeek ? "bg-primary/15 text-primary" : "bg-secondary/30",
+                    )}
+                  >
+                    <div>{row.weekTitle}</div>
+                    {row.isCurrentWeek && (
+                      <div className="text-[10px] font-semibold mt-0.5">الأسبوع الحالي</div>
+                    )}
+                  </td>
+                )}
+                <td className="p-2 border border-border/40">
+                  <span className="inline-block px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-semibold">
+                    {paragraphTypeLabel(settings, row.item.paragraphTypeId)}
+                  </span>
+                </td>
+                <td className="p-2 border border-border/40 text-foreground leading-snug">
+                  {row.item.topic || "—"}
+                </td>
+                {showExecution && (
+                  <>
+                    <td className="p-2 border border-border/40">
+                      {canExecute ? (
+                        <Input
+                          value={row.item.executor}
+                          onChange={(e) =>
+                            onUpdateExecution(row.item.id, { executor: e.target.value })
+                          }
+                          placeholder={getSessionName("الملقي")}
+                          className="h-8 text-xs"
+                        />
+                      ) : (
+                        <span className="text-xs">{row.item.executor || "—"}</span>
+                      )}
+                    </td>
+                    <td className="p-2 border border-border/40 text-center">
+                      {canExecute ? (
+                        <Input
+                          type="number"
+                          min={0}
+                          value={row.item.beneficiaries || ""}
+                          onChange={(e) =>
+                            onUpdateExecution(row.item.id, {
+                              beneficiaries: Number(e.target.value) || 0,
+                            })
+                          }
+                          placeholder="0"
+                          className="h-8 text-xs text-center"
+                        />
+                      ) : (
+                        <span className="text-xs font-medium">{row.item.beneficiaries || "—"}</span>
+                      )}
+                    </td>
+                    <td className="p-2 border border-border/40 text-center">
+                      {canExecute ? (
+                        <Checkbox
+                          checked={row.item.executed}
+                          onCheckedChange={(v) =>
+                            onUpdateExecution(row.item.id, { executed: !!v })
+                          }
+                        />
+                      ) : (
+                        <span className={cn(
+                          "text-xs font-bold",
+                          row.item.executed ? "text-success" : "text-muted-foreground",
+                        )}>
+                          {row.item.executed ? "✓" : "—"}
+                        </span>
+                      )}
+                    </td>
+                  </>
+                )}
+                {hasActions && (
+                  <td className="p-2 border border-border/40 text-center">
+                    <div className="flex items-center justify-center gap-0.5">
+                      {canEditContent && !contentChangePending && (
+                        <button
+                          type="button"
+                          title="تعديل النوع أو الموضوع"
+                          onClick={() => onOpenContentEdit(row.item)}
+                          className="p-1 rounded-md border border-border hover:bg-primary/10 text-primary"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {canReorder && reorderMode && (
+                        <span className="p-1 text-muted-foreground" title="اسحب الصف">
+                          <GripVertical className="w-3.5 h-3.5" />
+                        </span>
+                      )}
+                    </div>
+                  </td>
+                )}
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
 export function TeacherTarbawiWeekBoard({
   plan,
   settings,
@@ -53,12 +277,15 @@ export function TeacherTarbawiWeekBoard({
   contentChangePending,
   onPlanChange,
   onContentDraft,
-}: Props) {
+}: BoardProps) {
   const [dragItemId, setDragItemId] = useState<string | null>(null);
   const [reorderMode, setReorderMode] = useState(false);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
 
-  const selectableWeeks = getSelectableWeeks(calendar).filter((w) => w.week_number <= spanWeeks);
+  const rows = useMemo(
+    () => buildTableRows(plan.items, calendar, spanWeeks, currentWeekNum),
+    [plan.items, calendar, spanWeeks, currentWeekNum],
+  );
 
   const handleDrop = (weekNumber: number) => {
     if (!dragItemId || !canReorder || !reorderMode) return;
@@ -114,135 +341,46 @@ export function TeacherTarbawiWeekBoard({
           </Button>
         )}
         {reorderMode && (
-          <p className="text-xs text-muted-foreground">اسحب الفقرة إلى عمود الأسبوع المطلوب</p>
+          <p className="text-xs text-muted-foreground">
+            اسحب الصف وأفلته على صف في الأسبوع المطلوب
+          </p>
         )}
       </div>
 
-      <div className="overflow-x-auto pb-2">
-        <div className="flex gap-3 min-w-max">
-          {selectableWeeks.map((w) => {
-            const weekNum = w.week_number;
-            const isCurrent = weekNum === currentWeekNum;
-            const stats = weekStats.find((s) => s.weekNumber === weekNum);
-            const items = plan.items.filter((i) => i.weekNumber === weekNum);
-
-            return (
-              <div
-                key={weekNum}
-                className={cn(
-                  "w-[240px] shrink-0 rounded-xl border flex flex-col min-h-[280px]",
-                  isCurrent
-                    ? "border-primary bg-primary/15 shadow-md ring-2 ring-primary/30"
-                    : "border-border bg-secondary/20",
-                )}
-                onDragOver={(e) => {
-                  if (reorderMode && canReorder) e.preventDefault();
-                }}
-                onDrop={() => handleDrop(weekNum)}
-              >
-                <div
-                  className={cn(
-                    "px-3 py-2 border-b rounded-t-xl",
-                    isCurrent ? "bg-primary/25 border-primary/30" : "bg-secondary/40 border-border",
-                  )}
-                >
-                  <div className="font-bold text-sm">{formatWeekOptionLabel(w)}</div>
-                  {isCurrent && (
-                    <div className="text-[10px] text-primary font-semibold mt-0.5">الأسبوع الحالي</div>
-                  )}
-                  <div className="text-[11px] text-muted-foreground mt-1">
-                    {stats?.executed ?? 0}/{stats?.planned ?? 0} منفّذ · {stats?.pct ?? 0}%
-                  </div>
-                </div>
-
-                <div className="p-2 space-y-2 flex-1">
-                  {items.length === 0 ? (
-                    <p className="text-xs text-muted-foreground text-center py-6">لا فقرات</p>
-                  ) : (
-                    items.map((item) => (
-                      <div
-                        key={item.id}
-                        draggable={reorderMode && canReorder}
-                        onDragStart={() => setDragItemId(item.id)}
-                        onDragEnd={() => setDragItemId(null)}
-                        className={cn(
-                          "relative rounded-lg border p-2 text-xs space-y-1.5 bg-card",
-                          reorderMode && canReorder && "cursor-grab active:cursor-grabbing",
-                          dragItemId === item.id && "opacity-50",
-                        )}
-                      >
-                        {(canReorder || canEditContent) && (
-                          <div className="absolute top-1 left-1 flex gap-0.5 z-10">
-                            {canEditContent && !contentChangePending && (
-                              <button
-                                type="button"
-                                title="تعديل النوع أو الموضوع"
-                                onClick={() => openContentEdit(item)}
-                                className="p-1 rounded-md bg-background/90 border border-border shadow-sm hover:bg-primary/10 text-primary"
-                              >
-                                <Pencil className="w-3 h-3" />
-                              </button>
-                            )}
-                            {canReorder && reorderMode && (
-                              <span
-                                className="p-1 rounded-md bg-background/90 border border-border shadow-sm text-muted-foreground"
-                                title="اسحب لنقل الأسبوع"
-                              >
-                                <GripVertical className="w-3 h-3" />
-                              </span>
-                            )}
-                          </div>
-                        )}
-
-                        <div className="pr-1 pt-4">
-                          <div className="font-semibold text-primary">
-                            {paragraphTypeLabel(settings, item.paragraphTypeId)}
-                          </div>
-                          <div className="text-foreground/90 leading-snug">{item.topic || "—"}</div>
-                        </div>
-
-                        {canExecute && (
-                          <div className="space-y-1.5 pt-1 border-t border-border/50">
-                            <label className="flex items-center gap-2">
-                              <Checkbox
-                                checked={item.executed}
-                                onCheckedChange={(v) =>
-                                  updateItemExecution(item.id, { executed: !!v })
-                                }
-                              />
-                              <span>نُفّذ</span>
-                            </label>
-                            <Input
-                              value={item.executor}
-                              onChange={(e) =>
-                                updateItemExecution(item.id, { executor: e.target.value })
-                              }
-                              placeholder={getSessionName("الملقي")}
-                              className="h-7 text-xs"
-                            />
-                            <Input
-                              type="number"
-                              min={0}
-                              value={item.beneficiaries || ""}
-                              onChange={(e) =>
-                                updateItemExecution(item.id, {
-                                  beneficiaries: Number(e.target.value) || 0,
-                                })
-                              }
-                              placeholder="المستفيدون"
-                              className="h-7 text-xs"
-                            />
-                          </div>
-                        )}
-                      </div>
-                    ))
-                  )}
-                </div>
-              </div>
-            );
-          })}
+      {weekStats.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {weekStats.filter((s) => s.planned > 0).map((s) => (
+            <div
+              key={s.weekNumber}
+              className={cn(
+                "text-[11px] px-2 py-1 rounded-lg border",
+                s.weekNumber === currentWeekNum
+                  ? "border-primary/40 bg-primary/10 text-primary font-bold"
+                  : "border-border bg-secondary/30 text-muted-foreground",
+              )}
+            >
+              {weekLabel(s.weekNumber)}: {s.executed}/{s.planned} · {s.pct}%
+            </div>
+          ))}
         </div>
-      </div>
+      )}
+
+      <TarbawiPlanTable
+        rows={rows}
+        settings={settings}
+        showExecution
+        canExecute={canExecute}
+        canReorder={canReorder}
+        canEditContent={canEditContent}
+        contentChangePending={contentChangePending}
+        reorderMode={reorderMode}
+        dragItemId={dragItemId}
+        onDragStart={setDragItemId}
+        onDragEnd={() => setDragItemId(null)}
+        onDropOnWeek={handleDrop}
+        onOpenContentEdit={openContentEdit}
+        onUpdateExecution={updateItemExecution}
+      />
 
       {editTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40">
@@ -306,90 +444,57 @@ export function TeacherTarbawiDraftWeekBoard({
 }) {
   const [dragItemId, setDragItemId] = useState<string | null>(null);
   const [reorderMode, setReorderMode] = useState(true);
-  const selectableWeeks = getSelectableWeeks(calendar).filter((w) => w.week_number <= spanWeeks);
+
+  const rows = useMemo(
+    () => buildTableRows(plan.items, calendar, spanWeeks, currentWeekNum),
+    [plan.items, calendar, spanWeeks, currentWeekNum],
+  );
 
   const handleDrop = (weekNumber: number) => {
     if (!dragItemId || !canEditPlan) return;
     onPlanChange(moveTarbawiItemToWeek(plan, dragItemId, weekNumber));
     setDragItemId(null);
+    toast.success(`نُقلت الفقرة إلى ${weekLabel(weekNumber)}`);
   };
 
   return (
     <div className="space-y-3">
       {canEditPlan && (
-        <Button
-          type="button"
-          size="sm"
-          variant={reorderMode ? "default" : "outline"}
-          className="gap-1"
-          onClick={() => setReorderMode((v) => !v)}
-        >
-          <GripVertical className="w-4 h-4" />
-          {reorderMode ? "إيقاف تعديل الترتيب" : "تعديل الترتيب (سحب)"}
-        </Button>
+        <>
+          <Button
+            type="button"
+            size="sm"
+            variant={reorderMode ? "default" : "outline"}
+            className="gap-1"
+            onClick={() => setReorderMode((v) => !v)}
+          >
+            <GripVertical className="w-4 h-4" />
+            {reorderMode ? "إيقاف تعديل الترتيب" : "تعديل الترتيب (سحب)"}
+          </Button>
+          {reorderMode && (
+            <p className="text-xs text-muted-foreground">
+              اسحب الصف وأفلته على صف في الأسبوع المطلوب
+            </p>
+          )}
+        </>
       )}
 
-      <div className="overflow-x-auto pb-2">
-        <div className="flex gap-3 min-w-max">
-          {selectableWeeks.map((w) => {
-            const weekNum = w.week_number;
-            const isCurrent = weekNum === currentWeekNum;
-            const items = plan.items.filter((i) => i.weekNumber === weekNum);
-
-            return (
-              <div
-                key={weekNum}
-                className={cn(
-                  "w-[220px] shrink-0 rounded-xl border flex flex-col min-h-[200px]",
-                  isCurrent
-                    ? "border-primary bg-primary/15 ring-2 ring-primary/30"
-                    : "border-border bg-secondary/20",
-                )}
-                onDragOver={(e) => {
-                  if (reorderMode && canEditPlan) e.preventDefault();
-                }}
-                onDrop={() => handleDrop(weekNum)}
-              >
-                <div
-                  className={cn(
-                    "px-3 py-2 border-b rounded-t-xl text-sm font-bold",
-                    isCurrent ? "bg-primary/25" : "bg-secondary/40",
-                  )}
-                >
-                  {formatWeekOptionLabel(w)}
-                  <div className="text-[11px] font-normal text-muted-foreground">
-                    {items.length} فقرة
-                  </div>
-                </div>
-                <div className="p-2 space-y-2 flex-1">
-                  {items.map((item) => (
-                    <div
-                      key={item.id}
-                      draggable={reorderMode && canEditPlan}
-                      onDragStart={() => setDragItemId(item.id)}
-                      onDragEnd={() => setDragItemId(null)}
-                      className={cn(
-                        "rounded-lg border p-2 text-xs bg-card relative",
-                        reorderMode && canEditPlan && "cursor-grab",
-                      )}
-                    >
-                      {reorderMode && (
-                        <GripVertical className="w-3.5 h-3.5 absolute top-1 left-1 text-muted-foreground" />
-                      )}
-                      <div className="pt-3">
-                        <div className="font-semibold text-primary">
-                          {paragraphTypeLabel(settings, item.paragraphTypeId)}
-                        </div>
-                        <div>{item.topic}</div>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
+      <TarbawiPlanTable
+        rows={rows}
+        settings={settings}
+        showExecution={false}
+        canExecute={false}
+        canReorder={canEditPlan}
+        canEditContent={false}
+        contentChangePending={false}
+        reorderMode={reorderMode && canEditPlan}
+        dragItemId={dragItemId}
+        onDragStart={setDragItemId}
+        onDragEnd={() => setDragItemId(null)}
+        onDropOnWeek={handleDrop}
+        onOpenContentEdit={() => {}}
+        onUpdateExecution={() => {}}
+      />
     </div>
   );
 }

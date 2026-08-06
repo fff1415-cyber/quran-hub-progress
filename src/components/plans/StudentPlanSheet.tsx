@@ -7,7 +7,8 @@ import {
   levelUnit,
   trackLabel,
 } from "@/lib/plan-translator";
-import { faceQuotasFromAssignment } from "@/lib/plan-daily-faces";
+import { resolveFaceQuotas } from "@/lib/plan-daily-faces";
+import { formatPlanDate, formatPlanDateTime } from "@/lib/plan-dates";
 import { arabicDayName } from "@/lib/plan-phase";
 import { cn } from "@/lib/utils";
 import { Check, Loader2 } from "lucide-react";
@@ -81,7 +82,7 @@ export function StudentPlanSheet({
   }
 
   const planLabel = `${trackLabel(plan.track)} · ${levelUnit(plan.track)} ${plan.level_number}`;
-  const quotas = faceQuotasFromAssignment(assignment);
+  const quotas = resolveFaceQuotas(plan.track);
   const visibleSegments = segments.filter((s) => s.segment_index >= assignment.start_segment_index);
 
   return (
@@ -92,7 +93,8 @@ export function StudentPlanSheet({
           <div className="text-sm font-medium">{plan.title || planLabel}</div>
           <div className="text-xs text-muted-foreground mt-0.5">
             {trackLabel(plan.track)}
-            {assignment.plan_start_date && ` · بداية ${assignment.plan_start_date}`}
+            {assignment.plan_start_date && ` · بداية ${formatPlanDate(assignment.plan_start_date)}`}
+            {assignment.assigned_at && ` · ربط ${formatPlanDateTime(assignment.assigned_at)}`}
             {assignment.status === "frozen" && (
               <span className="mr-2 text-warning font-bold">· مجمدة</span>
             )}

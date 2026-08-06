@@ -9,11 +9,18 @@ import { getElapsedSemesterDays } from "@/lib/semester-grading";
 import { attendanceTypeLabel } from "@/lib/student-profile-data";
 import {
   aggregateFaceProgress,
-  faceQuotasFromAssignment,
+  resolveFaceQuotas,
+  termFaceTargets,
 } from "@/lib/plan-daily-faces";
-import { localGetStudentSheet } from "@/lib/plans-store";
+import { getTotalSemesterWorkingDays } from "@/lib/semester-grading";
 
 export interface ComplexFaceTotals {
+  hifz: number;
+  rabt: number;
+  muraja: number;
+}
+
+export interface ComplexFaceTargets {
   hifz: number;
   rabt: number;
   muraja: number;
@@ -29,12 +36,29 @@ export function aggregateComplexFaceTotals(
   let rabt = 0;
   let muraja = 0;
   for (const s of students) {
-    const sheet = localGetStudentSheet(s.id);
-    const quotas = faceQuotasFromAssignment(sheet.assignment);
+    const quotas = resolveFaceQuotas(s.levelType);
     const part = aggregateFaceProgress(s.id, grades, calendar, quotas);
     hifz += part.hifzActual;
     rabt += part.rabtActual;
     muraja += part.murajaActual;
+  }
+  return { hifz, rabt, muraja };
+}
+
+/** Sum term face targets for all students (full semester calendar). */
+export function aggregateComplexFaceTargets(
+  students: Student[],
+  calendar: AcademicCalendar,
+): ComplexFaceTargets {
+  const termDays = getTotalSemesterWorkingDays(calendar);
+  let hifz = 0;
+  let rabt = 0;
+  let muraja = 0;
+  for (const s of students) {
+    const t = termFaceTargets(resolveFaceQuotas(s.levelType), termDays);
+    hifz += t.hifzTarget;
+    rabt += t.rabtTarget;
+    muraja += t.murajaTarget;
   }
   return { hifz, rabt, muraja };
 }

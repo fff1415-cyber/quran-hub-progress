@@ -16,7 +16,7 @@ import {
 import { getSessionName } from "@/lib/session-role";
 import { Plus, Trash2, FileSpreadsheet, Download, Loader2, Pencil, CheckSquare, Square, QrCode, Printer } from "lucide-react";
 import { toast } from "sonner";
-import { DEFAULT_FACE_QUOTAS } from "@/lib/plan-daily-faces";
+import { TRACK_FACE_QUOTAS } from "@/lib/plan-daily-faces";
 import { printSingleStudentQrCard, printStudentQrCards } from "@/lib/student-qr-cards";
 import { useTenant } from "@/contexts/TenantContext";
 
@@ -151,8 +151,6 @@ export function StudentImportPanel() {
             instituteLevel: student.instituteLevel || row.instituteLevel,
             globalPhase: student.phaseNumber ?? row.phaseNumber,
             startHifzSegment: row.startHifzSegment,
-            dailyRabtFaces: row.dailyRabtFaces,
-            dailyMurajaFaces: row.dailyMurajaFaces,
             planStartDate: row.planStartDate || null,
             assignedBy,
             optional: true,
@@ -265,8 +263,8 @@ export function StudentsManagementPanel() {
   const emptyForm = (): EditForm => ({
     name: "", halaqaId: halaqat[0]?.id || 1, nationalId: "", parentPhone: "",
     studentPhone: "", level: "1", phaseNumber: 1, instituteLevel: INSTITUTE_LEVELS[0],
-    levelType: "gold", dailyRabtFaces: DEFAULT_FACE_QUOTAS.daily_rabt_faces,
-    dailyMurajaFaces: DEFAULT_FACE_QUOTAS.daily_muraja_faces,
+    levelType: "gold", dailyRabtFaces: TRACK_FACE_QUOTAS.gold.daily_rabt_faces,
+    dailyMurajaFaces: TRACK_FACE_QUOTAS.gold.daily_muraja_faces,
   });
 
   const [form, setForm] = useState<EditForm>(emptyForm);
@@ -307,8 +305,8 @@ export function StudentsManagementPanel() {
       phaseNumber: s.phaseNumber ?? (parseInt(s.level, 10) || 1),
       instituteLevel: s.instituteLevel ?? INSTITUTE_LEVELS[0],
       levelType: s.levelType,
-      dailyRabtFaces: DEFAULT_FACE_QUOTAS.daily_rabt_faces,
-      dailyMurajaFaces: DEFAULT_FACE_QUOTAS.daily_muraja_faces,
+      dailyRabtFaces: TRACK_FACE_QUOTAS[s.levelType].daily_rabt_faces,
+      dailyMurajaFaces: TRACK_FACE_QUOTAS[s.levelType].daily_muraja_faces,
     });
   };
 

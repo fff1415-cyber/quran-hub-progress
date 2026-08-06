@@ -7,8 +7,9 @@ import type { StudentPortalVisibility } from "@/lib/student-portal-settings";
 import type { ComponentPercentages } from "@/lib/semester-grading";
 import {
   aggregateFaceProgress,
-  faceQuotasFromAssignment,
+  facePct,
   formatFaceCount,
+  resolveFaceQuotas,
 } from "@/lib/plan-daily-faces";
 import {
   attendanceTypeLabel,
@@ -65,9 +66,9 @@ export function StudentPortalPersonalSection({
 
   const faceSummary = useMemo(() => {
     if (!visibility.faceCounts) return null;
-    const quotas = faceQuotasFromAssignment(planData?.assignment ?? null);
+    const quotas = resolveFaceQuotas(student.levelType);
     return aggregateFaceProgress(student.id, grades, calendar, quotas);
-  }, [student.id, grades, calendar, planData?.assignment, visibility.faceCounts]);
+  }, [student.id, student.levelType, grades, calendar, visibility.faceCounts]);
 
   const rabtMurCombined = faceSummary
     ? faceSummary.rabtActual + faceSummary.murajaActual
@@ -123,8 +124,16 @@ export function StudentPortalPersonalSection({
             {calendar.semester?.name ?? "الفصل الحالي"} · تراكمي حتى اليوم
           </p>
           <div className="grid sm:grid-cols-2 gap-3">
-            <FaceCountCard label="الأوجه المحفوظة" value={faceSummary.hifzActual} />
-            <FaceCountCard label="أوجه الربط والمراجعة" value={rabtMurCombined} />
+            <FaceCountCard
+              label="الأوجه المحفوظة"
+              value={faceSummary.hifzActual}
+              target={faceSummary.hifzTarget}
+            />
+            <FaceCountCard
+              label="أوجه الربط والمراجعة"
+              value={rabtMurCombined}
+              target={faceSummary.rabtTarget + faceSummary.murajaTarget}
+            />
           </div>
         </div>
       )}
@@ -195,13 +204,18 @@ export function StudentPortalPersonalSection({
   );
 }
 
-function FaceCountCard({ label, value }: { label: string; value: number }) {
+function FaceCountCard({ label, value, target }: { label: string; value: number; target?: number }) {
   return (
     <div className="rounded-lg border border-border p-4 bg-card">
       <div className="text-xs text-muted-foreground mb-1">{label}</div>
       <div className="text-2xl font-bold gold-text">
         {formatFaceCount(value)} <span className="text-sm font-normal text-muted-foreground">وجه</span>
       </div>
+      {target != null && target > 0 && (
+        <div className="text-[10px] text-muted-foreground mt-1">
+          مستهدف الترم: {formatFaceCount(target)} ({facePct(value, target)}%)
+        </div>
+      )}
     </div>
   );
 }

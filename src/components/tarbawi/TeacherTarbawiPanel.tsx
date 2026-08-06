@@ -237,7 +237,7 @@ export function TeacherTarbawiPanel({
               )}
               {canEditPlan && !distributed && "أضف كل الفقرات (نوع + موضوع) ثم وزّعها على الأسابيع"}
               {canEditPlan && distributed && "راجع التوزيع على الأسابيع (اسحب لنقل الفقرات) ثم أرسل للاعتماد"}
-              {isApproved && !contentChangePending && "مرحلة التنفيذ — اسحب لنقل الفقر بين الأسابيع، أو عدّل النوع/الموضوع عبر أيقونة القلم"}
+              {isApproved && !contentChangePending && "مرحلة التنفيذ — اسحب الصف بين الأسابيع، أو عدّل النوع/الموضوع عبر أيقونة القلم"}
               {isApproved && contentChangePending && "تعديل الفقرات بانتظار اعتماد مشرف البرامج — نقل الأسبوع بالسحب متاح"}
               {plan.status === "rejected" && (
                 <span className="text-destructive block mt-1">مرفوض: {plan.rejectionNote}</span>

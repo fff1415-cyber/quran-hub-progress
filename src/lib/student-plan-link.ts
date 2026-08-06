@@ -5,7 +5,7 @@ import {
   validateLevelAndPhase,
   type InstituteLevel,
 } from "@/lib/plan-level-ranges";
-import { normalizeFaceQuotas } from "@/lib/plan-daily-faces";
+import { resolveFaceQuotas } from "@/lib/plan-daily-faces";
 import type { EducationPlan, PlanTrack } from "@/lib/plan-types";
 import { assignStudentPlan, fetchPlans } from "@/lib/plans-service";
 
@@ -50,14 +50,7 @@ export async function linkStudentToPlan(opts: LinkStudentPlanOptions): Promise<{
     }
   }
 
-  const quotas = normalizeFaceQuotas({
-    daily_rabt_faces: opts.dailyRabtFaces ?? 2,
-    daily_muraja_faces: opts.dailyMurajaFaces ?? 2,
-    daily_hifz_faces: 1,
-    faces_per_half: 0.5,
-    faces_per_one: 1,
-    faces_per_two: 2,
-  });
+  const quotas = resolveFaceQuotas(opts.track);
 
   await assignStudentPlan(
     opts.studentId,

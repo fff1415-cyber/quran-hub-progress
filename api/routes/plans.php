@@ -153,6 +153,12 @@ function plans_ensure_assignment_v2_columns(PDO $pdo): void
              ADD COLUMN `start_muraja_segment` INT NULL DEFAULT NULL AFTER `plan_start_date`'
         );
     }
+    if (!plans_column_exists($pdo, 'student_plan_assignments', 'transferred_at')) {
+        $pdo->exec(
+            'ALTER TABLE `student_plan_assignments`
+             ADD COLUMN `transferred_at` TIMESTAMP NULL DEFAULT NULL AFTER `frozen_at`'
+        );
+    }
 }
 
 function plans_ensure_daily_faces_columns(PDO $pdo): void
@@ -192,6 +198,28 @@ function plans_ensure_daily_faces_columns(PDO $pdo): void
     }
 }
 
+function plans_track_face_quotas(string $track): array
+{
+    if ($track === 'gold') {
+        return [
+            'daily_hifz_faces' => 1,
+            'daily_rabt_faces' => 20,
+            'daily_muraja_faces' => 20,
+            'faces_per_half' => 1,
+            'faces_per_one' => 1,
+            'faces_per_two' => 2,
+        ];
+    }
+    return [
+        'daily_hifz_faces' => 1,
+        'daily_rabt_faces' => 10,
+        'daily_muraja_faces' => 10,
+        'faces_per_half' => 1,
+        'faces_per_one' => 1,
+        'faces_per_two' => 2,
+    ];
+}
+
 function plans_face_row(array $row): array
 {
     return [
@@ -206,14 +234,15 @@ function plans_face_row(array $row): array
 
 function plan_row(array $row): array
 {
+    $track = ($row['track'] ?? '') === 'silver' ? 'silver' : 'gold';
     return array_merge([
         'id' => $row['id'],
-        'track' => $row['track'],
+        'track' => $track,
         'level_number' => (int) $row['level_number'],
         'title' => $row['title'],
         'segment_count' => (int) $row['segment_count'],
         'created_at' => $row['created_at'] ?? null,
-    ], plans_face_row($row));
+    ], plans_track_face_quotas($track));
 }
 
 function segment_row(array $row): array
@@ -471,6 +500,7 @@ function assignment_row(array $row): array
         'assigned_by' => $row['assigned_by'],
         'assigned_at' => $row['assigned_at'] ?? null,
         'frozen_at' => $row['frozen_at'] ?? null,
+        'transferred_at' => $row['transferred_at'] ?? null,
     ], plans_face_row($row));
 }
 
@@ -587,14 +617,14 @@ function handle_assign_plan(): void
 
         if ($tenants) {
             $planStmt = $pdo->prepare(
-                'SELECT level_number, daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                'SELECT track, level_number, daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
                         faces_per_half, faces_per_one, faces_per_two
                  FROM education_plans WHERE id = ? AND complex_id = ?'
             );
             $planStmt->execute([$planId, $cid]);
         } else {
             $planStmt = $pdo->prepare(
-                'SELECT level_number, daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                'SELECT track, level_number, daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
                         faces_per_half, faces_per_one, faces_per_two
                  FROM education_plans WHERE id = ?'
             );
@@ -608,17 +638,11 @@ function handle_assign_plan(): void
             $startMuraja = null;
         }
 
-        $faces = plans_face_row(array_merge($planRow, [
-            'daily_hifz_faces' => $input['daily_hifz_faces'] ?? $planRow['daily_hifz_faces'],
-            'daily_rabt_faces' => $input['daily_rabt_faces'] ?? $planRow['daily_rabt_faces'],
-            'daily_muraja_faces' => $input['daily_muraja_faces'] ?? $planRow['daily_muraja_faces'],
-            'faces_per_half' => $input['faces_per_half'] ?? $planRow['faces_per_half'],
-            'faces_per_one' => $input['faces_per_one'] ?? $planRow['faces_per_one'],
-            'faces_per_two' => $input['faces_per_two'] ?? $planRow['faces_per_two'],
-        ]));
+        $track = ($planRow['track'] ?? '') === 'silver' ? 'silver' : 'gold';
+        $faces = plans_track_face_quotas($track);
 
         $pdo->prepare(
-            "UPDATE student_plan_assignments SET status = 'transferred' WHERE student_id = ? AND status = 'active'"
+            "UPDATE student_plan_assignments SET status = 'transferred', transferred_at = NOW() WHERE student_id = ? AND status = 'active'"
         )->execute([$studentId]);
 
         $id = new_uuid();
@@ -661,7 +685,16 @@ function handle_patch_assignment_quotas(): void
     $tenants = plans_tenant_enabled($pdo);
     plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
     plans_ensure_daily_faces_columns($pdo);
-    $faces = plans_face_row($input);
+    $trackStmt = $pdo->prepare(
+        'SELECT p.track FROM student_plan_assignments a
+         JOIN education_plans p ON p.id = a.plan_id
+         WHERE a.student_id = ? AND a.status IN (\'active\', \'frozen\')
+         LIMIT 1'
+    );
+    $trackStmt->execute([$studentId]);
+    $trackRow = $trackStmt->fetch();
+    $track = ($trackRow['track'] ?? '') === 'silver' ? 'silver' : 'gold';
+    $faces = plans_track_face_quotas($track);
     $stmt = $pdo->prepare(
         'UPDATE student_plan_assignments
          SET daily_hifz_faces = ?, daily_rabt_faces = ?, daily_muraja_faces = ?,
@@ -691,11 +724,12 @@ function handle_patch_assignment(): void
     $tenants = plans_tenant_enabled($pdo);
     plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
     $frozenAt = $status === 'frozen' ? date('Y-m-d H:i:s') : null;
+    $transferredAt = $status === 'transferred' ? date('Y-m-d H:i:s') : null;
     $stmt = $pdo->prepare(
-        'UPDATE student_plan_assignments SET status = ?, frozen_at = ?
+        'UPDATE student_plan_assignments SET status = ?, frozen_at = ?, transferred_at = COALESCE(?, transferred_at)
          WHERE student_id = ? AND status IN (\'active\', \'frozen\')'
     );
-    $stmt->execute([$status, $frozenAt, $studentId]);
+    $stmt->execute([$status, $frozenAt, $transferredAt, $studentId]);
     json_response(['ok' => true, 'updated' => $stmt->rowCount()]);
 }
 

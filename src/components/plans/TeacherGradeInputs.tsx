@@ -1,5 +1,5 @@
 import type { HifzValue } from "@/lib/mock-data";
-import { COMPENSATION_FACE_OPTIONS, HIFZ_LABELS } from "@/lib/mock-data";
+import { COMPENSATION_FACE_OPTIONS, COMPENSATION_MURAJA_FACE_OPTIONS, HIFZ_LABELS } from "@/lib/mock-data";
 import { useGradeInputSettings } from "@/contexts/GradeInputSettingsContext";
 import {
   ATTENDANCE_OPTION_LABELS,
@@ -180,6 +180,30 @@ export function CompensationSelect({
       title="أوجه حفظ زائدة (تعويض)"
     >
       {COMPENSATION_FACE_OPTIONS.map((opt) => (
+        <option key={opt.value} value={opt.value}>{opt.label}</option>
+      ))}
+    </select>
+  );
+}
+
+export function MurajaCompensationSelect({
+  value,
+  onChange,
+  disabled,
+}: {
+  value: number;
+  onChange: (v: number) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <select
+      value={String(value)}
+      disabled={disabled}
+      onChange={(e) => onChange(Number(e.target.value))}
+      className={cn(gradeCellSelectClass, "font-bold text-center")}
+      title="أوجه مراجعة زائدة (تعويض)"
+    >
+      {COMPENSATION_MURAJA_FACE_OPTIONS.map((opt) => (
         <option key={opt.value} value={opt.value}>{opt.label}</option>
       ))}
     </select>

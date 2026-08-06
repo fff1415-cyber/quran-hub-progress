@@ -26,6 +26,7 @@ import {
   sardPhase,
 } from "@/lib/sard-phased-flow";
 import { runPostPassAutomation } from "@/lib/post-pass-automation";
+import type { PlanAdvanceResult } from "@/lib/plan-progression";
 import { promoteStudentPhase } from "@/lib/student-phase-promote";
 import { notifyTeacherHalaqa } from "@/lib/teacher-notifications";
 import { AppHeader } from "@/components/AppHeader";
@@ -33,6 +34,23 @@ import { Mic, Minus, Plus, ArrowRight, Award, CheckCircle2, XCircle, Clock, Lock
 import { Toaster, toast } from "sonner";
 
 export const Route = createFileRoute("/musammi")({ component: MusammiPage });
+
+function passedSardPatch(
+  advance: PlanAdvanceResult,
+  finalPercent: number,
+  phase: "full" | "review_only",
+): Partial<SardQueueItem> {
+  return {
+    status: "passed",
+    finalPercent,
+    phase,
+    passedAt: new Date().toISOString(),
+    closedPlanTitle: advance.closedPlanTitle,
+    newPlanTitle: advance.newPlanTitle,
+    newPlanStartDate: advance.newPlanStartDate ?? undefined,
+    newPlanAssignedAt: advance.newPlanAssignedAt ?? undefined,
+  };
+}
 
 function notifyTeacherSard(halaqaId: number, message: string) {
   notifyTeacherHalaqa(halaqaId, message, "sard");
@@ -390,7 +408,6 @@ function SardEvaluatorFull({
     });
 
     if (merged.passed) {
-      updateSardItem(item.id, { status: "passed", finalPercent: merged.percent, phase: "full" });
       try {
         const newLevel = await promoteStudentLevel(item.studentId, level);
         const advance = await runPostPassAutomation({
@@ -404,6 +421,7 @@ function SardEvaluatorFull({
           track: levelType,
           assignedBy: "المسمّع",
         });
+        updateSardItem(item.id, passedSardPatch(advance, merged.percent, "full"));
         const planMsg = advance.newPlanTitle
           ? ` — انتقل إلى ${advance.newPlanTitle}`
           : advance.closedPlanTitle
@@ -412,6 +430,7 @@ function SardEvaluatorFull({
         notifyTeacherSard(item.halaqaId, `الطالب ${studentName} اجتاز السرد بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
         toast.success(`اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
       } catch {
+        updateSardItem(item.id, { status: "passed", finalPercent: merged.percent, phase: "full", passedAt: new Date().toISOString() });
         toast.success(`اجتاز بنسبة ${merged.percent}%`);
       }
     } else {
@@ -525,7 +544,6 @@ function SardEvaluatorReviewOnly({
     });
 
     if (merged.passed) {
-      updateSardItem(item.id, { status: "passed", finalPercent: merged.percent, phase: "review_only" });
       try {
         const newLevel = await promoteStudentLevel(item.studentId, level);
         const advance = await runPostPassAutomation({
@@ -539,6 +557,7 @@ function SardEvaluatorReviewOnly({
           track: levelType,
           assignedBy: "المسمّع",
         });
+        updateSardItem(item.id, passedSardPatch(advance, merged.percent, "review_only"));
         const planMsg = advance.newPlanTitle
           ? ` — انتقل إلى ${advance.newPlanTitle}`
           : advance.closedPlanTitle
@@ -547,6 +566,12 @@ function SardEvaluatorReviewOnly({
         notifyTeacherSard(item.halaqaId, `الطالب ${studentName} اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
         toast.success(`اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
       } catch {
+        updateSardItem(item.id, {
+          status: "passed",
+          finalPercent: merged.percent,
+          phase: "review_only",
+          passedAt: new Date().toISOString(),
+        });
         toast.success(`اجتاز بنسبة ${merged.percent}%`);
       }
     } else {

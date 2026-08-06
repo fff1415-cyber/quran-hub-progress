@@ -46,7 +46,9 @@ export async function runPostPassAutomation(payload: SardPassPayload): Promise<P
 
   let advance: PlanAdvanceResult = {};
   try {
-    advance = await completePlanAndAdvance(payload.studentId, assignedBy, payload.track);
+    advance = await completePlanAndAdvance(payload.studentId, assignedBy, payload.track, {
+      planStartDate: record.testDate.slice(0, 10),
+    });
     if (advance.newGlobalPhase) {
       await syncStudentToGlobalPhase(payload.studentId, advance.newGlobalPhase);
     }

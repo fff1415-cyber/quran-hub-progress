@@ -112,14 +112,14 @@ export function SupervisorHalaqaResultsPanel() {
                 {s.isTalqeen && <span className="mr-2 text-warning">· تلقين</span>}
               </div>
               <div className="grid grid-cols-2 gap-2 text-center">
-                <MiniStat label="الكلي — أسبوع" value={`${formatOverallPercent(s.overallWeekPct)}%`} />
-                <MiniStat label="الكلي — تراكمي" value={`${formatOverallPercent(s.overallSemesterPct)}%`} highlight />
+                <MiniStat label="الكلي — أسبوع" value={formatOverallPercent(s.overallWeekPct)} />
+                <MiniStat label="الكلي — تراكمي" value={formatOverallPercent(s.overallSemesterPct)} highlight />
               </div>
               {!s.isTalqeen && (
                 <div className="mt-3 pt-3 border-t border-border/50 grid grid-cols-3 gap-1 text-[10px] text-center text-muted-foreground">
-                  <span>حفظ {formatOverallPercent(s.hifz.weekPct)}%</span>
-                  <span>ربط {formatOverallPercent(s.rabt.weekPct)}%</span>
-                  <span>مراجعة {formatOverallPercent(s.muraja.weekPct)}%</span>
+                  <span>حفظ {formatOverallPercent(s.hifz.weekPct)}</span>
+                  <span>ربط {formatOverallPercent(s.rabt.weekPct)}</span>
+                  <span>مراجعة {formatOverallPercent(s.muraja.weekPct)}</span>
                 </div>
               )}
               <div className="mt-3 flex items-center justify-end gap-1 text-xs text-primary font-medium">
@@ -167,7 +167,7 @@ function HalaqaDetailView({
       <div className="glass-card rounded-2xl p-6 flex flex-col items-center">
         <OverallRing pct={data.overallSemesterPct} label="النسبة الكلية للحلقة — تراكمي" size="lg" />
         <p className="text-xs text-muted-foreground mt-2">
-          أسبوع {weekLabel(weekNum)}: {formatOverallPercent(data.overallWeekPct)}%
+          أسبوع {weekLabel(weekNum)}: {formatOverallPercent(data.overallWeekPct)}
         </p>
       </div>
 
@@ -184,7 +184,7 @@ function HalaqaDetailView({
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <TaskCard title="الحفظ" icon={BookOpen} metrics={data.hifz} accent="primary" />
           <TaskCard title="الربط" icon={Link2} metrics={data.rabt} accent="blue" />
-          <TaskCard title="المراجعة" icon={Layers} metrics={data.muraja} accent="amber" />
+          <TaskCard title="المراجعة" icon={Layers} metrics={data.muraja} accent="amber" allowOver100Faces />
         </div>
       )}
 
@@ -199,12 +199,14 @@ function TaskCard({
   metrics,
   showFaces = true,
   accent = "primary",
+  allowOver100Faces = false,
 }: {
   title: string;
   icon: typeof BookOpen;
   metrics: TaskFaceMetrics;
   showFaces?: boolean;
   accent?: "primary" | "blue" | "amber";
+  allowOver100Faces?: boolean;
 }) {
   const accentClass =
     accent === "blue"
@@ -235,8 +237,11 @@ function TaskCard({
             <span className="text-muted-foreground">المستهدف — كامل الترم</span>
             <span className="font-bold">{formatFaceCount(metrics.termTargetFaces)}</span>
           </div>
-          <FaceProgressBar pct={metrics.facesProgressPct} />
-          <p className="text-[10px] text-muted-foreground text-center">
+          <FaceProgressBar pct={metrics.facesProgressPct} allowOver100={allowOver100Faces} />
+          <p className={cn(
+            "text-[10px] text-muted-foreground text-center",
+            allowOver100Faces && metrics.facesProgressPct > 100 && "text-success font-bold",
+          )}>
             إنجاز الأوجه: {formatOverallPercent(metrics.facesProgressPct)}% من هدف الترم
           </p>
         </div>
@@ -258,28 +263,34 @@ function StudentResultsTable({ data, weekNum }: { data: HalaqaResultsSummary; we
     return (
       <div className="glass-card rounded-2xl p-4 overflow-x-auto">
         <h3 className="font-bold text-primary mb-3 text-sm">تفاصيل الطلاب</h3>
-        <table className="w-full text-sm min-w-[640px]">
+        <table className="w-full text-sm min-w-[640px] border-separate border-spacing-0">
           <thead>
-            <tr className="text-right text-muted-foreground border-b border-border">
-              <th className="p-2">الطالب</th>
-              <th className="p-2">أسبوع %</th>
-              <th className="p-2">تراكمي %</th>
-              <th className="p-2">حضور أسبوع</th>
-              <th className="p-2">حضور تراكمي</th>
-              <th className="p-2">واجب أسبوع</th>
-              <th className="p-2">واجب تراكمي</th>
+            <tr className="text-right text-muted-foreground bg-secondary/60">
+              <th className="p-2.5 border-b-2 border-border font-bold">الطالب</th>
+              <th className="p-2.5 border-b-2 border-border">أسبوع</th>
+              <th className="p-2.5 border-b-2 border-border">تراكمي</th>
+              <th className="p-2.5 border-b-2 border-border">حضور أسبوع</th>
+              <th className="p-2.5 border-b-2 border-border">حضور تراكمي</th>
+              <th className="p-2.5 border-b-2 border-border">واجب أسبوع</th>
+              <th className="p-2.5 border-b-2 border-border">واجب تراكمي</th>
             </tr>
           </thead>
           <tbody>
-            {data.students.map((s) => (
-              <tr key={s.studentId} className="border-b border-border/30 hover:bg-secondary/20">
-                <td className="p-2 font-medium">{s.studentName}</td>
-                <td className="p-2">{formatOverallPercent(s.overallWeekPct)}%</td>
-                <td className="p-2 font-bold text-primary">{formatOverallPercent(s.overallSemesterPct)}%</td>
-                <td className="p-2">{formatOverallPercent(s.attendance?.weekPct ?? 0)}%</td>
-                <td className="p-2">{formatOverallPercent(s.attendance?.semesterPct ?? 0)}%</td>
-                <td className="p-2">{formatOverallPercent(s.wajib?.weekPct ?? 0)}%</td>
-                <td className="p-2">{formatOverallPercent(s.wajib?.semesterPct ?? 0)}%</td>
+            {data.students.map((s, idx) => (
+              <tr
+                key={s.studentId}
+                className={cn(
+                  "border-b border-border/40 transition-colors hover:bg-accent/20",
+                  idx % 2 === 0 ? "bg-card" : "bg-secondary/50",
+                )}
+              >
+                <td className="p-2.5 font-medium">{s.studentName}</td>
+                <td className="p-2.5 text-center">{formatOverallPercent(s.overallWeekPct)}</td>
+                <td className="p-2.5 text-center font-bold text-primary">{formatOverallPercent(s.overallSemesterPct)}</td>
+                <td className="p-2.5 text-center">{formatOverallPercent(s.attendance?.weekPct ?? 0)}</td>
+                <td className="p-2.5 text-center">{formatOverallPercent(s.attendance?.semesterPct ?? 0)}</td>
+                <td className="p-2.5 text-center">{formatOverallPercent(s.wajib?.weekPct ?? 0)}</td>
+                <td className="p-2.5 text-center">{formatOverallPercent(s.wajib?.semesterPct ?? 0)}</td>
               </tr>
             ))}
           </tbody>
@@ -291,52 +302,89 @@ function StudentResultsTable({ data, weekNum }: { data: HalaqaResultsSummary; we
   return (
     <div className="glass-card rounded-2xl p-4 overflow-x-auto">
       <h3 className="font-bold text-primary mb-3 text-sm">تفاصيل الطلاب — {weekLabel(weekNum)}</h3>
-      <table className="w-full text-sm min-w-[900px]">
+      <table className="w-full text-sm min-w-[720px] border-separate border-spacing-0">
         <thead>
-          <tr className="text-right text-muted-foreground border-b border-border text-xs">
-            <th className="p-2" rowSpan={2}>الطالب</th>
-            <th className="p-2" rowSpan={2}>كلي</th>
-            <th className="p-2 text-center border-r border-border/50" colSpan={3}>الحفظ</th>
-            <th className="p-2 text-center border-r border-border/50" colSpan={3}>الربط</th>
-            <th className="p-2 text-center" colSpan={3}>المراجعة</th>
+          <tr className="text-xs border-b-2 border-border bg-secondary/60">
+            <th className="p-2.5 font-bold text-primary" rowSpan={2}>الطالب</th>
+            <th className="p-2.5 font-bold text-primary border-r border-border" rowSpan={2}>كلي</th>
+            <th className="p-2 text-center font-bold text-primary border-r-2 border-border" colSpan={2}>
+              الحفظ
+            </th>
+            <th className="p-2 text-center font-bold text-primary border-r-2 border-border" colSpan={2}>
+              الربط
+            </th>
+            <th className="p-2 text-center font-bold text-primary" colSpan={2}>
+              المراجعة
+            </th>
           </tr>
-          <tr className="text-right text-[10px] text-muted-foreground border-b border-border">
-            <th className="p-1.5">أسبوع</th>
-            <th className="p-1.5">تراكمي</th>
-            <th className="p-1.5 border-r border-border/50">أوجه/هدف</th>
-            <th className="p-1.5">أسبوع</th>
-            <th className="p-1.5">تراكمي</th>
-            <th className="p-1.5 border-r border-border/50">أوجه/هدف</th>
-            <th className="p-1.5">أسبوع</th>
-            <th className="p-1.5">تراكمي</th>
-            <th className="p-1.5">أوجه/هدف</th>
+          <tr className="text-[11px] text-muted-foreground border-b-2 border-border bg-secondary/40">
+            <th className="p-2 border-r border-border/60">تراكمي</th>
+            <th className="p-2 border-r-2 border-border">أوجه / هدف</th>
+            <th className="p-2 border-r border-border/60">تراكمي</th>
+            <th className="p-2 border-r-2 border-border">أوجه / هدف</th>
+            <th className="p-2 border-r border-border/60">تراكمي</th>
+            <th className="p-2">أوجه / هدف</th>
           </tr>
         </thead>
         <tbody>
-          {data.students.map((s) => (
-            <tr key={s.studentId} className="border-b border-border/30 hover:bg-secondary/20">
-              <td className="p-2 font-medium whitespace-nowrap">{s.studentName}</td>
-              <td className="p-2 font-bold text-primary whitespace-nowrap">
-                {formatOverallPercent(s.overallSemesterPct)}%
-              </td>
-              <StudentTaskCells task={s.hifz} />
-              <StudentTaskCells task={s.rabt} withBorder />
-              <StudentTaskCells task={s.muraja} />
-            </tr>
-          ))}
+          {data.students.map((s, idx) => {
+            const rowBg = idx % 2 === 0 ? "bg-card" : "bg-secondary/50";
+            return (
+              <tr
+                key={s.studentId}
+                className={cn(
+                  "border-b border-border/50 transition-colors hover:bg-accent/20",
+                  rowBg,
+                )}
+              >
+                <td className={cn("p-2.5 font-medium whitespace-nowrap border-r border-border/40", rowBg)}>
+                  {s.studentName}
+                </td>
+                <td className={cn("p-2.5 font-bold text-primary whitespace-nowrap text-center border-r border-border", rowBg)}>
+                  {formatOverallPercent(s.overallSemesterPct)}
+                </td>
+                <StudentTaskCells task={s.hifz} sectionEnd rowBg={rowBg} />
+                <StudentTaskCells task={s.rabt} sectionEnd rowBg={rowBg} />
+                <StudentTaskCells task={s.muraja} rowBg={rowBg} />
+              </tr>
+            );
+          })}
         </tbody>
       </table>
     </div>
   );
 }
 
-function StudentTaskCells({ task, withBorder = false }: { task: TaskFaceMetrics; withBorder?: boolean }) {
+function StudentTaskCells({
+  task,
+  sectionEnd = false,
+  rowBg,
+}: {
+  task: TaskFaceMetrics;
+  sectionEnd?: boolean;
+  rowBg: string;
+}) {
   return (
     <>
-      <td className="p-2 text-center">{formatOverallPercent(task.weekPct)}%</td>
-      <td className="p-2 text-center">{formatOverallPercent(task.semesterPct)}%</td>
-      <td className={cn("p-2 text-center text-xs whitespace-nowrap", withBorder && "border-r border-border/50")}>
-        {formatFaceCount(task.actualFaces)} / {formatFaceCount(task.termTargetFaces)}
+      <td className={cn("p-2.5 text-center font-semibold border-r border-border/40", rowBg)}>
+        {formatOverallPercent(task.semesterPct)}
+      </td>
+      <td
+        className={cn(
+          "p-2.5 text-center text-xs whitespace-nowrap",
+          sectionEnd && "border-r-2 border-border",
+          rowBg,
+        )}
+      >
+        <span className="font-bold text-foreground">{formatFaceCount(task.actualFaces)}</span>
+        <span className="text-muted-foreground mx-1">/</span>
+        <span className="text-muted-foreground">{formatFaceCount(task.termTargetFaces)}</span>
+        <span className={cn(
+          "block text-[10px] mt-0.5",
+          task.facesProgressPct > 100 ? "text-success font-bold" : "text-muted-foreground",
+        )}>
+          {formatOverallPercent(task.facesProgressPct)}
+        </span>
       </td>
     </>
   );
@@ -389,12 +437,15 @@ function OverallRing({ pct, label, size = "md" }: { pct: number; label: string; 
   );
 }
 
-function FaceProgressBar({ pct }: { pct: number }) {
-  const width = Math.min(Math.max(pct, 0), 100);
+function FaceProgressBar({ pct, allowOver100 = false }: { pct: number; allowOver100?: boolean }) {
+  const width = allowOver100 ? Math.min(Math.max(pct, 0), 100) : Math.min(Math.max(pct, 0), 100);
   return (
     <div className="h-2.5 rounded-full bg-secondary overflow-hidden">
       <div
-        className="h-full bg-primary transition-all rounded-full"
+        className={cn(
+          "h-full transition-all rounded-full",
+          allowOver100 && pct > 100 ? "bg-success" : "bg-primary",
+        )}
         style={{ width: `${width}%` }}
       />
     </div>

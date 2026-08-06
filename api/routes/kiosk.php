@@ -413,6 +413,7 @@ function kiosk_empty_week(array $workingDayKeys): array
         'sard' => false,
         'compensationFaces' => 0,
         'compensationPlanSegments' => [],
+        'compensationMurajaFaces' => 0,
     ];
 }
 

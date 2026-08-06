@@ -6,25 +6,30 @@ import {
   aggregateFaceProgress,
   aggregateFaceProgressAllWeeks,
   facePct,
-  faceQuotasFromAssignment,
   formatFaceCount,
-  DEFAULT_FACE_QUOTAS,
+  resolveFaceQuotas,
+  type DailyFaceQuotas,
 } from "@/lib/plan-daily-faces";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { BookOpen, Loader2, Search } from "lucide-react";
+import { cn } from "@/lib/utils";
 
 function FaceStatRow({
   label,
   actual,
   target,
+  allowOver100 = false,
 }: {
   label: string;
   actual: number;
   target: number;
+  allowOver100?: boolean;
 }) {
   const pct = facePct(actual, target);
+  const barWidth = Math.min(Math.max(pct, 0), 100);
+  const pctClass = allowOver100 && pct > 100 ? "text-success font-bold" : "";
   return (
     <div className="rounded-lg border border-border p-3 bg-secondary/20">
       <div className="text-xs text-muted-foreground mb-1">{label}</div>
@@ -36,11 +41,14 @@ function FaceStatRow({
       </div>
       <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
         <div
-          className="h-full bg-primary rounded-full transition-all"
-          style={{ width: `${Math.min(pct, 100)}%` }}
+          className={cn(
+            "h-full rounded-full transition-all",
+            allowOver100 && pct > 100 ? "bg-success" : "bg-primary",
+          )}
+          style={{ width: `${barWidth}%` }}
         />
       </div>
-      <div className="text-[10px] text-muted-foreground mt-1 text-left">{pct}%</div>
+      <div className={cn("text-[10px] text-muted-foreground mt-1 text-left", pctClass)}>{pct}%</div>
     </div>
   );
 }
@@ -53,7 +61,7 @@ export function StudentFaceReportPanel() {
   const [fromIso, setFromIso] = useState("");
   const [toIso, setToIso] = useState("");
   const [data, setData] = useState<{
-    quotas: typeof DEFAULT_FACE_QUOTAS;
+    quotas: DailyFaceQuotas;
     summary: ReturnType<typeof aggregateFaceProgressAllWeeks>;
     hasPlan: boolean;
   } | null>(null);
@@ -90,9 +98,7 @@ export function StudentFaceReportPanel() {
     fetchStudentPlanSheet(selected.id)
       .then((sheet) => {
         if (cancelled) return;
-        const quotas = sheet.assignment
-          ? faceQuotasFromAssignment(sheet.assignment)
-          : DEFAULT_FACE_QUOTAS;
+        const quotas = resolveFaceQuotas(selected.levelType);
         const summary = calendar && fromIso && toIso
           ? aggregateFaceProgress(selected.id, grades, calendar, quotas, fromIso, toIso)
           : aggregateFaceProgressAllWeeks(selected.id, grades, quotas);
@@ -175,7 +181,7 @@ export function StudentFaceReportPanel() {
             <div className="grid sm:grid-cols-3 gap-3">
               <FaceStatRow label="الحفظ" actual={data.summary.hifzActual} target={data.summary.hifzTarget} />
               <FaceStatRow label="الربط" actual={data.summary.rabtActual} target={data.summary.rabtTarget} />
-              <FaceStatRow label="المراجعة" actual={data.summary.murajaActual} target={data.summary.murajaTarget} />
+              <FaceStatRow label="المراجعة" actual={data.summary.murajaActual} target={data.summary.murajaTarget} allowOver100 />
             </div>
           </div>
         )}

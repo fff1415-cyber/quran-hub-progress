@@ -27,7 +27,7 @@ import { processAbsenceThresholdAlerts } from "@/lib/semester-absence";
 import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
-import { AttSelect, CompensationSelect } from "@/components/plans/TeacherGradeInputs";
+import { AttSelect, CompensationSelect, MurajaCompensationSelect } from "@/components/plans/TeacherGradeInputs";
 import { hifzCheckedValue } from "@/lib/mock-data";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -312,7 +312,7 @@ interface WeekTableProps {
 }
 
 const GRADE_COL = {
-  student: 140,
+  student: 156,
   attendance: 72,
   hifz: 48,
   passFail: 56,
@@ -320,6 +320,7 @@ const GRADE_COL = {
   weekPct: 72,
   semesterPct: 80,
   compensation: 56,
+  compensationMuraja: 56,
 } as const;
 
 const GRADE_CELL_W = {
@@ -330,8 +331,18 @@ const GRADE_CELL_W = {
   weekPct: "w-[72px] max-w-[72px]",
   semesterPct: "w-20 max-w-20",
   compensation: "w-14 max-w-14",
-  student: "w-[140px] max-w-[140px]",
+  compensationMuraja: "w-14 max-w-14",
+  student: "w-[156px] max-w-[156px]",
 } as const;
+
+/** Sticky header — row 1 sits at top; row 2 sits below row 1 (~3rem). */
+const GRADE_HEAD_ROW1_TOP = "top-0";
+const GRADE_HEAD_ROW2_TOP = "top-14";
+
+const STICKY_HEAD = "sticky z-20 bg-secondary shadow-[0_1px_0_var(--border)]";
+const STICKY_HEAD_CORNER = "sticky z-40 bg-secondary shadow-[0_1px_0_var(--border)]";
+const STICKY_NAME =
+  "sticky right-0 z-10 bg-card shadow-[-8px_0_12px_-6px_rgba(0,0,0,0.12)] group-hover:bg-accent/30 transition-colors";
 
 function gradeTableWidthPx(dayCount: number, isTalqeen: boolean): number {
   const perDay = isTalqeen
@@ -342,7 +353,7 @@ function gradeTableWidthPx(dayCount: number, isTalqeen: boolean): number {
     + dayCount * perDay
     + GRADE_COL.weekPct
     + GRADE_COL.semesterPct
-    + (isTalqeen ? 0 : GRADE_COL.compensation)
+    + (isTalqeen ? 0 : GRADE_COL.compensation + GRADE_COL.compensationMuraja)
   );
 }
 
@@ -366,9 +377,41 @@ function GradeTableColGroup({
         )),
       )}
       {!isTalqeen && <col style={{ width: GRADE_COL.compensation }} />}
+      {!isTalqeen && <col style={{ width: GRADE_COL.compensationMuraja }} />}
       <col style={{ width: GRADE_COL.weekPct }} />
       <col style={{ width: GRADE_COL.semesterPct }} />
     </colgroup>
+  );
+}
+
+function StudentNameCell({
+  index,
+  name,
+  children,
+}: {
+  index: number;
+  name: string;
+  children?: React.ReactNode;
+}) {
+  return (
+    <td className={cn("p-2 font-medium", STICKY_NAME, GRADE_CELL_W.student)}>
+      <div className="flex items-stretch gap-0 min-h-[2rem]">
+        <span
+          className="flex items-center justify-center w-7 shrink-0 text-xs font-bold text-muted-foreground tabular-nums"
+          aria-hidden
+        >
+          {index + 1}
+        </span>
+        <div
+          className="w-px shrink-0 self-stretch bg-gradient-to-b from-border/20 via-border to-border/20 my-0.5 mx-2"
+          aria-hidden
+        />
+        <div className="flex flex-col gap-1 min-w-0 flex-1">
+          <span className="leading-snug">{name}</span>
+          {children}
+        </div>
+      </div>
+    </td>
   );
 }
 
@@ -617,6 +660,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }
   };
 
+  const handleMurajaCompensationChange = (studentId: string, faces: number) => {
+    update(studentId, (w) => ({
+      ...w,
+      compensationMurajaFaces: faces,
+    }));
+    if (faces > 0) {
+      toast.success(`تعويض مراجعة ${faces} وجه`);
+    }
+  };
+
   const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
     update(studentId, (w) => {
       const base = ensureWeekDays(w, workingKeysList);
@@ -695,7 +748,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     );
 
   return (
-    <div className="glass-card rounded-2xl p-4 overflow-x-auto" ref={tableRef}>
+    <div className="glass-card rounded-2xl p-4">
       <div className="mb-4 px-2 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-3">
         <div className="flex items-center gap-3 flex-wrap min-w-0 sm:justify-self-start">
           <Select value={String(weekNum)} onValueChange={(v) => onWeekChange(Number(v))}>
@@ -827,8 +880,12 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           {viewerRole === "assistant" ? "لم يُعيّن لك أي طالب بعد" : "لا يوجد طلاب"}
         </p>
       ) : (
+      <div
+        ref={tableRef}
+        className="overflow-auto max-h-[min(72vh,calc(100dvh-14rem))] rounded-xl border border-border/50"
+      >
       <table
-        className="text-sm border-collapse table-fixed"
+        className="text-sm border-separate border-spacing-0 table-fixed"
         style={{ width: tableWidthPx, minWidth: tableWidthPx }}
       >
         <GradeTableColGroup
@@ -837,74 +894,81 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         />
         <thead>
           <tr className="bg-secondary/50">
-            <th className={cn("p-2 text-right sticky right-0 bg-secondary z-10", GRADE_CELL_W.student)}>الطالب</th>
+            <th className={cn("p-2 text-right min-h-14", STICKY_HEAD_CORNER, GRADE_HEAD_ROW1_TOP, "right-0", GRADE_CELL_W.student)}>
+              <span className="font-bold">الطالب</span>
+            </th>
             {visibleDays.map((d) => (
-              <th key={d.key} data-day-col={d.key} colSpan={dayColSpan} className={dayHeaderClass(d.key)}>
+              <th key={d.key} data-day-col={d.key} colSpan={dayColSpan} className={cn(STICKY_HEAD, GRADE_HEAD_ROW1_TOP, dayHeaderClass(d.key))}>
                 {d.label}
                 {highlightDay(d.key) && <span className="block text-[10px] text-primary font-normal">اليوم</span>}
               </th>
             ))}
             {!isTalqeen && (
-              <th className={cn("p-2 border-r border-border text-success", GRADE_CELL_W.compensation)}>تعويض</th>
+              <>
+                <th className={cn("p-2 border-r border-border text-success", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.compensation)}>ت. حفظ</th>
+                <th className={cn("p-2 border-r border-border text-amber-600 dark:text-amber-400", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.compensationMuraja)}>ت. مراجعة</th>
+              </>
             )}
-            <th className={cn("p-2 border-r border-border text-muted-foreground", GRADE_CELL_W.weekPct)}>نسبة الأسبوع</th>
-            <th className={cn("p-2 border-r border-border text-primary font-bold", GRADE_CELL_W.semesterPct)}>النسبة الكلية</th>
+            <th className={cn("p-2 border-r border-border text-muted-foreground", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.weekPct)}>نسبة الأسبوع</th>
+            <th className={cn("p-2 border-r border-border text-primary font-bold", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.semesterPct)}>النسبة الكلية</th>
           </tr>
           <tr className="bg-secondary/30 text-xs text-muted-foreground">
-            <th className={cn("sticky right-0 bg-secondary", GRADE_CELL_W.student)} />
+            <th className={cn(STICKY_HEAD_CORNER, GRADE_HEAD_ROW2_TOP, "right-0", GRADE_CELL_W.student)} />
             {visibleDays.map((d) =>
               isTalqeen ? (
                 <React.Fragment key={d.key}>
-                  <th className={subHeaderClass(d.key, GRADE_CELL_W.att)}>
+                  <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.att))}>
                     {bulkPresentBtn(d.key)}
                     <span className="block">حاضر</span>
                   </th>
-                  <th className={subHeaderClass(d.key, GRADE_CELL_W.wajib)}>واجب</th>
+                  <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.wajib))}>واجب</th>
                 </React.Fragment>
               ) : (
                 <React.Fragment key={d.key}>
-                  <th className={subHeaderClass(d.key, GRADE_CELL_W.att)}>
+                  <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.att))}>
                     {bulkPresentBtn(d.key)}
                     <span className="block">الحضور</span>
                   </th>
-                  <th className={subHeaderClass(d.key, GRADE_CELL_W.hifz)}>حفظ</th>
-                  <th className={subHeaderClass(d.key, GRADE_CELL_W.pf)}>ربط</th>
-                  <th className={subHeaderClass(d.key, GRADE_CELL_W.pf)}>مراجعة</th>
+                  <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.hifz))}>حفظ</th>
+                  <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.pf))}>ربط</th>
+                  <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.pf))}>مراجعة</th>
                 </React.Fragment>
               )
             )}
-            {!isTalqeen && <th className={GRADE_CELL_W.compensation} />}
-            <th className={GRADE_CELL_W.weekPct} />
-            <th className={GRADE_CELL_W.semesterPct} />
+            {!isTalqeen && (
+              <>
+                <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, GRADE_CELL_W.compensation)} />
+                <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, GRADE_CELL_W.compensationMuraja)} />
+              </>
+            )}
+            <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, GRADE_CELL_W.weekPct)} />
+            <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, GRADE_CELL_W.semesterPct)} />
           </tr>
         </thead>
         <tbody>
-          {students.map((s) => {
+          {students.map((s, studentIndex) => {
             const w = ensureWeekDays(grades[s.id]?.[weekNum] ?? emptyWeek(workingKeysList), workingKeysList);
             const weekPct = weekPercentage(w, isTalqeen, s.levelType);
             return (
-              <tr key={s.id} className="border-b border-border/50 hover:bg-accent/30">
-                <td className={cn("p-2 sticky right-0 bg-card font-medium", GRADE_CELL_W.student)}>
-                  <div className="flex flex-col gap-1">
-                    <span>{s.name}</span>
-                    {s.assignedTo === "assistant" && viewerRole === "teacher" && (
-                      <span className="text-[10px] text-muted-foreground">مع المساعد</span>
-                    )}
-                    {frozenPlanStudentIds.has(s.id) && (
-                      <span className="text-[10px] text-warning">الخطة مجمّدة</span>
-                    )}
-                    {planLinkedIds.has(s.id) && (
-                    <button
-                      type="button"
-                      onClick={() => void openPlanSheet(s)}
-                      className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline w-fit"
-                    >
-                      <ClipboardList className="w-3 h-3" />
-                      {planStudentIds.has(s.id) ? "الخطة" : frozenPlanStudentIds.has(s.id) ? "عرض (مجمّدة)" : "عرض الخطة"}
-                    </button>
-                    )}
-                  </div>
-                </td>
+              <tr key={s.id} className="group border-b border-border/50 hover:bg-accent/30">
+                <StudentNameCell index={studentIndex} name={s.name}>
+                  {s.assignedTo === "assistant" && viewerRole === "teacher" && (
+                    <span className="text-[10px] text-muted-foreground">مع المساعد</span>
+                  )}
+                  {frozenPlanStudentIds.has(s.id) && (
+                    <span className="text-[10px] text-warning">الخطة مجمّدة</span>
+                  )}
+                  {planLinkedIds.has(s.id) && (
+                  <button
+                    type="button"
+                    onClick={() => void openPlanSheet(s)}
+                    className="inline-flex items-center gap-1 text-[10px] text-primary hover:underline w-fit"
+                  >
+                    <ClipboardList className="w-3 h-3" />
+                    {planStudentIds.has(s.id) ? "الخطة" : frozenPlanStudentIds.has(s.id) ? "عرض (مجمّدة)" : "عرض الخطة"}
+                  </button>
+                  )}
+                </StudentNameCell>
                 {visibleDays.map((d) => {
                   const e = dayEntryFor(w, d.key, workingKeysList);
                   return isTalqeen ? (
@@ -961,12 +1025,20 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                   );
                 })}
                 {!isTalqeen && (
-                  <td className={cn("p-1 text-center border-r border-border/30", GRADE_CELL_W.compensation)}>
-                    <CompensationSelect
-                      value={w.compensationFaces ?? 0}
-                      onChange={(v) => void handleCompensationChange(s, v)}
-                    />
-                  </td>
+                  <>
+                    <td className={cn("p-1 text-center border-r border-border/30", GRADE_CELL_W.compensation)}>
+                      <CompensationSelect
+                        value={w.compensationFaces ?? 0}
+                        onChange={(v) => void handleCompensationChange(s, v)}
+                      />
+                    </td>
+                    <td className={cn("p-1 text-center border-r border-border/30", GRADE_CELL_W.compensationMuraja)}>
+                      <MurajaCompensationSelect
+                        value={w.compensationMurajaFaces ?? 0}
+                        onChange={(v) => handleMurajaCompensationChange(s.id, v)}
+                      />
+                    </td>
+                  </>
                 )}
                 <td className={cn("p-2 text-center font-bold border-r border-border/30", GRADE_CELL_W.weekPct)}>
                   <span className={weekPct >= 80 ? "text-success" : weekPct >= 50 ? "text-warning" : "text-muted-foreground"}>
@@ -986,6 +1058,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           })}
         </tbody>
       </table>
+      </div>
       )}
 
       {students.length > 0 && (

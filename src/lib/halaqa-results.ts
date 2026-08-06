@@ -6,10 +6,9 @@ import type { GradesStore, Halaqa, Student } from "@/lib/mock-data";
 import {
   aggregateFaceProgress,
   facePct,
-  faceQuotasFromAssignment,
-  normalizeTaskQuotas,
+  resolveFaceQuotas,
+  termFaceTargets,
 } from "@/lib/plan-daily-faces";
-import { localGetStudentSheet } from "@/lib/plans-store";
 import {
   getTotalSemesterWorkingDays,
   semesterComponentPercentages,
@@ -88,23 +87,20 @@ function buildTaskMetrics(
 }
 
 function studentFaceTotals(
-  studentId: string,
+  student: Student,
   grades: GradesStore,
   calendar: AcademicCalendar,
 ): { hifzActual: number; rabtActual: number; murajaActual: number; hifzTarget: number; rabtTarget: number; murajaTarget: number } {
-  const assignment = localGetStudentSheet(studentId).assignment;
-  const quotas = faceQuotasFromAssignment(assignment);
-  const q = normalizeTaskQuotas(quotas);
-  const progress = aggregateFaceProgress(studentId, grades, calendar, q);
+  const quotas = resolveFaceQuotas(student.levelType);
+  const progress = aggregateFaceProgress(student.id, grades, calendar, quotas);
   const termDays = getTotalSemesterWorkingDays(calendar);
+  const targets = termFaceTargets(quotas, termDays);
 
   return {
     hifzActual: progress.hifzActual,
     rabtActual: progress.rabtActual,
     murajaActual: progress.murajaActual,
-    hifzTarget: termDays * 1,
-    rabtTarget: termDays * q.daily_rabt_faces,
-    murajaTarget: termDays * q.daily_muraja_faces,
+    ...targets,
   };
 }
 
@@ -172,12 +168,12 @@ function computeStudentResult(
       hifz: EMPTY_TASK,
       rabt: EMPTY_TASK,
       muraja: EMPTY_TASK,
-      attendance: componentToTask(weekComponents, semesterComponents, studentFaceTotals(student.id, grades, calendar), "attendance"),
-      wajib: componentToTask(weekComponents, semesterComponents, studentFaceTotals(student.id, grades, calendar), "wajib"),
+      attendance: componentToTask(weekComponents, semesterComponents, studentFaceTotals(student, grades, calendar), "attendance"),
+      wajib: componentToTask(weekComponents, semesterComponents, studentFaceTotals(student, grades, calendar), "wajib"),
     };
   }
 
-  const faces = studentFaceTotals(student.id, grades, calendar);
+  const faces = studentFaceTotals(student, grades, calendar);
   return {
     studentId: student.id,
     studentName: student.name,

@@ -40,6 +40,7 @@ CREATE TABLE IF NOT EXISTS `student_plan_assignments` (
   `assigned_by` VARCHAR(255) NOT NULL DEFAULT '',
   `assigned_at` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
   `frozen_at` TIMESTAMP NULL DEFAULT NULL,
+  `transferred_at` TIMESTAMP NULL DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `idx_spa_student` (`student_id`),
   KEY `idx_spa_plan` (`plan_id`),

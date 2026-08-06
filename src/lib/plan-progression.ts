@@ -13,12 +13,15 @@ export interface PlanAdvanceResult {
   newPlanTitle?: string;
   newPlanId?: string;
   newGlobalPhase?: number;
+  newPlanStartDate?: string | null;
+  newPlanAssignedAt?: string | null;
 }
 
 export async function completePlanAndAdvance(
   studentId: string,
   assignedBy: string,
   track: PlanTrack,
+  options?: { planStartDate?: string },
 ): Promise<PlanAdvanceResult> {
   const sheet = await fetchStudentPlanSheet(studentId);
   const result: PlanAdvanceResult = {};
@@ -52,13 +55,19 @@ export async function completePlanAndAdvance(
   }
 
   const prevQuotas = sheet.assignment ? normalizeTaskQuotas(sheet.assignment) : undefined;
-  const today = new Date().toISOString().slice(0, 10);
+  const startDate = options?.planStartDate ?? new Date().toISOString().slice(0, 10);
 
   await assignStudentPlan(studentId, next.id, 1, assignedBy, {
-    plan_start_date: today,
+    plan_start_date: startDate,
     start_muraja_segment: murajaStartSegment(nextPhase),
     face_quotas: prevQuotas,
   });
+
+  const sheetAfter = await fetchStudentPlanSheet(studentId);
+  if (sheetAfter.assignment) {
+    result.newPlanStartDate = sheetAfter.assignment.plan_start_date ?? startDate;
+    result.newPlanAssignedAt = sheetAfter.assignment.assigned_at ?? null;
+  }
 
   result.newPlanTitle = next.title;
   result.newPlanId = next.id;

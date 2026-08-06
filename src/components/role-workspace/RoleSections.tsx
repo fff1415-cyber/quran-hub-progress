@@ -17,6 +17,7 @@ import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-conte
 import { getSessionName } from "@/lib/session-role";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
 import { daysSinceLabel, notifyTeacherHalaqa } from "@/lib/teacher-notifications";
+import { formatPlanDate, formatPlanDateTime } from "@/lib/plan-dates";
 import {
   listAbsenceAlertRows,
   processAbsenceThresholdAlerts,
@@ -321,6 +322,21 @@ export function SecretarySardPanel() {
                     <div>
                       <div className="font-medium">{s.name}</div>
                       <div className="text-xs text-muted-foreground">{h.name} · {weekLabel(q.week)}</div>
+                      {q.passedAt && (
+                        <div className="text-xs text-success font-medium mt-1">
+                          اجتاز: {formatPlanDateTime(q.passedAt)}
+                        </div>
+                      )}
+                      {q.newPlanTitle && (
+                        <div className="text-xs text-muted-foreground mt-0.5">
+                          الخطة الجديدة: {q.newPlanTitle}
+                          {q.newPlanStartDate && ` · بدء ${formatPlanDate(q.newPlanStartDate)}`}
+                          {q.newPlanAssignedAt && ` · ربط ${formatPlanDateTime(q.newPlanAssignedAt)}`}
+                        </div>
+                      )}
+                      {!q.newPlanTitle && q.closedPlanTitle && (
+                        <div className="text-xs text-muted-foreground mt-0.5">أُنجزت: {q.closedPlanTitle}</div>
+                      )}
                     </div>
                     <Button asChild variant="outline" size="sm" className="bg-success/10 text-success border-success/30">
                       <a href={`https://wa.me/${s.parentPhone}?text=${msg}`} target="_blank" rel="noreferrer">
@@ -586,10 +602,21 @@ export function SupervisorPassedPanel() {
             const h = halaqat.find((x) => x.id === q.halaqaId);
             if (!s || !h) return null;
             return (
-              <div key={q.id} className="flex items-center justify-between p-3 rounded-lg bg-success/10 border border-success/20">
+              <div key={q.id} className="flex items-center justify-between p-3 rounded-lg bg-success/10 border border-success/20 flex-wrap gap-2">
                 <div>
                   <div className="font-bold text-sm">{s.name}</div>
                   <div className="text-xs text-muted-foreground">{h.name} · {weekLabel(q.week)}</div>
+                  {q.passedAt && (
+                    <div className="text-xs text-success font-medium mt-1">
+                      اجتاز: {formatPlanDateTime(q.passedAt)}
+                    </div>
+                  )}
+                  {q.newPlanTitle && (
+                    <div className="text-xs text-muted-foreground mt-0.5">
+                      الخطة الجديدة: {q.newPlanTitle}
+                      {q.newPlanStartDate && ` · بدء ${formatPlanDate(q.newPlanStartDate)}`}
+                    </div>
+                  )}
                 </div>
                 <span className="px-2 py-1 rounded bg-success/20 text-success text-xs font-bold">{q.finalPercent}%</span>
               </div>

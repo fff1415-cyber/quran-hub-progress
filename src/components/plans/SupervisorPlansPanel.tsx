@@ -3,7 +3,7 @@ import { loadStudents, type Student } from "@/lib/mock-data";
 import { syncFromCloud } from "@/lib/cloud-sync";
 import { fetchPlans, fetchStudentPlanSheet, importPlans, assignStudentPlan, patchStudentAssignment, deletePlan } from "@/lib/plans-service";
 import type { EducationPlan, PlanTrack, StudentPlanSheetData } from "@/lib/plan-types";
-import { DEFAULT_FACE_QUOTAS, faceQuotasFromPlan, normalizeFaceQuotas } from "@/lib/plan-daily-faces";
+import { faceQuotasFromPlan } from "@/lib/plan-daily-faces";
 import { FaceQuotasFields } from "@/components/plans/FaceQuotasFields";
 import { StudentFaceReportPanel } from "@/components/plans/StudentFaceReportPanel";
 import { parsePlansExcel } from "@/lib/plan-excel-import";
@@ -103,7 +103,6 @@ export function SupervisorPlansPanel() {
   const [selectedPlan, setSelectedPlan] = useState<EducationPlan | null>(null);
   const [planStartDate, setPlanStartDate] = useState(getCalendarIsoDate());
   const [startHifz, setStartHifz] = useState("1");
-  const [faceQuotas, setFaceQuotas] = useState(DEFAULT_FACE_QUOTAS);
   const [lookupRefresh, setLookupRefresh] = useState(0);
   const [studentsVersion, setStudentsVersion] = useState(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -169,12 +168,6 @@ export function SupervisorPlansPanel() {
     return list.slice(0, 15);
   }, [plans, trackFilter, planQ]);
 
-  useEffect(() => {
-    if (selectedPlan) {
-      setFaceQuotas(faceQuotasFromPlan(selectedPlan));
-    }
-  }, [selectedPlan]);
-
   const submitAssign = async () => {
     if (!selectedPlan || !selectedStudent) {
       toast.error("اختر الطالب والخطة");
@@ -197,7 +190,7 @@ export function SupervisorPlansPanel() {
         {
           plan_start_date: planStartDate,
           start_muraja_segment: globalPhase !== null ? murajaStartSegment(globalPhase) : null,
-          face_quotas: normalizeFaceQuotas(faceQuotas),
+          face_quotas: faceQuotasFromPlan(selectedPlan),
         },
       );
       toast.success(`تم ربط ${selectedStudent.name} — ${selectedPlan.title}`);
@@ -408,7 +401,7 @@ export function SupervisorPlansPanel() {
                 المراجعة في المرحلة العامة 1 تبدأ تلقائياً من المقطع 16. الحفظ: ½=0.5 · 1=1 · 2=2 وجه (ثابت).
               </p>
               <div className="sm:col-span-2 pt-2 border-t border-border">
-                <FaceQuotasFields value={faceQuotas} onChange={setFaceQuotas} />
+                <FaceQuotasFields track={selectedPlan.track} />
               </div>
             </div>
           )}
