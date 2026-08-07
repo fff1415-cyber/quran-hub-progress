@@ -18,6 +18,30 @@ export function TenantLoginPage() {
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
 
+  if (tenantLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-4">
+        <Loader2 className="w-10 h-10 text-primary animate-spin" />
+        <p className="text-muted-foreground text-sm">جاري تحميل بيانات المجمع...</p>
+      </div>
+    );
+  }
+
+  if (tenantError) {
+    return (
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="glass-card rounded-2xl p-8 max-w-md text-center">
+          <h1 className="text-xl font-bold text-destructive mb-2">تعذّر تحميل المجمع</h1>
+          <p className="text-muted-foreground text-sm">{tenantError}</p>
+          <p className="text-muted-foreground text-xs mt-4">
+            تحقق من الرابط (مثل {apexDomain()}/m101) أو{" "}
+            <a href={`https://${apexDomain()}`} className="text-primary underline">عد إلى المنصة</a>
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   if (!tenant) {
     return null;
   }
@@ -93,30 +117,6 @@ export function TenantLoginPage() {
       setBusy(false);
     }
   };
-
-  if (tenantLoading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-4">
-        <Loader2 className="w-10 h-10 text-primary animate-spin" />
-        <p className="text-muted-foreground text-sm">جاري تحميل بيانات المجمع...</p>
-      </div>
-    );
-  }
-
-  if (tenantError) {
-    return (
-      <div className="min-h-screen flex items-center justify-center p-4">
-        <div className="glass-card rounded-2xl p-8 max-w-md text-center">
-          <h1 className="text-xl font-bold text-destructive mb-2">تعذّر تحميل المجمع</h1>
-          <p className="text-muted-foreground text-sm">{tenantError}</p>
-          <p className="text-muted-foreground text-xs mt-4">
-            تحقق من الرابط (مثل {apexDomain()}/m101) أو{" "}
-            <a href={`https://${apexDomain()}`} className="text-primary underline">عد إلى المنصة</a>
-          </p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
