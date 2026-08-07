@@ -7,8 +7,6 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { useEffect } from "react";
-import { syncFromCloud } from "@/lib/cloud-sync";
 import { isApexBareTenantAppPath } from "@/lib/tenant";
 import { EvaluationSettingsProvider } from "@/contexts/EvaluationSettingsContext";
 import { GradeInputSettingsProvider } from "@/contexts/GradeInputSettingsContext";
@@ -72,7 +70,6 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
-  useEffect(() => { void syncFromCloud(); }, []);
   return (
     <QueryClientProvider client={queryClient}>
       <TenantProvider>

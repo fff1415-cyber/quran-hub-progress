@@ -1,3 +1,4 @@
+import { useRouterState } from "@tanstack/react-router";
 import {
   createContext,
   useCallback,
@@ -7,6 +8,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { syncFromCloud } from "@/lib/cloud-sync";
 import {
   PLATFORM_BRAND,
   fetchTenantBySubdomain,
@@ -32,6 +34,7 @@ type TenantContextValue = {
 const TenantContext = createContext<TenantContextValue | null>(null);
 
 export function TenantProvider({ children }: { children: ReactNode }) {
+  const pathname = useRouterState({ select: (s) => s.location.pathname });
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [isPlatform, setIsPlatform] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -39,16 +42,20 @@ export function TenantProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     let cancelled = false;
+    setLoading(true);
     void (async () => {
       try {
         const resolved = await resolveTenantFromLocation(
           typeof window !== "undefined" ? window.location.hostname : undefined,
-          typeof window !== "undefined" ? window.location.pathname : undefined,
+          pathname,
         );
         if (!cancelled) {
           setTenant(resolved);
           setIsPlatform(resolved === null);
           setError(null);
+          if (resolved) {
+            await syncFromCloud();
+          }
         }
       } catch (e) {
         if (!cancelled) {
@@ -65,7 +72,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pathname]);
 
   const setTenantState = useCallback((next: TenantInfo) => {
     setTenant(next);

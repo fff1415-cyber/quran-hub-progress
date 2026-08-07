@@ -1,5 +1,6 @@
 import { buildRphpUrl } from "@/lib/api-base";
 import { getBrandTheme, type BrandThemeKey } from "@/lib/brand-themes";
+import { ensureTenantIsolation } from "@/lib/tenant-session";
 import defaultLogo from "@/assets/shtaiwi-logo.png.asset.json";
 
 export type TenantInfo = {
@@ -479,6 +480,7 @@ export function setCachedTenant(tenant: TenantInfo | null, platform = false): vo
   if (!tenant) {
     return;
   }
+  ensureTenantIsolation(tenant);
   if (typeof sessionStorage !== "undefined") {
     sessionStorage.setItem("qs_complex", String(tenant.id));
     sessionStorage.setItem("qs_tenant_subdomain", tenant.subdomain);
