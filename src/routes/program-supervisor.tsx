@@ -14,15 +14,19 @@ import { ClipboardList, Eye, Settings2, Loader2 } from "lucide-react";
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { Toaster } from "sonner";
 
-export const Route = createFileRoute("/program-supervisor")({
-  validateSearch: (s: Record<string, unknown>) => ({
+export function programSupervisorValidateSearch(s: Record<string, unknown>) {
+  return {
     tab: typeof s.tab === "string" ? s.tab : undefined,
-  }),
+  };
+}
+
+export const Route = createFileRoute("/program-supervisor")({
+  validateSearch: programSupervisorValidateSearch,
   component: ProgramSupervisorPage,
 });
 
-function ProgramSupervisorPage() {
-  const navigate = useNavigate({ from: "/program-supervisor" });
+export function ProgramSupervisorPage() {
+  const navigate = useNavigate();
   const search = Route.useSearch();
   const name = getSessionName("مشرف البرامج");
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);

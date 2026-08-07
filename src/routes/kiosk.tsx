@@ -28,14 +28,18 @@ const EMPTY_WINDOW: KioskScanWindow = {
   city: "Buraydah",
 };
 
-export const Route = createFileRoute("/kiosk")({
-  validateSearch: (search: Record<string, unknown>) => ({
+export function kioskValidateSearch(search: Record<string, unknown>) {
+  return {
     token: typeof search.token === "string" ? search.token : undefined,
-  }),
+  };
+}
+
+export const Route = createFileRoute("/kiosk")({
+  validateSearch: kioskValidateSearch,
   component: KioskPage,
 });
 
-function KioskPage() {
+export function KioskPage() {
   const { token } = Route.useSearch();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);

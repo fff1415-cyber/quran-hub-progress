@@ -46,16 +46,20 @@ function resolveSection(main: MainTab, raw?: string): string {
   return DEFAULT_SECTION[main];
 }
 
-export const Route = createFileRoute("/manager")({
-  validateSearch: (s: Record<string, unknown>) => ({
+export function managerValidateSearch(s: Record<string, unknown>) {
+  return {
     tab: typeof s.tab === "string" ? s.tab : undefined,
     section: typeof s.section === "string" ? s.section : undefined,
-  }),
+  };
+}
+
+export const Route = createFileRoute("/manager")({
+  validateSearch: managerValidateSearch,
   component: ManagerPage,
 });
 
-function ManagerPage() {
-  const navigate = useNavigate({ from: "/manager" });
+export function ManagerPage() {
+  const navigate = useNavigate();
   const search = Route.useSearch();
   const name = getSessionName("المدير");
 

@@ -10,6 +10,7 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as TenantSlugRouteRouteImport } from './routes/$tenantSlug/route'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as DailyOperationsRouteImport } from './routes/daily-operations'
 import { Route as DashboardRouteImport } from './routes/dashboard'
@@ -24,10 +25,25 @@ import { Route as StaffAttendanceRouteImport } from './routes/staff-attendance'
 import { Route as StudentRouteImport } from './routes/student'
 import { Route as SupervisorRouteImport } from './routes/supervisor'
 import { Route as TeacherRouteImport } from './routes/teacher'
+import { Route as TenantSlugIndexRouteImport } from './routes/$tenantSlug/index'
+import { Route as TenantSlugKioskRouteImport } from './routes/$tenantSlug/kiosk'
+import { Route as TenantSlugManagerRouteImport } from './routes/$tenantSlug/manager'
+import { Route as TenantSlugMusammiRouteImport } from './routes/$tenantSlug/musammi'
+import { Route as TenantSlugProgramSupervisorRouteImport } from './routes/$tenantSlug/program-supervisor'
+import { Route as TenantSlugSecretaryRouteImport } from './routes/$tenantSlug/secretary'
+import { Route as TenantSlugStaffAttendanceRouteImport } from './routes/$tenantSlug/staff-attendance'
+import { Route as TenantSlugStudentRouteImport } from './routes/$tenantSlug/student'
+import { Route as TenantSlugSupervisorRouteImport } from './routes/$tenantSlug/supervisor'
+import { Route as TenantSlugTeacherRouteImport } from './routes/$tenantSlug/teacher'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TenantSlugRouteRoute = TenantSlugRouteRouteImport.update({
+  id: '/$tenantSlug',
+  path: '/$tenantSlug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -100,9 +116,62 @@ const TeacherRoute = TeacherRouteImport.update({
   path: '/teacher',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TenantSlugIndexRoute = TenantSlugIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => TenantSlugRouteRoute,
+} as any)
+const TenantSlugKioskRoute = TenantSlugKioskRouteImport.update({
+  id: '/kiosk',
+  path: '/kiosk',
+  getParentRoute: () => TenantSlugRouteRoute,
+} as any)
+const TenantSlugManagerRoute = TenantSlugManagerRouteImport.update({
+  id: '/manager',
+  path: '/manager',
+  getParentRoute: () => TenantSlugRouteRoute,
+} as any)
+const TenantSlugMusammiRoute = TenantSlugMusammiRouteImport.update({
+  id: '/musammi',
+  path: '/musammi',
+  getParentRoute: () => TenantSlugRouteRoute,
+} as any)
+const TenantSlugProgramSupervisorRoute =
+  TenantSlugProgramSupervisorRouteImport.update({
+    id: '/program-supervisor',
+    path: '/program-supervisor',
+    getParentRoute: () => TenantSlugRouteRoute,
+  } as any)
+const TenantSlugSecretaryRoute = TenantSlugSecretaryRouteImport.update({
+  id: '/secretary',
+  path: '/secretary',
+  getParentRoute: () => TenantSlugRouteRoute,
+} as any)
+const TenantSlugStaffAttendanceRoute =
+  TenantSlugStaffAttendanceRouteImport.update({
+    id: '/staff-attendance',
+    path: '/staff-attendance',
+    getParentRoute: () => TenantSlugRouteRoute,
+  } as any)
+const TenantSlugStudentRoute = TenantSlugStudentRouteImport.update({
+  id: '/student',
+  path: '/student',
+  getParentRoute: () => TenantSlugRouteRoute,
+} as any)
+const TenantSlugSupervisorRoute = TenantSlugSupervisorRouteImport.update({
+  id: '/supervisor',
+  path: '/supervisor',
+  getParentRoute: () => TenantSlugRouteRoute,
+} as any)
+const TenantSlugTeacherRoute = TenantSlugTeacherRouteImport.update({
+  id: '/teacher',
+  path: '/teacher',
+  getParentRoute: () => TenantSlugRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/$tenantSlug': typeof TenantSlugRouteRouteWithChildren
   '/admin': typeof AdminRoute
   '/daily-operations': typeof DailyOperationsRoute
   '/dashboard': typeof DashboardRoute
@@ -117,6 +186,16 @@ export interface FileRoutesByFullPath {
   '/student': typeof StudentRoute
   '/supervisor': typeof SupervisorRoute
   '/teacher': typeof TeacherRoute
+  '/$tenantSlug/kiosk': typeof TenantSlugKioskRoute
+  '/$tenantSlug/manager': typeof TenantSlugManagerRoute
+  '/$tenantSlug/musammi': typeof TenantSlugMusammiRoute
+  '/$tenantSlug/program-supervisor': typeof TenantSlugProgramSupervisorRoute
+  '/$tenantSlug/secretary': typeof TenantSlugSecretaryRoute
+  '/$tenantSlug/staff-attendance': typeof TenantSlugStaffAttendanceRoute
+  '/$tenantSlug/student': typeof TenantSlugStudentRoute
+  '/$tenantSlug/supervisor': typeof TenantSlugSupervisorRoute
+  '/$tenantSlug/teacher': typeof TenantSlugTeacherRoute
+  '/$tenantSlug/': typeof TenantSlugIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -134,10 +213,21 @@ export interface FileRoutesByTo {
   '/student': typeof StudentRoute
   '/supervisor': typeof SupervisorRoute
   '/teacher': typeof TeacherRoute
+  '/$tenantSlug/kiosk': typeof TenantSlugKioskRoute
+  '/$tenantSlug/manager': typeof TenantSlugManagerRoute
+  '/$tenantSlug/musammi': typeof TenantSlugMusammiRoute
+  '/$tenantSlug/program-supervisor': typeof TenantSlugProgramSupervisorRoute
+  '/$tenantSlug/secretary': typeof TenantSlugSecretaryRoute
+  '/$tenantSlug/staff-attendance': typeof TenantSlugStaffAttendanceRoute
+  '/$tenantSlug/student': typeof TenantSlugStudentRoute
+  '/$tenantSlug/supervisor': typeof TenantSlugSupervisorRoute
+  '/$tenantSlug/teacher': typeof TenantSlugTeacherRoute
+  '/$tenantSlug': typeof TenantSlugIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
+  '/$tenantSlug': typeof TenantSlugRouteRouteWithChildren
   '/admin': typeof AdminRoute
   '/daily-operations': typeof DailyOperationsRoute
   '/dashboard': typeof DashboardRoute
@@ -152,11 +242,22 @@ export interface FileRoutesById {
   '/student': typeof StudentRoute
   '/supervisor': typeof SupervisorRoute
   '/teacher': typeof TeacherRoute
+  '/$tenantSlug/kiosk': typeof TenantSlugKioskRoute
+  '/$tenantSlug/manager': typeof TenantSlugManagerRoute
+  '/$tenantSlug/musammi': typeof TenantSlugMusammiRoute
+  '/$tenantSlug/program-supervisor': typeof TenantSlugProgramSupervisorRoute
+  '/$tenantSlug/secretary': typeof TenantSlugSecretaryRoute
+  '/$tenantSlug/staff-attendance': typeof TenantSlugStaffAttendanceRoute
+  '/$tenantSlug/student': typeof TenantSlugStudentRoute
+  '/$tenantSlug/supervisor': typeof TenantSlugSupervisorRoute
+  '/$tenantSlug/teacher': typeof TenantSlugTeacherRoute
+  '/$tenantSlug/': typeof TenantSlugIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/$tenantSlug'
     | '/admin'
     | '/daily-operations'
     | '/dashboard'
@@ -171,6 +272,16 @@ export interface FileRouteTypes {
     | '/student'
     | '/supervisor'
     | '/teacher'
+    | '/$tenantSlug/kiosk'
+    | '/$tenantSlug/manager'
+    | '/$tenantSlug/musammi'
+    | '/$tenantSlug/program-supervisor'
+    | '/$tenantSlug/secretary'
+    | '/$tenantSlug/staff-attendance'
+    | '/$tenantSlug/student'
+    | '/$tenantSlug/supervisor'
+    | '/$tenantSlug/teacher'
+    | '/$tenantSlug/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -188,9 +299,20 @@ export interface FileRouteTypes {
     | '/student'
     | '/supervisor'
     | '/teacher'
+    | '/$tenantSlug/kiosk'
+    | '/$tenantSlug/manager'
+    | '/$tenantSlug/musammi'
+    | '/$tenantSlug/program-supervisor'
+    | '/$tenantSlug/secretary'
+    | '/$tenantSlug/staff-attendance'
+    | '/$tenantSlug/student'
+    | '/$tenantSlug/supervisor'
+    | '/$tenantSlug/teacher'
+    | '/$tenantSlug'
   id:
     | '__root__'
     | '/'
+    | '/$tenantSlug'
     | '/admin'
     | '/daily-operations'
     | '/dashboard'
@@ -205,10 +327,21 @@ export interface FileRouteTypes {
     | '/student'
     | '/supervisor'
     | '/teacher'
+    | '/$tenantSlug/kiosk'
+    | '/$tenantSlug/manager'
+    | '/$tenantSlug/musammi'
+    | '/$tenantSlug/program-supervisor'
+    | '/$tenantSlug/secretary'
+    | '/$tenantSlug/staff-attendance'
+    | '/$tenantSlug/student'
+    | '/$tenantSlug/supervisor'
+    | '/$tenantSlug/teacher'
+    | '/$tenantSlug/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  TenantSlugRouteRoute: typeof TenantSlugRouteRouteWithChildren
   AdminRoute: typeof AdminRoute
   DailyOperationsRoute: typeof DailyOperationsRoute
   DashboardRoute: typeof DashboardRoute
@@ -232,6 +365,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/$tenantSlug': {
+      id: '/$tenantSlug'
+      path: '/$tenantSlug'
+      fullPath: '/$tenantSlug'
+      preLoaderRoute: typeof TenantSlugRouteRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -332,11 +472,112 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TeacherRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/$tenantSlug/': {
+      id: '/$tenantSlug/'
+      path: '/'
+      fullPath: '/$tenantSlug/'
+      preLoaderRoute: typeof TenantSlugIndexRouteImport
+      parentRoute: typeof TenantSlugRouteRoute
+    }
+    '/$tenantSlug/kiosk': {
+      id: '/$tenantSlug/kiosk'
+      path: '/kiosk'
+      fullPath: '/$tenantSlug/kiosk'
+      preLoaderRoute: typeof TenantSlugKioskRouteImport
+      parentRoute: typeof TenantSlugRouteRoute
+    }
+    '/$tenantSlug/manager': {
+      id: '/$tenantSlug/manager'
+      path: '/manager'
+      fullPath: '/$tenantSlug/manager'
+      preLoaderRoute: typeof TenantSlugManagerRouteImport
+      parentRoute: typeof TenantSlugRouteRoute
+    }
+    '/$tenantSlug/musammi': {
+      id: '/$tenantSlug/musammi'
+      path: '/musammi'
+      fullPath: '/$tenantSlug/musammi'
+      preLoaderRoute: typeof TenantSlugMusammiRouteImport
+      parentRoute: typeof TenantSlugRouteRoute
+    }
+    '/$tenantSlug/program-supervisor': {
+      id: '/$tenantSlug/program-supervisor'
+      path: '/program-supervisor'
+      fullPath: '/$tenantSlug/program-supervisor'
+      preLoaderRoute: typeof TenantSlugProgramSupervisorRouteImport
+      parentRoute: typeof TenantSlugRouteRoute
+    }
+    '/$tenantSlug/secretary': {
+      id: '/$tenantSlug/secretary'
+      path: '/secretary'
+      fullPath: '/$tenantSlug/secretary'
+      preLoaderRoute: typeof TenantSlugSecretaryRouteImport
+      parentRoute: typeof TenantSlugRouteRoute
+    }
+    '/$tenantSlug/staff-attendance': {
+      id: '/$tenantSlug/staff-attendance'
+      path: '/staff-attendance'
+      fullPath: '/$tenantSlug/staff-attendance'
+      preLoaderRoute: typeof TenantSlugStaffAttendanceRouteImport
+      parentRoute: typeof TenantSlugRouteRoute
+    }
+    '/$tenantSlug/student': {
+      id: '/$tenantSlug/student'
+      path: '/student'
+      fullPath: '/$tenantSlug/student'
+      preLoaderRoute: typeof TenantSlugStudentRouteImport
+      parentRoute: typeof TenantSlugRouteRoute
+    }
+    '/$tenantSlug/supervisor': {
+      id: '/$tenantSlug/supervisor'
+      path: '/supervisor'
+      fullPath: '/$tenantSlug/supervisor'
+      preLoaderRoute: typeof TenantSlugSupervisorRouteImport
+      parentRoute: typeof TenantSlugRouteRoute
+    }
+    '/$tenantSlug/teacher': {
+      id: '/$tenantSlug/teacher'
+      path: '/teacher'
+      fullPath: '/$tenantSlug/teacher'
+      preLoaderRoute: typeof TenantSlugTeacherRouteImport
+      parentRoute: typeof TenantSlugRouteRoute
+    }
   }
 }
 
+interface TenantSlugRouteRouteChildren {
+  TenantSlugKioskRoute: typeof TenantSlugKioskRoute
+  TenantSlugManagerRoute: typeof TenantSlugManagerRoute
+  TenantSlugMusammiRoute: typeof TenantSlugMusammiRoute
+  TenantSlugProgramSupervisorRoute: typeof TenantSlugProgramSupervisorRoute
+  TenantSlugSecretaryRoute: typeof TenantSlugSecretaryRoute
+  TenantSlugStaffAttendanceRoute: typeof TenantSlugStaffAttendanceRoute
+  TenantSlugStudentRoute: typeof TenantSlugStudentRoute
+  TenantSlugSupervisorRoute: typeof TenantSlugSupervisorRoute
+  TenantSlugTeacherRoute: typeof TenantSlugTeacherRoute
+  TenantSlugIndexRoute: typeof TenantSlugIndexRoute
+}
+
+const TenantSlugRouteRouteChildren: TenantSlugRouteRouteChildren = {
+  TenantSlugKioskRoute: TenantSlugKioskRoute,
+  TenantSlugManagerRoute: TenantSlugManagerRoute,
+  TenantSlugMusammiRoute: TenantSlugMusammiRoute,
+  TenantSlugProgramSupervisorRoute: TenantSlugProgramSupervisorRoute,
+  TenantSlugSecretaryRoute: TenantSlugSecretaryRoute,
+  TenantSlugStaffAttendanceRoute: TenantSlugStaffAttendanceRoute,
+  TenantSlugStudentRoute: TenantSlugStudentRoute,
+  TenantSlugSupervisorRoute: TenantSlugSupervisorRoute,
+  TenantSlugTeacherRoute: TenantSlugTeacherRoute,
+  TenantSlugIndexRoute: TenantSlugIndexRoute,
+}
+
+const TenantSlugRouteRouteWithChildren = TenantSlugRouteRoute._addFileChildren(
+  TenantSlugRouteRouteChildren,
+)
+
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  TenantSlugRouteRoute: TenantSlugRouteRouteWithChildren,
   AdminRoute: AdminRoute,
   DailyOperationsRoute: DailyOperationsRoute,
   DashboardRoute: DashboardRoute,

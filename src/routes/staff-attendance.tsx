@@ -18,15 +18,18 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Clock, Loader2, UserCheck } from "lucide-react";
 import { toast, Toaster } from "sonner";
+import { tenantPath } from "@/lib/tenant";
+
+export const staffAttendanceSearchSchema = z.object({
+  h: z.number().optional(),
+});
 
 export const Route = createFileRoute("/staff-attendance")({
-  validateSearch: z.object({
-    h: z.number().optional(),
-  }),
+  validateSearch: staffAttendanceSearchSchema,
   component: StaffAttendancePage,
 });
 
-function StaffAttendancePage() {
+export function StaffAttendancePage() {
   const { h } = Route.useSearch();
   const navigate = useNavigate();
   const [role, setRole] = useState<string | null>(null);
@@ -97,9 +100,9 @@ function StaffAttendancePage() {
 
   const backToTeacher = () => {
     if (halaqa) {
-      navigate({ to: "/teacher", search: { h: halaqa.id } });
+      navigate({ to: tenantPath("/teacher"), search: { h: halaqa.id } });
     } else {
-      navigate({ to: "/" });
+      navigate({ to: tenantPath("/") });
     }
   };
 

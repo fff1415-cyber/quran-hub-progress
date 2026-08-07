@@ -53,16 +53,20 @@ function resolveSection(main: MainTab, tabRaw?: string, sectionRaw?: string): st
   return DEFAULT_SECTION[main];
 }
 
-export const Route = createFileRoute("/supervisor")({
-  validateSearch: (s: Record<string, unknown>) => ({
+export function supervisorValidateSearch(s: Record<string, unknown>) {
+  return {
     tab: typeof s.tab === "string" ? s.tab : undefined,
     section: typeof s.section === "string" ? s.section : undefined,
-  }),
+  };
+}
+
+export const Route = createFileRoute("/supervisor")({
+  validateSearch: supervisorValidateSearch,
   component: SupervisorPage,
 });
 
-function SupervisorPage() {
-  const navigate = useNavigate({ from: "/supervisor" });
+export function SupervisorPage() {
+  const navigate = useNavigate();
   const search = Route.useSearch();
   const name = getSessionName("المشرف التعليمي");
   const [queue, setQueue] = useState(() => loadSardQueue());

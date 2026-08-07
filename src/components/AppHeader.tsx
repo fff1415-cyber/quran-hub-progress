@@ -9,6 +9,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/component
 import { cn } from "@/lib/utils";
 import { loadHalaqat } from "@/lib/mock-data";
 import { useTenant } from "@/contexts/TenantContext";
+import { tenantPath } from "@/lib/tenant";
 import { TenantLogo } from "@/components/TenantLogo";
 
 interface NavItem {
@@ -54,7 +55,7 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
     if (typeof window !== "undefined" && window.history.length > 1) {
       router.history.back();
     } else {
-      router.navigate({ to: "/" });
+      router.navigate({ to: tenantPath("/") });
     }
   };
 
@@ -92,7 +93,7 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
                   return (
                     <Link
                       key={item.to}
-                      to={item.to}
+                      to={tenantPath(item.to)}
                       search={item.search}
                       onClick={() => setOpen(false)}
                       className={navLinkClass}
@@ -113,7 +114,7 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
                       return (
                         <Link
                           key={`mgr-${item.to}`}
-                          to={item.to}
+                          to={tenantPath(item.to)}
                           onClick={() => setOpen(false)}
                           className={navLinkClass}
                         >
@@ -135,7 +136,7 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
                         {halaqat.map((hl) => (
                           <Link
                             key={`halaqa-${hl.id}`}
-                            to="/teacher"
+                            to={tenantPath("/teacher")}
                             search={{ h: hl.id }}
                             onClick={() => setOpen(false)}
                             className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm hover:bg-primary/10 hover:text-primary truncate"
@@ -149,7 +150,7 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
                 )}
 
                 <Link
-                  to="/"
+                  to={tenantPath("/")}
                   onClick={() => { sessionStorage.clear(); setOpen(false); }}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm hover:bg-destructive/15 text-destructive border border-transparent hover:border-destructive/30 mt-4"
                 >
@@ -169,7 +170,7 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
           </button>
         </div>
 
-        <Link to="/" className="flex items-center gap-2 sm:gap-3 group flex-1 justify-center sm:justify-start">
+        <Link to={tenantPath("/")} className="flex items-center gap-2 sm:gap-3 group flex-1 justify-center sm:justify-start">
           <TenantLogo
             logoUrl={logoUrl}
             brandName={brandName}

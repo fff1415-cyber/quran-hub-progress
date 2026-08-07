@@ -79,7 +79,7 @@ function notifyTeacherTransfer(
   });
 }
 
-function MusammiPage() {
+export function MusammiPage() {
   const [queue, setQueue] = useState<SardQueueItem[]>(() => loadSardQueue());
   const [activeId, setActiveId] = useState<string | null>(null);
   const halaqat = loadHalaqat();

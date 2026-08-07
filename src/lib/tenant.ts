@@ -120,6 +120,31 @@ export function getTenantBasepath(pathname?: string, hostname?: string): string 
   return slug ? `/${slug}` : "";
 }
 
+/** Prefix tenant app paths on apex: /manager → /5645/manager; subdomain host unchanged. */
+export function tenantPath(path: string): string {
+  if (typeof window === "undefined") {
+    return path.startsWith("/") ? path : `/${path}`;
+  }
+  if (!isPlatformHost(window.location.hostname)) {
+    return path.startsWith("/") ? path : `/${path}`;
+  }
+  const slug =
+    parseTenantSlugFromPath(window.location.pathname) ??
+    getCachedTenant()?.subdomain ??
+    (typeof sessionStorage !== "undefined"
+      ? sessionStorage.getItem("qs_tenant_subdomain")
+      : null);
+  if (!slug) {
+    return path.startsWith("/") ? path : `/${path}`;
+  }
+  const sub = slug.toLowerCase();
+  if (!path || path === "/") {
+    return `/${sub}`;
+  }
+  const normalized = path.startsWith("/") ? path : `/${path}`;
+  return `/${sub}${normalized}`;
+}
+
 export function isApexBareTenantAppPath(pathname: string, hostname?: string): boolean {
   const host =
     hostname ??

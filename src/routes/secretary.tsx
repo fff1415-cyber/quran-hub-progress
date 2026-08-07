@@ -56,16 +56,20 @@ function resolveSection(main: MainTab, tabRaw?: string, sectionRaw?: string): st
   return DEFAULT_SECTION[main];
 }
 
-export const Route = createFileRoute("/secretary")({
-  validateSearch: (s: Record<string, unknown>) => ({
+export function secretaryValidateSearch(s: Record<string, unknown>) {
+  return {
     tab: typeof s.tab === "string" ? s.tab : undefined,
     section: typeof s.section === "string" ? s.section : undefined,
-  }),
+  };
+}
+
+export const Route = createFileRoute("/secretary")({
+  validateSearch: secretaryValidateSearch,
   component: SecretaryPage,
 });
 
-function SecretaryPage() {
-  const navigate = useNavigate({ from: "/secretary" });
+export function SecretaryPage() {
+  const navigate = useNavigate();
   const search = Route.useSearch();
   const name = getSessionName("السكرتير");
   const students = loadStudents();

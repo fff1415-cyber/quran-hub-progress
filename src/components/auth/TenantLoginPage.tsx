@@ -6,7 +6,7 @@ import { isPortalViewerRole, setPortalMode } from "@/lib/student-portal-auth";
 import { Shield, UserCheck, GraduationCap, Mic, Eye, Loader2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { useTenant } from "@/contexts/TenantContext";
-import { apexDomain } from "@/lib/tenant";
+import { apexDomain, tenantPath } from "@/lib/tenant";
 import { TenantLogo } from "@/components/TenantLogo";
 
 type LoginMode = "staff" | "student";
@@ -68,14 +68,14 @@ export function TenantLoginPage() {
         await syncFromCloud();
 
         switch (auth.role) {
-          case "manager": navigate({ to: "/manager" }); break;
-          case "secretary": navigate({ to: "/secretary", search: { tab: "daily", section: "attendance" } }); break;
-          case "supervisor": navigate({ to: "/supervisor", search: { tab: "sard", section: "sard" } }); break;
-          case "program_supervisor": navigate({ to: "/program-supervisor" }); break;
-          case "musammi": navigate({ to: "/musammi" }); break;
+          case "manager": navigate({ to: tenantPath("/manager") }); break;
+          case "secretary": navigate({ to: tenantPath("/secretary"), search: { tab: "daily", section: "attendance" } }); break;
+          case "supervisor": navigate({ to: tenantPath("/supervisor"), search: { tab: "sard", section: "sard" } }); break;
+          case "program_supervisor": navigate({ to: tenantPath("/program-supervisor") }); break;
+          case "musammi": navigate({ to: tenantPath("/musammi") }); break;
           case "teacher":
           case "assistant":
-            navigate({ to: "/teacher", search: { h: auth.halaqaId! } });
+            navigate({ to: tenantPath("/teacher"), search: { h: auth.halaqaId! } });
             break;
         }
       } else {
@@ -91,7 +91,7 @@ export function TenantLoginPage() {
           else sessionStorage.setItem("qs_complex", String(tenant.id));
           setPortalMode("student");
           await syncFromCloud();
-          navigate({ to: "/student", search: { s: student.studentId } });
+          navigate({ to: tenantPath("/student"), search: { s: student.studentId } });
         } else {
           const auth = await loginByCode({ data: { code: v } });
           if (!auth.token || !auth.role) throw new Error("فشل تسجيل الدخول");
@@ -107,7 +107,7 @@ export function TenantLoginPage() {
           else sessionStorage.removeItem("qs_halaqa");
           setPortalMode("viewer");
           await syncFromCloud();
-          navigate({ to: "/student" });
+          navigate({ to: tenantPath("/student") });
         }
       }
     } catch (e) {

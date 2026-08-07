@@ -15,6 +15,7 @@ import {
   type AcademicCalendar,
 } from "@/lib/academic-context";
 import { cn } from "@/lib/utils";
+import { tenantPath } from "@/lib/tenant";
 import { AppHeader } from "@/components/AppHeader";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -47,16 +48,18 @@ import { ensureWeeklyTestsSemester } from "@/lib/weekly-tests";
 import { ensureTarbawiSemester } from "@/lib/tarbawi-program";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
+export const teacherSearchSchema = z.object({
+  h: z.number().optional(),
+  w: z.number().optional(),
+  view: z.enum(["grades", "tests", "programs", "tarbawi"]).optional(),
+});
+
 export const Route = createFileRoute("/teacher")({
-  validateSearch: z.object({
-    h: z.number().optional(),
-    w: z.number().optional(),
-    view: z.enum(["grades", "tests", "programs", "tarbawi"]).optional(),
-  }),
+  validateSearch: teacherSearchSchema,
   component: TeacherPage,
 });
 
-function TeacherPage() {
+export function TeacherPage() {
   const { h, w, view: viewParam } = Route.useSearch();
   const view = viewParam ?? "grades";
   const navigate = useNavigate();
@@ -104,13 +107,13 @@ function TeacherPage() {
   const handleWeekChange = (weekNum: number) => {
     setSelectedWeek(weekNum);
     if (halaqa) {
-      navigate({ to: "/teacher", search: { h: halaqa.id, w: weekNum, view } });
+      navigate({ to: tenantPath("/teacher"), search: { h: halaqa.id, w: weekNum, view } });
     }
   };
 
   const setView = (next: "grades" | "tests" | "programs" | "tarbawi") => {
     if (halaqa) {
-      navigate({ to: "/teacher", search: { h: halaqa.id, w: selectedWeek ?? undefined, view: next } });
+      navigate({ to: tenantPath("/teacher"), search: { h: halaqa.id, w: selectedWeek ?? undefined, view: next } });
     }
   };
 
@@ -122,7 +125,7 @@ function TeacherPage() {
       <div className="min-h-screen flex items-center justify-center">
         <div className="glass-card p-8 rounded-2xl text-center">
           <p>الحلقة غير موجودة</p>
-          <button onClick={() => navigate({ to: "/" })} className="mt-4 px-4 py-2 rounded-lg gold-gradient text-primary-foreground">العودة</button>
+          <button onClick={() => navigate({ to: tenantPath("/") })} className="mt-4 px-4 py-2 rounded-lg gold-gradient text-primary-foreground">العودة</button>
         </div>
       </div>
     );
@@ -250,7 +253,7 @@ function HalaqaSwitcher({ current }: { current: number }) {
   return (
     <select
       value={current}
-      onChange={(e) => navigate({ to: "/teacher", search: { h: Number(e.target.value) } })}
+      onChange={(e) => navigate({ to: tenantPath("/teacher"), search: { h: Number(e.target.value) } })}
       className="px-3 py-2 rounded-lg bg-input border border-border text-sm"
     >
       {halaqat.map((hl) => <option key={hl.id} value={hl.id}>{hl.name}</option>)}

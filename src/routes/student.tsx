@@ -28,15 +28,20 @@ import { weekLabel } from "@/lib/arabic-numbers";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { Trophy, Loader2, LogOut } from "lucide-react";
 import { Toaster } from "sonner";
+import { tenantPath } from "@/lib/tenant";
+
+export function studentValidateSearch(s: Record<string, unknown>) {
+  return {
+    s: typeof s.s === "string" ? s.s : undefined,
+  };
+}
 
 export const Route = createFileRoute("/student")({
-  validateSearch: (s: Record<string, unknown>) => ({
-    s: typeof s.s === "string" ? s.s : undefined,
-  }),
+  validateSearch: studentValidateSearch,
   component: StudentPage,
 });
 
-function StudentPage() {
+export function StudentPage() {
   const navigate = useNavigate();
   const search = Route.useSearch();
   const halaqat = loadHalaqat();
@@ -55,7 +60,7 @@ function StudentPage() {
 
   useEffect(() => {
     if (resolveStudentPortalAuth() === "login") {
-      navigate({ to: "/" });
+      navigate({ to: tenantPath("/") });
     }
   }, [navigate]);
 
@@ -101,7 +106,7 @@ function StudentPage() {
     setAuthMode("login");
     setStudentId(null);
     setPlanData(null);
-    navigate({ to: "/" });
+    navigate({ to: tenantPath("/") });
   };
 
   const weekNum = calendar?.currentWeekNumber ?? 1;

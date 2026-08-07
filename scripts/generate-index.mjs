@@ -14,11 +14,7 @@ if (!response.ok) {
   process.exit(1);
 }
 
-let html = await response.text();
-// Strip SSR router hydration — same index.html serves /, /5645, /5645/manager (SPA).
-// Keeping $_TSR state from "/" breaks deep links (Invariant failed).
-html = html.replace(/<script class="\$tsr"[\s\S]*?<\/script>/, "");
-html = html.replace(/<!--\$-->[\s\S]*?<!--\/\$-->/, '<div id="root"></div>');
+const html = await response.text();
 await writeFile(join(clientDir, "index.html"), html, "utf8");
 
 try {
