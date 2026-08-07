@@ -11,7 +11,8 @@ import {
   PLATFORM_BRAND,
   fetchTenantBySubdomain,
   parseSubdomain,
-  resolveTenantFromHostname,
+  parseTenantSlugFromPath,
+  resolveTenantFromLocation,
   setCachedTenant,
   tenantLogoUrl,
   type TenantInfo,
@@ -40,7 +41,10 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     let cancelled = false;
     void (async () => {
       try {
-        const resolved = await resolveTenantFromHostname();
+        const resolved = await resolveTenantFromLocation(
+          typeof window !== "undefined" ? window.location.hostname : undefined,
+          typeof window !== "undefined" ? window.location.pathname : undefined,
+        );
         if (!cancelled) {
           setTenant(resolved);
           setIsPlatform(resolved === null);
@@ -71,7 +75,10 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const refreshTenant = useCallback(async () => {
     const sub =
       tenant?.subdomain ??
-      (typeof window !== "undefined" ? parseSubdomain(window.location.hostname) : null);
+      (typeof window !== "undefined"
+        ? parseTenantSlugFromPath(window.location.pathname) ??
+          parseSubdomain(window.location.hostname)
+        : null);
     if (!sub) {
       return;
     }

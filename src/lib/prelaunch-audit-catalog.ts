@@ -28,7 +28,7 @@ export const PRELAUNCH_AUDIT_CATALOG: PrelaunchAuditItem[] = [
   // المنصة
   { id: "platform-home", group: "المنصة", label: "الصفحة الرئيسية (msht.io)", href: "/", hint: "بحث عن مجمع" },
   { id: "platform-register", group: "المنصة", label: "تسجيل مجمع جديد", href: "/register" },
-  { id: "tenant-login", group: "المنصة", label: "بوابة دخول المجمع", href: "/", hint: "على subdomain المجمع" },
+  { id: "tenant-login", group: "المنصة", label: "بوابة دخول المجمع", href: "/m1", hint: "مثال: msht.io/m101" },
 
   // المدير — صندوق العمل
   { id: "manager-inbox-transfers", group: "المدير", label: "صندوق العمل — التحويلات", href: manager("inbox", "transfers") },

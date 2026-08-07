@@ -4,7 +4,7 @@ import { Building2, Loader2, Search } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import {
   resolveComplexQuery,
-  tenantOrigin,
+  tenantUrl,
 } from "@/lib/tenant";
 import { PlatformBrandHeader } from "@/components/platform/PlatformBrandHeader";
 
@@ -22,7 +22,7 @@ export function PlatformHomePage() {
     try {
       const slugPattern = /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/i;
       if (slugPattern.test(q)) {
-        window.location.href = tenantOrigin(q.toLowerCase());
+        window.location.href = tenantUrl(q.toLowerCase());
         return;
       }
       const result = await resolveComplexQuery(q);
@@ -52,7 +52,7 @@ export function PlatformHomePage() {
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && !busy && void goToComplex()}
-                placeholder="مثال: مجمع حلقات الشتيوي أو m1"
+                placeholder="مثال: مجمع حلقات الشتيوي أو m101"
                 className="w-full pr-11 pl-4 py-3 rounded-xl bg-input border border-border focus:border-primary focus:outline-none text-base"
                 autoComplete="organization"
               />

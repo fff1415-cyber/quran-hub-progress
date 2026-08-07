@@ -237,11 +237,14 @@ export async function saveKioskSettings(input: {
   return mapSettingsResponse(body);
 }
 
+import { getTenantBasepath } from "@/lib/tenant";
+
 export function buildKioskPageUrl(token: string): string {
   if (typeof window === "undefined") {
     return `/kiosk?token=${encodeURIComponent(token)}`;
   }
-  return `${window.location.origin}/kiosk?token=${encodeURIComponent(token)}`;
+  const base = getTenantBasepath();
+  return `${window.location.origin}${base}/kiosk?token=${encodeURIComponent(token)}`;
 }
 
 /** Format HH:mm (24h) to 12h Arabic-friendly label. */

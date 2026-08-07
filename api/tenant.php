@@ -229,3 +229,50 @@ function pdo_api_error_message(PDOException $e): string
 
     return 'خطأ في قاعدة البيانات — ' . pdo_sql_error_detail($e);
 }
+
+function tenant_apex_domain(): string
+{
+    return 'msht.io';
+}
+
+function tenant_is_platform_host(string $host): bool
+{
+    $host = strtolower(trim($host));
+    $apex = tenant_apex_domain();
+    if ($host === $apex || $host === 'www.' . $apex) {
+        return true;
+    }
+    if ($host === 'localhost' || preg_match('/^\d+\.\d+\.\d+\.\d+$/', $host)) {
+        return true;
+    }
+
+    return false;
+}
+
+function tenant_subdomain_for_complex(PDO $pdo, int $cid): ?string
+{
+    if (!table_column_exists($pdo, 'complexes', 'subdomain')) {
+        return null;
+    }
+    $stmt = $pdo->prepare('SELECT subdomain FROM complexes WHERE id = ? LIMIT 1');
+    $stmt->execute([$cid]);
+    $row = $stmt->fetch();
+
+    return $row ? strtolower(trim((string) $row['subdomain'])) : null;
+}
+
+/** App origin for complex links: https://msht.io/m101 on apex, https://m101.msht.io on subdomain host. */
+function tenant_app_origin(PDO $pdo, int $cid): string
+{
+    $host = strtolower(trim((string) ($_SERVER['HTTP_HOST'] ?? 'localhost')));
+    $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
+    $origin = rtrim($scheme . '://' . $host, '/');
+    if (tenant_is_platform_host($host)) {
+        $sub = tenant_subdomain_for_complex($pdo, $cid);
+        if ($sub !== null && $sub !== '') {
+            return $origin . '/' . $sub;
+        }
+    }
+
+    return $origin;
+}

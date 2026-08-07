@@ -656,7 +656,7 @@ function handle_kiosk_get_settings(): void
     $pdo = db();
     $settings = kiosk_load_settings($pdo, $cid);
     $brand = kiosk_branding_payload($pdo, $cid);
-    $origin = ($_SERVER['HTTP_ORIGIN'] ?? '') ?: (((!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http') . '://' . ($_SERVER['HTTP_HOST'] ?? 'localhost'));
+    $origin = tenant_app_origin($pdo, $cid);
     $kioskUrl = rtrim($origin, '/') . '/kiosk';
     if ($settings['token'] !== '') {
         $kioskUrl .= '?token=' . urlencode($settings['token']);

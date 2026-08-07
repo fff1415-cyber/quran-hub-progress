@@ -52,6 +52,88 @@ function envSubdomainFallback(): string {
   return DEFAULT_TENANT.subdomain;
 }
 
+/** Apex routes that are NOT tenant slugs (msht.io/register, not msht.io/m101). */
+export const RESERVED_APEX_PATH_SEGMENTS = new Set([
+  "register",
+  "prelaunch-audit",
+  "admin",
+  "dashboard",
+  "daily-operations",
+  "manager",
+  "teacher",
+  "secretary",
+  "supervisor",
+  "student",
+  "musammi",
+  "kiosk",
+  "staff-attendance",
+  "program-supervisor",
+  "api",
+  "assets",
+]);
+
+/** Tenant app routes that must not be used bare on apex (use /m101/manager). */
+export const TENANT_APP_ROOT_SEGMENTS = new Set([
+  "manager",
+  "teacher",
+  "secretary",
+  "supervisor",
+  "student",
+  "musammi",
+  "kiosk",
+  "staff-attendance",
+  "program-supervisor",
+  "admin",
+  "dashboard",
+  "daily-operations",
+]);
+
+export function isValidTenantSlug(slug: string): boolean {
+  return slug !== "" && /^[a-z0-9](?:[a-z0-9-]{0,48}[a-z0-9])?$/i.test(slug);
+}
+
+export function isReservedApexPathSegment(segment: string): boolean {
+  return RESERVED_APEX_PATH_SEGMENTS.has(segment.toLowerCase());
+}
+
+/** First path segment on apex when it is a tenant slug: /m101/manager → m101 */
+export function parseTenantSlugFromPath(pathname: string): string | null {
+  const segment = pathname.replace(/^\/+|\/+$/g, "").split("/")[0]?.toLowerCase() ?? "";
+  if (!segment || isReservedApexPathSegment(segment)) {
+    return null;
+  }
+  return isValidTenantSlug(segment) ? segment : null;
+}
+
+/** Router basepath on apex path tenants: /m101 → /m101, subdomain host → "" */
+export function getTenantBasepath(pathname?: string, hostname?: string): string {
+  const host =
+    hostname ??
+    (typeof window !== "undefined" ? window.location.hostname : "");
+  if (!host || !isPlatformHost(host)) {
+    return "";
+  }
+  const path =
+    pathname ??
+    (typeof window !== "undefined" ? window.location.pathname : "");
+  const slug = parseTenantSlugFromPath(path);
+  return slug ? `/${slug}` : "";
+}
+
+export function isApexBareTenantAppPath(pathname: string, hostname?: string): boolean {
+  const host =
+    hostname ??
+    (typeof window !== "undefined" ? window.location.hostname : "");
+  if (!isPlatformHost(host)) {
+    return false;
+  }
+  if (getTenantBasepath(pathname, host)) {
+    return false;
+  }
+  const segment = pathname.replace(/^\/+|\/+$/g, "").split("/")[0]?.toLowerCase() ?? "";
+  return segment !== "" && TENANT_APP_ROOT_SEGMENTS.has(segment);
+}
+
 /** msht.io / www.msht.io — platform homepage, no tenant. */
 export function isPlatformHost(hostname?: string): boolean {
   const host = (hostname ?? (typeof window !== "undefined" ? window.location.hostname : ""))
@@ -113,16 +195,28 @@ export function parseSubdomain(hostname: string): string | null {
   return null;
 }
 
-export function tenantOrigin(subdomain: string): string {
+/** Public URL for a complex: https://msht.io/m101 (path-based on apex). */
+export function tenantUrl(subdomain: string, subPath = ""): string {
   const sub = subdomain.trim().toLowerCase();
+  const suffix = subPath ? (subPath.startsWith("/") ? subPath : `/${subPath}`) : "";
   if (typeof window !== "undefined") {
     const host = window.location.hostname.toLowerCase();
-    if (host === "localhost" || host.endsWith(".localhost") || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
-      const port = window.location.port ? `:${window.location.port}` : "";
-      return `${window.location.protocol}//${sub}.localhost${port}`;
+    const port = window.location.port ? `:${window.location.port}` : "";
+    const protocol = window.location.protocol;
+    if (host === "localhost" || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
+      return `${protocol}//${host}${port}/${sub}${suffix}`;
+    }
+    if (host.endsWith(".localhost")) {
+      const portLocal = window.location.port ? `:${window.location.port}` : "";
+      return `${window.location.protocol}//${host}${portLocal}/${sub}${suffix}`;
     }
   }
-  return `https://${sub}.${apexDomain()}`;
+  return `https://${apexDomain()}/${sub}${suffix}`;
+}
+
+/** @deprecated Prefer tenantUrl — kept for callers; now returns path URL on production apex. */
+export function tenantOrigin(subdomain: string): string {
+  return tenantUrl(subdomain);
 }
 
 export function isPlatformMode(): boolean {
@@ -280,7 +374,7 @@ export async function resolveComplexQuery(query: string): Promise<TenantResolveR
   const row = body as TenantResolveResult;
   return {
     ...row,
-    url: row.url || tenantOrigin(row.subdomain),
+    url: row.url || tenantUrl(row.subdomain),
   };
 }
 
@@ -314,7 +408,7 @@ export async function fetchNextSubdomain(): Promise<NextSubdomainResult> {
   const row = body as NextSubdomainResult;
   return {
     subdomain: row.subdomain,
-    url: row.url || tenantOrigin(row.subdomain),
+    url: row.url || tenantUrl(row.subdomain),
   };
 }
 
@@ -341,7 +435,7 @@ export async function registerNewComplex(input: ComplexRegisterInput): Promise<T
     id: row.id,
     name: row.name,
     subdomain: row.subdomain,
-    url: tenantOrigin(row.subdomain),
+    url: tenantUrl(row.subdomain),
   };
 }
 
@@ -401,10 +495,20 @@ export function getActiveComplexId(): number | undefined {
   return undefined;
 }
 
-export async function resolveTenantFromHostname(hostname?: string): Promise<TenantInfo | null> {
+export async function resolveTenantFromLocation(
+  hostname?: string,
+  pathname?: string,
+): Promise<TenantInfo | null> {
   const host = hostname ?? (typeof window !== "undefined" ? window.location.hostname : "");
+  const path = pathname ?? (typeof window !== "undefined" ? window.location.pathname : "");
 
   if (isPlatformHost(host)) {
+    const pathSlug = parseTenantSlugFromPath(path);
+    if (pathSlug) {
+      const tenant = await fetchTenantBySubdomain(pathSlug);
+      setCachedTenant(tenant, false);
+      return tenant;
+    }
     setCachedTenant(null, true);
     return null;
   }
@@ -417,4 +521,9 @@ export async function resolveTenantFromHostname(hostname?: string): Promise<Tena
   const tenant = await fetchTenantBySubdomain(subdomain);
   setCachedTenant(tenant, false);
   return tenant;
+}
+
+/** @deprecated Use resolveTenantFromLocation */
+export async function resolveTenantFromHostname(hostname?: string): Promise<TenantInfo | null> {
+  return resolveTenantFromLocation(hostname);
 }

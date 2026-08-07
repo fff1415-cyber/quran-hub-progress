@@ -6,7 +6,7 @@ import {
   apexDomain,
   fetchNextSubdomain,
   registerNewComplex,
-  tenantOrigin,
+  tenantUrl,
   type TenantResolveResult,
 } from "@/lib/tenant";
 import { useTenant } from "@/contexts/TenantContext";
@@ -118,6 +118,7 @@ function RegisterComplexPage() {
       });
       setCreated(result);
       toast.success(`تم تسجيل «${result.name}» بنجاح`);
+      void copyComplexLink(result.url);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "تعذّر التسجيل");
     } finally {
@@ -166,7 +167,7 @@ function RegisterComplexPage() {
                 </button>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                احفظ هذا الرابط — بوابة دخول مجمعك · عضوية المدير: {managerCode}
+                تم نسخ الرابط تلقائياً — بوابة دخول مجمعك · عضوية المدير: {managerCode}
               </p>
             </div>
 
@@ -196,16 +197,16 @@ function RegisterComplexPage() {
           <div>
             <label className="block text-sm text-muted-foreground mb-1">عضوية المجمع *</label>
             <div className="flex items-center gap-1 rounded-xl border border-border bg-input overflow-hidden" dir="ltr">
+              <span className="px-3 py-3 text-muted-foreground text-sm border-r border-border shrink-0 whitespace-nowrap">
+                {apexDomain()}/
+              </span>
               <input
                 value={subdomain}
                 onChange={(e) => setSubdomain(e.target.value.replace(/[^a-z0-9-]/gi, "").toLowerCase())}
-                placeholder={subdomainLoading ? "…" : "m4"}
+                placeholder={subdomainLoading ? "…" : "m101"}
                 disabled={subdomainLoading}
                 className="flex-1 px-4 py-3 bg-transparent focus:outline-none text-left disabled:opacity-60"
               />
-              <span className="px-3 py-3 text-muted-foreground text-sm border-r border-border shrink-0">
-                .{apexDomain()}
-              </span>
               <button
                 type="button"
                 onClick={() => void loadNextSubdomain()}
@@ -219,7 +220,7 @@ function RegisterComplexPage() {
             <p className="text-xs text-muted-foreground mt-1">
               {subdomainLoading
                 ? "جاري تخصيص عضوية المجمع..."
-                : `يُخصّص تلقائياً — مثال: ${subdomain} — الرابط: ${tenantOrigin(subdomain)}`}
+                : `يُخصّص تلقائياً — الرابط: ${tenantUrl(subdomain || "m101")}`}
             </p>
           </div>
 

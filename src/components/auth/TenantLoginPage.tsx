@@ -6,6 +6,7 @@ import { isPortalViewerRole, setPortalMode } from "@/lib/student-portal-auth";
 import { Shield, UserCheck, GraduationCap, Mic, Eye, Loader2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { useTenant } from "@/contexts/TenantContext";
+import { apexDomain } from "@/lib/tenant";
 import { TenantLogo } from "@/components/TenantLogo";
 
 type LoginMode = "staff" | "student";
@@ -109,8 +110,8 @@ export function TenantLoginPage() {
           <h1 className="text-xl font-bold text-destructive mb-2">تعذّر تحميل المجمع</h1>
           <p className="text-muted-foreground text-sm">{tenantError}</p>
           <p className="text-muted-foreground text-xs mt-4">
-            تحقق من الرابط (مثل m1.msht.io) أو{" "}
-            <a href="https://msht.io" className="text-primary underline">عد إلى المنصة</a>
+            تحقق من الرابط (مثل {apexDomain()}/m101) أو{" "}
+            <a href={`https://${apexDomain()}`} className="text-primary underline">عد إلى المنصة</a>
           </p>
         </div>
       </div>
