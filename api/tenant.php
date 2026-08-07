@@ -143,6 +143,9 @@ function pdo_integrity_error_message(PDOException $e): string
 {
     $msg = strtolower($e->getMessage());
 
+    if (str_contains($msg, 'app_state') && str_contains($msg, 'value')) {
+        return 'تعذّر حفظ بيانات التطبيق — قد تحتاج migrate-app-state-value-longtext.sql على Hostinger';
+    }
     if (str_contains($msg, 'uk_complexes_subdomain') || str_contains($msg, 'subdomain')) {
         return 'رمز المجمع (العضوية) مستخدم — اختر رمزاً آخر أو حدّث الصفحة';
     }

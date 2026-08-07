@@ -82,18 +82,7 @@ function kiosk_load_settings(PDO $pdo, int $complexId): array
 
 function kiosk_save_settings(PDO $pdo, int $complexId, array $settings): void
 {
-    $normalized = kiosk_normalize_settings($settings);
-    $payload = json_encode($normalized, JSON_UNESCAPED_UNICODE);
-    $tenants = app_state_tenant_enabled($pdo);
-    if ($tenants) {
-        $sql = 'INSERT INTO app_state (`complex_id`, `key`, value) VALUES (:complex_id, :key, :value)
-                ON DUPLICATE KEY UPDATE value = VALUES(value)';
-        $pdo->prepare($sql)->execute([':complex_id' => $complexId, ':key' => kiosk_settings_key(), ':value' => $payload]);
-    } else {
-        $sql = 'INSERT INTO app_state (`key`, value) VALUES (:key, :value)
-                ON DUPLICATE KEY UPDATE value = VALUES(value)';
-        $pdo->prepare($sql)->execute([':key' => kiosk_settings_key(), ':value' => $payload]);
-    }
+    app_state_upsert($pdo, kiosk_settings_key(), kiosk_normalize_settings($settings), $complexId);
 }
 
 function kiosk_token_from_request(): string
@@ -206,23 +195,19 @@ function kiosk_load_asr_cache(PDO $pdo, int $complexId, string $isoDate): ?strin
     if ($raw === false || $raw === '') {
         return null;
     }
-    $hhmm = trim((string) $raw);
-    return preg_match('/^\d{2}:\d{2}$/', $hhmm) ? $hhmm : null;
+    $decoded = json_decode((string) $raw, true);
+    if (is_string($decoded) && preg_match('/^\d{2}:\d{2}$/', $decoded)) {
+        return $decoded;
+    }
+    // Legacy rows stored plain HH:MM before JSON encoding fix.
+    $legacy = trim((string) $raw);
+    return preg_match('/^\d{2}:\d{2}$/', $legacy) ? $legacy : null;
 }
 
 function kiosk_save_asr_cache(PDO $pdo, int $complexId, string $isoDate, string $hhmm): void
 {
     $key = kiosk_asr_cache_key($complexId, $isoDate);
-    $tenants = app_state_tenant_enabled($pdo);
-    if ($tenants) {
-        $sql = 'INSERT INTO app_state (`complex_id`, `key`, value) VALUES (:complex_id, :key, :value)
-                ON DUPLICATE KEY UPDATE value = VALUES(value)';
-        $pdo->prepare($sql)->execute([':complex_id' => $complexId, ':key' => $key, ':value' => $hhmm]);
-    } else {
-        $sql = 'INSERT INTO app_state (`key`, value) VALUES (:key, :value)
-                ON DUPLICATE KEY UPDATE value = VALUES(value)';
-        $pdo->prepare($sql)->execute([':key' => $key, ':value' => $hhmm]);
-    }
+    app_state_upsert($pdo, $key, $hhmm, app_state_tenant_enabled($pdo) ? $complexId : null);
 }
 
 /** @param array<string, mixed> $settings */
@@ -437,17 +422,7 @@ function kiosk_load_grades(PDO $pdo, int $complexId): array
 
 function kiosk_save_grades(PDO $pdo, int $complexId, array $grades): void
 {
-    $payload = json_encode($grades, JSON_UNESCAPED_UNICODE);
-    $tenants = app_state_tenant_enabled($pdo);
-    if ($tenants) {
-        $sql = 'INSERT INTO app_state (`complex_id`, `key`, value) VALUES (:complex_id, :key, :value)
-                ON DUPLICATE KEY UPDATE value = VALUES(value)';
-        $pdo->prepare($sql)->execute([':complex_id' => $complexId, ':key' => 'grades', ':value' => $payload]);
-    } else {
-        $sql = 'INSERT INTO app_state (`key`, value) VALUES (:key, :value)
-                ON DUPLICATE KEY UPDATE value = VALUES(value)';
-        $pdo->prepare($sql)->execute([':key' => 'grades', ':value' => $payload]);
-    }
+    app_state_upsert($pdo, 'grades', $grades, app_state_tenant_enabled($pdo) ? $complexId : null);
 }
 
 /** @return array{semester: ?array, weeks: array} */
@@ -703,7 +678,16 @@ function handle_kiosk_put_settings(): void
         'country' => $input['country'] ?? ($current['country'] ?? 'Saudi Arabia'),
         'prayer_method' => $input['prayer_method'] ?? ($current['prayer_method'] ?? 4),
     ]);
-    kiosk_save_settings($pdo, $cid, $next);
+    try {
+        kiosk_save_settings($pdo, $cid, $next);
+    } catch (PDOException $e) {
+        if (pdo_is_integrity_violation($e)) {
+            error_response(pdo_integrity_error_message($e) . ' | ' . pdo_sql_error_detail($e), 409);
+        }
+        throw $e;
+    } catch (InvalidArgumentException $e) {
+        error_response($e->getMessage(), 400);
+    }
 
     handle_kiosk_get_settings();
 }
