@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMemo } from "react";
 import {
   loadSardQueue, loadNotifications, countTransfersForRole,
@@ -60,7 +60,7 @@ export const Route = createFileRoute("/manager")({
 
 export function ManagerPage() {
   const navigate = useNavigate();
-  const search = Route.useSearch();
+  const search = useSearch({ strict: false }) as ReturnType<typeof managerValidateSearch>;
   const name = getSessionName("المدير");
 
   const mainTab = resolveMainTab(search.tab);

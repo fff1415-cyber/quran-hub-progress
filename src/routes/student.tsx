@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { loadHalaqat, loadStudents, loadGrades, type GradesStore } from "@/lib/mock-data";
 import { getCalendarDayKey } from "@/lib/operational-date";
@@ -43,7 +43,7 @@ export const Route = createFileRoute("/student")({
 
 export function StudentPage() {
   const navigate = useNavigate();
-  const search = Route.useSearch();
+  const search = useSearch({ strict: false }) as ReturnType<typeof studentValidateSearch>;
   const halaqat = loadHalaqat();
   const students = loadStudents();
   const [grades, setGrades] = useState<GradesStore>(() => loadGrades());

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { loadGrades, loadStudents, loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
 import { getCalendarDayKey } from "@/lib/operational-date";
@@ -70,7 +70,7 @@ export const Route = createFileRoute("/secretary")({
 
 export function SecretaryPage() {
   const navigate = useNavigate();
-  const search = Route.useSearch();
+  const search = useSearch({ strict: false }) as ReturnType<typeof secretaryValidateSearch>;
   const name = getSessionName("السكرتير");
   const students = loadStudents();
   const grades = loadGrades();

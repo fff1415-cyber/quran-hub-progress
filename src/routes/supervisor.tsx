@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
 import { getSessionName } from "@/lib/session-role";
@@ -67,7 +67,7 @@ export const Route = createFileRoute("/supervisor")({
 
 export function SupervisorPage() {
   const navigate = useNavigate();
-  const search = Route.useSearch();
+  const search = useSearch({ strict: false }) as ReturnType<typeof supervisorValidateSearch>;
   const name = getSessionName("المشرف التعليمي");
   const [queue, setQueue] = useState(() => loadSardQueue());
 

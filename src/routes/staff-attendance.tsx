@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { AppHeader } from "@/components/AppHeader";
@@ -30,7 +30,7 @@ export const Route = createFileRoute("/staff-attendance")({
 });
 
 export function StaffAttendancePage() {
-  const { h } = Route.useSearch();
+  const { h } = useSearch({ strict: false }) as z.infer<typeof staffAttendanceSearchSchema>;
   const navigate = useNavigate();
   const [role, setRole] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);

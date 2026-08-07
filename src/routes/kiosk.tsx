@@ -1,4 +1,4 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, useSearch } from "@tanstack/react-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertCircle, Loader2 } from "lucide-react";
 import { TenantLogo } from "@/components/TenantLogo";
@@ -40,7 +40,7 @@ export const Route = createFileRoute("/kiosk")({
 });
 
 export function KioskPage() {
-  const { token } = Route.useSearch();
+  const { token } = useSearch({ strict: false }) as ReturnType<typeof kioskValidateSearch>;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [branding, setBranding] = useState<KioskSession | null>(null);

@@ -1,4 +1,4 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { z } from "zod";
 import {
@@ -60,7 +60,7 @@ export const Route = createFileRoute("/teacher")({
 });
 
 export function TeacherPage() {
-  const { h, w, view: viewParam } = Route.useSearch();
+  const { h, w, view: viewParam } = useSearch({ strict: false }) as z.infer<typeof teacherSearchSchema>;
   const view = viewParam ?? "grades";
   const navigate = useNavigate();
   const halaqat = loadHalaqat();

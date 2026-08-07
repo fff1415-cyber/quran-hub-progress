@@ -11,7 +11,7 @@ import { AppHeader } from "@/components/AppHeader";
 import { getSessionName } from "@/lib/session-role";
 import { listSubmittedTarbawiPlans } from "@/lib/tarbawi-program";
 import { ClipboardList, Eye, Settings2, Loader2 } from "lucide-react";
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { Toaster } from "sonner";
 
 export function programSupervisorValidateSearch(s: Record<string, unknown>) {
@@ -27,7 +27,7 @@ export const Route = createFileRoute("/program-supervisor")({
 
 export function ProgramSupervisorPage() {
   const navigate = useNavigate();
-  const search = Route.useSearch();
+  const search = useSearch({ strict: false }) as ReturnType<typeof programSupervisorValidateSearch>;
   const name = getSessionName("مشرف البرامج");
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
   const [loading, setLoading] = useState(true);
