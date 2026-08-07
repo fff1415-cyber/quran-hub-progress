@@ -10,5 +10,5 @@ define('DB_CHARSET', 'utf8mb4');
 // HMAC secret for session tokens — change in production
 define('TOKEN_SECRET', 'change-this-to-a-long-random-string');
 
-// Platform super-admin password (msht.io/platform-admin) — change in production
+// Platform super-admin password (msht.io/platform-admin) — or set in config.platform.php on server
 define('PLATFORM_ADMIN_SECRET', 'change-this-platform-admin-secret');

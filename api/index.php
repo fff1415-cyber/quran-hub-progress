@@ -23,6 +23,8 @@ require_once __DIR__ . '/bootstrap.php';
 api_register_error_handlers();
 
 require_once $configPath;
+require_once __DIR__ . '/config-loader.php';
+api_load_optional_config();
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
 require_once __DIR__ . '/tenant.php';

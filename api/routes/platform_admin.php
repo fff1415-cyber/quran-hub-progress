@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 function platform_admin_secret(): string
 {
+    global $PLATFORM_ADMIN_SECRET_OVERRIDE;
+    if (isset($PLATFORM_ADMIN_SECRET_OVERRIDE) && $PLATFORM_ADMIN_SECRET_OVERRIDE !== '') {
+        return (string) $PLATFORM_ADMIN_SECRET_OVERRIDE;
+    }
     if (defined('PLATFORM_ADMIN_SECRET')) {
         return (string) PLATFORM_ADMIN_SECRET;
     }
