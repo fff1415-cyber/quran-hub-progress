@@ -17,6 +17,7 @@ import { Route as DashboardRouteImport } from './routes/dashboard'
 import { Route as KioskRouteImport } from './routes/kiosk'
 import { Route as ManagerRouteImport } from './routes/manager'
 import { Route as MusammiRouteImport } from './routes/musammi'
+import { Route as PlatformAdminRouteImport } from './routes/platform-admin'
 import { Route as PrelaunchAuditRouteImport } from './routes/prelaunch-audit'
 import { Route as ProgramSupervisorRouteImport } from './routes/program-supervisor'
 import { Route as RegisterRouteImport } from './routes/register'
@@ -74,6 +75,11 @@ const ManagerRoute = ManagerRouteImport.update({
 const MusammiRoute = MusammiRouteImport.update({
   id: '/musammi',
   path: '/musammi',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PlatformAdminRoute = PlatformAdminRouteImport.update({
+  id: '/platform-admin',
+  path: '/platform-admin',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PrelaunchAuditRoute = PrelaunchAuditRouteImport.update({
@@ -178,6 +184,7 @@ export interface FileRoutesByFullPath {
   '/kiosk': typeof KioskRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
+  '/platform-admin': typeof PlatformAdminRoute
   '/prelaunch-audit': typeof PrelaunchAuditRoute
   '/program-supervisor': typeof ProgramSupervisorRoute
   '/register': typeof RegisterRoute
@@ -205,6 +212,7 @@ export interface FileRoutesByTo {
   '/kiosk': typeof KioskRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
+  '/platform-admin': typeof PlatformAdminRoute
   '/prelaunch-audit': typeof PrelaunchAuditRoute
   '/program-supervisor': typeof ProgramSupervisorRoute
   '/register': typeof RegisterRoute
@@ -234,6 +242,7 @@ export interface FileRoutesById {
   '/kiosk': typeof KioskRoute
   '/manager': typeof ManagerRoute
   '/musammi': typeof MusammiRoute
+  '/platform-admin': typeof PlatformAdminRoute
   '/prelaunch-audit': typeof PrelaunchAuditRoute
   '/program-supervisor': typeof ProgramSupervisorRoute
   '/register': typeof RegisterRoute
@@ -264,6 +273,7 @@ export interface FileRouteTypes {
     | '/kiosk'
     | '/manager'
     | '/musammi'
+    | '/platform-admin'
     | '/prelaunch-audit'
     | '/program-supervisor'
     | '/register'
@@ -291,6 +301,7 @@ export interface FileRouteTypes {
     | '/kiosk'
     | '/manager'
     | '/musammi'
+    | '/platform-admin'
     | '/prelaunch-audit'
     | '/program-supervisor'
     | '/register'
@@ -319,6 +330,7 @@ export interface FileRouteTypes {
     | '/kiosk'
     | '/manager'
     | '/musammi'
+    | '/platform-admin'
     | '/prelaunch-audit'
     | '/program-supervisor'
     | '/register'
@@ -348,6 +360,7 @@ export interface RootRouteChildren {
   KioskRoute: typeof KioskRoute
   ManagerRoute: typeof ManagerRoute
   MusammiRoute: typeof MusammiRoute
+  PlatformAdminRoute: typeof PlatformAdminRoute
   PrelaunchAuditRoute: typeof PrelaunchAuditRoute
   ProgramSupervisorRoute: typeof ProgramSupervisorRoute
   RegisterRoute: typeof RegisterRoute
@@ -414,6 +427,13 @@ declare module '@tanstack/react-router' {
       path: '/musammi'
       fullPath: '/musammi'
       preLoaderRoute: typeof MusammiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/platform-admin': {
+      id: '/platform-admin'
+      path: '/platform-admin'
+      fullPath: '/platform-admin'
+      preLoaderRoute: typeof PlatformAdminRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/prelaunch-audit': {
@@ -584,6 +604,7 @@ const rootRouteChildren: RootRouteChildren = {
   KioskRoute: KioskRoute,
   ManagerRoute: ManagerRoute,
   MusammiRoute: MusammiRoute,
+  PlatformAdminRoute: PlatformAdminRoute,
   PrelaunchAuditRoute: PrelaunchAuditRoute,
   ProgramSupervisorRoute: ProgramSupervisorRoute,
   RegisterRoute: RegisterRoute,

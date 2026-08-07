@@ -15,6 +15,7 @@ require_once __DIR__ . '/tenant_info.php';
 require_once __DIR__ . '/tenant_resolve.php';
 require_once __DIR__ . '/complex_branding.php';
 require_once __DIR__ . '/kiosk.php';
+require_once __DIR__ . '/platform_admin.php';
 
 function route_request(string $method, string $path): void
 {
@@ -200,6 +201,30 @@ function route_request(string $method, string $path): void
     }
     if ($path === '/kiosk/settings' && $method === 'PUT') {
         handle_kiosk_put_settings();
+        return;
+    }
+    if ($path === '/platform/login' && $method === 'POST') {
+        handle_platform_login();
+        return;
+    }
+    if ($path === '/platform/complexes' && $method === 'GET') {
+        handle_platform_list_complexes();
+        return;
+    }
+    if ($path === '/platform/complexes' && $method === 'PATCH') {
+        handle_platform_patch_complex();
+        return;
+    }
+    if ($path === '/platform/role-accounts' && $method === 'GET') {
+        handle_platform_list_role_accounts();
+        return;
+    }
+    if ($path === '/platform/role-accounts' && $method === 'DELETE') {
+        handle_platform_delete_role_account();
+        return;
+    }
+    if ($path === '/platform/revoke-access' && $method === 'POST') {
+        handle_platform_revoke_access();
         return;
     }
 

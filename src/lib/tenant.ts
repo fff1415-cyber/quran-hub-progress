@@ -56,6 +56,7 @@ function envSubdomainFallback(): string {
 /** Apex routes that are NOT tenant slugs (msht.io/register, not msht.io/m101). */
 export const RESERVED_APEX_PATH_SEGMENTS = new Set([
   "register",
+  "platform-admin",
   "prelaunch-audit",
   "admin",
   "dashboard",

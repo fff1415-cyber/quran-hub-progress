@@ -21,6 +21,8 @@ function handle_login_by_code(): void
     $tenantsRole = table_column_exists($pdo, 'role_accounts', 'complex_id');
     $tenantsHalaqa = table_column_exists($pdo, 'halaqat', 'complex_id');
 
+    assert_complex_login_allowed($pdo, $requestedComplexId);
+
     try {
         if ($tenantsRole) {
             $stmt = $pdo->prepare(
@@ -118,6 +120,8 @@ function handle_login_by_national_id(): void
     $requestedComplexId = login_complex_id_from_input($input);
     $pdo = db();
     $tenants = table_column_exists($pdo, 'students', 'complex_id');
+
+    assert_complex_login_allowed($pdo, $requestedComplexId);
 
     if ($tenants) {
         $stmt = $pdo->prepare(

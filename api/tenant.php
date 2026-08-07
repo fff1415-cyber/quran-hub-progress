@@ -81,6 +81,23 @@ function login_token_payload(array $payload, int $complexId, bool $tenantsEnable
     return $payload;
 }
 
+/** Block login when complex is deactivated (is_active = 0). */
+function assert_complex_login_allowed(PDO $pdo, int $complexId): void
+{
+    if (!table_column_exists($pdo, 'complexes', 'is_active')) {
+        return;
+    }
+    $stmt = $pdo->prepare('SELECT is_active FROM complexes WHERE id = ? LIMIT 1');
+    $stmt->execute([$complexId]);
+    $row = $stmt->fetch();
+    if (!$row) {
+        error_response('المجمع غير موجود', 404);
+    }
+    if ((int) ($row['is_active'] ?? 1) !== 1) {
+        error_response('تم تعطيل هذا المجمع — تواصل مع إدارة المنصة', 403);
+    }
+}
+
 /** Auth payload + resolved complex id (convenience). */
 function require_auth_with_complex(): array
 {
