@@ -28,6 +28,33 @@ function complexes_has_is_active(PDO $pdo): bool
     return table_column_exists($pdo, 'complexes', 'is_active');
 }
 
+/** Add is_active to complexes if missing (Hostinger one-time auto-migrate). */
+function ensure_complexes_is_active_column(PDO $pdo): void
+{
+    if (complexes_has_is_active($pdo)) {
+        return;
+    }
+    try {
+        $pdo->exec(
+            'ALTER TABLE `complexes`
+             ADD COLUMN `is_active` TINYINT(1) NOT NULL DEFAULT 1
+             AFTER `contact_phone`'
+        );
+        $pdo->exec('UPDATE `complexes` SET `is_active` = 1');
+    } catch (PDOException $e) {
+        if (complexes_has_is_active($pdo)) {
+            return;
+        }
+        if (str_contains($e->getMessage(), 'Duplicate column')) {
+            return;
+        }
+        error_response(
+            'تعذّر إضافة عمود is_active — نفّذ database/migrate-platform-admin.sql في phpMyAdmin',
+            503
+        );
+    }
+}
+
 function assert_complex_exists(PDO $pdo, int $complexId): array
 {
     $hasActive = complexes_has_is_active($pdo);
@@ -134,9 +161,7 @@ function handle_platform_patch_complex(): void
     $pdo = db();
     assert_complex_exists($pdo, $complexId);
 
-    if (!complexes_has_is_active($pdo)) {
-        error_response('عمود is_active غير موجود — نفّذ database/migrate-platform-admin.sql', 503);
-    }
+    ensure_complexes_is_active_column($pdo);
 
     if (!array_key_exists('is_active', $input)) {
         error_response('is_active مطلوب');
@@ -218,6 +243,8 @@ function handle_platform_revoke_access(): void
 
     $pdo = db();
     assert_complex_exists($pdo, $complexId);
+
+    ensure_complexes_is_active_column($pdo);
 
     $deleted = 0;
     if (in_array('role_accounts', $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN), true)) {
