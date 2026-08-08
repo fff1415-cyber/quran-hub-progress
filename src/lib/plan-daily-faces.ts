@@ -2,6 +2,7 @@ import type { AcademicCalendar } from "@/lib/academic-context";
 import { getElapsedSemesterDays, getTotalSemesterWorkingDays } from "@/lib/semester-grading";
 import type { DailyFaceQuotas, PlanTrack, StudentPlanAssignment } from "@/lib/plan-types";
 import type { DayEntry, GradesStore, HifzValue, Student } from "@/lib/mock-data";
+import { sumWeekCompensationFaces } from "@/lib/mock-data";
 import type { EducationPlan } from "@/lib/plan-types";
 
 /** Fixed hifz tap → faces (not configurable per level). */
@@ -140,7 +141,7 @@ function sumFacesFromAllGradeEntries(
   const weeks = grades[studentId] ?? {};
 
   for (const week of Object.values(weeks)) {
-    hifzActual += week.compensationFaces ?? 0;
+    hifzActual += sumWeekCompensationFaces(week);
     murajaActual += week.compensationMurajaFaces ?? 0;
     for (const entry of Object.values(week.days ?? {})) {
       const part = facesFromDayEntry(entry, quotas);
@@ -210,7 +211,7 @@ export function aggregateFaceProgress(
   for (const wn of weekNumsInRange) {
     const week = grades[studentId]?.[wn];
     if (!week?.days) continue;
-    hifzActual += week.compensationFaces ?? 0;
+    hifzActual += sumWeekCompensationFaces(week);
     murajaActual += week.compensationMurajaFaces ?? 0;
     for (const [dayKey, entry] of Object.entries(week.days)) {
       if (countedDayKeys.has(`${wn}:${dayKey}`)) continue;

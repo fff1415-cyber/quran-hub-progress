@@ -7,6 +7,9 @@ import {
   emptyWeek,
   ensureWeekDays,
   weekPercentage,
+  compensationRemainingForDay,
+  sumWeekCompensationFaces,
+  WEEKLY_COMPENSATION_CAP,
   type HifzValue,
 } from "@/lib/mock-data";
 import { formatWeekOptionLabel, getSelectableWeeks } from "@/lib/academic-context";
@@ -79,7 +82,7 @@ type Props = {
   ) => void;
   onPlanHifz: (s: Student, dayKey: string) => void;
   onPlanPassFail: (s: Student, dayKey: string, task: "rabt" | "muraja", value: "pass" | "fail" | "") => void;
-  onCompensationChange: (s: Student, faces: number) => void;
+  onCompensationChange: (s: Student, dayKey: string, faces: number) => void;
   onMarkAllPresent: (dayKey: string) => void;
 };
 
@@ -316,6 +319,9 @@ export function TeacherMobileDayBoard({
             const e = dayEntryFor(week, activeDayKey, workingKeysList);
             const weekPct = weekPercentage(week, isTalqeen, s.levelType);
             const hasPlan = planLinkedIds.has(s.id);
+            const dayComp = e.compensationFaces ?? 0;
+            const compMaxToday = compensationRemainingForDay(week, activeDayKey, workingKeysList);
+            const weekPoolRemaining = WEEKLY_COMPENSATION_CAP - sumWeekCompensationFaces(week, workingKeysList);
 
             return (
               <article
@@ -323,8 +329,8 @@ export function TeacherMobileDayBoard({
                 className="rounded-xl border border-border/70 bg-card/90 overflow-hidden"
               >
                 {/* Row 1: name · plan · percentages */}
-                <div className="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/40 bg-secondary/20 min-h-[2.25rem]">
-                  <h3 className="flex-1 min-w-0 font-bold text-[13px] leading-tight truncate">
+                <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border/40 bg-secondary/20 min-h-[2.25rem]">
+                  <h3 className="flex-1 min-w-0 font-bold text-[13px] leading-tight truncate pr-0.5">
                     {s.name}
                     {s.assignedTo === "assistant" && viewerRole === "teacher" && (
                       <span className="text-[9px] text-muted-foreground font-normal mr-1">· مساعد</span>
@@ -334,55 +340,61 @@ export function TeacherMobileDayBoard({
                     )}
                   </h3>
 
-                  {hasPlan && (
-                    <button
-                      type="button"
-                      onClick={() => onOpenPlanSheet(s)}
-                      className="shrink-0 inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary font-bold"
-                    >
-                      <ClipboardList className="w-3 h-3" />
-                      الخطة
-                    </button>
-                  )}
+                  <div className="shrink-0 flex items-center gap-2.5">
+                    {hasPlan && (
+                      <button
+                        type="button"
+                        onClick={() => onOpenPlanSheet(s)}
+                        className="inline-flex items-center gap-0.5 text-[10px] px-1.5 py-0.5 rounded-md bg-primary/10 text-primary font-bold"
+                      >
+                        <ClipboardList className="w-3 h-3" />
+                        الخطة
+                      </button>
+                    )}
 
-                  {!isTalqeen && (
-                    <Popover>
-                      <PopoverTrigger asChild>
-                        <button
-                          type="button"
-                          className={cn(
-                            "shrink-0 text-[10px] px-1 py-0.5 rounded font-bold",
-                            (week.compensationFaces ?? 0) > 0
-                              ? "bg-secondary text-foreground"
-                              : "text-muted-foreground/70",
-                          )}
-                        >
-                          تع{(week.compensationFaces ?? 0) > 0 ? ` ${week.compensationFaces}` : ""}
-                        </button>
-                      </PopoverTrigger>
-                      <PopoverContent className="w-48 p-2" align="end">
-                        <p className="text-[10px] text-muted-foreground mb-1.5">تعويض حفظ</p>
-                        <CompensationSelect
-                          value={week.compensationFaces ?? 0}
-                          onChange={(v) => onCompensationChange(s, v)}
+                    {!isTalqeen && (
+                      <Popover>
+                        <PopoverTrigger asChild>
+                          <button
+                            type="button"
+                            className={cn(
+                              "inline-flex items-center gap-1 text-[10px] px-1.5 py-0.5 rounded-md font-bold border",
+                              dayComp > 0
+                                ? "bg-success/10 text-success border-success/30"
+                                : "text-muted-foreground border-border/60",
+                            )}
+                          >
+                            تع {dayComp > 0 ? dayComp : "—"}
+                            <span className="text-[9px] opacity-75">· {weekPoolRemaining}</span>
+                          </button>
+                        </PopoverTrigger>
+                        <PopoverContent className="w-52 p-2.5" align="end">
+                          <p className="text-[10px] text-muted-foreground mb-1">
+                            تعويض {dayLabel} — متبقي للأسبوع: {weekPoolRemaining} من {WEEKLY_COMPENSATION_CAP}
+                          </p>
+                          <CompensationSelect
+                            value={dayComp}
+                            maxFaces={compMaxToday}
+                            onChange={(v) => onCompensationChange(s, activeDayKey, v)}
+                          />
+                        </PopoverContent>
+                      </Popover>
+                    )}
+
+                    <div className="flex items-center gap-2 text-left tabular-nums border-r border-border/50 pr-2">
+                      <div className="text-center leading-none">
+                        <div className="text-[8px] text-muted-foreground">أسبوع</div>
+                        <div className={cn("text-[11px] font-bold", pctClass(weekPct))}>{weekPct}%</div>
+                      </div>
+                      <div className="text-center leading-none min-w-[2.5rem]">
+                        <div className="text-[8px] text-muted-foreground">فصل</div>
+                        <SemesterBreakdownPopover
+                          studentId={s.id}
+                          isTalqeen={isTalqeen}
+                          grades={grades}
+                          calendar={calendar}
                         />
-                      </PopoverContent>
-                    </Popover>
-                  )}
-
-                  <div className="shrink-0 flex items-center gap-1.5 text-left tabular-nums">
-                    <div className="text-center leading-none">
-                      <div className="text-[8px] text-muted-foreground">أسبوع</div>
-                      <div className={cn("text-[11px] font-bold", pctClass(weekPct))}>{weekPct}%</div>
-                    </div>
-                    <div className="text-center leading-none min-w-[2.5rem]">
-                      <div className="text-[8px] text-muted-foreground">فصل</div>
-                      <SemesterBreakdownPopover
-                        studentId={s.id}
-                        isTalqeen={isTalqeen}
-                        grades={grades}
-                        calendar={calendar}
-                      />
+                      </div>
                     </div>
                   </div>
                 </div>

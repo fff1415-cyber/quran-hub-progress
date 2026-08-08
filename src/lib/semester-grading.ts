@@ -7,7 +7,7 @@ import { generateAcademicWeeks } from "@/lib/calendar-generator";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import { isoDateToDayKey } from "@/lib/operational-date";
 import type { DayEntry, GradesStore, HifzValue, Student } from "@/lib/mock-data";
-import { DAYS, weekPercentage, compensationPoints, type WeekRecord } from "@/lib/mock-data";
+import { DAYS, weekPercentage, compensationPoints, sumWeekCompensationFaces, type WeekRecord } from "@/lib/mock-data";
 
 export interface DailyGradeWeights {
   attendance_present: number;
@@ -302,7 +302,8 @@ export function semesterOverallPercentage(
 
   if (!isTalqeen) {
     for (const wn of weekNumsSeen) {
-      const comp = grades[studentId]?.[wn]?.compensationFaces ?? 0;
+      const week = grades[studentId]?.[wn];
+      const comp = sumWeekCompensationFaces(week);
       if (comp > 0) earned += compensationPoints(comp, levelType);
     }
   }

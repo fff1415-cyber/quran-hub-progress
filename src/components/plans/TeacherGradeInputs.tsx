@@ -166,11 +166,16 @@ export function CompensationSelect({
   value,
   onChange,
   disabled,
+  maxFaces,
 }: {
   value: number;
   onChange: (v: number) => void;
   disabled?: boolean;
+  /** Max faces allowed for this day (weekly cap minus other days). */
+  maxFaces?: number;
 }) {
+  const cap = maxFaces ?? 5;
+  const options = COMPENSATION_FACE_OPTIONS.filter((opt) => opt.value === 0 || opt.value <= cap);
   return (
     <select
       value={String(value)}
@@ -179,7 +184,7 @@ export function CompensationSelect({
       className={cn(gradeCellSelectClass, "font-bold text-center")}
       title="أوجه حفظ زائدة (تعويض)"
     >
-      {COMPENSATION_FACE_OPTIONS.map((opt) => (
+      {options.map((opt) => (
         <option key={opt.value} value={opt.value}>{opt.label}</option>
       ))}
     </select>

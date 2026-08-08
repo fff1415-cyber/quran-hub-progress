@@ -38,6 +38,8 @@ export interface DayEntry {
   rabt: "pass" | "fail" | "";
   muraja: "pass" | "fail" | "";
   wajib?: boolean; // talqeen
+  /** Daily hifz compensation faces (½–5 total per week across days). */
+  compensationFaces?: number;
   /** Custom field id → selected option (per halaqa field definitions). */
   custom?: Record<string, string>;
 }
@@ -140,7 +142,7 @@ function defaultWorkingDayKeys(workingDayKeys?: Iterable<string>): string[] {
 }
 
 export function emptyDayEntry(): DayEntry {
-  return { attendance: "", hifz: "", rabt: "", muraja: "", wajib: false };
+  return { attendance: "", hifz: "", rabt: "", muraja: "", wajib: false, compensationFaces: 0 };
 }
 
 export function emptyWeek(workingDayKeys?: Iterable<string>): WeekRecord {
@@ -639,6 +641,36 @@ export const COMPENSATION_FACE_OPTIONS: { value: number; label: string }[] = [
   { value: 5, label: "5" },
 ];
 
+/** Max hifz compensation faces per student per week (sum of daily entries). */
+export const WEEKLY_COMPENSATION_CAP = 5;
+
+export function sumWeekCompensationFaces(
+  w: WeekRecord | undefined,
+  workingDayKeys?: Iterable<string>,
+): number {
+  if (!w) return 0;
+  let sum = 0;
+  for (const key of defaultWorkingDayKeys(workingDayKeys)) {
+    sum += w.days[key]?.compensationFaces ?? 0;
+  }
+  if (sum === 0 && (w.compensationFaces ?? 0) > 0) {
+    return w.compensationFaces ?? 0;
+  }
+  return sum;
+}
+
+/** How many faces can still be assigned on `dayKey` this week. */
+export function compensationRemainingForDay(
+  w: WeekRecord | undefined,
+  dayKey: string,
+  workingDayKeys?: Iterable<string>,
+): number {
+  if (!w) return WEEKLY_COMPENSATION_CAP;
+  const used = sumWeekCompensationFaces(w, workingDayKeys);
+  const current = w.days[dayKey]?.compensationFaces ?? 0;
+  return Math.max(0, WEEKLY_COMPENSATION_CAP - (used - current));
+}
+
 export const COMPENSATION_MURAJA_FACE_OPTIONS: { value: number; label: string }[] = [
   { value: 0, label: "—" },
   { value: 10, label: "10" },
@@ -685,8 +717,9 @@ export function weekPercentage(
     const entry = w.days[d.key];
     if (entry) total += dayScore(entry, isTalqeen, levelType);
   });
-  if (!isTalqeen && w.compensationFaces && w.compensationFaces > 0) {
-    total += compensationPoints(w.compensationFaces, levelType);
+  if (!isTalqeen) {
+    const compTotal = sumWeekCompensationFaces(w, undefined);
+    if (compTotal > 0) total += compensationPoints(compTotal, levelType);
   }
   const max = maxPerDay * OFFICIAL_SCHOOL_DAYS.length;
   if (max <= 0) return 0;

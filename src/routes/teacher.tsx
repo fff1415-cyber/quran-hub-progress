@@ -5,6 +5,7 @@ import {
   loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, emptyDayEntry, ensureWeekDays, dayEntryFor, DAYS,
   weekPercentage, loadNotifications, dismissNotification, pushNotification,
   ensureGradesSemester,
+  sumWeekCompensationFaces, compensationRemainingForDay,
   type WeekRecord, type DayEntry, type Student,
 } from "@/lib/mock-data";
 import {
@@ -372,7 +373,7 @@ function dayColumnCount(isTalqeen: boolean, sci: SciTableCtx): number {
   if (isTalqeen) {
     return 2 + (sci.visible && sci.fields.attendance ? 1 : 0);
   }
-  let n = 4;
+  let n = 5;
   if (sci.visible) {
     if (sci.fields.attendance) n += 1;
     if (sci.fields.hifz) n += 1;
@@ -395,13 +396,12 @@ function extraScientificWidth(sci: SciTableCtx): number {
 function gradeTableWidthPx(dayCount: number, isTalqeen: boolean, sci: SciTableCtx): number {
   const perDay = isTalqeen
     ? GRADE_COL.attendance + GRADE_COL.wajib + (sci.visible && sci.fields.attendance ? GRADE_COL.scientific : 0)
-    : GRADE_COL.attendance + GRADE_COL.hifz + GRADE_COL.passFail * 2 + extraScientificWidth(sci);
+    : GRADE_COL.attendance + GRADE_COL.hifz + GRADE_COL.passFail * 2 + GRADE_COL.compensation + extraScientificWidth(sci);
   return (
     GRADE_COL.student
     + dayCount * perDay
     + GRADE_COL.weekPct
     + GRADE_COL.semesterPct
-    + (isTalqeen ? 0 : GRADE_COL.compensation)
   );
 }
 
@@ -419,6 +419,7 @@ function buildDayColWidths(isTalqeen: boolean, sci: SciTableCtx): number[] {
   if (sci.visible && sci.fields.rabt) out.push(GRADE_COL.scientific);
   out.push(GRADE_COL.passFail);
   if (sci.visible && sci.fields.muraja) out.push(GRADE_COL.scientific);
+  out.push(GRADE_COL.compensation);
   return out;
 }
 
@@ -441,7 +442,6 @@ function GradeTableColGroup({
           <col key={`d${dayIdx}-c${colIdx}`} style={{ width: w }} />
         )),
       )}
-      {!isTalqeen && <col style={{ width: GRADE_COL.compensation }} />}
       <col style={{ width: GRADE_COL.weekPct }} />
       <col style={{ width: GRADE_COL.semesterPct }} />
     </colgroup>
@@ -713,18 +713,25 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     saveGrades(g);
   };
 
-  const handleCompensationChange = async (s: Student, faces: number) => {
-    const tracked = grades[s.id]?.[weekNum]?.compensationPlanSegments ?? [];
+  const handleDayCompensationChange = async (s: Student, dayKey: string, faces: number) => {
+    const w = ensureWeekDays(grades[s.id]?.[weekNum] ?? emptyWeek(workingKeysList), workingKeysList);
+    const max = compensationRemainingForDay(w, dayKey, workingKeysList);
+    if (faces > max + 0.001) {
+      toast.error(`المتبقي للتعويض هذا الأسبوع: ${max}`);
+      return;
+    }
+    const days = { ...w.days };
+    days[dayKey] = { ...dayEntryFor(w, dayKey, workingKeysList), compensationFaces: faces };
+    let nextWeek: WeekRecord = { ...w, days };
+    const total = sumWeekCompensationFaces(nextWeek, workingKeysList);
+    nextWeek = { ...nextWeek, compensationFaces: total };
+    const tracked = w.compensationPlanSegments ?? [];
     try {
-      let newTracked: number[] = [];
+      let newTracked = tracked;
       if (planStudentIds.has(s.id)) {
-        newTracked = await syncCompensationToPlan(s, faces, tracked, senderName);
+        newTracked = await syncCompensationToPlan(s, total, tracked, senderName);
       }
-      update(s.id, (w) => ({
-        ...w,
-        compensationFaces: faces,
-        compensationPlanSegments: newTracked,
-      }));
+      update(s.id, () => ({ ...nextWeek, compensationPlanSegments: newTracked }));
       if (planSheetStudent?.id === s.id) {
         setPlanSheetData(await fetchStudentPlanSheet(s.id));
       }
@@ -732,7 +739,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         toast.info(`${s.name} أنهى الخطة — بانتظار تحويل المشرف للسرد`);
       }
       if (faces > 0) {
-        toast.success(`تعويض ${faces} — ${newTracked.length} مقطع في الخطة`);
+        toast.success(`تعويض ${faces} — متبقي ${compensationRemainingForDay(nextWeek, dayKey, workingKeysList)}`);
       } else if (tracked.length > 0) {
         toast.success("تم إلغاء التعويض وتراجع المقاطع");
       }
@@ -874,7 +881,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           onUpdateSciScore={updateSciScore}
           onPlanHifz={(s, dayKey) => void handlePlanHifz(s, dayKey)}
           onPlanPassFail={(s, dayKey, task, value) => void handlePlanPassFail(s, dayKey, task, value)}
-          onCompensationChange={(s, faces) => void handleCompensationChange(s, faces)}
+          onCompensationChange={(s, dayKey, faces) => void handleDayCompensationChange(s, dayKey, faces)}
           onMarkAllPresent={markAllPresentForDay}
         />
       ) : (
@@ -1043,9 +1050,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 {highlightDay(d.key) && <span className="block text-[10px] text-primary font-normal">اليوم</span>}
               </th>
             ))}
-            {!isTalqeen && (
-              <th className={cn("p-2 border-r border-border text-success", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.compensation)}>ت. حفظ</th>
-            )}
             <th className={cn("p-2 border-r border-border text-muted-foreground", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.weekPct)}>نسبة الأسبوع</th>
             <th className={cn("p-2 border-r border-border text-primary font-bold", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.semesterPct)}>النسبة الكلية</th>
           </tr>
@@ -1089,11 +1093,11 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                       درجة
                     </th>
                   )}
+                  <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.compensation), "text-success text-[10px]")}>
+                    تع
+                  </th>
                 </React.Fragment>
               )
-            )}
-            {!isTalqeen && (
-              <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, GRADE_CELL_W.compensation)} />
             )}
             <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, GRADE_CELL_W.weekPct)} />
             <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, GRADE_CELL_W.semesterPct)} />
@@ -1207,17 +1211,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           />
                         </td>
                       )}
+                      <td className={dayCellClass(d.key, GRADE_CELL_W.compensation)}>
+                        <CompensationSelect
+                          value={e.compensationFaces ?? 0}
+                          maxFaces={compensationRemainingForDay(w, d.key, workingKeysList)}
+                          onChange={(v) => void handleDayCompensationChange(s, d.key, v)}
+                        />
+                      </td>
                     </React.Fragment>
                   );
                 })}
-                {!isTalqeen && (
-                  <td className={cn("p-1 text-center border-r border-border/30", GRADE_CELL_W.compensation)}>
-                    <CompensationSelect
-                      value={w.compensationFaces ?? 0}
-                      onChange={(v) => void handleCompensationChange(s, v)}
-                    />
-                  </td>
-                )}
                 <td className={cn("p-2 text-center font-bold border-r border-border/30", GRADE_CELL_W.weekPct)}>
                   <span className={weekPct >= 80 ? "text-success" : weekPct >= 50 ? "text-warning" : "text-muted-foreground"}>
                     {weekPct}%
