@@ -606,7 +606,7 @@ function ProgramFillSection({
                 </th>
               )}
               <th colSpan={2} className="p-2 border-r border-border text-primary text-center bg-primary/10">
-                المجموع (البرامج اليدوية)
+                إجمالي البرامج
               </th>
             </tr>
             <tr className="bg-secondary/30 text-xs text-muted-foreground">

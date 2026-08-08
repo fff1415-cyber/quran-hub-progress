@@ -45,8 +45,8 @@ export const ATTENDANCE_PRESETS: {
 export const DEFAULT_GRADE_INPUT_SETTINGS: GradeInputSettings = {
   attendance: { mode: "dropdown", options: [...ALL_ATTENDANCE_OPTIONS] },
   hifz: { mode: "checkbox", options: [] },
-  rabt: { mode: "dropdown", options: [...ALL_PASS_FAIL_OPTIONS] },
-  muraja: { mode: "dropdown", options: [...ALL_PASS_FAIL_OPTIONS] },
+  rabt: { mode: "checkbox", options: [...ALL_PASS_FAIL_OPTIONS] },
+  muraja: { mode: "checkbox", options: [...ALL_PASS_FAIL_OPTIONS] },
   wajib: { mode: "checkbox" },
 };
 

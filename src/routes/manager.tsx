@@ -32,7 +32,7 @@ const VALID_SECTIONS: Record<MainTab, string[]> = {
   data: ["import", "halaqat", "students", "codes"],
   staff: ["monitor"],
   grades: ["sard", "items", "weekly", "staff-settings"],
-  settings: ["branding", "kiosk", "semesters", "messages", "student-portal"],
+  settings: ["branding", "kiosk", "semesters", "messages", "teacher-features", "student-portal"],
 };
 
 function resolveMainTab(raw?: string): MainTab {
