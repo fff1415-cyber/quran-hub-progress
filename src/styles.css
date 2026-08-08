@@ -124,4 +124,23 @@
   .gold-glow {
     box-shadow: 0 0 30px oklch(0.26 0.07 255 / 0.18), 0 0 60px oklch(0.78 0.13 80 / 0.12);
   }
+
+  /* Teacher mobile day board — enlarge touch targets without changing desktop inputs */
+  .teacher-mobile-control select,
+  .teacher-mobile-control button {
+    min-height: 2.5rem;
+  }
+  .teacher-mobile-control select {
+    width: 100%;
+    max-width: none;
+    font-size: 0.875rem;
+    padding-inline: 0.5rem;
+    border-radius: 0.65rem;
+  }
+  .teacher-mobile-control input {
+    width: 100%;
+    max-width: none;
+    min-height: 2.5rem;
+    font-size: 0.875rem;
+  }
 }

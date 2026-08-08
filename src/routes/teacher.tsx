@@ -45,9 +45,11 @@ import { TeacherWeeklyTestsPanel } from "@/components/TeacherWeeklyTestsPanel";
 import { TeacherHalaqaProgramsPanel } from "@/components/TeacherHalaqaProgramsPanel";
 import { TeacherTarbawiPanel } from "@/components/tarbawi/TeacherTarbawiPanel";
 import { SemesterBreakdownPopover } from "@/components/teacher/SemesterBreakdownPopover";
+import { TeacherMobileDayBoard } from "@/components/teacher/TeacherMobileDayBoard";
 import { ensureWeeklyTestsSemester } from "@/lib/weekly-tests";
 import { ensureTarbawiSemester } from "@/lib/tarbawi-program";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { useIsMobile } from "@/hooks/use-mobile";
 import {
   ScientificGradeInput,
   ScientificGradesToolbar,
@@ -148,22 +150,22 @@ export function TeacherPage() {
     <div className="min-h-screen">
       <Toaster position="top-center" richColors />
       <AppHeader title={halaqa.name} subtitle={roleLabel} />
-      <main className="max-w-7xl mx-auto px-4 py-8">
-        <div className="glass-card rounded-2xl p-6 mb-6">
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
+        <div className="glass-card rounded-2xl p-4 sm:p-6 mb-4 sm:mb-6">
           <div className="flex items-center justify-between flex-wrap gap-3">
-            <div>
-              <div className="text-2xl display gold-text">مرحباً {name || ""}</div>
+            <div className="min-w-0">
+              <div className="text-xl sm:text-2xl display gold-text truncate">مرحباً {name || ""}</div>
               <div className="text-sm text-muted-foreground mt-1 flex items-center gap-2 flex-wrap">
                 <span className="px-2 py-0.5 rounded-md bg-primary/10 text-primary text-xs font-bold">
                   {isManager ? "صلاحيات معلم كاملة" : isAssistant ? "مساعد" : elevated ? "صلاحية كاملة" : "معلم"}
                 </span>
-                {halaqa.name}
+                <span className="truncate">{halaqa.name}</span>
                 {calendar?.semester && (
                   <span className="text-xs text-muted-foreground">· {calendar.semester.name}</span>
                 )}
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-wrap shrink-0">
+            <div className="flex items-center gap-2 flex-wrap shrink-0 w-full sm:w-auto">
               {name && role && (
                 <StaffAttendanceCheckInButton
                   role={role}
@@ -194,18 +196,22 @@ export function TeacherPage() {
           </div>
         ) : (
           <Tabs value={view} onValueChange={(v) => setView(v as "grades" | "tests" | "programs" | "tarbawi")} dir="rtl">
-            <TabsList className="w-full sm:w-auto h-auto flex flex-wrap gap-1 p-1 mb-4 bg-secondary/50 border border-border rounded-xl">
-              <TabsTrigger value="grades" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                <ClipboardList className="w-4 h-4" /> التحضير والدرجات
+            <TabsList className="w-full h-auto flex gap-1 p-1 mb-4 bg-secondary/50 border border-border rounded-xl overflow-x-auto scrollbar-none">
+              <TabsTrigger value="grades" className="gap-1.5 shrink-0 flex-1 sm:flex-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2.5 sm:px-3">
+                <ClipboardList className="w-4 h-4" />
+                <span className="truncate">التحضير</span>
               </TabsTrigger>
-              <TabsTrigger value="programs" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                <BookOpen className="w-4 h-4" /> برنامج الحلقة
+              <TabsTrigger value="programs" className="gap-1.5 shrink-0 flex-1 sm:flex-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2.5 sm:px-3">
+                <BookOpen className="w-4 h-4" />
+                <span className="truncate">البرامج</span>
               </TabsTrigger>
-              <TabsTrigger value="tarbawi" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                <Sparkles className="w-4 h-4" /> البرنامج التربوي
+              <TabsTrigger value="tarbawi" className="gap-1.5 shrink-0 flex-1 sm:flex-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2.5 sm:px-3">
+                <Sparkles className="w-4 h-4" />
+                <span className="truncate">التربوي</span>
               </TabsTrigger>
-              <TabsTrigger value="tests" className="gap-2 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
-                <ClipboardCheck className="w-4 h-4" /> الاختبارات الأسبوعية
+              <TabsTrigger value="tests" className="gap-1.5 shrink-0 flex-1 sm:flex-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2.5 sm:px-3">
+                <ClipboardCheck className="w-4 h-4" />
+                <span className="truncate">الاختبارات</span>
               </TabsTrigger>
             </TabsList>
             <TabsContent value="grades" className="mt-0 space-y-4">
@@ -525,14 +531,25 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const workingKeysList = useMemo(() => [...workingKeys], [workingKeys]);
   const isCurrentWeek = weekNum === calendar.currentWeekNumber;
   const todayKey = calendar.currentDayKey;
+  const isMobile = useIsMobile();
+  const [activeDayKey, setActiveDayKey] = useState(todayKey);
 
   const highlightDay = (dayKey: string) => isCurrentWeek && dayKey === todayKey;
 
   useEffect(() => {
-    if (!isCurrentWeek || !tableRef.current) return;
+    if (visibleDays.length === 0) return;
+    const preferred =
+      isCurrentWeek && visibleDays.some((d) => d.key === todayKey)
+        ? todayKey
+        : visibleDays[0]!.key;
+    setActiveDayKey(preferred);
+  }, [weekNum, visibleDays, isCurrentWeek, todayKey]);
+
+  useEffect(() => {
+    if (!isCurrentWeek || !tableRef.current || isMobile) return;
     const col = tableRef.current.querySelector(`[data-day-col="${todayKey}"]`);
     col?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-  }, [isCurrentWeek, todayKey, weekNum]);
+  }, [isCurrentWeek, todayKey, weekNum, isMobile]);
 
   const submitTransfer = () => {
     const student = students.find((s) => s.id === transferStudentId);
@@ -814,7 +831,54 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     );
 
   return (
-    <div className="glass-card rounded-2xl p-4">
+    <div className={cn(isMobile ? "space-y-0" : "glass-card rounded-2xl p-4")}>
+      {isMobile ? (
+        <TeacherMobileDayBoard
+          weekNum={weekNum}
+          calendar={calendar}
+          onWeekChange={onWeekChange}
+          isTalqeen={isTalqeen}
+          viewerRole={viewerRole}
+          canAssign={canAssign}
+          students={students}
+          grades={grades}
+          workingKeysList={workingKeysList}
+          visibleDays={visibleDays}
+          activeDayKey={activeDayKey || visibleDays[0]?.key || todayKey}
+          onActiveDayChange={setActiveDayKey}
+          isCurrentWeek={isCurrentWeek}
+          todayKey={todayKey}
+          sciVisible={sciCtx.visible}
+          sciFields={sciCtx.fields}
+          sciData={sciData}
+          onSciConfigChange={(cfg) => {
+            setSciConfig(cfg);
+            refreshSciData();
+          }}
+          halaqaId={halaqaId}
+          halaqaSemesterPct={halaqaSemesterPct}
+          showTransferButton={showTransferButton}
+          transferOpen={transferOpen}
+          onTransferOpenChange={handleTransferOpenChange}
+          transferStudentId={transferStudentId}
+          onTransferStudentIdChange={setTransferStudentId}
+          transferReason={transferReason}
+          onTransferReasonChange={setTransferReason}
+          onSubmitTransfer={submitTransfer}
+          planStudentIds={planStudentIds}
+          frozenPlanStudentIds={frozenPlanStudentIds}
+          planLinkedIds={planLinkedIds}
+          onOpenPlanSheet={(s) => void openPlanSheet(s)}
+          onShowAssign={() => setShowAssign(true)}
+          onUpdateDay={updateDay}
+          onUpdateSciScore={updateSciScore}
+          onPlanHifz={(s, dayKey) => void handlePlanHifz(s, dayKey)}
+          onPlanPassFail={(s, dayKey, task, value) => void handlePlanPassFail(s, dayKey, task, value)}
+          onCompensationChange={(s, faces) => void handleCompensationChange(s, faces)}
+          onMarkAllPresent={markAllPresentForDay}
+        />
+      ) : (
+        <>
       <div className="mb-4 px-2 grid grid-cols-1 sm:grid-cols-[1fr_auto_1fr] items-center gap-3">
         <div className="flex items-center gap-3 flex-wrap min-w-0 sm:justify-self-start">
           <Select value={String(weekNum)} onValueChange={(v) => onWeekChange(Number(v))}>
@@ -1183,6 +1247,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           </span>
           <span className="text-xl font-bold gold-text">{formatOverallPercent(halaqaSemesterPct)}</span>
         </div>
+      )}
+        </>
       )}
 
       {showAssign && <AssignmentDialog halaqaId={halaqaId} onClose={() => setShowAssign(false)} />}
