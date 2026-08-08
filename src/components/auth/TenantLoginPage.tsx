@@ -2,19 +2,16 @@ import { useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
 import { loginByCode, loginByNationalId } from "@/lib/secure-data.functions";
 import { setToken, syncFromCloud } from "@/lib/cloud-sync";
-import { isPortalViewerRole, setPortalMode } from "@/lib/student-portal-auth";
-import { Shield, UserCheck, GraduationCap, Mic, Eye, Loader2 } from "lucide-react";
+import { setPortalMode } from "@/lib/student-portal-auth";
+import { Loader2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { useTenant } from "@/contexts/TenantContext";
 import { apexDomain, tenantPath } from "@/lib/tenant";
 import { TenantLogo } from "@/components/TenantLogo";
 
-type LoginMode = "staff" | "student";
-
 export function TenantLoginPage() {
   const navigate = useNavigate();
   const { tenant, logoUrl, brandName, loading: tenantLoading, error: tenantError } = useTenant();
-  const [mode, setMode] = useState<LoginMode>("staff");
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -46,69 +43,56 @@ export function TenantLoginPage() {
     return null;
   }
 
+  const looksLikeNationalId = value.trim().length >= 9;
+
   const submit = async () => {
-    if (!value.trim()) {
-      toast.error("أدخل الرمز / رقم الهوية");
+    const v = value.trim();
+    if (!v) {
+      toast.error("أدخل رقم العضوية أو رقم الهوية");
       return;
     }
     setBusy(true);
     try {
-      if (mode === "staff") {
-        const auth = await loginByCode({ data: { code: value.trim() } });
-        if (!auth.token || !auth.role) {
-          throw new Error("فشل تسجيل الدخول — تحقق من إعدادات API على الخادم");
-        }
-        setToken(auth.token);
-        sessionStorage.setItem("qs_role", auth.role);
-        sessionStorage.setItem("qs_name", auth.name);
-        if (auth.complexId != null) sessionStorage.setItem("qs_complex", String(auth.complexId));
+      if (v.length >= 9) {
+        const student = await loginByNationalId({ data: { nationalId: v } });
+        setToken(student.token);
+        sessionStorage.setItem("qs_role", "student");
+        sessionStorage.setItem("qs_student", student.studentId);
+        if (student.complexId != null) sessionStorage.setItem("qs_complex", String(student.complexId));
         else sessionStorage.setItem("qs_complex", String(tenant.id));
-        if (auth.halaqaId) sessionStorage.setItem("qs_halaqa", String(auth.halaqaId));
-        else sessionStorage.removeItem("qs_halaqa");
+        setPortalMode("student");
         await syncFromCloud();
+        navigate({ to: tenantPath("/student"), search: { s: student.studentId } });
+        return;
+      }
 
-        switch (auth.role) {
-          case "manager": navigate({ to: tenantPath("/manager") }); break;
-          case "secretary": navigate({ to: tenantPath("/secretary"), search: { tab: "daily", section: "attendance" } }); break;
-          case "supervisor": navigate({ to: tenantPath("/supervisor"), search: { tab: "sard", section: "sard" } }); break;
-          case "program_supervisor": navigate({ to: tenantPath("/program-supervisor") }); break;
-          case "musammi": navigate({ to: tenantPath("/musammi") }); break;
-          case "teacher":
-          case "assistant":
-            navigate({ to: tenantPath("/teacher"), search: { h: auth.halaqaId! } });
-            break;
-        }
-      } else {
-        const v = value.trim();
-        const looksLikeNationalId = v.length >= 9;
+      const auth = await loginByCode({ data: { code: v } });
+      if (!auth.token || !auth.role) {
+        throw new Error("فشل تسجيل الدخول — تحقق من رقم العضوية");
+      }
+      setToken(auth.token);
+      sessionStorage.setItem("qs_role", auth.role);
+      sessionStorage.setItem("qs_name", auth.name);
+      if (auth.complexId != null) sessionStorage.setItem("qs_complex", String(auth.complexId));
+      else sessionStorage.setItem("qs_complex", String(tenant.id));
+      if (auth.halaqaId) sessionStorage.setItem("qs_halaqa", String(auth.halaqaId));
+      else sessionStorage.removeItem("qs_halaqa");
+      sessionStorage.removeItem("qs_student");
+      sessionStorage.removeItem("qs_portal_mode");
+      await syncFromCloud();
 
-        if (looksLikeNationalId) {
-          const student = await loginByNationalId({ data: { nationalId: v } });
-          setToken(student.token);
-          sessionStorage.setItem("qs_role", "student");
-          sessionStorage.setItem("qs_student", student.studentId);
-          if (student.complexId != null) sessionStorage.setItem("qs_complex", String(student.complexId));
-          else sessionStorage.setItem("qs_complex", String(tenant.id));
-          setPortalMode("student");
-          await syncFromCloud();
-          navigate({ to: tenantPath("/student"), search: { s: student.studentId } });
-        } else {
-          const auth = await loginByCode({ data: { code: v } });
-          if (!auth.token || !auth.role) throw new Error("فشل تسجيل الدخول");
-          if (!isPortalViewerRole(auth.role)) {
-            throw new Error("رقم العضوية غير صالح — استخدم تبويب الكادر للوحة العمل");
-          }
-          setToken(auth.token);
-          sessionStorage.setItem("qs_role", auth.role);
-          sessionStorage.setItem("qs_name", auth.name);
-          if (auth.complexId != null) sessionStorage.setItem("qs_complex", String(auth.complexId));
-          else sessionStorage.setItem("qs_complex", String(tenant.id));
-          if (auth.halaqaId) sessionStorage.setItem("qs_halaqa", String(auth.halaqaId));
-          else sessionStorage.removeItem("qs_halaqa");
-          setPortalMode("viewer");
-          await syncFromCloud();
-          navigate({ to: tenantPath("/student") });
-        }
+      switch (auth.role) {
+        case "manager": navigate({ to: tenantPath("/manager") }); break;
+        case "secretary": navigate({ to: tenantPath("/secretary"), search: { tab: "daily", section: "attendance" } }); break;
+        case "supervisor": navigate({ to: tenantPath("/supervisor"), search: { tab: "sard", section: "sard" } }); break;
+        case "program_supervisor": navigate({ to: tenantPath("/program-supervisor") }); break;
+        case "musammi": navigate({ to: tenantPath("/musammi") }); break;
+        case "teacher":
+        case "assistant":
+          navigate({ to: tenantPath("/teacher"), search: { h: auth.halaqaId! } });
+          break;
+        default:
+          throw new Error("دور غير معروف — تواصل مع إدارة المجمع");
       }
     } catch (e) {
       const msg = e instanceof Error ? e.message : "تعذّر تسجيل الدخول";
@@ -135,46 +119,25 @@ export function TenantLoginPage() {
           </div>
           <h1 className="display text-3xl md:text-4xl font-bold gold-text mb-2">{brandName}</h1>
           <p className="text-muted-foreground text-sm">لتحفيظ القرآن الكريم</p>
-          <div className="mt-4 flex items-center justify-center gap-2">
-            <span className="h-px w-12 bg-gradient-to-r from-transparent to-primary/50" />
-            <span className="text-primary text-xs">﷽</span>
-            <span className="h-px w-12 bg-gradient-to-l from-transparent to-primary/50" />
-          </div>
-        </div>
-
-        <div className="grid grid-cols-2 gap-2 p-1 rounded-xl bg-secondary/40 mb-6">
-          <button
-            type="button"
-            onClick={() => { setMode("staff"); setValue(""); }}
-            className={`py-2.5 rounded-lg text-sm font-bold transition-all ${mode === "staff" ? "gold-gradient text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            دخول الكادر التعليمي
-          </button>
-          <button
-            type="button"
-            onClick={() => { setMode("student"); setValue(""); }}
-            className={`py-2.5 rounded-lg text-sm font-bold transition-all ${mode === "student" ? "gold-gradient text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}
-          >
-            الطالب وولي الأمر
-          </button>
         </div>
 
         <div className="mb-6">
           <label className="block text-sm text-muted-foreground mb-2">
-            {mode === "staff"
-              ? "رقم العضوية"
-              : "رقم هوية الطالب أو رقم العضوية للاطلاع العام"}
+            رقم العضوية أو رقم الهوية
           </label>
           <input
-            type={mode === "staff" || (mode === "student" && value.length > 0 && value.length <= 6) ? "password" : "text"}
+            type={looksLikeNationalId ? "text" : "password"}
             value={value}
             onChange={(e) => setValue(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && !busy && void submit()}
-            placeholder={mode === "staff" ? "••••" : "هوية أو عضوية"}
-            maxLength={mode === "staff" ? 6 : 10}
+            placeholder={looksLikeNationalId ? "رقم الهوية" : "••••"}
+            maxLength={10}
             inputMode="numeric"
             className="w-full px-4 py-3 rounded-xl bg-input border border-border focus:border-primary focus:outline-none text-center text-2xl tracking-[0.3em] font-bold text-primary"
           />
+          <p className="text-xs text-muted-foreground text-center mt-2">
+            الكادر: رقم العضوية · الطالب وولي الأمر: رقم الهوية
+          </p>
         </div>
 
         <button
@@ -185,29 +148,6 @@ export function TenantLoginPage() {
         >
           {busy ? "..." : "دخول"}
         </button>
-
-        <div className="mt-6 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
-          <div className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border/50">
-            <Shield className="w-4 h-4 text-primary" />
-            مدير • سكرتير
-          </div>
-          <div className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border/50">
-            <Eye className="w-4 h-4 text-primary" />
-            إشراف تعليمي
-          </div>
-          <div className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border/50">
-            <UserCheck className="w-4 h-4 text-primary" />
-            معلم • مساعد
-          </div>
-          <div className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border/50">
-            <Mic className="w-4 h-4 text-primary" />
-            مسمّع
-          </div>
-          <div className="flex flex-col items-center gap-1 p-2 rounded-lg border border-border/50 col-span-2">
-            <GraduationCap className="w-4 h-4 text-primary" />
-            ولي الأمر — هوية الطالب · أو عضوية للاطلاع العام
-          </div>
-        </div>
       </div>
     </div>
   );

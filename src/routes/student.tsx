@@ -219,7 +219,7 @@ export function StudentPage() {
   return (
     <div className="min-h-screen">
       <Toaster position="top-center" richColors />
-      <AppHeader title="نتائج الطلاب" subtitle="الطالب وولي الأمر" />
+      <AppHeader title="لوحة أداء المجمع" subtitle={authMode === "student" ? "المجمع والطالب" : "اطلاع عام"} />
       <main className="max-w-6xl mx-auto px-4 py-8">
 
         <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
@@ -296,7 +296,7 @@ export function StudentPage() {
 
             {authMode === "viewer" && (
               <p className="text-center text-sm text-muted-foreground py-4 glass-card rounded-xl">
-                الدخول برقم العضوية — النتائج العامة فقط. لتفاصيل الطالب أدخل رقم الهوية من الصفحة الرئيسية.
+                اطلاع عام على أداء المجمع — لتفاصيل طالب محدد يدخل ولي الأمر أو الطالب برقم الهوية من الصفحة الرئيسية.
               </p>
             )}
           </>

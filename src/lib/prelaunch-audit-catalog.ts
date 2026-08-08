@@ -93,7 +93,7 @@ export const PRELAUNCH_AUDIT_CATALOG: PrelaunchAuditItem[] = [
 
   // أدوار أخرى
   { id: "musammi", group: "المسمّع", label: "واجهة السرد والتقييم", href: "/musammi" },
-  { id: "student-portal", group: "بوابة الطالب", label: "لوحة الطالب", href: "/student", hint: "يتطلب دخول طالب أو معاينة مدير" },
+  { id: "student-portal", group: "بوابة الطالب", label: "لوحة أداء المجمع", href: "/student", hint: "يتطلب دخول طالب أو معاينة كادر" },
   { id: "staff-attendance", group: "حضور العاملين", label: "تسجيل حضور المعلّم", href: "/staff-attendance" },
   { id: "kiosk", group: "الكيوسك", label: "شاشة الكيوسك", href: "/kiosk", hint: "يتطلب token من إعدادات الكيوسك" },
 

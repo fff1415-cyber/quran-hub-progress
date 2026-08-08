@@ -10,6 +10,7 @@ export const PORTAL_VIEWER_ROLES = [
   "teacher",
   "assistant",
   "supervisor",
+  "program_supervisor",
   "musammi",
   "secretary",
   "manager",
@@ -59,6 +60,7 @@ export function portalViewerRoleLabel(role: string): string {
     musammi: "المسمّع",
     secretary: "السكرتير",
     manager: "المدير",
+    program_supervisor: "مشرف البرامج",
   };
   return map[role] ?? "الكادر";
 }

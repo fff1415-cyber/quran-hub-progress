@@ -43,7 +43,7 @@ export function ManagerStudentPortalPanel() {
     <div className="glass-card rounded-2xl p-6 space-y-5">
       <div>
         <h3 className="text-lg font-bold text-primary flex items-center gap-2">
-          <GraduationCap className="w-5 h-5" /> صفحة الطالب وولي الأمر
+          <GraduationCap className="w-5 h-5" /> لوحة أداء المجمع
         </h3>
         <p className="text-xs text-muted-foreground mt-1">
           تحكم في إظهار أو إخفاء أقسام الصفحة — لا يؤثر على البيانات، فقط على العرض.
