@@ -11,17 +11,19 @@ import { ManagerDataPanel } from "@/components/role-workspace/ManagerDataPanel";
 import { ManagerGradesEvaluationPanel } from "@/components/role-workspace/ManagerGradesEvaluationPanel";
 import { ManagerGeneralSettingsPanel } from "@/components/role-workspace/ManagerGeneralSettingsPanel";
 import { ManagerStaffAttendanceMonitorPanel } from "@/components/ManagerStaffAttendanceMonitorPanel";
+import { FinancialLedgerPanel } from "@/components/role-workspace/FinancialLedgerPanel";
 import {
-  Crown, Inbox, Database, UserCheck, GraduationCap, Settings,
+  Crown, Inbox, Database, UserCheck, GraduationCap, Settings, Wallet,
 } from "lucide-react";
 import { Toaster } from "sonner";
 
-const MAIN_TABS = ["inbox", "data", "staff", "grades", "settings"] as const;
+const MAIN_TABS = ["inbox", "data", "finances", "staff", "grades", "settings"] as const;
 type MainTab = (typeof MAIN_TABS)[number];
 
 const DEFAULT_SECTION: Record<MainTab, string> = {
   inbox: "transfers",
   data: "import",
+  finances: "ledger",
   staff: "monitor",
   grades: "sard",
   settings: "branding",
@@ -30,6 +32,7 @@ const DEFAULT_SECTION: Record<MainTab, string> = {
 const VALID_SECTIONS: Record<MainTab, string[]> = {
   inbox: ["transfers", "notifications"],
   data: ["import", "halaqat", "students", "codes"],
+  finances: ["ledger"],
   staff: ["monitor"],
   grades: ["sard", "items", "weekly", "staff-settings"],
   settings: ["branding", "kiosk", "semesters", "messages", "teacher-features", "student-portal"],
@@ -112,6 +115,14 @@ export function ManagerPage() {
       icon: Database,
       roles: ["manager"],
       content: <ManagerDataPanel section={section} onSectionChange={setSection} />,
+    },
+    {
+      id: "finances",
+      label: "المالية",
+      icon: Wallet,
+      roles: ["manager"],
+      perm: "manage_finances",
+      content: <FinancialLedgerPanel />,
     },
     {
       id: "staff",

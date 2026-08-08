@@ -125,7 +125,7 @@
     box-shadow: 0 0 30px oklch(0.26 0.07 255 / 0.18), 0 0 60px oklch(0.78 0.13 80 / 0.12);
   }
 
-  /* Teacher mobile day board — enlarge touch targets without changing desktop inputs */
+  /* Teacher mobile day board — compact touch targets */
   .teacher-mobile-control select,
   .teacher-mobile-control button {
     min-height: 2.5rem;
@@ -142,5 +142,20 @@
     max-width: none;
     min-height: 2.5rem;
     font-size: 0.875rem;
+  }
+
+  .teacher-mobile-compact select {
+    width: 100%;
+    max-width: none;
+    min-height: 2rem;
+    font-size: 0.7rem;
+    padding-inline: 0.15rem;
+    border-radius: 0.4rem;
+    border: 0;
+    background: transparent;
+  }
+  .teacher-mobile-compact button {
+    min-height: 2rem;
+    min-width: 2rem;
   }
 }

@@ -96,6 +96,8 @@ export const PRELAUNCH_AUDIT_CATALOG: PrelaunchAuditItem[] = [
   { id: "student-portal", group: "بوابة الطالب", label: "لوحة أداء المجمع", href: "/student", hint: "يتطلب دخول طالب أو معاينة كادر" },
   { id: "staff-attendance", group: "حضور العاملين", label: "تسجيل حضور المعلّم", href: "/staff-attendance" },
   { id: "kiosk", group: "الكيوسك", label: "شاشة الكيوسك", href: "/kiosk", hint: "يتطلب token من إعدادات الكيوسك" },
+  { id: "manager-finances", group: "المدير", label: "التفاصيل المالية", href: "/manager?tab=finances", hint: "إيرادات ومصروفات الفصل" },
+  { id: "secretary-finances", group: "السكرتير", label: "التفاصيل المالية", href: "/secretary?tab=finances", hint: "إيرادات ومصروفات الفصل" },
 
   // تحويلات legacy
   { id: "redirect-admin", group: "تحويلات", label: "/admin → المدير", href: "/admin", hint: "يجب أن يحوّل تلقائياً" },

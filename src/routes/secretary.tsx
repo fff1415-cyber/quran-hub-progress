@@ -11,22 +11,25 @@ import {
   SecretaryStudentsPanel,
   SecretaryReportsPanel,
 } from "@/components/role-workspace/SecretaryPanels";
-import { Clipboard, CalendarDays, Users, BarChart3 } from "lucide-react";
+import { FinancialLedgerPanel } from "@/components/role-workspace/FinancialLedgerPanel";
+import { Clipboard, CalendarDays, Users, BarChart3, Wallet } from "lucide-react";
 import { Toaster } from "sonner";
 import type { WeekRecord } from "@/lib/mock-data";
 
-const MAIN_TABS = ["daily", "students", "reports"] as const;
+const MAIN_TABS = ["daily", "students", "finances", "reports"] as const;
 type MainTab = (typeof MAIN_TABS)[number];
 
 const DEFAULT_SECTION: Record<MainTab, string> = {
   daily: "attendance",
   students: "profiles",
+  finances: "ledger",
   reports: "plans",
 };
 
 const VALID_SECTIONS: Record<MainTab, string[]> = {
   daily: ["attendance", "transfers", "late-permit"],
   students: ["profiles", "students", "import", "export"],
+  finances: ["ledger"],
   reports: ["plans", "weekly-tests", "sard"],
 };
 
@@ -141,6 +144,13 @@ export function SecretaryPage() {
       icon: Users,
       perm: "view_attendance",
       content: <SecretaryStudentsPanel section={section} onSectionChange={setSection} />,
+    },
+    {
+      id: "finances",
+      label: "المالية",
+      icon: Wallet,
+      perm: "manage_finances",
+      content: <FinancialLedgerPanel />,
     },
     {
       id: "reports",

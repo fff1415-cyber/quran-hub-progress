@@ -9,6 +9,7 @@ export const PERMISSIONS = [
   { key: "force_retry", label: "السماح بإعادة السرد فوراً (أقل من يومين)" },
   { key: "send_whatsapp", label: "إرسال رسائل واتساب لأولياء الأمور" },
   { key: "manage_plans", label: "إدارة الخطط التعليمية واستيراد Excel" },
+  { key: "manage_finances", label: "إدارة المالية (إيرادات ومصروفات)" },
 ] as const;
 
 export type PermissionKey = typeof PERMISSIONS[number]["key"];
@@ -16,7 +17,7 @@ export type PermissionKey = typeof PERMISSIONS[number]["key"];
 // Default permission sets per role
 export const DEFAULT_PERMS: Record<string, PermissionKey[]> = {
   manager: PERMISSIONS.map((p) => p.key),
-  secretary: ["view_attendance", "send_whatsapp", "force_retry", "manage_students", "import_sheets"],
+  secretary: ["view_attendance", "send_whatsapp", "force_retry", "manage_students", "import_sheets", "manage_finances"],
   supervisor: ["view_attendance", "approve_sard", "force_retry", "manage_plans"],
   program_supervisor: ["view_attendance", "manage_plans"],
   musammi: [],
