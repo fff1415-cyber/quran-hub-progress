@@ -248,6 +248,15 @@ export function ensureGradesSemester(semesterId: string | null): boolean {
   return false;
 }
 
+export type TransferActionRole = "manager" | "secretary" | "supervisor";
+
+export interface TransferActionRecord {
+  role: TransferActionRole;
+  byName: string;
+  text: string;
+  at: string;
+}
+
 export interface Notification {
   id: string;
   message: string;
@@ -265,6 +274,10 @@ export interface Notification {
     reason: string;
     fromName: string;
     forwardedBy?: string;
+    /** Links secretary/supervisor inbox item to the original teacher transfer. */
+    rootTransferId?: string;
+    /** Follow-up actions (manager / secretary / supervisor). */
+    actions?: TransferActionRecord[];
   };
   transferStatus?: "pending" | "to_secretary" | "to_supervisor" | "struggling" | "closed";
 }

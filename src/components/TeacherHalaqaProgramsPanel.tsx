@@ -4,6 +4,7 @@ import type { AcademicCalendar } from "@/lib/academic-context";
 import {
   formatWeekOptionLabel,
   getSelectableWeeks,
+  workingDayKeysFromSemester,
 } from "@/lib/academic-context";
 import {
   defaultNewProgram,
@@ -22,6 +23,19 @@ import {
   type ProgramScheduleMode,
 } from "@/lib/halaqa-programs";
 import { downloadHalaqaProgramsWorkbook } from "@/lib/halaqa-programs-export";
+import {
+  filterStandardPrograms,
+  findScientificProgram,
+  isScientificHalaqaProgram,
+} from "@/lib/scientific-grades-program";
+import {
+  enabledScientificFields,
+  loadScientificConfig,
+  loadScientificData,
+  SCIENTIFIC_TOTAL_LABELS,
+  studentScientificWeekTotals,
+  type ScientificGradeField,
+} from "@/lib/scientific-grades";
 import { CustomFieldSelect } from "@/components/plans/TeacherGradeInputs";
 import {
   Select,
@@ -116,6 +130,10 @@ export function TeacherHalaqaProgramsPanel({
   };
 
   const openEditProgram = (p: HalaqaProgram) => {
+    if (isScientificHalaqaProgram(p)) {
+      toast.info("برنامج درجات العلمي يُحدَّث تلقائياً من إعداد الدرجات العلمية");
+      return;
+    }
     setEditing({
       ...p,
       levels: p.levels.map((l) => ({ ...l })),
@@ -156,6 +174,10 @@ export function TeacherHalaqaProgramsPanel({
   };
 
   const removeProgram = (id: string) => {
+    if (isScientificHalaqaProgram({ id } as HalaqaProgram)) {
+      toast.error("برنامج درجات العلمي يُدار من تبويب التحضير والدرجات");
+      return;
+    }
     const all = loadHalaqaProgramsAll(halaqaId).map((p) =>
       p.id === id ? { ...p, active: false } : p,
     );
@@ -229,13 +251,14 @@ export function TeacherHalaqaProgramsPanel({
 
       {mode === "setup" && canManagePrograms && !readOnly ? (
         <ProgramSetupSection
-          programs={loadHalaqaProgramsAll(halaqaId).filter((p) => p.active !== false)}
+          programs={loadHalaqaProgramsAll(halaqaId).filter((p) => p.active !== false && !isScientificHalaqaProgram(p))}
           onAdd={openNewProgram}
           onEdit={openEditProgram}
           onRemove={removeProgram}
         />
       ) : (
         <ProgramFillSection
+          halaqaId={halaqaId}
           programs={programs}
           students={students}
           weekNum={weekNum}
@@ -245,6 +268,7 @@ export function TeacherHalaqaProgramsPanel({
           readOnly={readOnly}
           onWeekChange={onWeekChange}
           onCellChange={setCell}
+          workingDayKeys={[...workingDayKeysFromSemester(calendar.semester?.working_days)]}
         />
       )}
 
@@ -453,6 +477,7 @@ function ProgramSetupSection({
         <p className="text-center text-sm text-muted-foreground py-6">لا توجد برامج — ابدأ بإضافة برنامج</p>
       ) : (
         programs.map((p) => {
+          if (isScientificHalaqaProgram(p)) return null;
           const slots = programSlots(p);
           return (
             <div key={p.id} className="rounded-xl border border-border p-4 bg-secondary/20">
@@ -492,6 +517,7 @@ function ProgramSetupSection({
 }
 
 function ProgramFillSection({
+  halaqaId,
   programs,
   students,
   weekNum,
@@ -501,7 +527,9 @@ function ProgramFillSection({
   readOnly,
   onWeekChange,
   onCellChange,
+  workingDayKeys,
 }: {
+  halaqaId: number;
   programs: HalaqaProgram[];
   students: ReturnType<typeof loadStudents>;
   weekNum: number;
@@ -511,7 +539,18 @@ function ProgramFillSection({
   readOnly: boolean;
   onWeekChange: (n: number) => void;
   onCellChange: (studentId: string, programId: string, slotKey: string, value: string) => void;
+  workingDayKeys: string[];
 }) {
+  const standardPrograms = useMemo(() => filterStandardPrograms(programs), [programs]);
+  const scientificProgram = useMemo(() => findScientificProgram(programs), [programs]);
+  const sciFields = useMemo((): ScientificGradeField[] => {
+    if (scientificProgram?.scientificFields?.length) {
+      return scientificProgram.scientificFields;
+    }
+    return enabledScientificFields(loadScientificConfig(halaqaId).fields);
+  }, [scientificProgram, halaqaId]);
+  const sciData = loadScientificData(halaqaId);
+
   if (programs.length === 0) {
     return (
       <div className="glass-card rounded-2xl p-8 text-center text-muted-foreground">
@@ -519,6 +558,8 @@ function ProgramFillSection({
       </div>
     );
   }
+
+  const formatTotal = (n: number) => (n > 0 ? String(n) : "—");
 
   return (
     <div className="glass-card rounded-2xl p-4 overflow-x-auto">
@@ -544,7 +585,7 @@ function ProgramFillSection({
           <thead>
             <tr className="bg-secondary/50">
               <th className="p-2 text-right sticky right-0 bg-secondary z-10 min-w-[120px]">الطالب</th>
-              {programs.map((p) => {
+              {standardPrograms.map((p) => {
                 const slots = programSlots(p);
                 return (
                   <th
@@ -556,13 +597,21 @@ function ProgramFillSection({
                   </th>
                 );
               })}
+              {scientificProgram && sciFields.length > 0 && (
+                <th
+                  colSpan={sciFields.length + 1}
+                  className="p-2 border-r border-border text-center bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-bold"
+                >
+                  {scientificProgram.name}
+                </th>
+              )}
               <th colSpan={2} className="p-2 border-r border-border text-primary text-center bg-primary/10">
-                المجموع (كل البرامج)
+                المجموع (البرامج اليدوية)
               </th>
             </tr>
             <tr className="bg-secondary/30 text-xs text-muted-foreground">
               <th className="sticky right-0 bg-secondary" />
-              {programs.flatMap((p) => {
+              {standardPrograms.flatMap((p) => {
                 const slots = programSlots(p);
                 return slots.map((sl) => (
                   <th key={`${p.id}-${sl.key}`} className="p-1 border-r border-border min-w-[72px]">
@@ -570,17 +619,35 @@ function ProgramFillSection({
                   </th>
                 ));
               })}
+              {scientificProgram && sciFields.length > 0 && (
+                <>
+                  {sciFields.map((field) => (
+                    <th
+                      key={`sci-${field}`}
+                      className="p-1 border-r border-border min-w-[72px] text-emerald-700 dark:text-emerald-400 font-bold"
+                    >
+                      {SCIENTIFIC_TOTAL_LABELS[field]}
+                    </th>
+                  ))}
+                  <th className="p-1 border-r border-border min-w-[64px] text-emerald-700 dark:text-emerald-400 font-bold">
+                    الكلي
+                  </th>
+                </>
+              )}
               <th className="p-1 border-r border-border min-w-[64px] text-primary font-bold">رقم</th>
               <th className="p-1 border-r border-border min-w-[56px] text-primary font-bold">%</th>
             </tr>
           </thead>
           <tbody>
             {students.map((s) => {
-              const totals = studentAllProgramsWeekTotals(programs, grades, s.id, weekNum);
+              const totals = studentAllProgramsWeekTotals(standardPrograms, grades, s.id, weekNum);
+              const sciTotals = scientificProgram
+                ? studentScientificWeekTotals(sciData, s.id, weekNum, sciFields, workingDayKeys)
+                : null;
               return (
                 <tr key={s.id} className="border-b border-border/50 hover:bg-accent/20">
                   <td className="p-2 sticky right-0 bg-card font-medium">{s.name}</td>
-                  {programs.flatMap((p) => {
+                  {standardPrograms.flatMap((p) => {
                     const slots = programSlots(p);
                     const vals = grades[s.id]?.[weekNum]?.[p.id];
                     return slots.map((sl) => (
@@ -594,6 +661,21 @@ function ProgramFillSection({
                       </td>
                     ));
                   })}
+                  {scientificProgram && sciFields.length > 0 && sciTotals && (
+                    <>
+                      {sciFields.map((field) => (
+                        <td
+                          key={`${s.id}-sci-${field}`}
+                          className="p-1 border-r border-border/30 text-center text-xs font-bold bg-emerald-500/5"
+                        >
+                          {formatTotal(sciTotals[field])}
+                        </td>
+                      ))}
+                      <td className="p-1 border-r border-border/30 text-center text-xs font-bold bg-emerald-500/10">
+                        {formatTotal(sciTotals.total)}
+                      </td>
+                    </>
+                  )}
                   <td className="p-1 border-r border-border/30 text-center text-xs font-bold text-primary bg-primary/5">
                     {totals.filledSlots > 0 ? totals.earned : "—"}
                   </td>

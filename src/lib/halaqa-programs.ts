@@ -19,6 +19,9 @@ export type HalaqaProgram = {
   levels: ProgramLevel[];
   sortOrder: number;
   active: boolean;
+  kind?: "standard" | "scientific";
+  /** When kind=scientific — which total columns appear in برنامج الحلقة */
+  scientificFields?: import("@/lib/scientific-grades-program").ScientificGradeField[];
 };
 
 /** @deprecated legacy field — migrated to levels on load */

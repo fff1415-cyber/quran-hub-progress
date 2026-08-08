@@ -25,10 +25,11 @@ import { Toaster, toast } from "sonner";
 import { applyPlanInput, fetchStudentPlanSheet, syncCompensationToPlan } from "@/lib/plans-service";
 import { checkAndHandlePlanCompletion } from "@/lib/plan-completion";
 import { processAbsenceThresholdAlerts } from "@/lib/semester-absence";
+import { loadComplexFeatures } from "@/lib/complex-features";
 import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
-import { AttSelect, CompensationSelect, MurajaCompensationSelect } from "@/components/plans/TeacherGradeInputs";
+import { AttSelect, CompensationSelect } from "@/components/plans/TeacherGradeInputs";
 import { hifzCheckedValue } from "@/lib/mock-data";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
@@ -47,6 +48,18 @@ import { SemesterBreakdownPopover } from "@/components/teacher/SemesterBreakdown
 import { ensureWeeklyTestsSemester } from "@/lib/weekly-tests";
 import { ensureTarbawiSemester } from "@/lib/tarbawi-program";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  ScientificGradeInput,
+  ScientificGradesToolbar,
+} from "@/components/teacher/ScientificGradesToolbar";
+import {
+  getScientificDayScore,
+  loadScientificConfig,
+  loadScientificData,
+  setScientificDayScore,
+  type ScientificFieldsConfig,
+  type ScientificGradesConfig,
+} from "@/lib/scientific-grades";
 
 export const teacherSearchSchema = z.object({
   h: z.number().optional(),
@@ -323,7 +336,7 @@ const GRADE_COL = {
   weekPct: 72,
   semesterPct: 80,
   compensation: 56,
-  compensationMuraja: 56,
+  scientific: 48,
 } as const;
 
 const GRADE_CELL_W = {
@@ -334,7 +347,7 @@ const GRADE_CELL_W = {
   weekPct: "w-[72px] max-w-[72px]",
   semesterPct: "w-20 max-w-20",
   compensation: "w-14 max-w-14",
-  compensationMuraja: "w-14 max-w-14",
+  scientific: "w-12 max-w-12",
   student: "w-[156px] max-w-[156px]",
 } as const;
 
@@ -347,40 +360,82 @@ const STICKY_HEAD_CORNER = "sticky z-40 bg-secondary shadow-[0_1px_0_var(--borde
 const STICKY_NAME =
   "sticky right-0 z-10 bg-card shadow-[-8px_0_12px_-6px_rgba(0,0,0,0.12)] group-hover:bg-accent/30 transition-colors";
 
-function gradeTableWidthPx(dayCount: number, isTalqeen: boolean): number {
+type SciTableCtx = { visible: boolean; fields: ScientificFieldsConfig };
+
+function dayColumnCount(isTalqeen: boolean, sci: SciTableCtx): number {
+  if (isTalqeen) {
+    return 2 + (sci.visible && sci.fields.attendance ? 1 : 0);
+  }
+  let n = 4;
+  if (sci.visible) {
+    if (sci.fields.attendance) n += 1;
+    if (sci.fields.hifz) n += 1;
+    if (sci.fields.rabt) n += 1;
+    if (sci.fields.muraja) n += 1;
+  }
+  return n;
+}
+
+function extraScientificWidth(sci: SciTableCtx): number {
+  if (!sci.visible) return 0;
+  let w = 0;
+  if (sci.fields.attendance) w += GRADE_COL.scientific;
+  if (sci.fields.hifz) w += GRADE_COL.scientific;
+  if (sci.fields.rabt) w += GRADE_COL.scientific;
+  if (sci.fields.muraja) w += GRADE_COL.scientific;
+  return w;
+}
+
+function gradeTableWidthPx(dayCount: number, isTalqeen: boolean, sci: SciTableCtx): number {
   const perDay = isTalqeen
-    ? GRADE_COL.attendance + GRADE_COL.wajib
-    : GRADE_COL.attendance + GRADE_COL.hifz + GRADE_COL.passFail * 2;
+    ? GRADE_COL.attendance + GRADE_COL.wajib + (sci.visible && sci.fields.attendance ? GRADE_COL.scientific : 0)
+    : GRADE_COL.attendance + GRADE_COL.hifz + GRADE_COL.passFail * 2 + extraScientificWidth(sci);
   return (
     GRADE_COL.student
     + dayCount * perDay
     + GRADE_COL.weekPct
     + GRADE_COL.semesterPct
-    + (isTalqeen ? 0 : GRADE_COL.compensation + GRADE_COL.compensationMuraja)
+    + (isTalqeen ? 0 : GRADE_COL.compensation)
   );
+}
+
+function buildDayColWidths(isTalqeen: boolean, sci: SciTableCtx): number[] {
+  if (isTalqeen) {
+    const out = [GRADE_COL.attendance, GRADE_COL.wajib];
+    if (sci.visible && sci.fields.attendance) out.splice(1, 0, GRADE_COL.scientific);
+    return out;
+  }
+  const out: number[] = [GRADE_COL.attendance];
+  if (sci.visible && sci.fields.attendance) out.push(GRADE_COL.scientific);
+  out.push(GRADE_COL.hifz);
+  if (sci.visible && sci.fields.hifz) out.push(GRADE_COL.scientific);
+  out.push(GRADE_COL.passFail);
+  if (sci.visible && sci.fields.rabt) out.push(GRADE_COL.scientific);
+  out.push(GRADE_COL.passFail);
+  if (sci.visible && sci.fields.muraja) out.push(GRADE_COL.scientific);
+  return out;
 }
 
 function GradeTableColGroup({
   dayCount,
   isTalqeen,
+  sci,
 }: {
   dayCount: number;
   isTalqeen: boolean;
+  sci: SciTableCtx;
 }) {
-  const dayCols = isTalqeen
-    ? [GRADE_COL.attendance, GRADE_COL.wajib]
-    : [GRADE_COL.attendance, GRADE_COL.hifz, GRADE_COL.passFail, GRADE_COL.passFail];
+  const dayWidths = buildDayColWidths(isTalqeen, sci);
 
   return (
     <colgroup>
       <col style={{ width: GRADE_COL.student }} />
       {Array.from({ length: dayCount }, (_, dayIdx) =>
-        dayCols.map((w, colIdx) => (
+        dayWidths.map((w, colIdx) => (
           <col key={`d${dayIdx}-c${colIdx}`} style={{ width: w }} />
         )),
       )}
       {!isTalqeen && <col style={{ width: GRADE_COL.compensation }} />}
-      {!isTalqeen && <col style={{ width: GRADE_COL.compensationMuraja }} />}
       <col style={{ width: GRADE_COL.weekPct }} />
       <col style={{ width: GRADE_COL.semesterPct }} />
     </colgroup>
@@ -432,8 +487,13 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     [students],
   );
   const [grades, setGrades] = useState(() => loadGrades());
-  const baseDayCols = isTalqeen ? 2 : 4;
-  const dayColSpan = baseDayCols;
+  const [sciConfig, setSciConfig] = useState<ScientificGradesConfig>(() => loadScientificConfig(halaqaId));
+  const [sciData, setSciData] = useState(() => loadScientificData(halaqaId));
+  const sciCtx: SciTableCtx = useMemo(
+    () => ({ visible: sciConfig.visible, fields: sciConfig.fields }),
+    [sciConfig],
+  );
+  const dayColSpan = dayColumnCount(isTalqeen, sciCtx);
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferStudentId, setTransferStudentId] = useState("");
   const [transferReason, setTransferReason] = useState("");
@@ -446,6 +506,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const [planSheetError, setPlanSheetError] = useState<string | null>(null);
   const [planSheetLoading, setPlanSheetLoading] = useState(false);
   const senderName = typeof window !== "undefined" ? (sessionStorage.getItem("qs_name") || "المعلم") : "المعلم";
+  const showTransferButton = loadComplexFeatures().showTeacherTransferButton;
 
   const halaqaSemesterPct = useMemo(
     () => halaqaSemesterAverage(students, isTalqeen, grades, calendar),
@@ -663,14 +724,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }
   };
 
-  const handleMurajaCompensationChange = (studentId: string, faces: number) => {
-    update(studentId, (w) => ({
-      ...w,
-      compensationMurajaFaces: faces,
-    }));
-    if (faces > 0) {
-      toast.success(`تعويض مراجعة ${faces} وجه`);
-    }
+  const refreshSciData = () => setSciData(loadScientificData(halaqaId));
+
+  const updateSciScore = (
+    studentId: string,
+    dayKey: string,
+    field: "attendance" | "hifz" | "rabt" | "muraja",
+    value: string,
+  ) => {
+    setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
+    refreshSciData();
   };
 
   const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
@@ -726,8 +789,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   );
 
   const tableWidthPx = useMemo(
-    () => gradeTableWidthPx(visibleDays.length, isTalqeen),
-    [visibleDays.length, isTalqeen],
+    () => gradeTableWidthPx(visibleDays.length, isTalqeen, sciCtx),
+    [visibleDays.length, isTalqeen, sciCtx],
   );
 
   const dayHeaderClass = (dayKey: string) =>
@@ -773,7 +836,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           )}
         </div>
 
-        {!isTalqeen && students.length > 0 ? (
+        {!isTalqeen && students.length > 0 && showTransferButton ? (
           <Popover open={transferOpen} onOpenChange={handleTransferOpenChange}>
             <PopoverTrigger asChild>
               <button
@@ -856,6 +919,15 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         )}
 
         <div className="flex items-center gap-2 flex-wrap sm:justify-self-end justify-center">
+          {!isTalqeen && (
+            <ScientificGradesToolbar
+              halaqaId={halaqaId}
+              onConfigChange={(cfg) => {
+                setSciConfig(cfg);
+                refreshSciData();
+              }}
+            />
+          )}
           {canAssign && (
             <button
               type="button"
@@ -894,6 +966,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         <GradeTableColGroup
           dayCount={visibleDays.length}
           isTalqeen={isTalqeen}
+          sci={sciCtx}
         />
         <thead>
           <tr className="bg-secondary/50">
@@ -907,10 +980,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
               </th>
             ))}
             {!isTalqeen && (
-              <>
-                <th className={cn("p-2 border-r border-border text-success", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.compensation)}>ت. حفظ</th>
-                <th className={cn("p-2 border-r border-border text-amber-600 dark:text-amber-400", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.compensationMuraja)}>ت. مراجعة</th>
-              </>
+              <th className={cn("p-2 border-r border-border text-success", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.compensation)}>ت. حفظ</th>
             )}
             <th className={cn("p-2 border-r border-border text-muted-foreground", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.weekPct)}>نسبة الأسبوع</th>
             <th className={cn("p-2 border-r border-border text-primary font-bold", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.semesterPct)}>النسبة الكلية</th>
@@ -932,17 +1002,34 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                     {bulkPresentBtn(d.key)}
                     <span className="block">الحضور</span>
                   </th>
+                  {sciCtx.visible && sciCtx.fields.attendance && (
+                    <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.scientific), "text-primary text-[10px]")}>
+                      درجة
+                    </th>
+                  )}
                   <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.hifz))}>حفظ</th>
+                  {sciCtx.visible && sciCtx.fields.hifz && (
+                    <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.scientific), "text-primary text-[10px]")}>
+                      درجة
+                    </th>
+                  )}
                   <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.pf))}>ربط</th>
+                  {sciCtx.visible && sciCtx.fields.rabt && (
+                    <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.scientific), "text-primary text-[10px]")}>
+                      درجة
+                    </th>
+                  )}
                   <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.pf))}>مراجعة</th>
+                  {sciCtx.visible && sciCtx.fields.muraja && (
+                    <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.scientific), "text-primary text-[10px]")}>
+                      درجة
+                    </th>
+                  )}
                 </React.Fragment>
               )
             )}
             {!isTalqeen && (
-              <>
-                <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, GRADE_CELL_W.compensation)} />
-                <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, GRADE_CELL_W.compensationMuraja)} />
-              </>
+              <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, GRADE_CELL_W.compensation)} />
             )}
             <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, GRADE_CELL_W.weekPct)} />
             <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, GRADE_CELL_W.semesterPct)} />
@@ -988,6 +1075,14 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                       <td className={dayCellClass(d.key, GRADE_CELL_W.att)}>
                         <AttSelect value={e.attendance} onChange={(v) => updateDay(s.id, d.key, { attendance: v })} />
                       </td>
+                      {sciCtx.visible && sciCtx.fields.attendance && (
+                        <td className={dayCellClass(d.key, GRADE_CELL_W.scientific)}>
+                          <ScientificGradeInput
+                            value={getScientificDayScore(sciData, s.id, weekNum, d.key, "attendance")}
+                            onChange={(v) => updateSciScore(s.id, d.key, "attendance", v)}
+                          />
+                        </td>
+                      )}
                       <td className={dayCellClass(d.key, GRADE_CELL_W.hifz)}>
                         <PlanAwareTaskCell
                           student={s}
@@ -1000,6 +1095,14 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           onPlanHifzChange={() => void handlePlanHifz(s, d.key)}
                         />
                       </td>
+                      {sciCtx.visible && sciCtx.fields.hifz && (
+                        <td className={dayCellClass(d.key, GRADE_CELL_W.scientific)}>
+                          <ScientificGradeInput
+                            value={getScientificDayScore(sciData, s.id, weekNum, d.key, "hifz")}
+                            onChange={(v) => updateSciScore(s.id, d.key, "hifz", v)}
+                          />
+                        </td>
+                      )}
                       <td className={dayCellClass(d.key, GRADE_CELL_W.pf)}>
                         <PlanAwareTaskCell
                           student={s}
@@ -1012,6 +1115,14 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           onPlanPassFailChange={(v) => void handlePlanPassFail(s, d.key, "rabt", v)}
                         />
                       </td>
+                      {sciCtx.visible && sciCtx.fields.rabt && (
+                        <td className={dayCellClass(d.key, GRADE_CELL_W.scientific)}>
+                          <ScientificGradeInput
+                            value={getScientificDayScore(sciData, s.id, weekNum, d.key, "rabt")}
+                            onChange={(v) => updateSciScore(s.id, d.key, "rabt", v)}
+                          />
+                        </td>
+                      )}
                       <td className={dayCellClass(d.key, GRADE_CELL_W.pf)}>
                         <PlanAwareTaskCell
                           student={s}
@@ -1024,24 +1135,24 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           onPlanPassFailChange={(v) => void handlePlanPassFail(s, d.key, "muraja", v)}
                         />
                       </td>
+                      {sciCtx.visible && sciCtx.fields.muraja && (
+                        <td className={dayCellClass(d.key, GRADE_CELL_W.scientific)}>
+                          <ScientificGradeInput
+                            value={getScientificDayScore(sciData, s.id, weekNum, d.key, "muraja")}
+                            onChange={(v) => updateSciScore(s.id, d.key, "muraja", v)}
+                          />
+                        </td>
+                      )}
                     </React.Fragment>
                   );
                 })}
                 {!isTalqeen && (
-                  <>
-                    <td className={cn("p-1 text-center border-r border-border/30", GRADE_CELL_W.compensation)}>
-                      <CompensationSelect
-                        value={w.compensationFaces ?? 0}
-                        onChange={(v) => void handleCompensationChange(s, v)}
-                      />
-                    </td>
-                    <td className={cn("p-1 text-center border-r border-border/30", GRADE_CELL_W.compensationMuraja)}>
-                      <MurajaCompensationSelect
-                        value={w.compensationMurajaFaces ?? 0}
-                        onChange={(v) => handleMurajaCompensationChange(s.id, v)}
-                      />
-                    </td>
-                  </>
+                  <td className={cn("p-1 text-center border-r border-border/30", GRADE_CELL_W.compensation)}>
+                    <CompensationSelect
+                      value={w.compensationFaces ?? 0}
+                      onChange={(v) => void handleCompensationChange(s, v)}
+                    />
+                  </td>
                 )}
                 <td className={cn("p-2 text-center font-bold border-r border-border/30", GRADE_CELL_W.weekPct)}>
                   <span className={weekPct >= 80 ? "text-success" : weekPct >= 50 ? "text-warning" : "text-muted-foreground"}>

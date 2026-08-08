@@ -141,6 +141,27 @@ export function getElapsedSemesterDays(calendar: AcademicCalendar): SemesterDayR
   return out;
 }
 
+/** Map «weekNumber:dayKey» → ISO date for every working day in the semester. */
+export function getSemesterDayDateMap(calendar: AcademicCalendar): Map<string, string> {
+  const sem = calendar.semester;
+  if (!sem?.start_date) return new Map();
+
+  const weeks = generateAcademicWeeks({
+    startDate: sem.start_date,
+    weeksCount: sem.weeks_count,
+    workingDays: sem.working_days,
+    excludedDates: sem.excluded_dates,
+  });
+
+  const map = new Map<string, string>();
+  for (const w of weeks) {
+    for (const iso of w.workingDayDates) {
+      map.set(`${w.weekNumber}:${isoDateToDayKey(iso)}`, iso);
+    }
+  }
+  return map;
+}
+
 /** Total working days in the full semester calendar. */
 export function getTotalSemesterWorkingDays(calendar: AcademicCalendar): number {
   const sem = calendar.semester;

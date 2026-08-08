@@ -1,19 +1,24 @@
 import { useMemo, useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import {
-  loadStudents, loadHalaqat, loadGrades, loadAttendanceArchive, loadSardHistory,
+  loadStudents, loadHalaqat, loadGrades,
   weekPercentage, HIFZ_LABELS, DAYS,
   type Student,
 } from "@/lib/mock-data";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import {
   studentReportPercentages,
-  studentReportPercentRows,
   fallbackWeeklyAverage,
 } from "@/lib/semester-grading";
+import {
+  buildStudentFullReport,
+  exportStudentReportExcel as downloadStudentReportExcel,
+  printStudentReportPdf,
+} from "@/lib/student-report-export";
 import { StudentPercentSummary } from "@/components/StudentPercentSummary";
 import { weekLabel } from "@/lib/arabic-numbers";
-import { Download, Search, FileSpreadsheet, User } from "lucide-react";
+import { useTenant } from "@/contexts/TenantContext";
+import { Download, Search, FileSpreadsheet, User, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 const ATT_LABEL: Record<string, string> = {
@@ -21,6 +26,7 @@ const ATT_LABEL: Record<string, string> = {
 };
 
 export function GradesExport() {
+  const { brandName } = useTenant();
   const [fromWeek, setFromWeek] = useState(1);
   const [toWeek, setToWeek] = useState(18);
   const [halaqaId, setHalaqaId] = useState<number | "all">("all");
@@ -39,8 +45,6 @@ export function GradesExport() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
   const grades = loadGrades();
-  const archive = loadAttendanceArchive();
-  const sardHistory = loadSardHistory();
 
   const filteredForSearch = useMemo(() => {
     const q = search.trim();
@@ -56,7 +60,6 @@ export function GradesExport() {
 
     const wb = XLSX.utils.book_new();
 
-    // Sheet 1: Summary per student per week
     const summary: (string | number)[][] = [["الطالب", "الحلقة", "المستوى", "النوع", "الأسبوع", "النسبة %", "غياب", "تأخر", "استئذان", "حفظ", "مراجعة ✓", "مراجعة ✗", "ربط ✓", "ربط ✗"]];
     list.forEach((s) => {
       const h = halaqat.find((x) => x.id === s.halaqaId);
@@ -79,7 +82,6 @@ export function GradesExport() {
     });
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(summary), "ملخص الأسابيع");
 
-    // Sheet 2: Daily details (attendance, hifz, rabt, muraja per day)
     const daily: (string | number)[][] = [["الطالب", "الحلقة", "الأسبوع", "اليوم", "الحضور", "الحفظ", "الربط", "المراجعة"]];
     list.forEach((s) => {
       const h = halaqat.find((x) => x.id === s.halaqaId);
@@ -105,61 +107,6 @@ export function GradesExport() {
     toast.success("تم تصدير الملف");
   };
 
-  const exportStudentReport = (s: Student) => {
-    const h = halaqat.find((x) => x.id === s.halaqaId);
-    const isTalqeen = !!h?.isTalqeen;
-    const report = calendar
-      ? studentReportPercentages(s.id, s.levelType, isTalqeen, grades, calendar)
-      : {
-          overall: fallbackWeeklyAverage(s.id, isTalqeen, grades, s.levelType),
-          weekOverall: weekPercentage(
-            grades[s.id]?.[Math.max(...Object.keys(grades[s.id] || {}).map(Number), 0)],
-            isTalqeen,
-            s.levelType,
-          ),
-          components: { attendance: 0, hifz: 0, muraja: 0, rabt: 0, wajib: 0 },
-        };
-    const wb = XLSX.utils.book_new();
-
-    const info: (string | number)[][] = [
-      ["تقرير الطالب"],
-      ["الاسم", s.name],
-      ["الحلقة", h?.name || "—"],
-      ["المستوى", `${s.levelType === "gold" ? "ذهبي" : "فضي"} - ${s.level}`],
-      ["رقم الهوية", s.nationalId],
-      ["ولي الأمر", s.parentPhone],
-      [],
-      ...studentReportPercentRows(report, isTalqeen),
-    ];
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(info), "معلومات");
-
-    // Weekly breakdown — percentages only
-    const weekRows: (string | number)[][] = [["الأسبوع", "النسبة %"]];
-    const weeks = grades[s.id] || {};
-    Object.keys(weeks).map(Number).sort((a, b) => a - b).forEach((w) => {
-      const week = weeks[w];
-      weekRows.push([weekLabel(w), weekPercentage(week, isTalqeen, s.levelType)]);
-    });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(weekRows), "الأسابيع");
-
-    // Attendance archive for this student
-    const attRows: (string | number)[][] = [["النوع", "التاريخ", "اليوم"]];
-    archive.filter((a) => a.studentId === s.id).forEach((a) => {
-      attRows.push([a.type === "absent" ? "غياب" : a.type === "late" ? "تأخر" : "استئذان", a.date, a.dayKey]);
-    });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(attRows), "سجل الحضور");
-
-    // Sard history
-    const sardRows: (string | number)[][] = [["الأسبوع", "المحاولة", "النتيجة", "النسبة %", "التاريخ"]];
-    sardHistory.filter((x) => x.studentId === s.id).forEach((x) => {
-      sardRows.push([weekLabel(x.week), x.attempt, x.result === "passed" ? "ناجح" : "راسب", x.percent, new Date(x.at).toLocaleDateString("ar")]);
-    });
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sardRows), "سجل السرد");
-
-    XLSX.writeFile(wb, `تقرير_${s.name}.xlsx`);
-    toast.success("تم تصدير التقرير");
-  };
-
   const selectedReport = useMemo(() => {
     if (!selectedStudent) return null;
     const h = halaqat.find((x) => x.id === selectedStudent.halaqaId);
@@ -173,7 +120,33 @@ export function GradesExport() {
       components: { attendance: 0, hifz: 0, muraja: 0, rabt: 0, wajib: 0 },
     };
   }, [selectedStudent, halaqat, grades, calendar]);
+
+  const selectedFullReport = useMemo(() => {
+    if (!selectedStudent) return null;
+    return buildStudentFullReport(selectedStudent, calendar);
+  }, [selectedStudent, calendar]);
+
   const selectedH = selectedStudent ? halaqat.find((x) => x.id === selectedStudent.halaqaId) : null;
+
+  const handleExportExcel = () => {
+    if (!selectedFullReport) return;
+    try {
+      downloadStudentReportExcel(selectedFullReport);
+      toast.success("تم تصدير التقرير (Excel)");
+    } catch {
+      toast.error("فشل تصدير Excel");
+    }
+  };
+
+  const handleExportPdf = () => {
+    if (!selectedFullReport) return;
+    try {
+      printStudentReportPdf(selectedFullReport, brandName);
+      toast.success("جاري فتح نافذة الطباعة — اختر «حفظ كـ PDF»");
+    } catch {
+      toast.error("فشل تصدير PDF");
+    }
+  };
 
   return (
     <div className="glass-card rounded-2xl p-6 mb-6">
@@ -230,17 +203,26 @@ export function GradesExport() {
             })}
           </div>
         )}
-        {selectedStudent && selectedReport && (
+        {selectedStudent && selectedReport && selectedFullReport && (
           <div className="rounded-xl border border-primary/30 bg-primary/5 p-4">
             <div className="flex items-start justify-between flex-wrap gap-2 mb-3">
               <div>
                 <div className="font-bold flex items-center gap-2"><User className="w-4 h-4" />{selectedStudent.name}</div>
                 <div className="text-xs text-muted-foreground">{selectedH?.name} · {selectedStudent.levelType === "gold" ? "ذهبي" : "فضي"} - مستوى {selectedStudent.level}</div>
+                <div className="text-xs text-muted-foreground mt-1">
+                  مخالفات: {selectedFullReport.profile.violations.length} · غياب/تأخر: {selectedFullReport.profile.attendance.length}
+                </div>
               </div>
-              <button onClick={() => exportStudentReport(selectedStudent)}
-                className="px-3 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center gap-1 text-sm">
-                <Download className="w-4 h-4" /> تصدير التقرير
-              </button>
+              <div className="flex gap-2">
+                <button onClick={handleExportExcel}
+                  className="px-3 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center gap-1 text-sm">
+                  <Download className="w-4 h-4" /> Excel
+                </button>
+                <button onClick={handleExportPdf}
+                  className="px-3 py-2 rounded-lg border border-primary/40 text-primary font-bold flex items-center gap-1 text-sm hover:bg-primary/5">
+                  <FileText className="w-4 h-4" /> PDF
+                </button>
+              </div>
             </div>
             <StudentPercentSummary
               report={selectedReport}

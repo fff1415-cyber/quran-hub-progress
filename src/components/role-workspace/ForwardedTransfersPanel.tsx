@@ -6,10 +6,17 @@ import {
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { studentReportPercentages, formatOverallPercent } from "@/lib/semester-grading";
 import type { TransferTargetRole } from "@/lib/mock-data";
+import { getSessionName } from "@/lib/session-role";
+import {
+  appendTransferAction,
+  syncNotificationsToCloud,
+  transferActionRoleLabel,
+} from "@/lib/transfer-actions";
+import { TransferActionForm } from "@/components/role-workspace/TransferActionForm";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Send, Check, Loader2 } from "lucide-react";
+import { Send } from "lucide-react";
 import { toast } from "sonner";
 
 const ROLE_LABEL: Record<TransferTargetRole, string> = {
@@ -59,19 +66,22 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
 
   useEffect(() => { refresh(); }, [role]);
 
-  const acknowledge = async (n: Notification) => {
+  const submitAction = async (n: Notification, actionText: string) => {
     if (!n.transferData || busyId) return;
     setBusyId(n.id);
+    const actorName = getSessionName(transferActionRoleLabel(role));
+
     try {
+      appendTransferAction(n.id, {
+        role,
+        byName: actorName,
+        text: actionText,
+        at: new Date().toISOString(),
+      });
       updateNotification(n.id, { read: true, transferStatus: "closed" });
       refresh();
-      toast.success("تم استلام الحالة وإغلاقها");
-      try {
-        const { pushAppState } = await import("@/lib/cloud-sync");
-        await pushAppState("notifications", loadNotifications());
-      } catch {
-        toast.warning("تم التحديث محلياً — تعذّرت المزامنة");
-      }
+      toast.success("تم تسجيل الإجراء وإغلاق الحالة");
+      await syncNotificationsToCloud();
     } catch (e) {
       refresh();
       toast.error(e instanceof Error ? e.message : "فشل التحديث");
@@ -89,14 +99,14 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
           <TabBadge count={items.length} />
         </CardTitle>
         <CardDescription>
-          حالات أحالها المدير إلى {ROLE_LABEL[role]} — راجع السبب ثم أكّد الاستلام
+          حالات أحالها المدير إلى {ROLE_LABEL[role]} — يجب تسجيل الإجراء المتخذ لكل طالب قبل الإغلاق
         </CardDescription>
       </CardHeader>
       <CardContent>
         {items.length === 0 ? (
           <p className="text-muted-foreground text-center py-10 text-sm">لا توجد تحويلات معلّقة</p>
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {items.map((n) => {
               const td = n.transferData!;
               const s = students.find((x) => x.id === td.studentId);
@@ -115,7 +125,13 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
                         {td.forwardedBy ? ` · من المدير: ${td.forwardedBy}` : td.fromName ? ` · من: ${td.fromName}` : ""}
                       </div>
                     </div>
-                    <div className="text-[10px] text-muted-foreground">{new Date(n.createdAt).toLocaleString("ar")}</div>
+                    <div className="text-[10px] text-muted-foreground">
+                      تاريخ المخالفة: {td.rootTransferId
+                        ? new Date(
+                            loadNotifications().find((x) => x.id === td.rootTransferId)?.createdAt ?? n.createdAt,
+                          ).toLocaleString("ar-SA")
+                        : new Date(n.createdAt).toLocaleString("ar-SA")}
+                    </div>
                   </div>
                   <div className="rounded-lg bg-background/40 border border-border p-2 mb-3 text-sm">
                     <span className="text-xs text-muted-foreground">السبب: </span>{td.reason}
@@ -139,15 +155,12 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
                       <p className="col-span-full text-xs text-muted-foreground">جاري تحميل النسب...</p>
                     )}
                   </div>
-                  <button
-                    type="button"
-                    disabled={processing}
-                    onClick={() => void acknowledge(n)}
-                    className="flex items-center gap-2 px-4 py-2 rounded-lg bg-success/15 text-success border border-success/30 text-sm font-bold disabled:opacity-50"
-                  >
-                    {processing ? <Loader2 className="w-4 h-4 animate-spin" /> : <Check className="w-4 h-4" />}
-                    تم الاستلام
-                  </button>
+                  <TransferActionForm
+                    roleLabel={transferActionRoleLabel(role)}
+                    submitLabel="تسجيل الإجراء وإغلاق"
+                    busy={processing}
+                    onSubmit={(text) => void submitAction(n, text)}
+                  />
                 </div>
               );
             })}

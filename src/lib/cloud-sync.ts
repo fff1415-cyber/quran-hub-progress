@@ -4,6 +4,7 @@ import { saveGrades, saveHalaqat, saveLatePermissions, saveMessageTemplates, sav
 import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } from "./weekly-tests";
 import { saveStaffAttendanceSettings, saveStaffCheckIns } from "./staff-attendance";
 import { saveStudentPortalVisibility, type StudentPortalVisibility } from "./student-portal-settings";
+import { saveComplexFeatures, type ComplexFeatures } from "./complex-features";
 import { saveTarbawiStore, type TarbawiStore, ensureTarbawiSemester, mergeTarbawiStores, loadTarbawiStore } from "./tarbawi-program";
 import type { AcademicPhaseRecord } from "./academic-record";
 import { saveAcademicRecords } from "./academic-record";
@@ -160,10 +161,15 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       if (state.has("academic_records")) saveAcademicRecords(state.get("academic_records") as AcademicPhaseRecord[]);
       if (state.has("halaqa_programs")) saveAllHalaqaPrograms(state.get("halaqa_programs") as HalaqaProgramsStore);
       if (state.has("halaqa_program_grades")) saveAllProgramGrades(state.get("halaqa_program_grades") as HalaqaProgramGradesStore);
+      if (state.has("scientific_grades")) {
+        const { replaceScientificGradesStore } = await import("./scientific-grades");
+        replaceScientificGradesStore(state.get("scientific_grades") as import("./scientific-grades").ScientificGradesStore);
+      }
       if (state.has("notifications")) saveNotifications(state.get("notifications") as Notification[]);
       if (state.has("message_templates")) saveMessageTemplates(state.get("message_templates") as Record<MessageTemplateKey, string>);
       if (state.has("late_permissions")) saveLatePermissions(state.get("late_permissions") as LatePermission[]);
       if (state.has("student_portal_settings")) saveStudentPortalVisibility(state.get("student_portal_settings") as StudentPortalVisibility);
+      if (state.has("complex_features")) saveComplexFeatures(state.get("complex_features") as ComplexFeatures);
       if (!tarbawiReset && state.has("tarbawi_program")) {
         const cloud = state.get("tarbawi_program") as TarbawiStore;
         const local = loadTarbawiStore();
@@ -291,7 +297,7 @@ export async function deleteRoleAccount(id: string) {
 }
 
 export async function pushAppState(
-  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_programs" | "halaqa_program_grades" | "notifications" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings" | "staff_attendance" | "staff_attendance_settings" | "student_portal_settings" | "tarbawi_program",
+  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_programs" | "halaqa_program_grades" | "scientific_grades" | "notifications" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings" | "staff_attendance" | "staff_attendance_settings" | "student_portal_settings" | "complex_features" | "tarbawi_program",
   value: unknown,
 ) {
   await secureSetAppState({ data: { token: tokenOrThrow(), key, value } });

@@ -4,8 +4,9 @@ import { ManagerBrandingPanel } from "@/components/role-workspace/ManagerBrandin
 import { KioskSettingsPanel } from "@/components/role-workspace/KioskSettingsPanel";
 import { ManagerSettingsPanel } from "@/components/role-workspace/ManagerSettingsPanel";
 import { ManagerStudentPortalPanel } from "@/components/role-workspace/ManagerStudentPortalPanel";
+import { ManagerTeacherFeaturesPanel } from "@/components/role-workspace/ManagerTeacherFeaturesPanel";
 import { ManagerSubTabs } from "@/components/role-workspace/ManagerSubTabs";
-import { CalendarDays, MessageSquare, Palette, GraduationCap, QrCode } from "lucide-react";
+import { CalendarDays, MessageSquare, Palette, GraduationCap, QrCode, Send } from "lucide-react";
 
 type Props = {
   section: string;
@@ -46,6 +47,12 @@ export function ManagerGeneralSettingsPanel({ section, onSectionChange }: Props)
       label: "رسائل واتساب",
       icon: MessageSquare,
       content: <ManagerSettingsPanel />,
+    },
+    {
+      id: "teacher-features",
+      label: "صفحة المعلم",
+      icon: Send,
+      content: <ManagerTeacherFeaturesPanel />,
     },
     {
       id: "student-portal",
