@@ -1,7 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useTenant } from "@/contexts/TenantContext";
 import { ensureSessionFromToken } from "@/lib/auth-session";
-import { fetchHalaqatRoster } from "@/lib/cloud-sync";
+import { fetchHalaqatForComplex } from "@/lib/cloud-sync";
 import type { Halaqa } from "@/lib/mock-data";
 import {
   findHalaqaForTeacher,
@@ -16,22 +16,28 @@ export type TeacherHalaqaAccessState =
   | { phase: "loading" }
   | { phase: "redirect"; halaqaId: number }
   | { phase: "ready"; halaqa: Halaqa; halaqat: Halaqa[]; resolvedH: number }
-  | { phase: "missing"; halaqat: Halaqa[]; resolvedH?: number };
-
-function cacheHasHalaqa(halaqat: Halaqa[], preferredH?: number): boolean {
-  if (halaqat.length === 0) return false;
-  if (!preferredH) return true;
-  return Boolean(findHalaqaForTeacher(halaqat, preferredH));
-}
+  | {
+      phase: "missing";
+      halaqat: Halaqa[];
+      resolvedH?: number;
+      error?: string;
+      retry: () => void;
+    };
 
 /**
- * Load halaqat for the teacher page directly from API when local cache is empty or stale.
+ * Resolve teacher halaqa from API using the active tenant id.
+ * React state holds the roster — localStorage is only a cache, not the source of truth.
  */
 export function useTeacherHalaqaAccess(urlH: unknown): TeacherHalaqaAccessState {
-  const { loading: tenantLoading } = useTenant();
-  const fetchGen = useRef(0);
+  const { tenant, loading: tenantLoading, error: tenantError } = useTenant();
   const [halaqat, setHalaqat] = useState<Halaqa[]>([]);
   const [fetching, setFetching] = useState(true);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [retryToken, setRetryToken] = useState(0);
+
+  const retry = useCallback(() => {
+    setRetryToken((n) => n + 1);
+  }, []);
 
   useEffect(() => {
     if (tenantLoading) {
@@ -40,31 +46,49 @@ export function useTeacherHalaqaAccess(urlH: unknown): TeacherHalaqaAccessState 
     }
 
     ensureSessionFromToken();
-    const preferredH = resolveTeacherHalaqaId(urlH);
-    const cached = readLocalHalaqat();
 
-    if (cacheHasHalaqa(cached, preferredH)) {
+    const complexId = tenant?.id;
+    if (!complexId) {
+      const cached = readLocalHalaqat();
       setHalaqat(cached);
       setFetching(false);
+      setFetchError(tenantError ?? (cached.length ? null : "تعذّر تحديد المجمع"));
       return;
     }
 
-    const gen = ++fetchGen.current;
+    let cancelled = false;
     setFetching(true);
-    void fetchHalaqatRoster()
-      .then((list) => {
-        if (gen !== fetchGen.current) return;
+    setFetchError(null);
+
+    void (async () => {
+      try {
+        const list = await fetchHalaqatForComplex(complexId);
+        if (cancelled) return;
         const next = list.length > 0 ? list : readLocalHalaqat();
         setHalaqat(next);
-      })
-      .catch(() => {
-        if (gen !== fetchGen.current) return;
-        setHalaqat(readLocalHalaqat());
-      })
-      .finally(() => {
-        if (gen === fetchGen.current) setFetching(false);
-      });
-  }, [tenantLoading, urlH]);
+        if (next.length === 0) {
+          setFetchError("لم يتم العثور على حلقات في هذا المجمع");
+        }
+      } catch (e) {
+        if (cancelled) return;
+        const cached = readLocalHalaqat();
+        setHalaqat(cached);
+        setFetchError(
+          cached.length > 0
+            ? null
+            : e instanceof Error
+              ? e.message
+              : "تعذّر تحميل الحلقات",
+        );
+      } finally {
+        if (!cancelled) setFetching(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tenantLoading, tenant?.id, tenantError, retryToken]);
 
   useEffect(() => {
     if (tenantLoading || fetching || halaqat.length === 0) return;
@@ -97,5 +121,11 @@ export function useTeacherHalaqaAccess(urlH: unknown): TeacherHalaqaAccessState 
     return { phase: "redirect", halaqaId: redirectId };
   }
 
-  return { phase: "missing", halaqat, resolvedH: preferredH };
+  return {
+    phase: "missing",
+    halaqat,
+    resolvedH: preferredH,
+    error: fetchError ?? undefined,
+    retry,
+  };
 }

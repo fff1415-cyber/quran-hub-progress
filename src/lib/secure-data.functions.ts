@@ -8,8 +8,11 @@ function loginBody(extra: Record<string, unknown>): string {
   return JSON.stringify(cid ? { ...extra, complexId: cid } : extra);
 }
 
-function publicComplexQuery(): string {
-  const cid = getActiveComplexId();
+function publicComplexQuery(explicitComplexId?: number): string {
+  const cid =
+    explicitComplexId && explicitComplexId > 0
+      ? explicitComplexId
+      : getActiveComplexId();
   return cid ? `complexId=${cid}` : "";
 }
 
@@ -78,8 +81,8 @@ export async function secureListStudents({ data }: { data: { token: string } }) 
   return apiFetch<unknown[]>("/students", { method: "GET", auth: data.token });
 }
 
-export async function listPublicStudents() {
-  const q = publicComplexQuery();
+export async function listPublicStudents(complexId?: number) {
+  const q = publicComplexQuery(complexId);
   return apiFetch<unknown[]>(`/students/public${q ? `?${q}` : ""}`, { method: "GET" });
 }
 
@@ -113,8 +116,8 @@ export async function secureListHalaqatFull({ data }: { data: { token: string } 
   return apiFetch<unknown[]>("/halaqat", { method: "GET", auth: data.token });
 }
 
-export async function listPublicHalaqat() {
-  const q = publicComplexQuery();
+export async function listPublicHalaqat(complexId?: number) {
+  const q = publicComplexQuery(complexId);
   return apiFetch<unknown[]>(`/halaqat/public${q ? `?${q}` : ""}`, { method: "GET" });
 }
 

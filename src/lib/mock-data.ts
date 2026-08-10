@@ -213,8 +213,10 @@ export function loadHalaqat(): Halaqa[] {
   const raw = localStorage.getItem(KEY_HALAQAT);
   return raw ? JSON.parse(raw) : [];
 }
-export function saveHalaqat(h: Halaqa[]) {
+export function saveHalaqat(h: Halaqa[], options?: { allowEmpty?: boolean }) {
   if (typeof window === "undefined") return;
+  // Never wipe a populated roster with an accidental empty write.
+  if (h.length === 0 && !options?.allowEmpty) return;
   localStorage.setItem(KEY_HALAQAT, JSON.stringify(h));
 }
 

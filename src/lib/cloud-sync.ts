@@ -29,6 +29,8 @@ import {
   secureSetAppState,
 } from "./secure-data.functions";
 import { fetchActiveCalendar } from "./academic-context";
+import { getActiveComplexId } from "@/lib/tenant";
+import { getAuthItem } from "@/lib/auth-session";
 
 export { getToken, setToken, clearToken, hasAuthToken } from "@/lib/auth-session";
 
@@ -115,8 +117,50 @@ function halaqaToRow(h: Halaqa): CloudHalaqaRow {
   };
 }
 
+function resolveComplexIdHint(explicit?: number): number | undefined {
+  if (explicit && explicit > 0) return explicit;
+  const active = getActiveComplexId();
+  if (active && active > 0) return active;
+  const fromSession = Number(getAuthItem("qs_complex") ?? 0);
+  return Number.isFinite(fromSession) && fromSession > 0 ? fromSession : undefined;
+}
+
+/** Fetch halaqat for a known complex id — does not depend on module-level tenant cache alone. */
+export async function fetchHalaqatForComplex(complexId: number): Promise<Halaqa[]> {
+  if (!Number.isFinite(complexId) || complexId <= 0) return [];
+
+  const token = getToken();
+  let rows: CloudHalaqaRow[] = [];
+
+  if (token) {
+    const auth = await Promise.allSettled([secureListHalaqatFull({ data: { token } })]);
+    if (auth[0].status === "fulfilled" && Array.isArray(auth[0].value) && auth[0].value.length > 0) {
+      rows = auth[0].value as CloudHalaqaRow[];
+    }
+  }
+
+  if (rows.length === 0) {
+    try {
+      const pub = await listPublicHalaqat(complexId);
+      if (Array.isArray(pub)) rows = pub as CloudHalaqaRow[];
+    } catch (e) {
+      console.warn("Public halaqat fetch failed:", e);
+    }
+  }
+
+  const halaqat = rows
+    .map(rowToHalaqa)
+    .filter((h) => Number.isFinite(h.id) && h.id > 0 && h.name.trim() !== "");
+
+  if (halaqat.length > 0) saveHalaqat(halaqat);
+  return halaqat;
+}
+
 /** Fetch halaqat from API — authenticated first, then public fallback. Always caches locally. */
-export async function fetchHalaqatRoster(): Promise<Halaqa[]> {
+export async function fetchHalaqatRoster(complexId?: number): Promise<Halaqa[]> {
+  const cid = resolveComplexIdHint(complexId);
+  if (cid) return fetchHalaqatForComplex(cid);
+
   const token = getToken();
   let rows: CloudHalaqaRow[] = [];
 
@@ -189,8 +233,8 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       }
     }
 
-    // Persist core roster first — app-state/calendar failures must not wipe halaqat cache.
-    saveHalaqat(halaqat);
+    // Persist core roster first — never overwrite existing cache with an empty list.
+    if (halaqat.length > 0) saveHalaqat(halaqat);
     saveStudents(students);
 
     if (token) {
@@ -316,7 +360,7 @@ export async function deleteStudent(id: string) {
 
 export async function pushHalaqat(halaqat: Halaqa[]) {
   if (halaqat.length === 0) {
-    saveHalaqat(halaqat);
+    saveHalaqat(halaqat, { allowEmpty: true });
     return;
   }
   await secureUpsertHalaqat({ data: { token: tokenOrThrow(), halaqat: halaqat.map(halaqaToRow) } });

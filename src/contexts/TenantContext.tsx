@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -35,11 +36,14 @@ type TenantContextValue = {
 
 const TenantContext = createContext<TenantContextValue | null>(null);
 
-function resolveTenantScopeKey(pathname: string): string {
-  if (typeof window === "undefined") return pathname;
+function resolveTenantScopeKey(_routerPathname: string): string {
+  if (typeof window === "undefined") return _routerPathname;
   const host = window.location.hostname;
+  // Prefer the real browser path — router pathname can omit the /m1 prefix
+  // depending on matching, which incorrectly keyed the tenant as "__platform__".
+  const path = window.location.pathname || _routerPathname;
   if (isPlatformHost(host)) {
-    return parseTenantSlugFromPath(pathname) ?? "__platform__";
+    return parseTenantSlugFromPath(path) ?? "__platform__";
   }
   return parseSubdomain(host) ?? "__unknown__";
 }
@@ -51,9 +55,11 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const [isPlatform, setIsPlatform] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const loadGeneration = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
+    const runId = ++loadGeneration.current;
     setLoading(true);
     void (async () => {
       try {
@@ -61,23 +67,31 @@ export function TenantProvider({ children }: { children: ReactNode }) {
           typeof window !== "undefined" ? window.location.hostname : undefined,
           typeof window !== "undefined" ? window.location.pathname : pathname,
         );
-        if (!cancelled) {
-          setTenant(resolved);
-          setIsPlatform(resolved === null);
-          setError(null);
-          if (resolved) {
+
+        // Always sync roster after tenant resolve — even if this effect instance
+        // was superseded (React Strict Mode). Sync is idempotent; skipping it
+        // left localStorage empty and broke /teacher.
+        if (resolved) {
+          try {
             await syncFromCloud();
             ensureSessionFromToken();
+          } catch (syncErr) {
+            console.warn("Tenant roster sync failed:", syncErr);
           }
         }
+
+        if (cancelled || runId !== loadGeneration.current) return;
+
+        setTenant(resolved);
+        setIsPlatform(resolved === null);
+        setError(null);
       } catch (e) {
-        if (!cancelled) {
-          const msg = e instanceof Error ? e.message : "تعذّر تحميل بيانات المجمع";
-          setError(msg);
-          setIsPlatform(false);
-        }
+        if (cancelled || runId !== loadGeneration.current) return;
+        const msg = e instanceof Error ? e.message : "تعذّر تحميل بيانات المجمع";
+        setError(msg);
+        setIsPlatform(false);
       } finally {
-        if (!cancelled) {
+        if (!cancelled && runId === loadGeneration.current) {
           setLoading(false);
         }
       }
@@ -85,7 +99,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [tenantScopeKey]);
+  }, [tenantScopeKey, pathname]);
 
   const setTenantState = useCallback((next: TenantInfo) => {
     setTenant(next);

@@ -142,10 +142,31 @@ export function TeacherPage() {
 
   if (access.phase === "missing") {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="glass-card p-8 rounded-2xl text-center">
-          <p>الحلقة غير موجودة</p>
-          <button onClick={() => navigate({ to: tenantPath("/") })} className="mt-4 px-4 py-2 rounded-lg gold-gradient text-primary-foreground">العودة</button>
+      <div className="min-h-screen flex items-center justify-center p-4">
+        <div className="glass-card p-8 rounded-2xl text-center max-w-md w-full">
+          <p className="font-bold text-lg">الحلقة غير موجودة</p>
+          {access.error && (
+            <p className="text-sm text-muted-foreground mt-2">{access.error}</p>
+          )}
+          <p className="text-xs text-muted-foreground mt-2">
+            إن كنت معلماً، أعد تسجيل الدخول أو حدّث الصفحة بعد اكتمال تحميل بيانات المجمع.
+          </p>
+          <div className="mt-4 flex flex-col sm:flex-row gap-2 justify-center">
+            <button
+              type="button"
+              onClick={() => access.retry()}
+              className="px-4 py-2 rounded-lg border border-primary/30 text-primary font-bold"
+            >
+              إعادة المحاولة
+            </button>
+            <button
+              type="button"
+              onClick={() => navigate({ to: tenantPath("/") })}
+              className="px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold"
+            >
+              العودة
+            </button>
+          </div>
         </div>
       </div>
     );
