@@ -30,9 +30,15 @@ import {
 } from "./secure-data.functions";
 import { fetchActiveCalendar } from "./academic-context";
 import { getActiveComplexId } from "@/lib/tenant";
-import { getAuthItem } from "@/lib/auth-session";
+import {
+  getAuthItem,
+  getToken,
+  setToken,
+  clearToken,
+  hasAuthToken,
+} from "@/lib/auth-session";
 
-export { getToken, setToken, clearToken, hasAuthToken } from "@/lib/auth-session";
+export { getToken, setToken, clearToken, hasAuthToken };
 
 interface CloudStudentRow {
   id: string;
