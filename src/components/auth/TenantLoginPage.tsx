@@ -106,6 +106,8 @@ export function TenantLoginPage() {
         setAuthItem("qs_name", student.name);
         if (student.complexId != null) setAuthItem("qs_complex", String(student.complexId));
         else setAuthItem("qs_complex", String(tenant.id));
+        setAuthItem("qs_tenant_subdomain", tenant.subdomain);
+        setAuthItem("qs_tenant_name", tenant.name);
         setPortalMode("student");
         await syncFromCloud();
         void initPushAfterLogin();
@@ -122,6 +124,8 @@ export function TenantLoginPage() {
       setAuthItem("qs_name", auth.name);
       if (auth.complexId != null) setAuthItem("qs_complex", String(auth.complexId));
       else setAuthItem("qs_complex", String(tenant.id));
+      setAuthItem("qs_tenant_subdomain", tenant.subdomain);
+      setAuthItem("qs_tenant_name", tenant.name);
       if (auth.halaqaId) setAuthItem("qs_halaqa", String(auth.halaqaId));
       else removeAuthItem("qs_halaqa");
       removeAuthItem("qs_student");

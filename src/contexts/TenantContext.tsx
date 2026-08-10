@@ -12,6 +12,7 @@ import { syncFromCloud } from "@/lib/cloud-sync";
 import {
   PLATFORM_BRAND,
   fetchTenantBySubdomain,
+  isPlatformHost,
   parseSubdomain,
   parseTenantSlugFromPath,
   resolveTenantFromLocation,
@@ -33,8 +34,18 @@ type TenantContextValue = {
 
 const TenantContext = createContext<TenantContextValue | null>(null);
 
+function resolveTenantScopeKey(pathname: string): string {
+  if (typeof window === "undefined") return pathname;
+  const host = window.location.hostname;
+  if (isPlatformHost(host)) {
+    return parseTenantSlugFromPath(pathname) ?? "__platform__";
+  }
+  return parseSubdomain(host) ?? "__unknown__";
+}
+
 export function TenantProvider({ children }: { children: ReactNode }) {
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  const tenantScopeKey = useMemo(() => resolveTenantScopeKey(pathname), [pathname]);
   const [tenant, setTenant] = useState<TenantInfo | null>(null);
   const [isPlatform, setIsPlatform] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -47,7 +58,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
       try {
         const resolved = await resolveTenantFromLocation(
           typeof window !== "undefined" ? window.location.hostname : undefined,
-          pathname,
+          typeof window !== "undefined" ? window.location.pathname : pathname,
         );
         if (!cancelled) {
           setTenant(resolved);
@@ -72,7 +83,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [pathname]);
+  }, [tenantScopeKey]);
 
   const setTenantState = useCallback((next: TenantInfo) => {
     setTenant(next);

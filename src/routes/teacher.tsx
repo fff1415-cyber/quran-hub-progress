@@ -17,8 +17,8 @@ import {
 } from "@/lib/academic-context";
 import { cn } from "@/lib/utils";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
-import { getAuthItem } from "@/lib/auth-session";
-import { useTenant } from "@/contexts/TenantContext";
+import { halaqaSearchParamSchema } from "@/lib/teacher-halaqa-access";
+import { useTeacherHalaqaAccess } from "@/hooks/use-teacher-halaqa-access";
 import { dispatchPushEvent } from "@/lib/push-notifications";
 import { tenantPath } from "@/lib/tenant";
 import { AppHeader } from "@/components/AppHeader";
@@ -69,7 +69,7 @@ import {
 } from "@/lib/scientific-grades";
 
 export const teacherSearchSchema = z.object({
-  h: z.coerce.number().optional(),
+  h: halaqaSearchParamSchema,
   w: z.coerce.number().optional(),
   view: z.enum(["grades", "tests", "programs", "tarbawi"]).optional(),
 });
@@ -83,11 +83,7 @@ export function TeacherPage() {
   const { h, w, view: viewParam } = useSearch({ strict: false }) as z.infer<typeof teacherSearchSchema>;
   const view = viewParam ?? "grades";
   const navigate = useNavigate();
-  const { loading: tenantLoading } = useTenant();
-  const [halaqat, setHalaqat] = useState(() => loadHalaqat());
-  const sessionHalaqaId = Number(getAuthItem("qs_halaqa") ?? 0) || undefined;
-  const hNum = h != null && !Number.isNaN(Number(h)) ? Number(h) : undefined;
-  const resolvedH = hNum ?? sessionHalaqaId;
+  const access = useTeacherHalaqaAccess(h);
   const [role, setRole] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
@@ -95,24 +91,18 @@ export function TeacherPage() {
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
 
   useEffect(() => {
-    if (tenantLoading) return;
-    setHalaqat(loadHalaqat());
-  }, [tenantLoading]);
-
-  useEffect(() => {
     setRole(getSessionRole());
     setName(getSessionName());
   }, []);
 
   useEffect(() => {
-    if (hNum || tenantLoading) return;
-    const r = getSessionRole();
-    const isElevated = r === "manager" || r === "secretary" || r === "supervisor";
-    const fallback = sessionHalaqaId ?? (isElevated ? halaqat[0]?.id : undefined);
-    if (fallback) {
-      navigate({ to: tenantPath("/teacher"), search: { h: fallback, w, view }, replace: true });
-    }
-  }, [hNum, sessionHalaqaId, halaqat, tenantLoading, w, view, navigate]);
+    if (access.phase !== "redirect") return;
+    navigate({
+      to: tenantPath("/teacher"),
+      search: { h: access.halaqaId, w, view },
+      replace: true,
+    });
+  }, [access, w, view, navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -141,7 +131,27 @@ export function TeacherPage() {
   const isManager = role === "manager";
   const elevated = isManager || role === "secretary" || role === "supervisor";
   const roleLabel = isAssistant ? "مساعد" : isManager ? "مدير" : elevated ? "مشرف" : "معلم";
-  const halaqa = resolvedH ? halaqat.find((x) => x.id === resolvedH) : undefined;
+
+  if (access.phase === "loading" || access.phase === "redirect") {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (access.phase === "missing") {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="glass-card p-8 rounded-2xl text-center">
+          <p>الحلقة غير موجودة</p>
+          <button onClick={() => navigate({ to: tenantPath("/") })} className="mt-4 px-4 py-2 rounded-lg gold-gradient text-primary-foreground">العودة</button>
+        </div>
+      </div>
+    );
+  }
+
+  const { halaqa } = access;
 
   const handleWeekChange = (weekNum: number) => {
     setSelectedWeek(weekNum);
@@ -158,25 +168,6 @@ export function TeacherPage() {
 
   const canManagePrograms = role === "teacher";
   const programsReadOnly = role === "manager";
-
-  if (tenantLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
-      </div>
-    );
-  }
-
-  if (!halaqa) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="glass-card p-8 rounded-2xl text-center">
-          <p>الحلقة غير موجودة</p>
-          <button onClick={() => navigate({ to: tenantPath("/") })} className="mt-4 px-4 py-2 rounded-lg gold-gradient text-primary-foreground">العودة</button>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen">

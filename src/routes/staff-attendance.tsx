@@ -2,7 +2,6 @@ import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router"
 import { useEffect, useState } from "react";
 import { z } from "zod";
 import { AppHeader } from "@/components/AppHeader";
-import { loadHalaqat } from "@/lib/mock-data";
 import {
   findTodayCheckIn,
   formatTime12,
@@ -18,13 +17,14 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Clock, Loader2, UserCheck } from "lucide-react";
 import { toast, Toaster } from "sonner";
-import { getAuthItem } from "@/lib/auth-session";
+import { halaqaSearchParamSchema, resolveTeacherHalaqaId, readLocalHalaqat, findHalaqaById } from "@/lib/teacher-halaqa-access";
+import { useTenant } from "@/contexts/TenantContext";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { dispatchPushEvent } from "@/lib/push-notifications";
 import { tenantPath } from "@/lib/tenant";
 
 export const staffAttendanceSearchSchema = z.object({
-  h: z.number().optional(),
+  h: halaqaSearchParamSchema,
 });
 
 export const Route = createFileRoute("/staff-attendance")({
@@ -35,6 +35,7 @@ export const Route = createFileRoute("/staff-attendance")({
 export function StaffAttendancePage() {
   const { h } = useSearch({ strict: false }) as z.infer<typeof staffAttendanceSearchSchema>;
   const navigate = useNavigate();
+  const { loading: tenantLoading } = useTenant();
   const [role, setRole] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -43,9 +44,9 @@ export function StaffAttendancePage() {
   const [loading, setLoading] = useState(true);
 
   const settings = loadStaffAttendanceSettings();
-  const halaqat = loadHalaqat();
-  const halaqaId = h ?? Number(getAuthItem("qs_halaqa") ?? 0);
-  const halaqa = halaqat.find((x) => x.id === halaqaId);
+  const halaqat = tenantLoading ? [] : readLocalHalaqat();
+  const halaqaId = resolveTeacherHalaqaId(h);
+  const halaqa = findHalaqaById(halaqat, halaqaId);
 
   useEffect(() => {
     setRole(getSessionRole());
