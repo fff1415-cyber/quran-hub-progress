@@ -1,3 +1,5 @@
+import { hasAuthToken } from "@/lib/auth-session";
+
 /**
  * Semester-scoped financial ledger — income & expense entries per complex.
  */
@@ -48,7 +50,7 @@ function persist(store: FinancialLedgerStore) {
   } catch {
     /* ignore */
   }
-  if (!sessionStorage.getItem("qs_token")) return;
+  if (!hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync")
     .then((m) => m.pushAppState("financial_ledger", store))

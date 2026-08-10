@@ -1,9 +1,7 @@
-import { getToken, clearToken } from "@/lib/cloud-sync";
+import { clearAuthSession, getAuthItem, removeAuthItem, setAuthItem } from "@/lib/auth-session";
 import { getSessionRole } from "@/lib/session-role";
 
 export type StudentPortalAuthMode = "login" | "student" | "viewer";
-
-const PORTAL_MODE_KEY = "qs_portal_mode";
 
 /** Staff roles that may view general portal stats (no student detail). */
 export const PORTAL_VIEWER_ROLES = [
@@ -19,23 +17,15 @@ export const PORTAL_VIEWER_ROLES = [
 export type PortalViewerRole = (typeof PORTAL_VIEWER_ROLES)[number];
 
 export function setPortalMode(mode: "student" | "viewer"): void {
-  if (typeof window !== "undefined") sessionStorage.setItem(PORTAL_MODE_KEY, mode);
+  setAuthItem("qs_portal_mode", mode);
 }
 
 export function clearPortalSession(): void {
-  if (typeof window === "undefined") return;
-  sessionStorage.removeItem(PORTAL_MODE_KEY);
-  sessionStorage.removeItem("qs_role");
-  sessionStorage.removeItem("qs_name");
-  sessionStorage.removeItem("qs_student");
-  sessionStorage.removeItem("qs_halaqa");
-  sessionStorage.removeItem("qs_complex");
-  clearToken();
+  clearAuthSession();
 }
 
 export function getPortalStudentId(): string | null {
-  if (typeof window === "undefined") return null;
-  return sessionStorage.getItem("qs_student");
+  return getAuthItem("qs_student");
 }
 
 export function isPortalViewerRole(role: string): role is PortalViewerRole {
@@ -43,11 +33,11 @@ export function isPortalViewerRole(role: string): role is PortalViewerRole {
 }
 
 export function resolveStudentPortalAuth(): StudentPortalAuthMode {
-  if (!getToken()) return "login";
+  if (!getAuthItem("qs_token")) return "login";
   const role = getSessionRole();
   if (role === "student" && getPortalStudentId()) return "student";
   if (isPortalViewerRole(role)) return "viewer";
-  const mode = typeof window !== "undefined" ? sessionStorage.getItem(PORTAL_MODE_KEY) : null;
+  const mode = getAuthItem("qs_portal_mode");
   if (mode === "student" && role === "student" && getPortalStudentId()) return "student";
   return "login";
 }
@@ -63,4 +53,12 @@ export function portalViewerRoleLabel(role: string): string {
     program_supervisor: "مشرف البرامج",
   };
   return map[role] ?? "الكادر";
+}
+
+export function setStudentSession(studentId: string): void {
+  setAuthItem("qs_student", studentId);
+}
+
+export function clearStudentSession(): void {
+  removeAuthItem("qs_student");
 }

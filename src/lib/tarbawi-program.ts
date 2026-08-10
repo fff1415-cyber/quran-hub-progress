@@ -2,6 +2,7 @@
  * البرنامج التربوي — planning + approval + weekly execution.
  */
 import { pushNotification } from "@/lib/mock-data";
+import { hasAuthToken } from "@/lib/auth-session";
 
 export interface TarbawiParagraphType {
   id: string;
@@ -149,7 +150,7 @@ function readStore(): TarbawiStore {
 function writeStore(store: TarbawiStore): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(KEY_STORE, JSON.stringify(store));
-  if (sessionStorage.getItem("qs_token") && sessionStorage.getItem("qs_syncing") !== "1") {
+  if (hasAuthToken() && sessionStorage.getItem("qs_syncing") !== "1") {
     void pushTarbawiStoreCloud(store).catch((e) => {
       console.warn("tarbawi_program cloud sync failed:", e);
     });

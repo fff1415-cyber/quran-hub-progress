@@ -1,3 +1,5 @@
+import { hasAuthToken } from "@/lib/auth-session";
+
 const KEY = "qshatawi_complex_features_v1";
 export const COMPLEX_FEATURES_APP_STATE_KEY = "complex_features";
 
@@ -38,7 +40,7 @@ export function saveComplexFeatures(settings: ComplexFeatures): ComplexFeatures 
   }
   if (
     typeof window !== "undefined"
-    && sessionStorage.getItem("qs_token")
+    && hasAuthToken()
     && sessionStorage.getItem("qs_syncing") !== "1"
   ) {
     void import("./cloud-sync").then((m) => m.pushAppState(COMPLEX_FEATURES_APP_STATE_KEY, normalized)).catch(() => undefined);

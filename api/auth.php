@@ -41,7 +41,7 @@ function base64url_decode(string $data): string|false
 
 function generate_token(array $payload): string
 {
-    $payload['exp'] = ($payload['exp'] ?? ((time() * 1000) + 86400000));
+    $payload['exp'] = ($payload['exp'] ?? ((time() * 1000) + (90 * 86400000)));
     $json = json_encode($payload, JSON_UNESCAPED_UNICODE | JSON_INVALID_UTF8_SUBSTITUTE);
     if ($json === false) {
         error_response('تعذّر إنشاء جلسة الدخول — تحقق من بيانات الحساب', 500);

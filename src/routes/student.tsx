@@ -20,6 +20,7 @@ import {
   getPortalStudentId,
   resolveStudentPortalAuth,
   portalViewerRoleLabel,
+  setStudentSession,
   type StudentPortalAuthMode,
 } from "@/lib/student-portal-auth";
 import { loadStudentPortalVisibility } from "@/lib/student-portal-settings";
@@ -95,7 +96,7 @@ export function StudentPage() {
       if (sid) {
         setStudentId(sid);
         if (search.s && typeof window !== "undefined") {
-          sessionStorage.setItem("qs_student", search.s);
+          setStudentSession(search.s);
         }
       }
     }

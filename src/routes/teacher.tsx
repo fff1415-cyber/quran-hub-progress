@@ -16,6 +16,8 @@ import {
   type AcademicCalendar,
 } from "@/lib/academic-context";
 import { cn } from "@/lib/utils";
+import { getSessionName, getSessionRole } from "@/lib/session-role";
+import { dispatchPushEvent } from "@/lib/push-notifications";
 import { tenantPath } from "@/lib/tenant";
 import { AppHeader } from "@/components/AppHeader";
 import {
@@ -88,8 +90,8 @@ export function TeacherPage() {
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
 
   useEffect(() => {
-    setRole(sessionStorage.getItem("qs_role"));
-    setName(sessionStorage.getItem("qs_name"));
+    setRole(getSessionRole());
+    setName(getSessionName());
   }, []);
 
   useEffect(() => {
@@ -511,7 +513,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const [planSheetData, setPlanSheetData] = useState<StudentPlanSheetData | null>(null);
   const [planSheetError, setPlanSheetError] = useState<string | null>(null);
   const [planSheetLoading, setPlanSheetLoading] = useState(false);
-  const senderName = typeof window !== "undefined" ? (sessionStorage.getItem("qs_name") || "المعلم") : "المعلم";
+  const senderName = getSessionName("المعلم");
   const showTransferButton = loadComplexFeatures().showTeacherTransferButton;
 
   const halaqaSemesterPct = useMemo(
@@ -568,6 +570,13 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         fromName: senderName,
       },
       transferStatus: "pending",
+    });
+    void dispatchPushEvent({
+      event: "teacher_transfer",
+      title: "طلب تحويل طالب",
+      body: `${senderName}: ${student.name} — ${reason}`,
+      url: tenantPath("/manager"),
+      targets: { roles: ["manager"] },
     });
     toast.success("تم إرسال الطالب للإدارة");
     setTransferOpen(false);
@@ -773,6 +782,28 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     });
     if (patch.attendance === "absent") {
       void fetchActiveCalendar(true).then(processAbsenceThresholdAlerts).catch(() => {});
+      const student = students.find((s) => s.id === studentId);
+      if (student) {
+        void dispatchPushEvent({
+          event: "student_absent",
+          title: "غياب الطالب",
+          body: `غاب ${student.name} عن الحلقة اليوم`,
+          url: tenantPath("/student") + `?s=${encodeURIComponent(studentId)}`,
+          targets: { studentIds: [studentId] },
+        });
+      }
+    }
+    if (patch.attendance === "late") {
+      const student = students.find((s) => s.id === studentId);
+      if (student) {
+        void dispatchPushEvent({
+          event: "student_late",
+          title: "تأخر الطالب",
+          body: `تأخر ${student.name} عن الحلقة اليوم`,
+          url: tenantPath("/student") + `?s=${encodeURIComponent(studentId)}`,
+          targets: { studentIds: [studentId] },
+        });
+      }
     }
   };
 

@@ -18,6 +18,9 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Clock, Loader2, UserCheck } from "lucide-react";
 import { toast, Toaster } from "sonner";
+import { getAuthItem } from "@/lib/auth-session";
+import { getSessionName, getSessionRole } from "@/lib/session-role";
+import { dispatchPushEvent } from "@/lib/push-notifications";
 import { tenantPath } from "@/lib/tenant";
 
 export const staffAttendanceSearchSchema = z.object({
@@ -41,12 +44,12 @@ export function StaffAttendancePage() {
 
   const settings = loadStaffAttendanceSettings();
   const halaqat = loadHalaqat();
-  const halaqaId = h ?? Number(sessionStorage.getItem("qs_halaqa") ?? 0);
+  const halaqaId = h ?? Number(getAuthItem("qs_halaqa") ?? 0);
   const halaqa = halaqat.find((x) => x.id === halaqaId);
 
   useEffect(() => {
-    setRole(sessionStorage.getItem("qs_role"));
-    setName(sessionStorage.getItem("qs_name"));
+    setRole(getSessionRole());
+    setName(getSessionName());
   }, []);
 
   useEffect(() => {
@@ -86,10 +89,19 @@ export function StaffAttendancePage() {
       setTodayRecord(checkIn);
       if (alreadyRegistered) {
         toast.info("سبق تسجيل حضورك اليوم");
-      } else if (checkIn.status === "late") {
-        toast.warning("تم التسجيل — حالة: متأخر");
       } else {
-        toast.success("تم تسجيل حضورك — حاضر");
+        void dispatchPushEvent({
+          event: "staff_checkin",
+          title: "تسجيل حضور كادر",
+          body: `${name} (${role}) — ${halaqa.name} · ${STAFF_STATUS_LABEL[checkIn.status]}`,
+          url: tenantPath("/manager"),
+          targets: { roles: ["manager"] },
+        });
+        if (checkIn.status === "late") {
+          toast.warning("تم التسجيل — حالة: متأخر");
+        } else {
+          toast.success("تم تسجيل حضورك — حاضر");
+        }
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "فشل التسجيل");

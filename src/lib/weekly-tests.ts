@@ -2,6 +2,7 @@
  * Weekly tests track — independent from semester overall % and plan progress.
  * Slot counts configured by manager (muraja_slots, rabt_slots).
  */
+import { hasAuthToken } from "@/lib/auth-session";
 
 import type { AcademicCalendar } from "@/lib/academic-context";
 import type { Student } from "@/lib/mock-data";
@@ -56,13 +57,13 @@ export function normalizeWeeklyTestsSettings(raw: Partial<WeeklyTestsSettings>):
 }
 
 function persistStore(value: WeeklyTestsStore) {
-  if (typeof window === "undefined" || !sessionStorage.getItem("qs_token")) return;
+  if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync").then((m) => m.pushAppState("weekly_tests", value)).catch(() => undefined);
 }
 
 function persistSettings(value: WeeklyTestsSettings) {
-  if (typeof window === "undefined" || !sessionStorage.getItem("qs_token")) return;
+  if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync").then((m) => m.pushAppState("weekly_tests_settings", value)).catch(() => undefined);
 }

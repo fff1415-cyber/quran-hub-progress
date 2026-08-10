@@ -1,3 +1,5 @@
+import { hasAuthToken } from "@/lib/auth-session";
+
 const KEY = "qshatawi_student_portal_settings_v1";
 const APP_STATE_KEY = "student_portal_settings";
 
@@ -68,7 +70,7 @@ export function saveStudentPortalVisibility(settings: StudentPortalVisibility): 
   if (typeof window !== "undefined") {
     localStorage.setItem(KEY, JSON.stringify(normalized));
   }
-  if (typeof window !== "undefined" && sessionStorage.getItem("qs_token") && sessionStorage.getItem("qs_syncing") !== "1") {
+  if (typeof window !== "undefined" && hasAuthToken() && sessionStorage.getItem("qs_syncing") !== "1") {
     void import("./cloud-sync").then((m) => m.pushAppState(APP_STATE_KEY, normalized)).catch(() => undefined);
   }
   return normalized;

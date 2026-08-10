@@ -1,8 +1,12 @@
 import { useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { loginByCode, loginByNationalId } from "@/lib/secure-data.functions";
 import { setToken, syncFromCloud } from "@/lib/cloud-sync";
 import { setPortalMode } from "@/lib/student-portal-auth";
+import { clearAuthSession, getToken, isTokenExpired, removeAuthItem, setAuthItem } from "@/lib/auth-session";
+import { navigateBySessionRole } from "@/lib/auth-redirect";
+import { initPushAfterLogin } from "@/lib/push-notifications";
+import { getSessionRole } from "@/lib/session-role";
 import { Loader2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { useTenant } from "@/contexts/TenantContext";
@@ -14,12 +18,53 @@ export function TenantLoginPage() {
   const { tenant, logoUrl, brandName, loading: tenantLoading, error: tenantError } = useTenant();
   const [value, setValue] = useState("");
   const [busy, setBusy] = useState(false);
+  const [autoChecking, setAutoChecking] = useState(true);
 
-  if (tenantLoading) {
+  useEffect(() => {
+    if (tenantLoading || tenantError || !tenant) {
+      if (!tenantLoading) setAutoChecking(false);
+      return;
+    }
+
+    const token = getToken();
+    if (!token || isTokenExpired(token)) {
+      if (token) clearAuthSession();
+      setAutoChecking(false);
+      return;
+    }
+    if (!getSessionRole()) {
+      setAutoChecking(false);
+      return;
+    }
+
+    let cancelled = false;
+    (async () => {
+      try {
+        await syncFromCloud();
+        if (cancelled) return;
+        void initPushAfterLogin();
+        if (!navigateBySessionRole(navigate)) {
+          clearAuthSession();
+        }
+      } catch {
+        clearAuthSession();
+      } finally {
+        if (!cancelled) setAutoChecking(false);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tenant?.id, tenantLoading, tenantError, navigate, tenant]);
+
+  if (tenantLoading || autoChecking) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center gap-4 p-4">
         <Loader2 className="w-10 h-10 text-primary animate-spin" />
-        <p className="text-muted-foreground text-sm">جاري تحميل بيانات المجمع...</p>
+        <p className="text-muted-foreground text-sm">
+          {tenantLoading ? "جاري تحميل بيانات المجمع..." : "جاري استعادة جلسة الدخول..."}
+        </p>
       </div>
     );
   }
@@ -56,12 +101,14 @@ export function TenantLoginPage() {
       if (v.length >= 9) {
         const student = await loginByNationalId({ data: { nationalId: v } });
         setToken(student.token);
-        sessionStorage.setItem("qs_role", "student");
-        sessionStorage.setItem("qs_student", student.studentId);
-        if (student.complexId != null) sessionStorage.setItem("qs_complex", String(student.complexId));
-        else sessionStorage.setItem("qs_complex", String(tenant.id));
+        setAuthItem("qs_role", "student");
+        setAuthItem("qs_student", student.studentId);
+        setAuthItem("qs_name", student.name);
+        if (student.complexId != null) setAuthItem("qs_complex", String(student.complexId));
+        else setAuthItem("qs_complex", String(tenant.id));
         setPortalMode("student");
         await syncFromCloud();
+        void initPushAfterLogin();
         navigate({ to: tenantPath("/student"), search: { s: student.studentId } });
         return;
       }
@@ -71,15 +118,16 @@ export function TenantLoginPage() {
         throw new Error("فشل تسجيل الدخول — تحقق من رقم العضوية");
       }
       setToken(auth.token);
-      sessionStorage.setItem("qs_role", auth.role);
-      sessionStorage.setItem("qs_name", auth.name);
-      if (auth.complexId != null) sessionStorage.setItem("qs_complex", String(auth.complexId));
-      else sessionStorage.setItem("qs_complex", String(tenant.id));
-      if (auth.halaqaId) sessionStorage.setItem("qs_halaqa", String(auth.halaqaId));
-      else sessionStorage.removeItem("qs_halaqa");
-      sessionStorage.removeItem("qs_student");
-      sessionStorage.removeItem("qs_portal_mode");
+      setAuthItem("qs_role", auth.role);
+      setAuthItem("qs_name", auth.name);
+      if (auth.complexId != null) setAuthItem("qs_complex", String(auth.complexId));
+      else setAuthItem("qs_complex", String(tenant.id));
+      if (auth.halaqaId) setAuthItem("qs_halaqa", String(auth.halaqaId));
+      else removeAuthItem("qs_halaqa");
+      removeAuthItem("qs_student");
+      removeAuthItem("qs_portal_mode");
       await syncFromCloud();
+      void initPushAfterLogin();
 
       switch (auth.role) {
         case "manager": navigate({ to: tenantPath("/manager") }); break;

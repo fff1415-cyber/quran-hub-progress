@@ -1,4 +1,5 @@
 /** Teacher-defined halaqa programs — fully separate from core grades (حفظ/ربط/مراجعة). */
+import { hasAuthToken } from "@/lib/auth-session";
 
 export type ProgramScheduleMode = "weekdays" | "times_per_week";
 
@@ -58,13 +59,13 @@ const DEFAULT_LEVELS: ProgramLevel[] = [
 ];
 
 function persistPrograms(value: HalaqaProgramsStore) {
-  if (typeof window === "undefined" || !sessionStorage.getItem("qs_token")) return;
+  if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync").then((m) => m.pushAppState("halaqa_programs", value)).catch(() => undefined);
 }
 
 function persistProgramGrades(value: HalaqaProgramGradesStore) {
-  if (typeof window === "undefined" || !sessionStorage.getItem("qs_token")) return;
+  if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync").then((m) => m.pushAppState("halaqa_program_grades", value)).catch(() => undefined);
 }

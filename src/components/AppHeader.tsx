@@ -7,6 +7,9 @@ import {
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
+import { getSessionName, getSessionRole } from "@/lib/session-role";
+import { clearPortalSession } from "@/lib/student-portal-auth";
+import { teardownPushOnLogout } from "@/lib/push-notifications";
 import { loadHalaqat } from "@/lib/mock-data";
 import { useTenant } from "@/contexts/TenantContext";
 import { tenantPath } from "@/lib/tenant";
@@ -44,8 +47,8 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
   const { brandName, logoUrl } = useTenant();
   const [open, setOpen] = useState(false);
   const [halaqatOpen, setHalaqatOpen] = useState(false);
-  const role = typeof window !== "undefined" ? sessionStorage.getItem("qs_role") || "" : "";
-  const name = typeof window !== "undefined" ? sessionStorage.getItem("qs_name") || "" : "";
+  const role = getSessionRole();
+  const name = getSessionName();
   const isManager = role === "manager";
 
   const items = NAV.filter((n) => n.roles.length === 0 || n.roles.includes(role));
@@ -151,7 +154,11 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
 
                 <Link
                   to={tenantPath("/")}
-                  onClick={() => { sessionStorage.clear(); setOpen(false); }}
+                  onClick={() => {
+                    void teardownPushOnLogout();
+                    clearPortalSession();
+                    setOpen(false);
+                  }}
                   className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm hover:bg-destructive/15 text-destructive border border-transparent hover:border-destructive/30 mt-4"
                 >
                   <LogOut className="w-4 h-4" />

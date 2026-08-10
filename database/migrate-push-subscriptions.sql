@@ -1,0 +1,16 @@
+-- Web Push subscriptions are stored in app_state key `push_subscriptions` (JSON array).
+-- No schema change required — this file documents the storage format only.
+--
+-- Each subscription entry:
+-- {
+--   "id": "sha256(endpoint)",
+--   "endpoint": "...",
+--   "keys": { "p256dh": "...", "auth": "..." },
+--   "role": "manager|student|teacher|...",
+--   "name": "...",
+--   "studentId": "..." | null,
+--   "halaqaId": number | null,
+--   "updatedAt": "ISO8601"
+-- }
+--
+-- Configure VAPID keys in api/config.php (see config.example.php).

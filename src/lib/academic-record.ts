@@ -1,4 +1,5 @@
 import type { PlanTrack } from "@/lib/plan-types";
+import { hasAuthToken } from "@/lib/auth-session";
 import { loadSardHistory } from "@/lib/mock-data";
 
 export interface AcademicPhaseRecord {
@@ -21,7 +22,7 @@ export interface AcademicPhaseRecord {
 const KEY = "qshatawi_academic_records_v1";
 
 function persistShared(value: AcademicPhaseRecord[]) {
-  if (typeof window === "undefined" || !sessionStorage.getItem("qs_token")) return;
+  if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync").then((m) => m.pushAppState("academic_records", value)).catch(() => undefined);
 }

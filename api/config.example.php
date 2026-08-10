@@ -12,3 +12,9 @@ define('TOKEN_SECRET', 'change-this-to-a-long-random-string');
 
 // Platform super-admin password (msht.io/platform-admin) — or set in config.platform.php on server
 define('PLATFORM_ADMIN_SECRET', 'change-this-platform-admin-secret');
+
+// Web Push (VAPID) — generate with: npx web-push generate-vapid-keys
+// Add the keys to config.php on the server (do not use example keys in production).
+define('VAPID_PUBLIC_KEY', '');
+define('VAPID_PRIVATE_KEY', '');
+define('VAPID_SUBJECT', 'mailto:admin@msht.io');

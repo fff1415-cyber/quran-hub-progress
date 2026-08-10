@@ -6,6 +6,7 @@ import { saveStaffAttendanceSettings, saveStaffCheckIns } from "./staff-attendan
 import { saveStudentPortalVisibility, type StudentPortalVisibility } from "./student-portal-settings";
 import { saveComplexFeatures, type ComplexFeatures } from "./complex-features";
 import { saveFinancialLedger, type FinancialLedgerStore } from "./financial-ledger";
+import { savePushNotificationSettings, type PushNotificationSettings } from "./push-notification-settings";
 import { saveTarbawiStore, type TarbawiStore, ensureTarbawiSemester, mergeTarbawiStores, loadTarbawiStore } from "./tarbawi-program";
 import type { AcademicPhaseRecord } from "./academic-record";
 import { saveAcademicRecords } from "./academic-record";
@@ -29,17 +30,7 @@ import {
 } from "./secure-data.functions";
 import { fetchActiveCalendar } from "./academic-context";
 
-const TOKEN_KEY = "qs_token";
-export function getToken(): string | null {
-  if (typeof window === "undefined") return null;
-  return sessionStorage.getItem(TOKEN_KEY);
-}
-export function setToken(t: string) {
-  if (typeof window !== "undefined") sessionStorage.setItem(TOKEN_KEY, t);
-}
-export function clearToken() {
-  if (typeof window !== "undefined") sessionStorage.removeItem(TOKEN_KEY);
-}
+export { getToken, setToken, clearToken, hasAuthToken } from "@/lib/auth-session";
 
 interface CloudStudentRow {
   id: string;
@@ -170,6 +161,9 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       if (state.has("message_templates")) saveMessageTemplates(state.get("message_templates") as Record<MessageTemplateKey, string>);
       if (state.has("late_permissions")) saveLatePermissions(state.get("late_permissions") as LatePermission[]);
       if (state.has("student_portal_settings")) saveStudentPortalVisibility(state.get("student_portal_settings") as StudentPortalVisibility);
+      if (state.has("push_notification_settings")) {
+        savePushNotificationSettings(state.get("push_notification_settings") as PushNotificationSettings);
+      }
       if (state.has("complex_features")) saveComplexFeatures(state.get("complex_features") as ComplexFeatures);
       if (state.has("financial_ledger")) saveFinancialLedger(state.get("financial_ledger") as FinancialLedgerStore);
       if (!tarbawiReset && state.has("tarbawi_program")) {
@@ -299,7 +293,7 @@ export async function deleteRoleAccount(id: string) {
 }
 
 export async function pushAppState(
-  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_programs" | "halaqa_program_grades" | "scientific_grades" | "notifications" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings" | "staff_attendance" | "staff_attendance_settings" | "student_portal_settings" | "complex_features" | "tarbawi_program" | "financial_ledger",
+  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_programs" | "halaqa_program_grades" | "scientific_grades" | "notifications" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings" | "staff_attendance" | "staff_attendance_settings" | "student_portal_settings" | "complex_features" | "push_notification_settings" | "tarbawi_program" | "financial_ledger",
   value: unknown,
 ) {
   await secureSetAppState({ data: { token: tokenOrThrow(), key, value } });

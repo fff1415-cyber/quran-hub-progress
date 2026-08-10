@@ -1,4 +1,5 @@
 // Mock data + localStorage store for مجمع حلقات الشتيوي
+import { hasAuthToken } from "@/lib/auth-session";
 
 export type Role = "manager" | "secretary" | "supervisor" | "program_supervisor" | "teacher" | "assistant" | "musammi" | "student" | "parent";
 
@@ -195,7 +196,7 @@ const KEY_MESSAGE_TEMPLATES = "qshatawi_message_templates_v2";
 const KEY_LATE_PERMISSIONS = "qshatawi_late_permissions_v2";
 
 function persistShared(key: "grades" | "sard_queue" | "sard_history" | "notifications" | "message_templates" | "late_permissions", value: unknown) {
-  if (typeof window === "undefined" || !sessionStorage.getItem("qs_token")) return;
+  if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync").then((m) => m.pushAppState(key, value)).catch(() => undefined);
 }

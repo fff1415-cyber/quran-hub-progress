@@ -12,6 +12,7 @@ import {
   isSupervisorForceRetryCandidate,
 } from "@/lib/sard-phased-flow";
 import { getCalendarDayKey, getCalendarIsoDate } from "@/lib/operational-date";
+import { getSessionName } from "@/lib/session-role";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
@@ -57,7 +58,7 @@ export function DailyOperations() {
   const todayISO = calendar?.operationalDate ?? getCalendarIsoDate();
   const todayKey = calendar?.currentDayKey ?? getCalendarDayKey();
   const currentWeek = calendar?.currentWeekNumber ?? 1;
-  const me = typeof window !== "undefined" ? sessionStorage.getItem("qs_name") || "الإداري" : "الإداري";
+  const me = getSessionName("الإداري");
 
   useEffect(() => {
     fetchActiveCalendar().then(setCalendar).catch(() => {});

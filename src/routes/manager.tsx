@@ -35,7 +35,7 @@ const VALID_SECTIONS: Record<MainTab, string[]> = {
   finances: ["ledger"],
   staff: ["monitor"],
   grades: ["sard", "items", "weekly", "staff-settings"],
-  settings: ["branding", "kiosk", "semesters", "messages", "teacher-features", "student-portal"],
+  settings: ["branding", "kiosk", "semesters", "messages", "push-notifications", "teacher-features", "student-portal"],
 };
 
 function resolveMainTab(raw?: string): MainTab {

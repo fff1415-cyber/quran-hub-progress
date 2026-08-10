@@ -16,6 +16,7 @@ require_once __DIR__ . '/tenant_resolve.php';
 require_once __DIR__ . '/complex_branding.php';
 require_once __DIR__ . '/kiosk.php';
 require_once __DIR__ . '/platform_admin.php';
+require_once __DIR__ . '/push.php';
 
 function route_request(string $method, string $path): void
 {
@@ -225,6 +226,22 @@ function route_request(string $method, string $path): void
     }
     if ($path === '/platform/revoke-access' && $method === 'POST') {
         handle_platform_revoke_access();
+        return;
+    }
+    if ($path === '/push/vapid-public-key' && $method === 'GET') {
+        handle_push_vapid_public();
+        return;
+    }
+    if ($path === '/push/subscribe' && $method === 'POST') {
+        handle_push_subscribe();
+        return;
+    }
+    if ($path === '/push/unsubscribe' && $method === 'POST') {
+        handle_push_unsubscribe();
+        return;
+    }
+    if ($path === '/push/dispatch' && $method === 'POST') {
+        handle_push_dispatch();
         return;
     }
 

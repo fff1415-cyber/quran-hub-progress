@@ -1,4 +1,5 @@
 /** Teacher-entered numeric grades — separate from core week percentage. */
+import { hasAuthToken } from "@/lib/auth-session";
 
 import {
   SCIENTIFIC_PROGRAM_ID,
@@ -61,7 +62,7 @@ export function defaultScientificConfig(): ScientificGradesConfig {
 }
 
 function persist(store: ScientificGradesStore) {
-  if (typeof window === "undefined" || !sessionStorage.getItem("qs_token")) return;
+  if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync").then((m) => m.pushAppState("scientific_grades", store)).catch(() => undefined);
 }

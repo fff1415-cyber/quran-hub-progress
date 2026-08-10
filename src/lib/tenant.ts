@@ -1,6 +1,7 @@
 import { buildRphpUrl } from "@/lib/api-base";
 import { getBrandTheme, type BrandThemeKey } from "@/lib/brand-themes";
-import { ensureTenantIsolation } from "@/lib/tenant-session";
+import { clearTenantSession, ensureTenantIsolation, setTenantSession } from "@/lib/tenant-session";
+import { getAuthItem } from "@/lib/auth-session";
 import defaultLogo from "@/assets/shtaiwi-logo.png.asset.json";
 
 export type TenantInfo = {
@@ -133,9 +134,7 @@ export function tenantPath(path: string): string {
   const slug =
     parseTenantSlugFromPath(window.location.pathname) ??
     getCachedTenant()?.subdomain ??
-    (typeof sessionStorage !== "undefined"
-      ? sessionStorage.getItem("qs_tenant_subdomain")
-      : null);
+    getAuthItem("qs_tenant_subdomain");
   if (!slug) {
     return path.startsWith("/") ? path : `/${path}`;
   }
@@ -470,11 +469,7 @@ export function setCachedTenant(tenant: TenantInfo | null, platform = false): vo
   cachedTenant = tenant;
   cachedPlatformMode = platform;
   if (platform) {
-    if (typeof sessionStorage !== "undefined") {
-      sessionStorage.removeItem("qs_complex");
-      sessionStorage.removeItem("qs_tenant_subdomain");
-      sessionStorage.removeItem("qs_tenant_name");
-    }
+    clearTenantSession();
     applyPlatformTheme();
     return;
   }
@@ -482,11 +477,7 @@ export function setCachedTenant(tenant: TenantInfo | null, platform = false): vo
     return;
   }
   ensureTenantIsolation(tenant);
-  if (typeof sessionStorage !== "undefined") {
-    sessionStorage.setItem("qs_complex", String(tenant.id));
-    sessionStorage.setItem("qs_tenant_subdomain", tenant.subdomain);
-    sessionStorage.setItem("qs_tenant_name", tenant.name);
-  }
+  setTenantSession(tenant);
   applyTenantTheme(tenant);
   if (typeof document !== "undefined") {
     document.title = tenant.name;
@@ -504,13 +495,11 @@ export function getActiveComplexId(): number | undefined {
   if (cachedTenant?.id) {
     return cachedTenant.id;
   }
-  if (typeof sessionStorage !== "undefined") {
-    const fromSession = sessionStorage.getItem("qs_complex");
-    if (fromSession) {
-      const n = Number(fromSession);
-      if (Number.isFinite(n) && n > 0) {
-        return n;
-      }
+  const fromSession = getAuthItem("qs_complex");
+  if (fromSession) {
+    const n = Number(fromSession);
+    if (Number.isFinite(n) && n > 0) {
+      return n;
     }
   }
   const raw = import.meta.env.VITE_COMPLEX_ID;

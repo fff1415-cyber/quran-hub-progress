@@ -2,6 +2,7 @@
  * Staff (teacher/assistant) attendance — start time from daily Asr + offset.
  * Check-in is never blocked; late status applies after grace minutes.
  */
+import { hasAuthToken } from "@/lib/auth-session";
 
 export type StaffCheckInStatus = "present" | "late";
 
@@ -51,13 +52,13 @@ const KEY_STORE = "qshatawi_staff_attendance_v1";
 const KEY_PRAYER_PREFIX = "qshatawi_prayer_asr_v1_";
 
 function persistSettings(value: StaffAttendanceSettings) {
-  if (typeof window === "undefined" || !sessionStorage.getItem("qs_token")) return;
+  if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync").then((m) => m.pushAppState("staff_attendance_settings", value)).catch(() => undefined);
 }
 
 function persistStore(value: StaffCheckIn[]) {
-  if (typeof window === "undefined" || !sessionStorage.getItem("qs_token")) return;
+  if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync").then((m) => m.pushAppState("staff_attendance", value)).catch(() => undefined);
 }
