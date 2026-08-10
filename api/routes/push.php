@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/push_send.php';
+require_once __DIR__ . '/../push_send.php';
 
 const PUSH_SUBSCRIPTIONS_KEY = 'push_subscriptions';
 const PUSH_SETTINGS_KEY = 'push_notification_settings';
