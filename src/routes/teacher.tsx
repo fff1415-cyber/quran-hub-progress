@@ -18,7 +18,6 @@ import {
 import { cn } from "@/lib/utils";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { getAuthItem } from "@/lib/auth-session";
-import { getToken, syncFromCloud } from "@/lib/cloud-sync";
 import { useTenant } from "@/contexts/TenantContext";
 import { dispatchPushEvent } from "@/lib/push-notifications";
 import { tenantPath } from "@/lib/tenant";
@@ -70,8 +69,8 @@ import {
 } from "@/lib/scientific-grades";
 
 export const teacherSearchSchema = z.object({
-  h: z.number().optional(),
-  w: z.number().optional(),
+  h: z.coerce.number().optional(),
+  w: z.coerce.number().optional(),
   view: z.enum(["grades", "tests", "programs", "tarbawi"]).optional(),
 });
 
@@ -86,9 +85,9 @@ export function TeacherPage() {
   const navigate = useNavigate();
   const { loading: tenantLoading } = useTenant();
   const [halaqat, setHalaqat] = useState(() => loadHalaqat());
-  const [resolvingHalaqat, setResolvingHalaqat] = useState(false);
   const sessionHalaqaId = Number(getAuthItem("qs_halaqa") ?? 0) || undefined;
-  const resolvedH = h ?? sessionHalaqaId;
+  const hNum = h != null && !Number.isNaN(Number(h)) ? Number(h) : undefined;
+  const resolvedH = hNum ?? sessionHalaqaId;
   const [role, setRole] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
@@ -101,33 +100,19 @@ export function TeacherPage() {
   }, [tenantLoading]);
 
   useEffect(() => {
-    if (tenantLoading || halaqat.length > 0 || !getToken()) return;
-    let cancelled = false;
-    setResolvingHalaqat(true);
-    void syncFromCloud()
-      .then(() => {
-        if (!cancelled) setHalaqat(loadHalaqat());
-      })
-      .finally(() => {
-        if (!cancelled) setResolvingHalaqat(false);
-      });
-    return () => { cancelled = true; };
-  }, [tenantLoading, halaqat.length]);
-
-  useEffect(() => {
     setRole(getSessionRole());
     setName(getSessionName());
   }, []);
 
   useEffect(() => {
-    if (h || tenantLoading || resolvingHalaqat) return;
+    if (hNum || tenantLoading) return;
     const r = getSessionRole();
     const isElevated = r === "manager" || r === "secretary" || r === "supervisor";
     const fallback = sessionHalaqaId ?? (isElevated ? halaqat[0]?.id : undefined);
     if (fallback) {
       navigate({ to: tenantPath("/teacher"), search: { h: fallback, w, view }, replace: true });
     }
-  }, [h, sessionHalaqaId, halaqat, tenantLoading, resolvingHalaqat, w, view, navigate]);
+  }, [hNum, sessionHalaqaId, halaqat, tenantLoading, w, view, navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -174,12 +159,7 @@ export function TeacherPage() {
   const canManagePrograms = role === "teacher";
   const programsReadOnly = role === "manager";
 
-  const waitingForHalaqat =
-    tenantLoading ||
-    resolvingHalaqat ||
-    (Boolean(getToken()) && halaqat.length === 0 && (Boolean(resolvedH) || !h));
-
-  if (waitingForHalaqat) {
+  if (tenantLoading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
         <Loader2 className="w-8 h-8 animate-spin text-primary" />
