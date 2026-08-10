@@ -17,6 +17,9 @@ import {
 } from "@/lib/academic-context";
 import { cn } from "@/lib/utils";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
+import { getAuthItem } from "@/lib/auth-session";
+import { getToken, syncFromCloud } from "@/lib/cloud-sync";
+import { useTenant } from "@/contexts/TenantContext";
 import { dispatchPushEvent } from "@/lib/push-notifications";
 import { tenantPath } from "@/lib/tenant";
 import { AppHeader } from "@/components/AppHeader";
@@ -81,8 +84,11 @@ export function TeacherPage() {
   const { h, w, view: viewParam } = useSearch({ strict: false }) as z.infer<typeof teacherSearchSchema>;
   const view = viewParam ?? "grades";
   const navigate = useNavigate();
-  const halaqat = loadHalaqat();
-  const halaqa = halaqat.find((x) => x.id === h);
+  const { loading: tenantLoading } = useTenant();
+  const [halaqat, setHalaqat] = useState(() => loadHalaqat());
+  const [resolvingHalaqat, setResolvingHalaqat] = useState(false);
+  const sessionHalaqaId = Number(getAuthItem("qs_halaqa") ?? 0) || undefined;
+  const resolvedH = h ?? sessionHalaqaId;
   const [role, setRole] = useState<string | null>(null);
   const [name, setName] = useState<string | null>(null);
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
@@ -90,9 +96,38 @@ export function TeacherPage() {
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
 
   useEffect(() => {
+    if (tenantLoading) return;
+    setHalaqat(loadHalaqat());
+  }, [tenantLoading]);
+
+  useEffect(() => {
+    if (tenantLoading || halaqat.length > 0 || !getToken()) return;
+    let cancelled = false;
+    setResolvingHalaqat(true);
+    void syncFromCloud()
+      .then(() => {
+        if (!cancelled) setHalaqat(loadHalaqat());
+      })
+      .finally(() => {
+        if (!cancelled) setResolvingHalaqat(false);
+      });
+    return () => { cancelled = true; };
+  }, [tenantLoading, halaqat.length]);
+
+  useEffect(() => {
     setRole(getSessionRole());
     setName(getSessionName());
   }, []);
+
+  useEffect(() => {
+    if (h || tenantLoading || resolvingHalaqat) return;
+    const r = getSessionRole();
+    const isElevated = r === "manager" || r === "secretary" || r === "supervisor";
+    const fallback = sessionHalaqaId ?? (isElevated ? halaqat[0]?.id : undefined);
+    if (fallback) {
+      navigate({ to: tenantPath("/teacher"), search: { h: fallback, w, view }, replace: true });
+    }
+  }, [h, sessionHalaqaId, halaqat, tenantLoading, resolvingHalaqat, w, view, navigate]);
 
   useEffect(() => {
     let cancelled = false;
@@ -121,6 +156,7 @@ export function TeacherPage() {
   const isManager = role === "manager";
   const elevated = isManager || role === "secretary" || role === "supervisor";
   const roleLabel = isAssistant ? "مساعد" : isManager ? "مدير" : elevated ? "مشرف" : "معلم";
+  const halaqa = resolvedH ? halaqat.find((x) => x.id === resolvedH) : undefined;
 
   const handleWeekChange = (weekNum: number) => {
     setSelectedWeek(weekNum);
@@ -137,6 +173,19 @@ export function TeacherPage() {
 
   const canManagePrograms = role === "teacher";
   const programsReadOnly = role === "manager";
+
+  const waitingForHalaqat =
+    tenantLoading ||
+    resolvingHalaqat ||
+    (Boolean(getToken()) && halaqat.length === 0 && (Boolean(resolvedH) || !h));
+
+  if (waitingForHalaqat) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+      </div>
+    );
+  }
 
   if (!halaqa) {
     return (

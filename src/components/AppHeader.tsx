@@ -8,6 +8,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
+import { getAuthItem } from "@/lib/auth-session";
 import { clearPortalSession } from "@/lib/student-portal-auth";
 import { teardownPushOnLogout } from "@/lib/push-notifications";
 import { loadHalaqat } from "@/lib/mock-data";
@@ -52,7 +53,11 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
   const isManager = role === "manager";
 
   const items = NAV.filter((n) => n.roles.length === 0 || n.roles.includes(role));
-  const halaqat = useMemo(() => (isManager ? loadHalaqat() : []), [isManager]);
+  const halaqat = useMemo(() => (isManager ? loadHalaqat() : []), [isManager, open]);
+  const teacherHalaqaSearch = useMemo(() => {
+    const id = Number(getAuthItem("qs_halaqa") ?? 0);
+    return id ? { h: id } : undefined;
+  }, [open]);
 
   const goBack = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -93,11 +98,12 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
               <nav className="mt-6 space-y-1">
                 {items.map((item) => {
                   const Icon = item.icon;
+                  const search = item.to === "/teacher" ? teacherHalaqaSearch : item.search;
                   return (
                     <Link
                       key={item.to}
                       to={tenantPath(item.to)}
-                      search={item.search}
+                      search={search}
                       onClick={() => setOpen(false)}
                       className={navLinkClass}
                     >

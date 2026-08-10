@@ -29,7 +29,7 @@ export function ensureTenantIsolation(tenant: { id: number; subdomain: string })
   const prevSub = getAuthItem("qs_tenant_subdomain");
   const prevComplex = getAuthItem("qs_complex");
   const mismatch =
-    prevSub !== tenant.subdomain ||
+    (prevSub != null && prevSub !== "" && prevSub !== tenant.subdomain) ||
     (prevComplex != null && Number(prevComplex) !== tenant.id);
   if (!mismatch) return;
   clearAuthSession();
