@@ -63,7 +63,7 @@ function rowToStudent(r: CloudStudentRow): Student {
   return {
     id: r.id,
     name: r.name,
-    halaqaId: r.halaqa_id,
+    halaqaId: Number(r.halaqa_id),
     nationalId: r.national_id ?? "",
     parentPhone: r.parent_phone ?? "",
     studentPhone: r.student_phone ?? undefined,
@@ -77,7 +77,7 @@ function rowToStudent(r: CloudStudentRow): Student {
 }
 function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
   return {
-    id: r.id,
+    id: Number(r.id),
     name: r.name,
     isTalqeen: Boolean(r.is_talqeen),
     teacherName: r.teacher_name,
@@ -134,82 +134,89 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       students = (s as CloudStudentRow[]).map(rowToStudent);
     }
 
+    // Persist core roster first — app-state/calendar failures must not wipe halaqat cache.
+    saveHalaqat(halaqat);
+    saveStudents(students);
+
     if (token) {
-      const calendar = await fetchActiveCalendar(true);
-      const semesterReset = ensureGradesSemester(calendar.semester?.id ?? null);
-      const weeklyTestsReset = ensureWeeklyTestsSemester(calendar.semester?.id ?? null);
-      const tarbawiReset = ensureTarbawiSemester(calendar.semester?.id ?? null);
+      try {
+        const calendar = await fetchActiveCalendar(true);
+        const semesterReset = ensureGradesSemester(calendar.semester?.id ?? null);
+        const weeklyTestsReset = ensureWeeklyTestsSemester(calendar.semester?.id ?? null);
+        const tarbawiReset = ensureTarbawiSemester(calendar.semester?.id ?? null);
 
-      const stateRows = await secureListAppState({ data: { token } });
-      const state = new Map(stateRows.map((row) => [row.key, row.value]));
-      sessionStorage.setItem("qs_syncing", "1");
-      if (!semesterReset && state.has("grades")) saveGrades(state.get("grades") as GradesStore);
-      if (!weeklyTestsReset && state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
-      if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
-      if (state.has("staff_attendance_settings")) saveStaffAttendanceSettings(state.get("staff_attendance_settings") as import("./staff-attendance").StaffAttendanceSettings);
-      if (state.has("staff_attendance")) saveStaffCheckIns(state.get("staff_attendance") as import("./staff-attendance").StaffCheckIn[]);
-      if (state.has("sard_queue")) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
-      if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
-      if (state.has("academic_records")) saveAcademicRecords(state.get("academic_records") as AcademicPhaseRecord[]);
-      if (state.has("halaqa_programs")) saveAllHalaqaPrograms(state.get("halaqa_programs") as HalaqaProgramsStore);
-      if (state.has("halaqa_program_grades")) saveAllProgramGrades(state.get("halaqa_program_grades") as HalaqaProgramGradesStore);
-      if (state.has("scientific_grades")) {
-        const { replaceScientificGradesStore } = await import("./scientific-grades");
-        replaceScientificGradesStore(state.get("scientific_grades") as import("./scientific-grades").ScientificGradesStore);
-      }
-      if (state.has("notifications")) saveNotifications(state.get("notifications") as Notification[]);
-      if (state.has("message_templates")) saveMessageTemplates(state.get("message_templates") as Record<MessageTemplateKey, string>);
-      if (state.has("late_permissions")) saveLatePermissions(state.get("late_permissions") as LatePermission[]);
-      if (state.has("student_portal_settings")) saveStudentPortalVisibility(state.get("student_portal_settings") as StudentPortalVisibility);
-      if (state.has("push_notification_settings")) {
-        savePushNotificationSettings(state.get("push_notification_settings") as PushNotificationSettings);
-      }
-      if (state.has("complex_features")) saveComplexFeatures(state.get("complex_features") as ComplexFeatures);
-      if (state.has("financial_ledger")) saveFinancialLedger(state.get("financial_ledger") as FinancialLedgerStore);
-      if (!tarbawiReset && state.has("tarbawi_program")) {
-        const cloud = state.get("tarbawi_program") as TarbawiStore;
-        const local = loadTarbawiStore();
-        const { merged, pushToCloud } = mergeTarbawiStores(local, cloud);
-        saveTarbawiStore(merged);
-        if (pushToCloud) {
-          try {
-            await secureSetAppState({ data: { token, key: "tarbawi_program", value: merged } });
-          } catch {
-            /* local merge kept — will retry on next save */
+        const stateRows = await secureListAppState({ data: { token } });
+        const state = new Map(stateRows.map((row) => [row.key, row.value]));
+        sessionStorage.setItem("qs_syncing", "1");
+        if (!semesterReset && state.has("grades")) saveGrades(state.get("grades") as GradesStore);
+        if (!weeklyTestsReset && state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
+        if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
+        if (state.has("staff_attendance_settings")) saveStaffAttendanceSettings(state.get("staff_attendance_settings") as import("./staff-attendance").StaffAttendanceSettings);
+        if (state.has("staff_attendance")) saveStaffCheckIns(state.get("staff_attendance") as import("./staff-attendance").StaffCheckIn[]);
+        if (state.has("sard_queue")) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
+        if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
+        if (state.has("academic_records")) saveAcademicRecords(state.get("academic_records") as AcademicPhaseRecord[]);
+        if (state.has("halaqa_programs")) saveAllHalaqaPrograms(state.get("halaqa_programs") as HalaqaProgramsStore);
+        if (state.has("halaqa_program_grades")) saveAllProgramGrades(state.get("halaqa_program_grades") as HalaqaProgramGradesStore);
+        if (state.has("scientific_grades")) {
+          const { replaceScientificGradesStore } = await import("./scientific-grades");
+          replaceScientificGradesStore(state.get("scientific_grades") as import("./scientific-grades").ScientificGradesStore);
+        }
+        if (state.has("notifications")) saveNotifications(state.get("notifications") as Notification[]);
+        if (state.has("message_templates")) saveMessageTemplates(state.get("message_templates") as Record<MessageTemplateKey, string>);
+        if (state.has("late_permissions")) saveLatePermissions(state.get("late_permissions") as LatePermission[]);
+        if (state.has("student_portal_settings")) saveStudentPortalVisibility(state.get("student_portal_settings") as StudentPortalVisibility);
+        if (state.has("push_notification_settings")) {
+          savePushNotificationSettings(state.get("push_notification_settings") as PushNotificationSettings);
+        }
+        if (state.has("complex_features")) saveComplexFeatures(state.get("complex_features") as ComplexFeatures);
+        if (state.has("financial_ledger")) saveFinancialLedger(state.get("financial_ledger") as FinancialLedgerStore);
+        if (!tarbawiReset && state.has("tarbawi_program")) {
+          const cloud = state.get("tarbawi_program") as TarbawiStore;
+          const local = loadTarbawiStore();
+          const { merged, pushToCloud } = mergeTarbawiStores(local, cloud);
+          saveTarbawiStore(merged);
+          if (pushToCloud) {
+            try {
+              await secureSetAppState({ data: { token, key: "tarbawi_program", value: merged } });
+            } catch {
+              /* local merge kept — will retry on next save */
+            }
+          }
+        } else if (!tarbawiReset && !state.has("tarbawi_program")) {
+          const local = loadTarbawiStore();
+          const hasLocal = Object.keys(local.settingsBySemester).length > 0 || Object.keys(local.plans).length > 0;
+          if (hasLocal) {
+            try {
+              await secureSetAppState({ data: { token, key: "tarbawi_program", value: local } });
+            } catch {
+              /* ignore */
+            }
           }
         }
-      } else if (!tarbawiReset && !state.has("tarbawi_program")) {
-        const local = loadTarbawiStore();
-        const hasLocal = Object.keys(local.settingsBySemester).length > 0 || Object.keys(local.plans).length > 0;
-        if (hasLocal) {
+        sessionStorage.removeItem("qs_syncing");
+
+        if (semesterReset) {
           try {
-            await secureSetAppState({ data: { token, key: "tarbawi_program", value: local } });
+            await secureSetAppState({ data: { token, key: "grades", value: {} } });
+            await secureSetAppState({ data: { token, key: "weekly_tests", value: {} } });
           } catch {
-            /* ignore */
+            /* local reset is enough */
           }
         }
-      }
-      sessionStorage.removeItem("qs_syncing");
-
-      if (semesterReset) {
-        try {
-          await secureSetAppState({ data: { token, key: "grades", value: {} } });
-          await secureSetAppState({ data: { token, key: "weekly_tests", value: {} } });
-        } catch {
-          /* local reset is enough */
+        if (tarbawiReset) {
+          try {
+            await secureSetAppState({ data: { token, key: "tarbawi_program", value: { settingsBySemester: {}, plans: {} } } });
+          } catch {
+            /* local reset is enough */
+          }
         }
-      }
-      if (tarbawiReset) {
-        try {
-          await secureSetAppState({ data: { token, key: "tarbawi_program", value: { settingsBySemester: {}, plans: {} } } });
-        } catch {
-          /* local reset is enough */
-        }
+      } catch (stateErr) {
+        sessionStorage.removeItem("qs_syncing");
+        console.warn("Cloud app-state sync failed (roster kept):", stateErr);
       }
     }
 
-    saveHalaqat(halaqat);
-    saveStudents(students);
     return { students, halaqat };
   } catch (e) {
     console.warn("Cloud sync failed, using local cache:", e);

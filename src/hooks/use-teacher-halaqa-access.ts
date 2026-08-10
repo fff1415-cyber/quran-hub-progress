@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useTenant } from "@/contexts/TenantContext";
-import { getToken } from "@/lib/auth-session";
+import { ensureSessionFromToken, getToken } from "@/lib/auth-session";
 import { syncFromCloud } from "@/lib/cloud-sync";
 import type { Halaqa } from "@/lib/mock-data";
 import {
-  findHalaqaById,
+  findHalaqaForTeacher,
+  getSessionHalaqaId,
+  persistSessionHalaqaId,
   pickTeacherHalaqaRedirectId,
   readLocalHalaqat,
   resolveTeacherHalaqaId,
@@ -16,24 +18,43 @@ export type TeacherHalaqaAccessState =
   | { phase: "ready"; halaqa: Halaqa; halaqat: Halaqa[]; resolvedH: number }
   | { phase: "missing"; halaqat: Halaqa[]; resolvedH?: number };
 
+function needsHalaqaSync(halaqat: Halaqa[], preferredH?: number): boolean {
+  if (halaqat.length === 0) return true;
+  if (!preferredH) return false;
+  return !findHalaqaForTeacher(halaqat, preferredH);
+}
+
 /**
  * Resolve the teacher's halaqa after tenant sync completes.
- * Reads localStorage synchronously (never stale React state) and runs one
- * fallback cloud sync if authenticated cache is still empty.
+ * Reads localStorage synchronously and runs one fallback cloud sync when needed.
  */
 export function useTeacherHalaqaAccess(urlH: unknown): TeacherHalaqaAccessState {
   const { loading: tenantLoading } = useTenant();
   const syncGen = useRef(0);
+  const syncAttempted = useRef(false);
   const [fallbackSyncing, setFallbackSyncing] = useState(false);
   const [cacheRevision, setCacheRevision] = useState(0);
 
   useEffect(() => {
     if (tenantLoading) {
+      syncAttempted.current = false;
       setFallbackSyncing(false);
       return;
     }
-    if (!getToken() || readLocalHalaqat().length > 0) return;
 
+    ensureSessionFromToken();
+
+    if (!getToken()) return;
+
+    const preferredH = resolveTeacherHalaqaId(urlH);
+    const halaqat = readLocalHalaqat();
+    if (!needsHalaqaSync(halaqat, preferredH)) {
+      syncAttempted.current = false;
+      return;
+    }
+    if (syncAttempted.current) return;
+
+    syncAttempted.current = true;
     const gen = ++syncGen.current;
     setFallbackSyncing(true);
     void syncFromCloud().finally(() => {
@@ -41,7 +62,17 @@ export function useTeacherHalaqaAccess(urlH: unknown): TeacherHalaqaAccessState 
       setFallbackSyncing(false);
       setCacheRevision((n) => n + 1);
     });
-  }, [tenantLoading]);
+  }, [tenantLoading, urlH]);
+
+  useEffect(() => {
+    if (tenantLoading || fallbackSyncing) return;
+    ensureSessionFromToken();
+    const preferredH = resolveTeacherHalaqaId(urlH);
+    const halaqa = findHalaqaForTeacher(readLocalHalaqat(), preferredH);
+    if (halaqa && getSessionHalaqaId() !== halaqa.id) {
+      persistSessionHalaqaId(halaqa.id);
+    }
+  }, [tenantLoading, fallbackSyncing, urlH, cacheRevision]);
 
   void cacheRevision;
 
@@ -49,23 +80,23 @@ export function useTeacherHalaqaAccess(urlH: unknown): TeacherHalaqaAccessState 
     return { phase: "loading" };
   }
 
+  ensureSessionFromToken();
+
   const halaqat = readLocalHalaqat();
-  const resolvedH = resolveTeacherHalaqaId(urlH);
+  const preferredH = resolveTeacherHalaqaId(urlH);
+  const halaqa = findHalaqaForTeacher(halaqat, preferredH);
 
-  if (!resolvedH) {
-    const redirectId = pickTeacherHalaqaRedirectId(halaqat);
-    if (redirectId) return { phase: "redirect", halaqaId: redirectId };
-    return { phase: "missing", halaqat };
-  }
-
-  const halaqa = findHalaqaById(halaqat, resolvedH);
-  if (!halaqa) {
-    const redirectId = pickTeacherHalaqaRedirectId(halaqat);
-    if (redirectId && redirectId !== resolvedH) {
-      return { phase: "redirect", halaqaId: redirectId };
+  if (halaqa) {
+    if (!preferredH || preferredH !== halaqa.id) {
+      return { phase: "redirect", halaqaId: halaqa.id };
     }
-    return { phase: "missing", halaqat, resolvedH };
+    return { phase: "ready", halaqa, halaqat, resolvedH: halaqa.id };
   }
 
-  return { phase: "ready", halaqa, halaqat, resolvedH };
+  const redirectId = pickTeacherHalaqaRedirectId(halaqat);
+  if (redirectId) {
+    return { phase: "redirect", halaqaId: redirectId };
+  }
+
+  return { phase: "missing", halaqat, resolvedH: preferredH };
 }

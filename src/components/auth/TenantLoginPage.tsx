@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { loginByCode, loginByNationalId } from "@/lib/secure-data.functions";
 import { setToken, syncFromCloud } from "@/lib/cloud-sync";
 import { setPortalMode } from "@/lib/student-portal-auth";
-import { clearAuthSession, getToken, isTokenExpired, removeAuthItem, setAuthItem } from "@/lib/auth-session";
+import { clearAuthSession, getToken, isTokenExpired, removeAuthItem, setAuthItem, ensureSessionFromToken } from "@/lib/auth-session";
 import { navigateBySessionRole } from "@/lib/auth-redirect";
 import { initPushAfterLogin } from "@/lib/push-notifications";
 import { getSessionRole } from "@/lib/session-role";
@@ -40,7 +40,9 @@ export function TenantLoginPage() {
     let cancelled = false;
     (async () => {
       try {
+        ensureSessionFromToken();
         await syncFromCloud();
+        ensureSessionFromToken();
         if (cancelled) return;
         void initPushAfterLogin();
         if (!navigateBySessionRole(navigate)) {

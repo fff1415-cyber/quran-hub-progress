@@ -17,7 +17,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Clock, Loader2, UserCheck } from "lucide-react";
 import { toast, Toaster } from "sonner";
-import { halaqaSearchParamSchema, resolveTeacherHalaqaId, readLocalHalaqat, findHalaqaById } from "@/lib/teacher-halaqa-access";
+import { findHalaqaById, findHalaqaForTeacher, halaqaSearchParamSchema, readLocalHalaqat, resolveTeacherHalaqaId } from "@/lib/teacher-halaqa-access";
 import { useTenant } from "@/contexts/TenantContext";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { dispatchPushEvent } from "@/lib/push-notifications";
@@ -45,8 +45,8 @@ export function StaffAttendancePage() {
 
   const settings = loadStaffAttendanceSettings();
   const halaqat = tenantLoading ? [] : readLocalHalaqat();
-  const halaqaId = resolveTeacherHalaqaId(h);
-  const halaqa = findHalaqaById(halaqat, halaqaId);
+  const halaqa = findHalaqaForTeacher(halaqat, resolveTeacherHalaqaId(h));
+  const halaqaId = halaqa?.id ?? resolveTeacherHalaqaId(h);
 
   useEffect(() => {
     setRole(getSessionRole());

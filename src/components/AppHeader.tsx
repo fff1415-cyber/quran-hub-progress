@@ -8,7 +8,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { cn } from "@/lib/utils";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
-import { getSessionHalaqaId } from "@/lib/teacher-halaqa-access";
+import { getSessionHalaqaId, getTokenHalaqaId } from "@/lib/teacher-halaqa-access";
 import { clearPortalSession } from "@/lib/student-portal-auth";
 import { teardownPushOnLogout } from "@/lib/push-notifications";
 import { loadHalaqat } from "@/lib/mock-data";
@@ -55,7 +55,7 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
   const items = NAV.filter((n) => n.roles.length === 0 || n.roles.includes(role));
   const halaqat = useMemo(() => (isManager ? loadHalaqat() : []), [isManager, open]);
   const teacherHalaqaSearch = useMemo(() => {
-    const id = getSessionHalaqaId();
+    const id = getSessionHalaqaId() ?? getTokenHalaqaId();
     return id ? { h: id } : undefined;
   }, [open]);
 

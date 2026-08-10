@@ -1,6 +1,6 @@
 import { z } from "zod";
-import { getAuthItem } from "@/lib/auth-session";
-import { getSessionRole } from "@/lib/session-role";
+import { decodeAuthTokenPayload, getAuthItem, setAuthItem } from "@/lib/auth-session";
+import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { loadHalaqat, type Halaqa } from "@/lib/mock-data";
 
 /** Normalize ?h= from URL (string/number/empty) to a positive id or undefined. */
@@ -19,19 +19,46 @@ export function getSessionHalaqaId(): number | undefined {
   return parseHalaqaSearchParam(getAuthItem("qs_halaqa"));
 }
 
+export function getTokenHalaqaId(): number | undefined {
+  return decodeAuthTokenPayload()?.halaqaId;
+}
+
 export function resolveTeacherHalaqaId(urlH: unknown): number | undefined {
-  return parseHalaqaSearchParam(urlH) ?? getSessionHalaqaId();
+  return parseHalaqaSearchParam(urlH) ?? getSessionHalaqaId() ?? getTokenHalaqaId();
+}
+
+export function persistSessionHalaqaId(id: number): void {
+  setAuthItem("qs_halaqa", String(id));
 }
 
 export function findHalaqaById(halaqat: Halaqa[], id?: number): Halaqa | undefined {
   if (!id) return undefined;
-  return halaqat.find((x) => x.id === id);
+  return halaqat.find((x) => Number(x.id) === id);
+}
+
+/** Match halaqa by id, else by teacher/assistant name from session or JWT. */
+export function findHalaqaForTeacher(halaqat: Halaqa[], preferredId?: number): Halaqa | undefined {
+  const byId = findHalaqaById(halaqat, preferredId);
+  if (byId) return byId;
+
+  const payload = decodeAuthTokenPayload();
+  const role = getSessionRole() || payload?.role || "";
+  const name = (getSessionName() || payload?.name || "").trim();
+  if (!name) return undefined;
+
+  if (role === "teacher") {
+    return halaqat.find((h) => h.teacherName.trim() === name);
+  }
+  if (role === "assistant") {
+    return halaqat.find((h) => h.assistantName.trim() === name);
+  }
+  return undefined;
 }
 
 /** Pick a halaqa id for redirect when ?h= is missing from the URL. */
 export function pickTeacherHalaqaRedirectId(halaqat: Halaqa[]): number | undefined {
-  const sessionId = getSessionHalaqaId();
-  if (sessionId && halaqat.some((h) => h.id === sessionId)) return sessionId;
+  const matched = findHalaqaForTeacher(halaqat, resolveTeacherHalaqaId(undefined));
+  if (matched) return matched.id;
 
   const role = getSessionRole();
   const elevated = role === "manager" || role === "secretary" || role === "supervisor";
@@ -45,5 +72,5 @@ export function pickTeacherHalaqaRedirectId(halaqat: Halaqa[]): number | undefin
 }
 
 export function readLocalHalaqat(): Halaqa[] {
-  return loadHalaqat();
+  return loadHalaqat().map((h) => ({ ...h, id: Number(h.id) }));
 }

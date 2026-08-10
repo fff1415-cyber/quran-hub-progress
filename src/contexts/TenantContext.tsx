@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from "react";
 import { syncFromCloud } from "@/lib/cloud-sync";
+import { ensureSessionFromToken } from "@/lib/auth-session";
 import {
   PLATFORM_BRAND,
   fetchTenantBySubdomain,
@@ -66,6 +67,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
           setError(null);
           if (resolved) {
             await syncFromCloud();
+            ensureSessionFromToken();
           }
         }
       } catch (e) {

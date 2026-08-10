@@ -1,6 +1,6 @@
 import type { NavigateOptions } from "@tanstack/react-router";
 import { tenantPath } from "@/lib/tenant";
-import { getAuthItem } from "@/lib/auth-session";
+import { getAuthItem, decodeAuthTokenPayload } from "@/lib/auth-session";
 
 type NavigateFn = (opts: NavigateOptions) => void;
 
@@ -16,7 +16,10 @@ export function navigateBySessionRole(navigate: NavigateFn): boolean {
     return true;
   }
 
-  const halaqaId = Number(getAuthItem("qs_halaqa") ?? 0);
+  const halaqaId =
+    Number(getAuthItem("qs_halaqa") ?? 0) ||
+    decodeAuthTokenPayload()?.halaqaId ||
+    0;
 
   switch (role) {
     case "manager":
