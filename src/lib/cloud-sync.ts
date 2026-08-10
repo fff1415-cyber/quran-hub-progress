@@ -80,9 +80,9 @@ function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
     id: Number(r.id),
     name: r.name,
     isTalqeen: Boolean(r.is_talqeen),
-    teacherName: r.teacher_name,
+    teacherName: r.teacher_name ?? "",
     teacherCode: r.teacher_code ?? "",
-    assistantName: r.assistant_name,
+    assistantName: r.assistant_name ?? "",
     assistantCode: r.assistant_code ?? "",
   };
 }
@@ -115,6 +115,37 @@ function halaqaToRow(h: Halaqa): CloudHalaqaRow {
   };
 }
 
+/** Fetch halaqat from API — authenticated first, then public fallback. Always caches locally. */
+export async function fetchHalaqatRoster(): Promise<Halaqa[]> {
+  const token = getToken();
+  let rows: CloudHalaqaRow[] = [];
+
+  if (token) {
+    const auth = await Promise.allSettled([
+      secureListHalaqatFull({ data: { token } }),
+    ]);
+    if (auth[0].status === "fulfilled" && Array.isArray(auth[0].value)) {
+      rows = auth[0].value as CloudHalaqaRow[];
+    }
+  }
+
+  if (rows.length === 0) {
+    try {
+      const pub = await listPublicHalaqat();
+      if (Array.isArray(pub)) rows = pub as CloudHalaqaRow[];
+    } catch (e) {
+      console.warn("Public halaqat fetch failed:", e);
+    }
+  }
+
+  const halaqat = rows
+    .map(rowToHalaqa)
+    .filter((h) => Number.isFinite(h.id) && h.id > 0 && h.name.trim() !== "");
+
+  if (halaqat.length > 0) saveHalaqat(halaqat);
+  return halaqat;
+}
+
 export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: Halaqa[] } | null> {
   try {
     const token = getToken();
@@ -122,16 +153,40 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
     let students: Student[];
 
     if (token) {
-      const [h, s] = await Promise.all([
+      const [hResult, sResult] = await Promise.allSettled([
         secureListHalaqatFull({ data: { token } }),
         secureListStudents({ data: { token } }),
       ]);
-      halaqat = (h as CloudHalaqaRow[]).map(rowToHalaqa);
-      students = (s as CloudStudentRow[]).map(rowToStudent);
+      if (hResult.status === "fulfilled") {
+        halaqat = (hResult.value as CloudHalaqaRow[]).map(rowToHalaqa);
+      } else {
+        halaqat = await fetchHalaqatRoster();
+      }
+      if (sResult.status === "fulfilled") {
+        students = (sResult.value as CloudStudentRow[]).map(rowToStudent);
+      } else {
+        try {
+          students = ((await listPublicStudents()) as CloudStudentRow[]).map(rowToStudent);
+        } catch {
+          students = [];
+        }
+      }
     } else {
-      const [h, s] = await Promise.all([listPublicHalaqat(), listPublicStudents()]);
-      halaqat = (h as CloudHalaqaRow[]).map(rowToHalaqa);
-      students = (s as CloudStudentRow[]).map(rowToStudent);
+      const [hResult, sResult] = await Promise.allSettled([
+        listPublicHalaqat(),
+        listPublicStudents(),
+      ]);
+      halaqat =
+        hResult.status === "fulfilled"
+          ? (hResult.value as CloudHalaqaRow[]).map(rowToHalaqa)
+          : [];
+      students =
+        sResult.status === "fulfilled"
+          ? (sResult.value as CloudStudentRow[]).map(rowToStudent)
+          : [];
+      if (halaqat.length === 0) {
+        halaqat = await fetchHalaqatRoster();
+      }
     }
 
     // Persist core roster first — app-state/calendar failures must not wipe halaqat cache.

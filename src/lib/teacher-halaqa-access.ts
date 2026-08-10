@@ -31,6 +31,20 @@ export function persistSessionHalaqaId(id: number): void {
   setAuthItem("qs_halaqa", String(id));
 }
 
+function normalizePersonName(name: string): string {
+  return name
+    .trim()
+    .replace(/^أ\.?\s*/u, "")
+    .replace(/\s+/g, " ");
+}
+
+function namesMatch(stored: string, candidate: string): boolean {
+  const a = normalizePersonName(stored);
+  const b = normalizePersonName(candidate);
+  if (!a || !b) return false;
+  return a === b || a.includes(b) || b.includes(a);
+}
+
 export function findHalaqaById(halaqat: Halaqa[], id?: number): Halaqa | undefined {
   if (!id) return undefined;
   return halaqat.find((x) => Number(x.id) === id);
@@ -47,10 +61,10 @@ export function findHalaqaForTeacher(halaqat: Halaqa[], preferredId?: number): H
   if (!name) return undefined;
 
   if (role === "teacher") {
-    return halaqat.find((h) => h.teacherName.trim() === name);
+    return halaqat.find((h) => namesMatch(name, h.teacherName));
   }
   if (role === "assistant") {
-    return halaqat.find((h) => h.assistantName.trim() === name);
+    return halaqat.find((h) => namesMatch(name, h.assistantName));
   }
   return undefined;
 }
@@ -60,7 +74,7 @@ export function pickTeacherHalaqaRedirectId(halaqat: Halaqa[]): number | undefin
   const matched = findHalaqaForTeacher(halaqat, resolveTeacherHalaqaId(undefined));
   if (matched) return matched.id;
 
-  const role = getSessionRole();
+  const role = getSessionRole() || decodeAuthTokenPayload()?.role || "";
   const elevated = role === "manager" || role === "secretary" || role === "supervisor";
   if (elevated && halaqat[0]) return halaqat[0].id;
 

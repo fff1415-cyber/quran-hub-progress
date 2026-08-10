@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTenant } from "@/contexts/TenantContext";
-import { ensureSessionFromToken, getToken } from "@/lib/auth-session";
-import { syncFromCloud } from "@/lib/cloud-sync";
+import { ensureSessionFromToken } from "@/lib/auth-session";
+import { fetchHalaqatRoster } from "@/lib/cloud-sync";
 import type { Halaqa } from "@/lib/mock-data";
 import {
   findHalaqaForTeacher,
@@ -18,71 +18,70 @@ export type TeacherHalaqaAccessState =
   | { phase: "ready"; halaqa: Halaqa; halaqat: Halaqa[]; resolvedH: number }
   | { phase: "missing"; halaqat: Halaqa[]; resolvedH?: number };
 
-function needsHalaqaSync(halaqat: Halaqa[], preferredH?: number): boolean {
-  if (halaqat.length === 0) return true;
-  if (!preferredH) return false;
-  return !findHalaqaForTeacher(halaqat, preferredH);
+function cacheHasHalaqa(halaqat: Halaqa[], preferredH?: number): boolean {
+  if (halaqat.length === 0) return false;
+  if (!preferredH) return true;
+  return Boolean(findHalaqaForTeacher(halaqat, preferredH));
 }
 
 /**
- * Resolve the teacher's halaqa after tenant sync completes.
- * Reads localStorage synchronously and runs one fallback cloud sync when needed.
+ * Load halaqat for the teacher page directly from API when local cache is empty or stale.
  */
 export function useTeacherHalaqaAccess(urlH: unknown): TeacherHalaqaAccessState {
   const { loading: tenantLoading } = useTenant();
-  const syncGen = useRef(0);
-  const syncAttempted = useRef(false);
-  const [fallbackSyncing, setFallbackSyncing] = useState(false);
-  const [cacheRevision, setCacheRevision] = useState(0);
+  const fetchGen = useRef(0);
+  const [halaqat, setHalaqat] = useState<Halaqa[]>([]);
+  const [fetching, setFetching] = useState(true);
 
   useEffect(() => {
     if (tenantLoading) {
-      syncAttempted.current = false;
-      setFallbackSyncing(false);
+      setFetching(true);
       return;
     }
 
     ensureSessionFromToken();
-
-    if (!getToken()) return;
-
     const preferredH = resolveTeacherHalaqaId(urlH);
-    const halaqat = readLocalHalaqat();
-    if (!needsHalaqaSync(halaqat, preferredH)) {
-      syncAttempted.current = false;
+    const cached = readLocalHalaqat();
+
+    if (cacheHasHalaqa(cached, preferredH)) {
+      setHalaqat(cached);
+      setFetching(false);
       return;
     }
-    if (syncAttempted.current) return;
 
-    syncAttempted.current = true;
-    const gen = ++syncGen.current;
-    setFallbackSyncing(true);
-    void syncFromCloud().finally(() => {
-      if (gen !== syncGen.current) return;
-      setFallbackSyncing(false);
-      setCacheRevision((n) => n + 1);
-    });
+    const gen = ++fetchGen.current;
+    setFetching(true);
+    void fetchHalaqatRoster()
+      .then((list) => {
+        if (gen !== fetchGen.current) return;
+        const next = list.length > 0 ? list : readLocalHalaqat();
+        setHalaqat(next);
+      })
+      .catch(() => {
+        if (gen !== fetchGen.current) return;
+        setHalaqat(readLocalHalaqat());
+      })
+      .finally(() => {
+        if (gen === fetchGen.current) setFetching(false);
+      });
   }, [tenantLoading, urlH]);
 
   useEffect(() => {
-    if (tenantLoading || fallbackSyncing) return;
+    if (tenantLoading || fetching || halaqat.length === 0) return;
     ensureSessionFromToken();
     const preferredH = resolveTeacherHalaqaId(urlH);
-    const halaqa = findHalaqaForTeacher(readLocalHalaqat(), preferredH);
+    const halaqa = findHalaqaForTeacher(halaqat, preferredH);
     if (halaqa && getSessionHalaqaId() !== halaqa.id) {
       persistSessionHalaqaId(halaqa.id);
     }
-  }, [tenantLoading, fallbackSyncing, urlH, cacheRevision]);
+  }, [tenantLoading, fetching, halaqat, urlH]);
 
-  void cacheRevision;
-
-  if (tenantLoading || fallbackSyncing) {
+  if (tenantLoading || fetching) {
     return { phase: "loading" };
   }
 
   ensureSessionFromToken();
 
-  const halaqat = readLocalHalaqat();
   const preferredH = resolveTeacherHalaqaId(urlH);
   const halaqa = findHalaqaForTeacher(halaqat, preferredH);
 

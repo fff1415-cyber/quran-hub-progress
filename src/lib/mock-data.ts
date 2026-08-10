@@ -213,7 +213,10 @@ export function loadHalaqat(): Halaqa[] {
   const raw = localStorage.getItem(KEY_HALAQAT);
   return raw ? JSON.parse(raw) : [];
 }
-export function saveHalaqat(h: Halaqa[]) { localStorage.setItem(KEY_HALAQAT, JSON.stringify(h)); }
+export function saveHalaqat(h: Halaqa[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(KEY_HALAQAT, JSON.stringify(h));
+}
 
 export function loadGrades(): GradesStore {
   if (typeof window === "undefined") return {};
