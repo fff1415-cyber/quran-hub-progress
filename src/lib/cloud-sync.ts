@@ -29,6 +29,7 @@ import {
   secureSetAppState,
 } from "./secure-data.functions";
 import { fetchActiveCalendar } from "./academic-context";
+import { mergeAbsenceAlertRecordFromCloud, ABSENCE_ALERTS_APP_STATE_KEY } from "./semester-absence";
 import { getActiveComplexId } from "@/lib/tenant";
 import {
   getAuthItem,
@@ -268,6 +269,9 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
           replaceScientificGradesStore(state.get("scientific_grades") as import("./scientific-grades").ScientificGradesStore);
         }
         if (state.has("notifications")) saveNotifications(state.get("notifications") as Notification[]);
+        if (state.has(ABSENCE_ALERTS_APP_STATE_KEY)) {
+          mergeAbsenceAlertRecordFromCloud(state.get(ABSENCE_ALERTS_APP_STATE_KEY));
+        }
         if (state.has("message_templates")) saveMessageTemplates(state.get("message_templates") as Record<MessageTemplateKey, string>);
         if (state.has("late_permissions")) saveLatePermissions(state.get("late_permissions") as LatePermission[]);
         if (state.has("student_portal_settings")) saveStudentPortalVisibility(state.get("student_portal_settings") as StudentPortalVisibility);
@@ -405,7 +409,7 @@ export async function deleteRoleAccount(id: string) {
 }
 
 export async function pushAppState(
-  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_programs" | "halaqa_program_grades" | "scientific_grades" | "notifications" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings" | "staff_attendance" | "staff_attendance_settings" | "student_portal_settings" | "complex_features" | "push_notification_settings" | "tarbawi_program" | "financial_ledger",
+  key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_programs" | "halaqa_program_grades" | "scientific_grades" | "notifications" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings" | "staff_attendance" | "staff_attendance_settings" | "student_portal_settings" | "complex_features" | "push_notification_settings" | "tarbawi_program" | "financial_ledger" | typeof ABSENCE_ALERTS_APP_STATE_KEY,
   value: unknown,
 ) {
   await secureSetAppState({ data: { token: tokenOrThrow(), key, value } });
