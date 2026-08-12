@@ -295,7 +295,7 @@ export type TransferTargetRole = "manager" | "secretary" | "supervisor";
 /** Transfers routed to a role inbox (from manager forward or teacher → manager). */
 export function loadTransfersForRole(role: TransferTargetRole): Notification[] {
   return loadNotifications().filter((n) => {
-    if (n.type !== "transfer" || n.read) return false;
+    if (n.type !== "transfer" || n.read || !n.transferData) return false;
     if (role === "manager") {
       return (n.transferStatus === "pending" || !n.transferStatus) && !n.targetRole;
     }

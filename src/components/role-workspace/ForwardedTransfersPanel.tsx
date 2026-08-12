@@ -108,7 +108,8 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
         ) : (
           <div className="space-y-4">
             {items.map((n) => {
-              const td = n.transferData!;
+              const td = n.transferData;
+              if (!td) return null;
               const s = students.find((x) => x.id === td.studentId);
               const h = halaqat.find((x) => x.id === td.halaqaId);
               const pct = calendar && s && h

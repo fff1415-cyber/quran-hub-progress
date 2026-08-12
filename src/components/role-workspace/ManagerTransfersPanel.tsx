@@ -65,7 +65,7 @@ export function ManagerTransfersPanel() {
     [notifs],
   );
   const struggling = useMemo(
-    () => notifs.filter((n) => n.type === "transfer" && n.transferStatus === "struggling" && !n.targetRole),
+    () => notifs.filter((n) => n.type === "transfer" && n.transferStatus === "struggling" && !n.targetRole && n.transferData),
     [notifs],
   );
   const violationHistory = useMemo(
@@ -154,7 +154,8 @@ export function ManagerTransfersPanel() {
         ) : (
           <div className="space-y-3">
             {pendingTransfers.map((n) => {
-              const td = n.transferData!;
+              const td = n.transferData;
+              if (!td) return null;
               const s = students.find((x) => x.id === td.studentId);
               const h = halaqat.find((x) => x.id === td.halaqaId);
               const pct = calendar && s && h
@@ -242,7 +243,8 @@ export function ManagerTransfersPanel() {
         ) : (
           <div className="space-y-3">
             {struggling.map((n) => {
-              const td = n.transferData!;
+              const td = n.transferData;
+              if (!td) return null;
               const s = students.find((x) => x.id === td.studentId);
               const h = halaqat.find((x) => x.id === td.halaqaId);
               return (
@@ -275,7 +277,8 @@ export function ManagerTransfersPanel() {
         ) : (
           <div className="space-y-3 max-h-[480px] overflow-y-auto">
             {violationHistory.map((n) => {
-              const td = n.transferData!;
+              const td = n.transferData;
+              if (!td) return null;
               const s = students.find((x) => x.id === td.studentId);
               const h = halaqat.find((x) => x.id === td.halaqaId);
               return (
