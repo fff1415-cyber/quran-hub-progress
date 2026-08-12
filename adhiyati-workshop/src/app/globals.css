@@ -1,0 +1,63 @@
+@import "tailwindcss";
+
+:root {
+  --background: #faf8f6;
+  --foreground: #1a1a1a;
+  --primary: #8A1538;
+  --secondary: #D46A2E;
+  --primary-light: #a91d47;
+  --secondary-light: #e88a4a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-primary: var(--primary);
+  --color-secondary: var(--secondary);
+  --color-primary-light: var(--primary-light);
+  --color-secondary-light: var(--secondary-light);
+  --font-sans: var(--font-tajawal);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  direction: rtl;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-tajawal), "Tajawal", sans-serif;
+  min-height: 100vh;
+}
+
+.btn-primary {
+  @apply rounded-xl bg-primary px-6 py-3 font-bold text-white transition hover:bg-primary-light;
+}
+
+.btn-secondary {
+  @apply rounded-xl bg-secondary px-6 py-3 font-bold text-white transition hover:bg-secondary-light;
+}
+
+.btn-outline {
+  @apply rounded-xl border-2 border-primary px-6 py-3 font-bold text-primary transition hover:bg-primary hover:text-white;
+}
+
+.card {
+  @apply rounded-2xl border border-primary/10 bg-white p-6 shadow-sm;
+}
+
+input, textarea, select {
+  @apply rounded-xl border border-gray-300 px-4 py-3 text-right outline-none transition focus:border-primary focus:ring-2 focus:ring-primary/20;
+}
+
+.stage-badge {
+  @apply inline-flex items-center rounded-full bg-primary/10 px-4 py-1 text-sm font-medium text-primary;
+}
+
+.gradient-text {
+  @apply bg-gradient-to-l from-primary to-secondary bg-clip-text text-transparent;
+}
