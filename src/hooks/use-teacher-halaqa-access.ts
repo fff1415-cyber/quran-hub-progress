@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useTenant } from "@/contexts/TenantContext";
 import { ensureSessionFromToken } from "@/lib/auth-session";
-import { fetchHalaqatForComplex } from "@/lib/cloud-sync";
+import { fetchHalaqatForComplex, isCloudSyncFresh } from "@/lib/cloud-sync";
 import type { Halaqa } from "@/lib/mock-data";
 import {
   findHalaqaForTeacher,
@@ -62,6 +62,13 @@ export function useTeacherHalaqaAccess(urlH: unknown): TeacherHalaqaAccessState 
 
     void (async () => {
       try {
+        const cached = readLocalHalaqat();
+        if (isCloudSyncFresh() && cached.length > 0) {
+          if (cancelled) return;
+          setHalaqat(cached);
+          return;
+        }
+
         const list = await fetchHalaqatForComplex(complexId);
         if (cancelled) return;
         const next = list.length > 0 ? list : readLocalHalaqat();

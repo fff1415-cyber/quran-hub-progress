@@ -110,7 +110,7 @@ export function SupervisorPlansPanel() {
   const me = getSessionName("المشرف");
 
   useEffect(() => {
-    void syncFromCloud().then(() => setStudentsVersion((v) => v + 1));
+    void syncFromCloud({ force: true }).then(() => setStudentsVersion((v) => v + 1));
   }, []);
 
   const refresh = useCallback(async () => {

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { z } from "zod";
 import {
   loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, emptyDayEntry, ensureWeekDays, dayEntryFor, DAYS,
@@ -25,7 +25,10 @@ import { AppHeader } from "@/components/AppHeader";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
 } from "@/components/ui/select";
-import { Bell, Check, CheckCircle2, ClipboardList, ClipboardCheck, BookOpen, Loader2, Send, Users, X, Sparkles } from "lucide-react";
+import {
+  Bell, BookOpen, Check, CheckCircle2, ClipboardCheck, ClipboardList, Loader2, Monitor, Send,
+  Smartphone, Sparkles, Users, X,
+} from "lucide-react";
 import { Toaster, toast } from "sonner";
 import { applyPlanInput, fetchStudentPlanSheet, syncCompensationToPlan } from "@/lib/plans-service";
 import { checkAndHandlePlanCompletion } from "@/lib/plan-completion";
@@ -46,15 +49,19 @@ import {
 } from "@/lib/semester-grading";
 import { TeacherGradesExport } from "@/components/TeacherGradesExport";
 import { StaffAttendanceCheckInButton } from "@/components/StaffAttendanceCheckInButton";
-import { TeacherWeeklyTestsPanel } from "@/components/TeacherWeeklyTestsPanel";
-import { TeacherHalaqaProgramsPanel } from "@/components/TeacherHalaqaProgramsPanel";
-import { TeacherTarbawiPanel } from "@/components/tarbawi/TeacherTarbawiPanel";
 import { SemesterBreakdownPopover } from "@/components/teacher/SemesterBreakdownPopover";
 import { TeacherMobileDayBoard } from "@/components/teacher/TeacherMobileDayBoard";
 import { ensureWeeklyTestsSemester } from "@/lib/weekly-tests";
 import { ensureTarbawiSemester } from "@/lib/tarbawi-program";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useIsMobile } from "@/hooks/use-mobile";
+import {
+  desktopCompensationDayKey,
+  loadTeacherGradeLayoutMode,
+  resolveTeacherGradeLayout,
+  saveTeacherGradeLayoutMode,
+  type TeacherGradeLayoutMode,
+} from "@/lib/teacher-grade-layout";
 import {
   ScientificGradeInput,
   ScientificGradesToolbar,
@@ -67,6 +74,24 @@ import {
   type ScientificFieldsConfig,
   type ScientificGradesConfig,
 } from "@/lib/scientific-grades";
+
+const TeacherWeeklyTestsPanel = lazy(() =>
+  import("@/components/TeacherWeeklyTestsPanel").then((m) => ({ default: m.TeacherWeeklyTestsPanel })),
+);
+const TeacherHalaqaProgramsPanel = lazy(() =>
+  import("@/components/TeacherHalaqaProgramsPanel").then((m) => ({ default: m.TeacherHalaqaProgramsPanel })),
+);
+const TeacherTarbawiPanel = lazy(() =>
+  import("@/components/tarbawi/TeacherTarbawiPanel").then((m) => ({ default: m.TeacherTarbawiPanel })),
+);
+
+function TabPanelFallback() {
+  return (
+    <div className="glass-card rounded-2xl p-12 flex justify-center">
+      <Loader2 className="w-8 h-8 animate-spin text-primary" />
+    </div>
+  );
+}
 
 export const teacherSearchSchema = z.object({
   h: halaqaSearchParamSchema,
@@ -107,7 +132,7 @@ export function TeacherPage() {
   useEffect(() => {
     let cancelled = false;
     setLoadingCal(true);
-    fetchActiveCalendar(true)
+    fetchActiveCalendar(false)
       .then((cal) => {
         if (cancelled) return;
         const reset = ensureGradesSemester(cal.semester?.id ?? null);
@@ -270,38 +295,50 @@ export function TeacherPage() {
               />
             </TabsContent>
             <TabsContent value="programs" className="mt-0">
-              <TeacherHalaqaProgramsPanel
-                halaqaId={halaqa.id}
-                halaqaName={halaqa.name}
-                calendar={calendar}
-                weekNum={selectedWeek}
-                onWeekChange={handleWeekChange}
-                viewerRole={isAssistant ? "assistant" : isManager ? "manager" : "teacher"}
-                canManagePrograms={canManagePrograms}
-                readOnly={programsReadOnly}
-              />
+              {view === "programs" && (
+                <Suspense fallback={<TabPanelFallback />}>
+                  <TeacherHalaqaProgramsPanel
+                    halaqaId={halaqa.id}
+                    halaqaName={halaqa.name}
+                    calendar={calendar}
+                    weekNum={selectedWeek}
+                    onWeekChange={handleWeekChange}
+                    viewerRole={isAssistant ? "assistant" : isManager ? "manager" : "teacher"}
+                    canManagePrograms={canManagePrograms}
+                    readOnly={programsReadOnly}
+                  />
+                </Suspense>
+              )}
             </TabsContent>
             <TabsContent value="tarbawi" className="mt-0">
-              <TeacherTarbawiPanel
-                key={`tarbawi-${halaqa.id}-${calendar.semester?.id ?? "default"}`}
-                halaqaId={halaqa.id}
-                halaqaName={halaqa.name}
-                calendar={calendar}
-                weekNum={selectedWeek}
-                onWeekChange={handleWeekChange}
-                readOnly={isAssistant || programsReadOnly}
-              />
+              {view === "tarbawi" && (
+                <Suspense fallback={<TabPanelFallback />}>
+                  <TeacherTarbawiPanel
+                    key={`tarbawi-${halaqa.id}-${calendar.semester?.id ?? "default"}`}
+                    halaqaId={halaqa.id}
+                    halaqaName={halaqa.name}
+                    calendar={calendar}
+                    weekNum={selectedWeek}
+                    onWeekChange={handleWeekChange}
+                    readOnly={isAssistant || programsReadOnly}
+                  />
+                </Suspense>
+              )}
             </TabsContent>
             <TabsContent value="tests" className="mt-0">
-              <TeacherWeeklyTestsPanel
-                halaqaId={halaqa.id}
-                halaqaName={halaqa.name}
-                isTalqeen={halaqa.isTalqeen}
-                calendar={calendar}
-                weekNum={selectedWeek}
-                onWeekChange={handleWeekChange}
+              {view === "tests" && (
+                <Suspense fallback={<TabPanelFallback />}>
+                  <TeacherWeeklyTestsPanel
+                    halaqaId={halaqa.id}
+                    halaqaName={halaqa.name}
+                    isTalqeen={halaqa.isTalqeen}
+                    calendar={calendar}
+                    weekNum={selectedWeek}
+                    onWeekChange={handleWeekChange}
                 viewerRole={isAssistant ? "assistant" : "teacher"}
-              />
+                  />
+                </Suspense>
+              )}
             </TabsContent>
           </Tabs>
         )}
@@ -412,11 +449,11 @@ const STICKY_NAME =
 
 type SciTableCtx = { visible: boolean; fields: ScientificFieldsConfig };
 
-function dayColumnCount(isTalqeen: boolean, sci: SciTableCtx): number {
+function dayColumnCount(isTalqeen: boolean, sci: SciTableCtx, compensationPerDay: boolean): number {
   if (isTalqeen) {
     return 2 + (sci.visible && sci.fields.attendance ? 1 : 0);
   }
-  let n = 5;
+  let n = compensationPerDay ? 5 : 4;
   if (sci.visible) {
     if (sci.fields.attendance) n += 1;
     if (sci.fields.hifz) n += 1;
@@ -436,19 +473,28 @@ function extraScientificWidth(sci: SciTableCtx): number {
   return w;
 }
 
-function gradeTableWidthPx(dayCount: number, isTalqeen: boolean, sci: SciTableCtx): number {
+function gradeTableWidthPx(
+  dayCount: number,
+  isTalqeen: boolean,
+  sci: SciTableCtx,
+  compensationPerDay: boolean,
+): number {
   const perDay = isTalqeen
     ? GRADE_COL.attendance + GRADE_COL.wajib + (sci.visible && sci.fields.attendance ? GRADE_COL.scientific : 0)
-    : GRADE_COL.attendance + GRADE_COL.hifz + GRADE_COL.passFail * 2 + GRADE_COL.compensation + extraScientificWidth(sci);
+    : GRADE_COL.attendance + GRADE_COL.hifz + GRADE_COL.passFail * 2
+      + (compensationPerDay ? GRADE_COL.compensation : 0)
+      + extraScientificWidth(sci);
+  const consolidatedComp = !isTalqeen && !compensationPerDay ? GRADE_COL.compensation : 0;
   return (
     GRADE_COL.student
     + dayCount * perDay
+    + consolidatedComp
     + GRADE_COL.weekPct
     + GRADE_COL.semesterPct
   );
 }
 
-function buildDayColWidths(isTalqeen: boolean, sci: SciTableCtx): number[] {
+function buildDayColWidths(isTalqeen: boolean, sci: SciTableCtx, compensationPerDay: boolean): number[] {
   if (isTalqeen) {
     const out = [GRADE_COL.attendance, GRADE_COL.wajib];
     if (sci.visible && sci.fields.attendance) out.splice(1, 0, GRADE_COL.scientific);
@@ -462,7 +508,7 @@ function buildDayColWidths(isTalqeen: boolean, sci: SciTableCtx): number[] {
   if (sci.visible && sci.fields.rabt) out.push(GRADE_COL.scientific);
   out.push(GRADE_COL.passFail);
   if (sci.visible && sci.fields.muraja) out.push(GRADE_COL.scientific);
-  out.push(GRADE_COL.compensation);
+  if (compensationPerDay) out.push(GRADE_COL.compensation);
   return out;
 }
 
@@ -470,12 +516,14 @@ function GradeTableColGroup({
   dayCount,
   isTalqeen,
   sci,
+  compensationPerDay,
 }: {
   dayCount: number;
   isTalqeen: boolean;
   sci: SciTableCtx;
+  compensationPerDay: boolean;
 }) {
-  const dayWidths = buildDayColWidths(isTalqeen, sci);
+  const dayWidths = buildDayColWidths(isTalqeen, sci, compensationPerDay);
 
   return (
     <colgroup>
@@ -485,6 +533,7 @@ function GradeTableColGroup({
           <col key={`d${dayIdx}-c${colIdx}`} style={{ width: w }} />
         )),
       )}
+      {!isTalqeen && !compensationPerDay && <col style={{ width: GRADE_COL.compensation }} />}
       <col style={{ width: GRADE_COL.weekPct }} />
       <col style={{ width: GRADE_COL.semesterPct }} />
     </colgroup>
@@ -542,7 +591,13 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     () => ({ visible: sciConfig.visible, fields: sciConfig.fields }),
     [sciConfig],
   );
-  const dayColSpan = dayColumnCount(isTalqeen, sciCtx);
+  const deviceMobile = useIsMobile();
+  const [layoutMode, setLayoutMode] = useState<TeacherGradeLayoutMode>(() => loadTeacherGradeLayoutMode());
+  const { useMobileBoard, compensationPerDay } = useMemo(
+    () => resolveTeacherGradeLayout(layoutMode, deviceMobile),
+    [layoutMode, deviceMobile],
+  );
+  const dayColSpan = dayColumnCount(isTalqeen, sciCtx, compensationPerDay);
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferStudentId, setTransferStudentId] = useState("");
   const [transferReason, setTransferReason] = useState("");
@@ -574,8 +629,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const workingKeysList = useMemo(() => [...workingKeys], [workingKeys]);
   const isCurrentWeek = weekNum === calendar.currentWeekNumber;
   const todayKey = calendar.currentDayKey;
-  const isMobile = useIsMobile();
   const [activeDayKey, setActiveDayKey] = useState(todayKey);
+  const compensationDayKey = useMemo(
+    () => desktopCompensationDayKey(visibleDays.map((d) => d.key)),
+    [visibleDays],
+  );
+
+  const setGradeLayoutMode = (mode: TeacherGradeLayoutMode) => {
+    setLayoutMode(mode);
+    saveTeacherGradeLayoutMode(mode);
+  };
 
   const highlightDay = (dayKey: string) => isCurrentWeek && dayKey === todayKey;
 
@@ -589,10 +652,10 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   }, [weekNum, visibleDays, isCurrentWeek, todayKey]);
 
   useEffect(() => {
-    if (!isCurrentWeek || !tableRef.current || isMobile) return;
+    if (!isCurrentWeek || !tableRef.current || useMobileBoard) return;
     const col = tableRef.current.querySelector(`[data-day-col="${todayKey}"]`);
     col?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-  }, [isCurrentWeek, todayKey, weekNum, isMobile]);
+  }, [isCurrentWeek, todayKey, weekNum, useMobileBoard]);
 
   const submitTransfer = () => {
     const student = students.find((s) => s.id === transferStudentId);
@@ -822,7 +885,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       };
     });
     if (patch.attendance === "absent") {
-      void fetchActiveCalendar(true).then(processAbsenceThresholdAlerts).catch(() => {});
+      void fetchActiveCalendar(false).then(processAbsenceThresholdAlerts).catch(() => {});
       const student = students.find((s) => s.id === studentId);
       if (student) {
         void dispatchPushEvent({
@@ -885,8 +948,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   );
 
   const tableWidthPx = useMemo(
-    () => gradeTableWidthPx(visibleDays.length, isTalqeen, sciCtx),
-    [visibleDays.length, isTalqeen, sciCtx],
+    () => gradeTableWidthPx(visibleDays.length, isTalqeen, sciCtx, compensationPerDay),
+    [visibleDays.length, isTalqeen, sciCtx, compensationPerDay],
   );
 
   const dayHeaderClass = (dayKey: string) =>
@@ -909,9 +972,41 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       highlightDay(dayKey) && "bg-muted/50",
     );
 
+  const layoutToggle = (
+    <div
+      className="inline-flex items-center rounded-lg border border-border bg-secondary/40 p-0.5"
+      role="group"
+      aria-label="طريقة عرض التحضير"
+    >
+      {([
+        { mode: "auto" as const, label: "تلقائي", icon: null },
+        { mode: "mobile" as const, label: "جوال", icon: Smartphone },
+        { mode: "desktop" as const, label: "جدول", icon: Monitor },
+      ]).map(({ mode, label, icon: Icon }) => (
+        <button
+          key={mode}
+          type="button"
+          onClick={() => setGradeLayoutMode(mode)}
+          className={cn(
+            "inline-flex items-center gap-1 px-2 py-1 rounded-md text-[11px] font-bold transition-colors",
+            layoutMode === mode
+              ? "bg-primary text-primary-foreground shadow-sm"
+              : "text-muted-foreground hover:text-foreground hover:bg-secondary",
+          )}
+        >
+          {Icon && <Icon className="w-3.5 h-3.5" />}
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+
   return (
-    <div className={cn(isMobile ? "space-y-0" : "glass-card rounded-2xl p-4")}>
-      {isMobile ? (
+    <div className={cn(useMobileBoard ? "space-y-0" : "glass-card rounded-2xl p-4")}>
+      <div className={cn("flex justify-end px-2", useMobileBoard ? "pb-2" : "mb-3")}>
+        {layoutToggle}
+      </div>
+      {useMobileBoard ? (
         <TeacherMobileDayBoard
           weekNum={weekNum}
           calendar={calendar}
@@ -1110,6 +1205,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           dayCount={visibleDays.length}
           isTalqeen={isTalqeen}
           sci={sciCtx}
+          compensationPerDay={compensationPerDay}
         />
         <thead>
           <tr className="bg-secondary/50">
@@ -1122,6 +1218,19 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 {highlightDay(d.key) && <span className="block text-[10px] text-primary font-normal">اليوم</span>}
               </th>
             ))}
+            {!isTalqeen && !compensationPerDay && (
+              <th
+                rowSpan={2}
+                className={cn(
+                  "p-2 border-r border-border text-success font-bold align-middle",
+                  STICKY_HEAD,
+                  GRADE_HEAD_ROW1_TOP,
+                  GRADE_CELL_W.compensation,
+                )}
+              >
+                تعويض
+              </th>
+            )}
             <th className={cn("p-2 border-r border-border text-muted-foreground", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.weekPct)}>نسبة الأسبوع</th>
             <th className={cn("p-2 border-r border-border text-primary font-bold", STICKY_HEAD, GRADE_HEAD_ROW1_TOP, GRADE_CELL_W.semesterPct)}>النسبة الكلية</th>
           </tr>
@@ -1165,9 +1274,11 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                       درجة
                     </th>
                   )}
-                  <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.compensation), "text-success text-[10px]")}>
-                    تع
-                  </th>
+                  {compensationPerDay && (
+                    <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.compensation), "text-success text-[10px]")}>
+                      تع
+                    </th>
+                  )}
                 </React.Fragment>
               )
             )}
@@ -1283,16 +1394,30 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           />
                         </td>
                       )}
-                      <td className={dayCellClass(d.key, GRADE_CELL_W.compensation)}>
-                        <CompensationSelect
-                          value={e.compensationFaces ?? 0}
-                          maxFaces={compensationRemainingForDay(w, d.key, workingKeysList)}
-                          onChange={(v) => void handleDayCompensationChange(s, d.key, v)}
-                        />
-                      </td>
+                      {compensationPerDay && (
+                        <td className={dayCellClass(d.key, GRADE_CELL_W.compensation)}>
+                          <CompensationSelect
+                            value={e.compensationFaces ?? 0}
+                            maxFaces={compensationRemainingForDay(w, d.key, workingKeysList)}
+                            onChange={(v) => void handleDayCompensationChange(s, d.key, v)}
+                          />
+                        </td>
+                      )}
                     </React.Fragment>
                   );
                 })}
+                {!isTalqeen && !compensationPerDay && (() => {
+                  const compEntry = dayEntryFor(w, compensationDayKey, workingKeysList);
+                  return (
+                    <td className={cn("p-1 border-r border-border/30", GRADE_CELL_W.compensation)}>
+                      <CompensationSelect
+                        value={compEntry.compensationFaces ?? 0}
+                        maxFaces={compensationRemainingForDay(w, compensationDayKey, workingKeysList)}
+                        onChange={(v) => void handleDayCompensationChange(s, compensationDayKey, v)}
+                      />
+                    </td>
+                  );
+                })()}
                 <td className={cn("p-2 text-center font-bold border-r border-border/30", GRADE_CELL_W.weekPct)}>
                   <span className={weekPct >= 80 ? "text-success" : weekPct >= 50 ? "text-warning" : "text-muted-foreground"}>
                     {weekPct}%

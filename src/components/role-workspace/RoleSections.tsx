@@ -129,7 +129,7 @@ export function SecretaryAbsenceThresholdPanel() {
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
-    fetchActiveCalendar(true)
+    fetchActiveCalendar(false)
       .then((cal) => {
         setCalendar(cal);
         processAbsenceThresholdAlerts(cal);

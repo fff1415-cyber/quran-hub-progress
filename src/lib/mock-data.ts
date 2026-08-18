@@ -201,6 +201,32 @@ function persistShared(key: "grades" | "sard_queue" | "sard_history" | "notifica
   void import("./cloud-sync").then((m) => m.pushAppState(key, value)).catch(() => undefined);
 }
 
+const GRADES_CLOUD_DEBOUNCE_MS = 2500;
+let gradesCloudTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingGradesCloud: GradesStore | null = null;
+
+function scheduleGradesCloudPush(g: GradesStore): void {
+  pendingGradesCloud = g;
+  if (gradesCloudTimer) clearTimeout(gradesCloudTimer);
+  gradesCloudTimer = setTimeout(() => {
+    gradesCloudTimer = null;
+    const payload = pendingGradesCloud;
+    pendingGradesCloud = null;
+    if (payload) persistShared("grades", payload);
+  }, GRADES_CLOUD_DEBOUNCE_MS);
+}
+
+/** Flush debounced grade upload immediately (e.g. before logout). */
+export function flushGradesToCloud(): void {
+  if (gradesCloudTimer) {
+    clearTimeout(gradesCloudTimer);
+    gradesCloudTimer = null;
+  }
+  const payload = pendingGradesCloud ?? loadGrades();
+  pendingGradesCloud = null;
+  persistShared("grades", payload);
+}
+
 export function loadStudents(): Student[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY_STUDENTS);
@@ -225,7 +251,10 @@ export function loadGrades(): GradesStore {
   const raw = localStorage.getItem(KEY_GRADES);
   return raw ? JSON.parse(raw) : {};
 }
-export function saveGrades(g: GradesStore) { localStorage.setItem(KEY_GRADES, JSON.stringify(g)); persistShared("grades", g); }
+export function saveGrades(g: GradesStore) {
+  localStorage.setItem(KEY_GRADES, JSON.stringify(g));
+  scheduleGradesCloudPush(g);
+}
 
 export function getGradesSemesterId(): string | null {
   if (typeof window === "undefined") return null;

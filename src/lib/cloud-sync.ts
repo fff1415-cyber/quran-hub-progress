@@ -1,6 +1,18 @@
 // Cloud sync layer — all data via Hostinger PHP API
 import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, Notification, SardHistoryItem, SardQueueItem, Student } from "./mock-data";
-import { saveGrades, saveHalaqat, saveLatePermissions, saveMessageTemplates, saveNotifications, saveSardHistory, saveSardQueue, saveStudents, ensureGradesSemester } from "./mock-data";
+import {
+  saveGrades,
+  saveHalaqat,
+  saveLatePermissions,
+  saveMessageTemplates,
+  saveNotifications,
+  saveSardHistory,
+  saveSardQueue,
+  saveStudents,
+  loadStudents,
+  loadHalaqat,
+  ensureGradesSemester,
+} from "./mock-data";
 import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } from "./weekly-tests";
 import { saveStaffAttendanceSettings, saveStaffCheckIns } from "./staff-attendance";
 import { saveStudentPortalVisibility, type StudentPortalVisibility } from "./student-portal-settings";
@@ -28,7 +40,7 @@ import {
   secureListAppState,
   secureSetAppState,
 } from "./secure-data.functions";
-import { fetchActiveCalendar } from "./academic-context";
+import { fetchActiveCalendar, loadCachedCalendar } from "./academic-context";
 import { mergeAbsenceAlertRecordFromCloud, ABSENCE_ALERTS_APP_STATE_KEY } from "./semester-absence";
 import { getActiveComplexId } from "@/lib/tenant";
 import {
@@ -40,6 +52,30 @@ import {
 } from "@/lib/auth-session";
 
 export { getToken, setToken, clearToken, hasAuthToken };
+
+const SYNC_FRESH_KEY = "qs_cloud_sync_at";
+/** Skip full roster + app_state pull when synced recently (navigation within session). */
+const SYNC_TTL_MS = 3 * 60 * 1000;
+
+export function isCloudSyncFresh(): boolean {
+  if (typeof sessionStorage === "undefined") return false;
+  const raw = sessionStorage.getItem(SYNC_FRESH_KEY);
+  if (!raw) return false;
+  const at = Number(raw);
+  return Number.isFinite(at) && Date.now() - at < SYNC_TTL_MS;
+}
+
+export function markCloudSyncFresh(): void {
+  if (typeof sessionStorage !== "undefined") {
+    sessionStorage.setItem(SYNC_FRESH_KEY, String(Date.now()));
+  }
+}
+
+export function invalidateCloudSyncCache(): void {
+  if (typeof sessionStorage !== "undefined") {
+    sessionStorage.removeItem(SYNC_FRESH_KEY);
+  }
+}
 
 interface CloudStudentRow {
   id: string;
@@ -197,8 +233,14 @@ export async function fetchHalaqatRoster(complexId?: number): Promise<Halaqa[]> 
   return halaqat;
 }
 
-export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: Halaqa[] } | null> {
+export async function syncFromCloud(options?: {
+  force?: boolean;
+}): Promise<{ students: Student[]; halaqat: Halaqa[] } | null> {
   try {
+    if (!options?.force && isCloudSyncFresh()) {
+      return { students: loadStudents(), halaqat: loadHalaqat() };
+    }
+
     const token = getToken();
     let halaqat: Halaqa[];
     let students: Student[];
@@ -246,7 +288,7 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
 
     if (token) {
       try {
-        const calendar = await fetchActiveCalendar(true);
+        const calendar = await fetchActiveCalendar(!loadCachedCalendar());
         const semesterReset = ensureGradesSemester(calendar.semester?.id ?? null);
         const weeklyTestsReset = ensureWeeklyTestsSemester(calendar.semester?.id ?? null);
         const tarbawiReset = ensureTarbawiSemester(calendar.semester?.id ?? null);
@@ -326,6 +368,7 @@ export async function syncFromCloud(): Promise<{ students: Student[]; halaqat: H
       }
     }
 
+    markCloudSyncFresh();
     return { students, halaqat };
   } catch (e) {
     console.warn("Cloud sync failed, using local cache:", e);

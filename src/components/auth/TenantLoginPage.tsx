@@ -1,7 +1,7 @@
 import { useNavigate } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 import { loginByCode, loginByNationalId } from "@/lib/secure-data.functions";
-import { setToken, syncFromCloud } from "@/lib/cloud-sync";
+import { setToken, syncFromCloud, invalidateCloudSyncCache } from "@/lib/cloud-sync";
 import { setPortalMode } from "@/lib/student-portal-auth";
 import { clearAuthSession, getToken, isTokenExpired, removeAuthItem, setAuthItem, ensureSessionFromToken } from "@/lib/auth-session";
 import { navigateBySessionRole } from "@/lib/auth-redirect";
@@ -41,7 +41,8 @@ export function TenantLoginPage() {
     (async () => {
       try {
         ensureSessionFromToken();
-        await syncFromCloud();
+        invalidateCloudSyncCache();
+        await syncFromCloud({ force: true });
         ensureSessionFromToken();
         if (cancelled) return;
         void initPushAfterLogin();
@@ -111,7 +112,8 @@ export function TenantLoginPage() {
         setAuthItem("qs_tenant_subdomain", tenant.subdomain);
         setAuthItem("qs_tenant_name", tenant.name);
         setPortalMode("student");
-        await syncFromCloud();
+        invalidateCloudSyncCache();
+        await syncFromCloud({ force: true });
         void initPushAfterLogin();
         navigate({ to: tenantPath("/student"), search: { s: student.studentId } });
         return;
@@ -132,7 +134,8 @@ export function TenantLoginPage() {
       else removeAuthItem("qs_halaqa");
       removeAuthItem("qs_student");
       removeAuthItem("qs_portal_mode");
-      await syncFromCloud();
+      invalidateCloudSyncCache();
+      await syncFromCloud({ force: true });
       void initPushAfterLogin();
 
       switch (auth.role) {

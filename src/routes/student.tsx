@@ -82,7 +82,7 @@ export function StudentPage() {
 
   useEffect(() => {
     let cancelled = false;
-    fetchActiveCalendar(true)
+    fetchActiveCalendar(false)
       .then((cal) => { if (!cancelled) setCalendar(cal); })
       .catch(() => { if (!cancelled) setCalendar(null); });
     return () => { cancelled = true; };

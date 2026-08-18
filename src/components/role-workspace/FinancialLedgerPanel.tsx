@@ -97,7 +97,7 @@ export function FinancialLedgerPanel() {
     let cancelled = false;
     void (async () => {
       try {
-        await syncFromCloud();
+        await syncFromCloud({ force: true });
         refreshLedger();
         const cal = await fetchActiveCalendar(true);
         if (!cancelled) setCalendar(cal);
