@@ -1,7 +1,14 @@
+import { generateAcademicWeeks } from "@/lib/calendar-generator";
 import { getCalendarIsoDate, getCalendarDayKey, isoDateToDayKey } from "@/lib/operational-date";
 import { getToken } from "@/lib/cloud-sync";
 import { secureGetActiveSemester } from "@/lib/secure-data.functions";
 import { weekLabel } from "@/lib/arabic-numbers";
+
+export interface SemesterDayRef {
+  iso: string;
+  weekNumber: number;
+  dayKey: string;
+}
 
 export interface ActiveSemester {
   id: string;
@@ -67,8 +74,39 @@ function fallbackWeeks(count: number): AcademicWeekRow[] {
   }));
 }
 
-/** Find academic week containing operational date (inclusive range). */
-export function resolveWeekForDate(weeks: AcademicWeekRow[], isoDate: string): number {
+/** Map ISO date → grade week/day columns using generated semester calendar. */
+export function resolveSemesterDayForDate(
+  calendar: AcademicCalendar,
+  isoDate: string,
+): SemesterDayRef | null {
+  const sem = calendar.semester;
+  if (!sem?.start_date || !isoDate) return null;
+
+  const weeks = generateAcademicWeeks({
+    startDate: sem.start_date,
+    weeksCount: sem.weeks_count,
+    workingDays: sem.working_days,
+    excludedDates: sem.excluded_dates,
+  });
+
+  for (const w of weeks) {
+    if (w.workingDayDates.includes(isoDate)) {
+      return {
+        iso: isoDate,
+        weekNumber: w.weekNumber,
+        dayKey: isoDateToDayKey(isoDate),
+      };
+    }
+  }
+  return null;
+}
+
+/** Today's working day in the active semester, or null (weekend/holiday/outside semester). */
+export function getTodaySemesterDay(calendar: AcademicCalendar): SemesterDayRef | null {
+  return resolveSemesterDayForDate(calendar, calendar.operationalDate);
+}
+
+function resolveWeekFromDbRows(weeks: AcademicWeekRow[], isoDate: string): number {
   if (weeks.length === 0) return 1;
   for (const w of weeks) {
     if (w.start_date && w.end_date && isoDate >= w.start_date && isoDate <= w.end_date) {
@@ -76,8 +114,23 @@ export function resolveWeekForDate(weeks: AcademicWeekRow[], isoDate: string): n
     }
   }
   const first = weeks[0];
-  if (first.start_date && isoDate < first.start_date) return first.week_number;
-  return weeks[weeks.length - 1]?.week_number ?? 1;
+  if (first?.start_date && isoDate < first.start_date) return first.week_number;
+  const last = weeks[weeks.length - 1];
+  if (last?.end_date && isoDate > last.end_date) return last.week_number;
+  return last?.week_number ?? 1;
+}
+
+/** Find academic week containing operational date (generated calendar first, then DB rows). */
+export function resolveWeekForDate(
+  weeks: AcademicWeekRow[],
+  isoDate: string,
+  calendar?: AcademicCalendar | null,
+): number {
+  if (calendar?.semester?.start_date) {
+    const day = resolveSemesterDayForDate(calendar, isoDate);
+    if (day) return day.weekNumber;
+  }
+  return resolveWeekFromDbRows(weeks, isoDate);
 }
 
 export function buildAcademicCalendar(
@@ -94,15 +147,18 @@ export function buildAcademicCalendar(
     resolvedWeeks = fallbackWeeks(count);
   }
 
-  const currentWeekNumber = resolveWeekForDate(resolvedWeeks, operationalDate);
-
-  return {
+  const draft: AcademicCalendar = {
     semester,
     weeks: resolvedWeeks,
-    currentWeekNumber,
+    currentWeekNumber: 1,
     currentDayKey,
     operationalDate,
   };
+  const todayDay = getTodaySemesterDay(draft);
+  const currentWeekNumber = todayDay?.weekNumber
+    ?? resolveWeekForDate(resolvedWeeks, operationalDate, draft);
+
+  return { ...draft, currentWeekNumber };
 }
 
 export function getSelectableWeeks(calendar: AcademicCalendar): AcademicWeekRow[] {
@@ -129,8 +185,11 @@ export function loadCachedCalendar(): AcademicCalendar | null {
 function refreshCalendarNow(calendar: AcademicCalendar, now: Date = new Date()): AcademicCalendar {
   const operationalDate = getCalendarIsoDate(now);
   const currentDayKey = getCalendarDayKey(now);
-  const currentWeekNumber = resolveWeekForDate(calendar.weeks, operationalDate);
-  return { ...calendar, operationalDate, currentDayKey, currentWeekNumber };
+  const draft = { ...calendar, operationalDate, currentDayKey };
+  const todayDay = getTodaySemesterDay(draft);
+  const currentWeekNumber = todayDay?.weekNumber
+    ?? resolveWeekForDate(calendar.weeks, operationalDate, draft);
+  return { ...draft, currentWeekNumber };
 }
 
 export async function fetchActiveCalendar(force = false): Promise<AcademicCalendar> {

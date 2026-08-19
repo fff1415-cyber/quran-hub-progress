@@ -4,7 +4,7 @@
  */
 
 import { generateAcademicWeeks } from "@/lib/calendar-generator";
-import type { AcademicCalendar } from "@/lib/academic-context";
+import type { AcademicCalendar, SemesterDayRef } from "@/lib/academic-context";
 import { isoDateToDayKey } from "@/lib/operational-date";
 import type { DayEntry, GradesStore, HifzValue, Student } from "@/lib/mock-data";
 import { DAYS, weekPercentage, compensationPoints, sumWeekCompensationFaces, type WeekRecord } from "@/lib/mock-data";
@@ -43,11 +43,7 @@ export const DEFAULT_DAILY_GRADE_WEIGHTS: DailyGradeWeights = {
   talqeen_wajib: 15,
 };
 
-export interface SemesterDayRef {
-  iso: string;
-  weekNumber: number;
-  dayKey: string;
-}
+export type { SemesterDayRef } from "@/lib/academic-context";
 
 export interface DayScoreBreakdown {
   earned: number;
@@ -255,11 +251,11 @@ export function semesterDayCompletionReport(
   return {
     overall: ratioPct(fullComplete, totalDays),
     components: {
-      attendance: ratioPct(attComplete, totalDays),
-      hifz: ratioPct(hifzComplete, totalDays),
-      muraja: ratioPct(murComplete, totalDays),
-      rabt: ratioPct(rabtComplete, totalDays),
-      wajib: ratioPct(wajibComplete, totalDays),
+      attendance: ratioPct(attComplete, elapsedDays || totalDays),
+      hifz: ratioPct(hifzComplete, elapsedDays || totalDays),
+      muraja: ratioPct(murComplete, elapsedDays || totalDays),
+      rabt: ratioPct(rabtComplete, elapsedDays || totalDays),
+      wajib: ratioPct(wajibComplete, elapsedDays || totalDays),
     },
     expectedProgress,
     completedDays: fullComplete,

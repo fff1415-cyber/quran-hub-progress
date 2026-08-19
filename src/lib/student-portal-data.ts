@@ -1,4 +1,5 @@
 import type { AcademicCalendar } from "@/lib/academic-context";
+import { getTodaySemesterDay } from "@/lib/academic-context";
 import {
   loadAttendanceArchive,
   loadGrades,
@@ -67,23 +68,29 @@ export interface DailyComplexAttendance {
   total: number;
   present: number;
   percent: number;
+  /** false when today is not a semester working day */
+  applicable: boolean;
 }
 
-/** Today’s attendance across all students in all halaqat (present + late). */
+/** Today's attendance across all students (present + late) for the actual calendar date. */
 export function aggregateDailyComplexAttendance(
   students: Student[],
   grades: GradesStore,
   calendar: AcademicCalendar,
 ): DailyComplexAttendance {
   const total = students.length;
-  if (total === 0) return { total: 0, present: 0, percent: 0 };
+  if (total === 0) return { total: 0, present: 0, percent: 0, applicable: false };
 
-  const weekNum = calendar.currentWeekNumber;
-  const todayKey = calendar.currentDayKey;
+  const todayDay = getTodaySemesterDay(calendar);
+  if (!todayDay) {
+    return { total, present: 0, percent: 0, applicable: false };
+  }
+
+  const { weekNumber, dayKey } = todayDay;
   let present = 0;
 
   for (const s of students) {
-    const att = grades[s.id]?.[weekNum]?.days[todayKey]?.attendance;
+    const att = grades[s.id]?.[weekNumber]?.days[dayKey]?.attendance;
     if (att === "present" || att === "late") present += 1;
   }
 
@@ -91,6 +98,7 @@ export function aggregateDailyComplexAttendance(
     total,
     present,
     percent: Math.round((present / total) * 1000) / 10,
+    applicable: true,
   };
 }
 

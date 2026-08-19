@@ -41,7 +41,7 @@ export function StudentWeeklyPercentSummary({
   return (
     <div className="space-y-4">
       <div>
-        <p className="text-sm font-bold text-primary">النسب الفصلية — من بداية الفصل</p>
+        <p className="text-sm font-bold text-primary">النسب الفصلية — من بداية الفصل حتى اليوم</p>
         <p className="text-xs text-muted-foreground mt-0.5">{timelineNote}</p>
       </div>
 

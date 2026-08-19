@@ -184,11 +184,34 @@ export function aggregateFaceProgress(
     to === calendar.operationalDate;
 
   if (useFullSemesterRange) {
-    const totals = sumFacesFromAllGradeEntries(studentId, grades, quotas);
+    const elapsed = getElapsedSemesterDays(calendar);
+    let hifzActual = 0;
+    let rabtActual = 0;
+    let murajaActual = 0;
+    const weekNumsSeen = new Set<number>();
+
+    for (const day of elapsed) {
+      const week = grades[studentId]?.[day.weekNumber];
+      const part = facesFromDayEntry(week?.days[day.dayKey], quotas);
+      hifzActual += part.hifz;
+      rabtActual += part.rabt;
+      murajaActual += part.muraja;
+      weekNumsSeen.add(day.weekNumber);
+    }
+
+    for (const wn of weekNumsSeen) {
+      const week = grades[studentId]?.[wn];
+      if (!week) continue;
+      hifzActual += sumWeekCompensationFaces(week);
+      murajaActual += week.compensationMurajaFaces ?? 0;
+    }
+
     const termDays = getTotalSemesterWorkingDays(calendar);
     return {
-      workingDays,
-      ...totals,
+      workingDays: elapsed.length,
+      hifzActual,
+      rabtActual,
+      murajaActual,
       ...termFaceTargets(quotas, termDays),
     };
   }

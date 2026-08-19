@@ -81,8 +81,8 @@ export function weeksInExportRange(
       .map((w) => w.week_number);
   }
 
-  const lo = resolveWeekForDate(calendar.weeks, fromIso);
-  const hi = resolveWeekForDate(calendar.weeks, cappedTo);
+  const lo = resolveWeekForDate(calendar.weeks, fromIso, calendar);
+  const hi = resolveWeekForDate(calendar.weeks, cappedTo, calendar);
   const nums: number[] = [];
   for (let w = Math.min(lo, hi); w <= Math.max(lo, hi); w++) {
     if (w <= calendar.currentWeekNumber) nums.push(w);
@@ -131,11 +131,10 @@ function emptyPeriodStats(): PeriodDayStats {
 
 function tallyDayEntry(stats: PeriodDayStats, e: WeekRecord["days"][string] | undefined): void {
   if (!e) return;
-  const hasTask = !!(e.hifz || e.rabt || e.muraja);
   if (e.attendance === "absent") stats.absent++;
   else if (e.attendance === "late") stats.late++;
   else if (e.attendance === "excused") stats.excused++;
-  else if (e.attendance === "present" || (e.attendance === "" && hasTask)) stats.present++;
+  else if (e.attendance === "present") stats.present++;
 
   if (e.hifz) stats.hifz++;
   if (e.muraja === "pass") stats.murajaPass++;

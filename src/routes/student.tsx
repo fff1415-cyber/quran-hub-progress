@@ -1,12 +1,12 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { loadHalaqat, loadStudents, loadGrades, type GradesStore } from "@/lib/mock-data";
-import { getCalendarDayKey } from "@/lib/operational-date";
-import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
+import { fetchActiveCalendar, getTodaySemesterDay, type AcademicCalendar } from "@/lib/academic-context";
 import { syncFromCloud } from "@/lib/cloud-sync";
 import {
   halaqaWeekAverage,
   semesterDayCompletionReport,
+  semesterComponentPercentages,
   studentWeekOverallPercentage,
   formatOverallPercent,
 } from "@/lib/semester-grading";
@@ -24,7 +24,7 @@ import {
   type StudentPortalAuthMode,
 } from "@/lib/student-portal-auth";
 import { loadStudentPortalVisibility } from "@/lib/student-portal-settings";
-import { aggregateComplexFaceTotals, aggregateComplexFaceTargets, aggregateDailyComplexAttendance } from "@/lib/student-portal-data";
+import { aggregateComplexFaceTotals, aggregateDailyComplexAttendance } from "@/lib/student-portal-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { Trophy, Loader2, LogOut } from "lucide-react";
@@ -143,11 +143,6 @@ export function StudentPage() {
     return aggregateComplexFaceTotals(students, grades, calendar);
   }, [students, grades, calendar]);
 
-  const complexFaceTargets = useMemo(() => {
-    if (!calendar) return null;
-    return aggregateComplexFaceTargets(students, calendar);
-  }, [students, calendar]);
-
   const dailyAttendance = useMemo(() => {
     if (!calendar) return null;
     return aggregateDailyComplexAttendance(students, grades, calendar);
@@ -163,19 +158,19 @@ export function StudentPage() {
     const completion = semesterDayCompletionReport(
       s.id, h.isTalqeen, grades, calendar,
     );
+    const semesterComponents = semesterComponentPercentages(
+      s.id, s.levelType, h.isTalqeen, grades, calendar,
+    );
 
-    const todayKey = getCalendarDayKey();
-    let todayStatus = "";
-    const weeks = Object.values(grades[s.id] || {});
-    for (let i = weeks.length - 1; i >= 0; i--) {
-      const att = weeks[i].days[todayKey]?.attendance;
-      if (att) { todayStatus = att; break; }
-    }
+    const todayDay = getTodaySemesterDay(calendar);
+    const todayStatus = todayDay
+      ? (grades[s.id]?.[todayDay.weekNumber]?.days[todayDay.dayKey]?.attendance ?? "")
+      : "";
 
     return {
       s,
       h,
-      semesterComponents: completion.components,
+      semesterComponents,
       semesterOverall: completion.overall,
       expectedProgress: completion.expectedProgress,
       elapsedDays: completion.elapsedDays,
@@ -256,7 +251,6 @@ export function StudentPage() {
                 weekNum={weekNum}
                 dailyAttendance={dailyAttendance}
                 complexFaces={complexFaces}
-                complexFaceTargets={complexFaceTargets}
                 showWeekly={visibility.halaqaWeekly}
                 showDailyAttendance={visibility.dailyComplexAttendance}
                 showComplexFaces={visibility.complexFaceCounts}
