@@ -8,16 +8,22 @@ import {
 import { getToken } from "@/lib/cloud-sync";
 import { secureGetActiveSemester, secureUpdateActiveSemester } from "@/lib/secure-data.functions";
 import { clearCalendarCache, fetchActiveCalendar, type ActiveSemester } from "@/lib/academic-context";
+import {
+  holidayDateStrings,
+  parseSemesterHolidays,
+  serializeSemesterHolidays,
+  type SemesterHoliday,
+} from "@/lib/semester-holidays";
+import { SemesterHolidaysEditor } from "@/components/SemesterHolidaysEditor";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Badge } from "@/components/ui/badge";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import { CalendarRange, Eye, Save, Plus, Trash2, Loader2, RefreshCw } from "lucide-react";
+import { CalendarRange, Eye, Save, Loader2, RefreshCw } from "lucide-react";
 import { toast } from "sonner";
 
 const DEFAULT_WORKING_DAYS = [0, 1, 2, 3, 4];
@@ -36,7 +42,7 @@ function parseActiveSemester(raw: unknown): ActiveSemester | null {
     start_date: normalizeIsoDate(String(s.start_date ?? "")),
     weeks_count: Number(s.weeks_count ?? 0),
     working_days: Array.isArray(s.working_days) ? s.working_days.map(Number) : DEFAULT_WORKING_DAYS,
-    excluded_dates: Array.isArray(s.excluded_dates) ? s.excluded_dates.map((d) => normalizeIsoDate(String(d))) : [],
+    excluded_dates: parseSemesterHolidays(s.excluded_dates),
   };
 }
 
@@ -47,16 +53,12 @@ export function SemesterEditForm() {
   const [startDate, setStartDate] = useState("");
   const [weeksCount, setWeeksCount] = useState(18);
   const [workingDays, setWorkingDays] = useState<number[]>(DEFAULT_WORKING_DAYS);
-  const [excludedDates, setExcludedDates] = useState<string[]>([]);
-  const [holidayPick, setHolidayPick] = useState("");
+  const [holidays, setHolidays] = useState<SemesterHoliday[]>([]);
   const [preview, setPreview] = useState<GeneratedAcademicWeek[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
 
-  const sortedExcluded = useMemo(
-    () => [...excludedDates].sort((a, b) => a.localeCompare(b)),
-    [excludedDates],
-  );
+  const serializedHolidays = useMemo(() => serializeSemesterHolidays(holidays), [holidays]);
 
   const loadActive = useCallback(async () => {
     setLoading(true);
@@ -77,7 +79,7 @@ export function SemesterEditForm() {
       setStartDate(semester.start_date);
       setWeeksCount(semester.weeks_count || 18);
       setWorkingDays(semester.working_days.length ? semester.working_days : DEFAULT_WORKING_DAYS);
-      setExcludedDates(semester.excluded_dates);
+      setHolidays(semester.excluded_dates);
       setPreview(null);
     } catch {
       setSemesterId(null);
@@ -98,25 +100,6 @@ export function SemesterEditForm() {
       }
       return [...cur, day].sort((a, b) => a - b);
     });
-    setPreview(null);
-  };
-
-  const addHoliday = () => {
-    if (!holidayPick) {
-      toast.error("اختر تاريخاً للإجازة");
-      return;
-    }
-    if (excludedDates.includes(holidayPick)) {
-      toast.info("هذا التاريخ مُضاف مسبقاً");
-      return;
-    }
-    setExcludedDates((cur) => [...cur, holidayPick].sort());
-    setHolidayPick("");
-    setPreview(null);
-  };
-
-  const removeHoliday = (date: string) => {
-    setExcludedDates((cur) => cur.filter((d) => d !== date));
     setPreview(null);
   };
 
@@ -144,7 +127,7 @@ export function SemesterEditForm() {
     startDate,
     weeksCount,
     workingDays,
-    excludedDates: sortedExcluded,
+    excludedDates: holidayDateStrings(serializedHolidays),
   });
 
   const handlePreview = () => {
@@ -186,7 +169,7 @@ export function SemesterEditForm() {
             start_date: startDate,
             weeks_count: weeksCount,
             working_days: workingDays,
-            excluded_dates: sortedExcluded,
+            excluded_dates: serializedHolidays,
           },
           weeks: weeks.map((w) => ({
             week_number: w.weekNumber,
@@ -318,41 +301,13 @@ export function SemesterEditForm() {
           </div>
         </div>
 
-        <div className="space-y-3 rounded-lg border border-border p-4 bg-secondary/20">
-          <Label>تواريخ الإجازات</Label>
-          <div className="flex flex-wrap gap-2">
-            <Input
-              type="date"
-              value={holidayPick}
-              onChange={(e) => setHolidayPick(e.target.value)}
-              dir="ltr"
-              className="max-w-[200px] text-start"
-            />
-            <Button type="button" variant="outline" size="sm" onClick={addHoliday}>
-              <Plus className="w-4 h-4" />
-              إضافة إجازة
-            </Button>
-          </div>
-          {sortedExcluded.length === 0 ? (
-            <p className="text-xs text-muted-foreground">لم تُضف إجازات بعد</p>
-          ) : (
-            <div className="flex flex-wrap gap-2">
-              {sortedExcluded.map((d) => (
-                <Badge key={d} variant="secondary" className="gap-1 pe-1">
-                  <span dir="ltr">{d}</span>
-                  <button
-                    type="button"
-                    onClick={() => removeHoliday(d)}
-                    className="rounded-full p-0.5 hover:bg-destructive/20 hover:text-destructive"
-                    aria-label={`حذف إجازة ${d}`}
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </button>
-                </Badge>
-              ))}
-            </div>
-          )}
-        </div>
+        <SemesterHolidaysEditor
+          holidays={holidays}
+          onChange={(next) => {
+            setHolidays(next);
+            setPreview(null);
+          }}
+        />
 
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" onClick={handlePreview} disabled={previewing || saving}>

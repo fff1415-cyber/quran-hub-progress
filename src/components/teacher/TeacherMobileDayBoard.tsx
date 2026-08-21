@@ -96,15 +96,20 @@ function TaskColumn({
   label,
   children,
   sci,
+  cellClassName,
 }: {
   label: string;
   children: ReactNode;
   sci?: ReactNode;
+  cellClassName?: string;
 }) {
   return (
     <div className="flex-1 min-w-0 flex flex-col items-stretch">
       <span className="text-[9px] font-bold text-muted-foreground text-center leading-none mb-1">{label}</span>
-      <div className="teacher-mobile-compact flex items-center justify-center min-h-9 rounded-lg bg-input/50 border border-border/60 px-0.5">
+      <div className={cn(
+        "teacher-mobile-compact flex items-center justify-center min-h-9 rounded-lg border border-border/60 px-0.5",
+        cellClassName ?? "bg-input/50",
+      )}>
         {children}
       </div>
       {sci != null && (
@@ -405,6 +410,7 @@ export function TeacherMobileDayBoard({
                     <div className="flex gap-1">
                       <TaskColumn
                         label="حضور"
+                        cellClassName="bg-transparent border-transparent p-0"
                         sci={
                           showSciRow && sciFields.attendance ? (
                             <ScientificGradeInput
@@ -431,6 +437,7 @@ export function TeacherMobileDayBoard({
                     <div className="flex gap-1">
                       <TaskColumn
                         label="حضور"
+                        cellClassName="bg-transparent border-transparent p-0"
                         sci={
                           showSciRow && sciFields.attendance ? (
                             <ScientificGradeInput

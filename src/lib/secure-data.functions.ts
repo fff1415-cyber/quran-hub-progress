@@ -197,7 +197,7 @@ export async function secureCreateSemester({
       start_date: string;
       weeks_count: number;
       working_days: number[];
-      excluded_dates: string[];
+      excluded_dates: { date: string; name: string }[];
     };
     weeks: { week_number: number; start_date: string; end_date: string }[];
   };
@@ -219,7 +219,7 @@ export async function secureUpdateActiveSemester({
       start_date: string;
       weeks_count: number;
       working_days: number[];
-      excluded_dates: string[];
+      excluded_dates: { date: string; name: string }[];
     };
     weeks: { week_number: number; start_date: string; end_date: string }[];
   };

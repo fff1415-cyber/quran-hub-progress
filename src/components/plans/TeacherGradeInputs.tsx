@@ -1,4 +1,5 @@
 import type { HifzValue } from "@/lib/mock-data";
+import type { ReactNode } from "react";
 import { COMPENSATION_FACE_OPTIONS, COMPENSATION_MURAJA_FACE_OPTIONS, HIFZ_LABELS } from "@/lib/mock-data";
 import { useGradeInputSettings } from "@/contexts/GradeInputSettingsContext";
 import {
@@ -13,6 +14,41 @@ import { Check } from "lucide-react";
 /** Fixed-width selects for the halaqa grade table (width set by colgroup). */
 export const gradeCellSelectClass =
   "w-full max-w-full min-w-0 bg-input border border-border rounded px-1 py-1 text-xs truncate";
+
+/** Background tint for attendance cells only. */
+export function attendanceCellClass(value: string): string {
+  switch (value) {
+    case "present":
+      return "bg-success/30";
+    case "late":
+      return "bg-warning/25";
+    case "excused":
+      return "bg-destructive/15";
+    case "absent":
+      return "bg-destructive/40";
+    default:
+      return "";
+  }
+}
+
+function AttendanceCellFrame({
+  value,
+  children,
+}: {
+  value: string;
+  children: ReactNode;
+}) {
+  return (
+    <div
+      className={cn(
+        "w-full min-h-9 rounded flex items-center justify-center p-0.5 transition-colors",
+        attendanceCellClass(value),
+      )}
+    >
+      {children}
+    </div>
+  );
+}
 
 function GradeCellCheckbox({
   checked,
@@ -59,12 +95,14 @@ export function AttSelect({
   if (cfg.mode === "checkbox") {
     const checked = value === "present";
     return (
-      <GradeCellCheckbox
-        checked={checked}
-        titleChecked="حاضر"
-        titleUnchecked="غائب"
-        onChange={(next) => onChange(next ? "present" : "absent")}
-      />
+      <AttendanceCellFrame value={value}>
+        <GradeCellCheckbox
+          checked={checked}
+          titleChecked="حاضر"
+          titleUnchecked="غائب"
+          onChange={(next) => onChange(next ? "present" : "absent")}
+        />
+      </AttendanceCellFrame>
     );
   }
 
@@ -75,16 +113,18 @@ export function AttSelect({
   }
 
   return (
-    <select
-      value={value}
-      onChange={(e) => onChange(e.target.value as AttendanceOption | "")}
-      className={gradeCellSelectClass}
-    >
-      <option value="">—</option>
-      {options.map((opt) => (
-        <option key={opt} value={opt}>{ATTENDANCE_OPTION_LABELS[opt]}</option>
-      ))}
-    </select>
+    <AttendanceCellFrame value={value}>
+      <select
+        value={value}
+        onChange={(e) => onChange(e.target.value as AttendanceOption | "")}
+        className={cn(gradeCellSelectClass, "bg-transparent border-border/50")}
+      >
+        <option value="">—</option>
+        {options.map((opt) => (
+          <option key={opt} value={opt}>{ATTENDANCE_OPTION_LABELS[opt]}</option>
+        ))}
+      </select>
+    </AttendanceCellFrame>
   );
 }
 

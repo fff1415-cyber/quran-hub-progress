@@ -1,4 +1,5 @@
 import { generateAcademicWeeks } from "@/lib/calendar-generator";
+import { holidayDateStrings, parseSemesterHolidays, type SemesterHoliday } from "@/lib/semester-holidays";
 import { getCalendarIsoDate, getCalendarDayKey, isoDateToDayKey } from "@/lib/operational-date";
 import { getToken } from "@/lib/cloud-sync";
 import { secureGetActiveSemester } from "@/lib/secure-data.functions";
@@ -16,7 +17,7 @@ export interface ActiveSemester {
   start_date: string;
   weeks_count: number;
   working_days: number[];
-  excluded_dates: string[];
+  excluded_dates: SemesterHoliday[];
 }
 
 export interface AcademicWeekRow {
@@ -46,7 +47,7 @@ function parseSemester(raw: unknown): ActiveSemester | null {
     start_date: String(s.start_date ?? ""),
     weeks_count: Number(s.weeks_count ?? 0),
     working_days: Array.isArray(s.working_days) ? s.working_days.map(Number) : [0, 1, 2, 3, 4],
-    excluded_dates: Array.isArray(s.excluded_dates) ? s.excluded_dates.map(String) : [],
+    excluded_dates: parseSemesterHolidays(s.excluded_dates),
   };
 }
 
@@ -86,7 +87,7 @@ export function resolveSemesterDayForDate(
     startDate: sem.start_date,
     weeksCount: sem.weeks_count,
     workingDays: sem.working_days,
-    excludedDates: sem.excluded_dates,
+    excludedDates: holidayDateStrings(sem.excluded_dates),
   });
 
   for (const w of weeks) {

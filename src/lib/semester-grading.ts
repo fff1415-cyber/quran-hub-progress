@@ -5,6 +5,8 @@
 
 import { generateAcademicWeeks } from "@/lib/calendar-generator";
 import type { AcademicCalendar, SemesterDayRef } from "@/lib/academic-context";
+import { holidayDateStrings } from "@/lib/semester-holidays";
+import { isoDateToDayKey } from "@/lib/operational-date";
 import { isoDateToDayKey } from "@/lib/operational-date";
 import type { DayEntry, GradesStore, HifzValue, Student } from "@/lib/mock-data";
 import { DAYS, weekPercentage, compensationPoints, sumWeekCompensationFaces, type WeekRecord } from "@/lib/mock-data";
@@ -117,7 +119,7 @@ export function getElapsedSemesterDays(calendar: AcademicCalendar): SemesterDayR
     startDate: sem.start_date,
     weeksCount: sem.weeks_count,
     workingDays: sem.working_days,
-    excludedDates: sem.excluded_dates,
+    excludedDates: holidayDateStrings(sem.excluded_dates),
   });
 
   const cap = calendar.operationalDate;
@@ -146,7 +148,7 @@ export function getSemesterDayDateMap(calendar: AcademicCalendar): Map<string, s
     startDate: sem.start_date,
     weeksCount: sem.weeks_count,
     workingDays: sem.working_days,
-    excludedDates: sem.excluded_dates,
+    excludedDates: holidayDateStrings(sem.excluded_dates),
   });
 
   const map = new Map<string, string>();
@@ -167,7 +169,7 @@ export function getTotalSemesterWorkingDays(calendar: AcademicCalendar): number 
     startDate: sem.start_date,
     weeksCount: sem.weeks_count,
     workingDays: sem.working_days,
-    excludedDates: sem.excluded_dates,
+    excludedDates: holidayDateStrings(sem.excluded_dates),
   });
 
   return weeks.reduce((n, w) => n + w.workingDayDates.length, 0);

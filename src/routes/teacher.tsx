@@ -1314,7 +1314,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                   const e = dayEntryFor(w, d.key, workingKeysList);
                   return isTalqeen ? (
                     <React.Fragment key={d.key}>
-                      <td className={dayCellClass(d.key, GRADE_CELL_W.att)}>
+                      <td className={cn(dayCellClass(d.key, GRADE_CELL_W.att), "!p-0.5")}>
                         <AttSelect value={e.attendance} talqeen onChange={(v) => updateDay(s.id, d.key, { attendance: v })} />
                       </td>
                       <td className={cn("p-1 text-center", GRADE_CELL_W.wajib, highlightDay(d.key) && "bg-muted/60")}>
@@ -1323,7 +1323,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                     </React.Fragment>
                   ) : (
                     <React.Fragment key={d.key}>
-                      <td className={dayCellClass(d.key, GRADE_CELL_W.att)}>
+                      <td className={cn(dayCellClass(d.key, GRADE_CELL_W.att), "!p-0.5")}>
                         <AttSelect value={e.attendance} onChange={(v) => updateDay(s.id, d.key, { attendance: v })} />
                       </td>
                       {sciCtx.visible && sciCtx.fields.attendance && (
