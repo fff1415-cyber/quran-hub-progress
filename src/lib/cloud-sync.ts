@@ -472,18 +472,28 @@ export async function fetchCloudGrades(): Promise<GradesStore> {
   return row.value as GradesStore;
 }
 
+let gradesPushQueue: Promise<GradesStore> = Promise.resolve({} as GradesStore);
+
 /** Upload local grades after merging with the latest cloud copy (teacher + assistant). */
 export async function pushMergedGrades(local: GradesStore): Promise<GradesStore> {
-  let cloud: GradesStore = {};
-  try {
-    cloud = await fetchCloudGrades();
-  } catch {
-    cloud = {};
-  }
-  const merged = mergeGradesStores(cloud, local);
-  await secureSetAppState({ data: { token: tokenOrThrow(), key: "grades", value: merged } });
-  saveGrades(merged, { sync: false });
-  return merged;
+  const run = async (): Promise<GradesStore> => {
+    let cloud: GradesStore = {};
+    try {
+      cloud = await fetchCloudGrades();
+    } catch {
+      cloud = {};
+    }
+    const merged = mergeGradesStores(cloud, local);
+    await secureSetAppState({ data: { token: tokenOrThrow(), key: "grades", value: merged } });
+    saveGrades(merged, { sync: false });
+    return merged;
+  };
+  const next = gradesPushQueue.then(run, run);
+  gradesPushQueue = next.then(
+    (v) => v,
+    () => local,
+  );
+  return next;
 }
 
 /** Pull cloud grades and merge into local without echoing a push. */
