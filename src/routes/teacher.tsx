@@ -577,12 +577,8 @@ function StudentNameCell({
 function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewerRole, canAssign }: WeekTableProps) {
   const tableRef = useRef<HTMLDivElement>(null);
   const allStudents = useMemo(() => loadStudents().filter((s) => s.halaqaId === halaqaId), [halaqaId]);
-  const students = useMemo(
-    () => (viewerRole === "assistant"
-      ? allStudents.filter((s) => s.assignedTo !== "teacher")
-      : allStudents.filter((s) => s.assignedTo !== "assistant")),
-    [allStudents, viewerRole],
-  );
+  /** Teacher and assistant both see the full halaqa roster so attendance stays live for everyone. */
+  const students = allStudents;
   const studentIdsKey = useMemo(
     () => students.map((s) => s.id).sort().join(","),
     [students],
@@ -827,13 +823,13 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }
   };
 
-  const update = (studentId: string, fn: (w: WeekRecord) => WeekRecord) => {
+  const update = (studentId: string, fn: (w: WeekRecord) => WeekRecord, sync?: boolean | "immediate") => {
     const g = { ...grades };
     if (!g[studentId]) g[studentId] = {};
     if (!g[studentId][weekNum]) g[studentId][weekNum] = emptyWeek(workingKeysList);
     g[studentId][weekNum] = fn(g[studentId][weekNum]);
     setGrades(g);
-    saveGrades(g);
+    saveGrades(g, sync === undefined ? undefined : { sync });
   };
 
   const handleDayCompensationChange = async (s: Student, dayKey: string, faces: number) => {
@@ -896,7 +892,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           [dayKey]: { ...base.days[dayKey], ...patch, touchedAt: Date.now() },
         },
       };
-    });
+    }, patch.attendance !== undefined ? "immediate" : undefined);
     if (patch.attendance === "absent") {
       void fetchActiveCalendar(false).then(processAbsenceThresholdAlerts).catch(() => {});
       const student = students.find((s) => s.id === studentId);
@@ -944,7 +940,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       updated++;
     });
     setGrades(g);
-    saveGrades(g);
+    saveGrades(g, { sync: "immediate" });
     const dayLabel = DAYS.find((d) => d.key === dayKey)?.label ?? dayKey;
     toast.success(
       updated > 0
@@ -1200,6 +1196,13 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           )}
           <span className="flex items-center gap-2 text-sm text-success whitespace-nowrap">
             <CheckCircle2 className="w-4 h-4" /> حفظ تلقائي
+          </span>
+          <span className="flex items-center gap-1.5 text-xs text-primary whitespace-nowrap" title="شاشة المعلم والمساعد تُحدَّث معاً">
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/50" />
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-primary" />
+            </span>
+            مباشر — المعلم والمساعد
           </span>
         </div>
       </div>

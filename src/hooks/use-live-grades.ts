@@ -5,7 +5,7 @@ import {
   type GradesStore,
 } from "@/lib/mock-data";
 
-const POLL_MS = 2500;
+const POLL_MS = 800;
 const GRADES_BROADCAST = "qs-grades-v2";
 
 /**
@@ -36,7 +36,8 @@ export function useLiveGrades(): [GradesStore, (g: GradesStore) => void] {
 
     let cancelled = false;
     const tick = async () => {
-      if (cancelled || document.hidden) return;
+      if (cancelled) return;
+      if (document.hidden) return;
       try {
         const { pullMergedGrades } = await import("@/lib/cloud-sync");
         const next = await pullMergedGrades();

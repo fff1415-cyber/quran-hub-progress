@@ -313,6 +313,7 @@ export function TeacherMobileDayBoard({
 
       <p className="text-[10px] text-muted-foreground px-1">
         {dayLabel} · {students.length} طالب
+        <span className="text-primary font-bold"> · مباشر</span>
         {isWeekDayClosed(calendar, weekNum, activeDayKey) && (
           <span className="text-warning font-bold"> · إجازة — العرض فقط دون تعديل</span>
         )}

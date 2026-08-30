@@ -203,7 +203,7 @@ function persistShared(key: "grades" | "sard_queue" | "sard_history" | "notifica
   void import("./cloud-sync").then((m) => m.pushAppState(key, value)).catch(() => undefined);
 }
 
-const GRADES_CLOUD_DEBOUNCE_MS = 500;
+const GRADES_CLOUD_DEBOUNCE_MS = 150;
 let gradesCloudTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingGradesCloud: GradesStore | null = null;
 
@@ -357,11 +357,12 @@ export function loadGrades(): GradesStore {
   const raw = localStorage.getItem(KEY_GRADES);
   return raw ? JSON.parse(raw) : {};
 }
-export function saveGrades(g: GradesStore, options?: { sync?: boolean }) {
+export function saveGrades(g: GradesStore, options?: { sync?: boolean | "immediate" }) {
   localStorage.setItem(KEY_GRADES, JSON.stringify(g));
   notifyGradesChanged();
   if (options?.sync === false) return;
   scheduleGradesCloudPush(g);
+  if (options?.sync === "immediate") flushGradesToCloud();
 }
 
 export function getGradesSemesterId(): string | null {
