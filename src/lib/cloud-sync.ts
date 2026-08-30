@@ -11,6 +11,8 @@ import {
   saveStudents,
   loadStudents,
   loadHalaqat,
+  loadGrades,
+  mergeGradesStores,
   ensureGradesSemester,
 } from "./mock-data";
 import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } from "./weekly-tests";
@@ -296,7 +298,10 @@ export async function syncFromCloud(options?: {
         const stateRows = await secureListAppState({ data: { token } });
         const state = new Map(stateRows.map((row) => [row.key, row.value]));
         sessionStorage.setItem("qs_syncing", "1");
-        if (!semesterReset && state.has("grades")) saveGrades(state.get("grades") as GradesStore);
+        if (!semesterReset && state.has("grades")) {
+          const cloud = state.get("grades") as GradesStore;
+          saveGrades(mergeGradesStores(loadGrades(), cloud), { sync: false });
+        }
         if (!weeklyTestsReset && state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
         if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
         if (state.has("staff_attendance_settings")) saveStaffAttendanceSettings(state.get("staff_attendance_settings") as import("./staff-attendance").StaffAttendanceSettings);
@@ -456,4 +461,44 @@ export async function pushAppState(
   value: unknown,
 ) {
   await secureSetAppState({ data: { token: tokenOrThrow(), key, value } });
+}
+
+export async function fetchCloudGrades(): Promise<GradesStore> {
+  const rows = await secureListAppState({ data: { token: tokenOrThrow(), key: "grades" } });
+  const row = rows.find((r) => r.key === "grades");
+  if (!row || row.value == null || typeof row.value !== "object" || Array.isArray(row.value)) {
+    return {};
+  }
+  return row.value as GradesStore;
+}
+
+/** Upload local grades after merging with the latest cloud copy (teacher + assistant). */
+export async function pushMergedGrades(local: GradesStore): Promise<GradesStore> {
+  let cloud: GradesStore = {};
+  try {
+    cloud = await fetchCloudGrades();
+  } catch {
+    cloud = {};
+  }
+  const merged = mergeGradesStores(cloud, local);
+  await secureSetAppState({ data: { token: tokenOrThrow(), key: "grades", value: merged } });
+  saveGrades(merged, { sync: false });
+  return merged;
+}
+
+/** Pull cloud grades and merge into local without echoing a push. */
+export async function pullMergedGrades(): Promise<GradesStore | null> {
+  const token = getToken();
+  if (!token) return null;
+  const cloud = await fetchCloudGrades();
+  const merged = mergeGradesStores(loadGrades(), cloud);
+  const prev = sessionStorage.getItem("qs_syncing");
+  sessionStorage.setItem("qs_syncing", "1");
+  try {
+    saveGrades(merged, { sync: false });
+  } finally {
+    if (prev) sessionStorage.setItem("qs_syncing", prev);
+    else sessionStorage.removeItem("qs_syncing");
+  }
+  return merged;
 }

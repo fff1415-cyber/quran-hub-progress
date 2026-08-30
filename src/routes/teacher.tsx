@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router"
 import React, { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { z } from "zod";
 import {
-  loadHalaqat, loadStudents, saveStudents, loadGrades, saveGrades, emptyWeek, emptyDayEntry, ensureWeekDays, dayEntryFor, DAYS,
+  loadHalaqat, loadStudents, saveStudents, saveGrades, emptyWeek, emptyDayEntry, ensureWeekDays, dayEntryFor, DAYS,
   weekPercentage, loadNotifications, dismissNotification, pushNotification,
   ensureGradesSemester,
   sumWeekCompensationFaces, compensationRemainingForDay,
@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { halaqaSearchParamSchema } from "@/lib/teacher-halaqa-access";
 import { useTeacherHalaqaAccess } from "@/hooks/use-teacher-halaqa-access";
+import { useLiveGrades } from "@/hooks/use-live-grades";
 import { dispatchPushEvent } from "@/lib/push-notifications";
 import { tenantPath } from "@/lib/tenant";
 import { AppHeader } from "@/components/AppHeader";
@@ -586,7 +587,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     () => students.map((s) => s.id).sort().join(","),
     [students],
   );
-  const [grades, setGrades] = useState(() => loadGrades());
+  const [grades, setGrades] = useLiveGrades();
   const [sciConfig, setSciConfig] = useState<ScientificGradesConfig>(() => loadScientificConfig(halaqaId));
   const [sciData, setSciData] = useState(() => loadScientificData(halaqaId));
   const sciCtx: SciTableCtx = useMemo(
@@ -844,7 +845,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       return;
     }
     const days = { ...w.days };
-    days[dayKey] = { ...dayEntryFor(w, dayKey, workingKeysList), compensationFaces: faces };
+    days[dayKey] = { ...dayEntryFor(w, dayKey, workingKeysList), compensationFaces: faces, touchedAt: Date.now() };
     let nextWeek: WeekRecord = { ...w, days };
     const total = sumWeekCompensationFaces(nextWeek, workingKeysList);
     nextWeek = { ...nextWeek, compensationFaces: total };
@@ -892,7 +893,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         ...base,
         days: {
           ...base.days,
-          [dayKey]: { ...base.days[dayKey], ...patch },
+          [dayKey]: { ...base.days[dayKey], ...patch, touchedAt: Date.now() },
         },
       };
     });
@@ -938,7 +939,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       if (prev.attendance === "present") return;
       g[s.id][weekNum] = {
         ...week,
-        days: { ...week.days, [dayKey]: { ...prev, attendance: "present" } },
+        days: { ...week.days, [dayKey]: { ...prev, attendance: "present", touchedAt: Date.now() } },
       };
       updated++;
     });

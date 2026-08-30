@@ -43,6 +43,8 @@ export interface DayEntry {
   compensationFaces?: number;
   /** Custom field id → selected option (per halaqa field definitions). */
   custom?: Record<string, string>;
+  /** Last local edit time — used to merge teacher/assistant concurrent saves. */
+  touchedAt?: number;
 }
 
 export interface WeekRecord {
@@ -201,9 +203,109 @@ function persistShared(key: "grades" | "sard_queue" | "sard_history" | "notifica
   void import("./cloud-sync").then((m) => m.pushAppState(key, value)).catch(() => undefined);
 }
 
-const GRADES_CLOUD_DEBOUNCE_MS = 2500;
+const GRADES_CLOUD_DEBOUNCE_MS = 500;
 let gradesCloudTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingGradesCloud: GradesStore | null = null;
+
+export const GRADES_CHANGED_EVENT = "qs-grades-changed";
+const GRADES_BROADCAST = "qs-grades-v2";
+
+function gradesBroadcast(): BroadcastChannel | null {
+  if (typeof window === "undefined" || typeof BroadcastChannel === "undefined") return null;
+  try {
+    return new BroadcastChannel(GRADES_BROADCAST);
+  } catch {
+    return null;
+  }
+}
+
+function notifyGradesChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(GRADES_CHANGED_EVENT));
+  const bc = gradesBroadcast();
+  if (bc) {
+    try {
+      bc.postMessage({ t: Date.now() });
+    } catch {
+      /* ignore */
+    }
+    bc.close();
+  }
+}
+
+function isBlankGradeValue(v: unknown): boolean {
+  if (v === undefined || v === null || v === "" || v === false) return true;
+  if (typeof v === "number" && v === 0) return true;
+  return false;
+}
+
+function mergeDayEntries(a: DayEntry | undefined, b: DayEntry | undefined): DayEntry {
+  const left = a ?? emptyDayEntry();
+  const right = b ?? emptyDayEntry();
+  const lt = left.touchedAt ?? 0;
+  const rt = right.touchedAt ?? 0;
+  const pick = <K extends keyof DayEntry>(key: K): DayEntry[K] => {
+    const lv = left[key];
+    const rv = right[key];
+    const le = isBlankGradeValue(lv);
+    const re = isBlankGradeValue(rv);
+    if (le && !re) return rv;
+    if (!le && re) return lv;
+    if (le && re) return lv;
+    return (rt >= lt ? rv : lv) as DayEntry[K];
+  };
+  const custom = rt >= lt
+    ? { ...(left.custom ?? {}), ...(right.custom ?? {}) }
+    : { ...(right.custom ?? {}), ...(left.custom ?? {}) };
+  return {
+    attendance: pick("attendance") as DayEntry["attendance"],
+    hifz: pick("hifz") as HifzValue,
+    rabt: pick("rabt") as DayEntry["rabt"],
+    muraja: pick("muraja") as DayEntry["muraja"],
+    wajib: pick("wajib") as boolean | undefined,
+    compensationFaces: pick("compensationFaces") as number | undefined,
+    custom: Object.keys(custom).length ? custom : undefined,
+    touchedAt: Math.max(lt, rt) || undefined,
+  };
+}
+
+function mergeWeekRecords(a: WeekRecord | undefined, b: WeekRecord | undefined): WeekRecord {
+  const left = a ?? emptyWeek();
+  const right = b ?? emptyWeek();
+  const dayKeys = new Set([...Object.keys(left.days), ...Object.keys(right.days)]);
+  const days: Record<string, DayEntry> = {};
+  for (const key of dayKeys) {
+    days[key] = mergeDayEntries(left.days[key], right.days[key]);
+  }
+  const segs = [...new Set([...(left.compensationPlanSegments ?? []), ...(right.compensationPlanSegments ?? [])])];
+  return {
+    days,
+    testMuraja: left.testMuraja || right.testMuraja,
+    testRabt: left.testRabt || right.testRabt,
+    sard: left.sard || right.sard,
+    compensationFaces: Math.max(left.compensationFaces ?? 0, right.compensationFaces ?? 0) || undefined,
+    compensationMurajaFaces: Math.max(left.compensationMurajaFaces ?? 0, right.compensationMurajaFaces ?? 0) || undefined,
+    compensationPlanSegments: segs.length ? segs : undefined,
+  };
+}
+
+/** Union of two grade stores: filled cells win; if both filled, newer touchedAt wins. */
+export function mergeGradesStores(base: GradesStore, overlay: GradesStore): GradesStore {
+  const out: GradesStore = {};
+  const studentIds = new Set([...Object.keys(base), ...Object.keys(overlay)]);
+  for (const sid of studentIds) {
+    const bWeeks = base[sid] ?? {};
+    const oWeeks = overlay[sid] ?? {};
+    const weekKeys = new Set([...Object.keys(bWeeks), ...Object.keys(oWeeks)]);
+    const weeks: Record<number, WeekRecord> = {};
+    for (const wk of weekKeys) {
+      const n = Number(wk);
+      weeks[n] = mergeWeekRecords(bWeeks[n] ?? bWeeks[wk as unknown as number], oWeeks[n] ?? oWeeks[wk as unknown as number]);
+    }
+    out[sid] = weeks;
+  }
+  return out;
+}
 
 function scheduleGradesCloudPush(g: GradesStore): void {
   pendingGradesCloud = g;
@@ -212,7 +314,10 @@ function scheduleGradesCloudPush(g: GradesStore): void {
     gradesCloudTimer = null;
     const payload = pendingGradesCloud;
     pendingGradesCloud = null;
-    if (payload) persistShared("grades", payload);
+    if (!payload) return;
+    if (typeof window === "undefined" || !hasAuthToken()) return;
+    if (sessionStorage.getItem("qs_syncing") === "1") return;
+    void import("./cloud-sync").then((m) => m.pushMergedGrades(payload)).catch(() => undefined);
   }, GRADES_CLOUD_DEBOUNCE_MS);
 }
 
@@ -224,7 +329,8 @@ export function flushGradesToCloud(): void {
   }
   const payload = pendingGradesCloud ?? loadGrades();
   pendingGradesCloud = null;
-  persistShared("grades", payload);
+  if (typeof window === "undefined" || !hasAuthToken()) return;
+  void import("./cloud-sync").then((m) => m.pushMergedGrades(payload)).catch(() => undefined);
 }
 
 export function loadStudents(): Student[] {
@@ -251,8 +357,10 @@ export function loadGrades(): GradesStore {
   const raw = localStorage.getItem(KEY_GRADES);
   return raw ? JSON.parse(raw) : {};
 }
-export function saveGrades(g: GradesStore) {
+export function saveGrades(g: GradesStore, options?: { sync?: boolean }) {
   localStorage.setItem(KEY_GRADES, JSON.stringify(g));
+  notifyGradesChanged();
+  if (options?.sync === false) return;
   scheduleGradesCloudPush(g);
 }
 

@@ -47,10 +47,21 @@ function handle_list_app_state(): void
     $cid = require_complex_id($auth);
     $pdo = db();
     $tenants = app_state_tenant_enabled($pdo);
+    $keyFilter = (string) ($_GET['key'] ?? '');
 
     if ($tenants) {
-        $stmt = $pdo->prepare('SELECT `key`, value FROM app_state WHERE complex_id = ?');
-        $stmt->execute([$cid]);
+        if ($keyFilter !== '') {
+            $stmt = $pdo->prepare('SELECT `key`, value FROM app_state WHERE complex_id = ? AND `key` = ?');
+            $stmt->execute([$cid, $keyFilter]);
+            $rows = $stmt->fetchAll();
+        } else {
+            $stmt = $pdo->prepare('SELECT `key`, value FROM app_state WHERE complex_id = ?');
+            $stmt->execute([$cid]);
+            $rows = $stmt->fetchAll();
+        }
+    } else if ($keyFilter !== '') {
+        $stmt = $pdo->prepare('SELECT `key`, value FROM app_state WHERE `key` = ?');
+        $stmt->execute([$keyFilter]);
         $rows = $stmt->fetchAll();
     } else {
         $rows = $pdo->query('SELECT `key`, value FROM app_state')->fetchAll();
