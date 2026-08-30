@@ -13,6 +13,8 @@ import {
   getSelectableWeeks,
   formatWeekOptionLabel,
   workingDayKeysFromSemester,
+  getWeekDaySlot,
+  isWeekDayClosed,
   type AcademicCalendar,
 } from "@/lib/academic-context";
 import { cn } from "@/lib/utils";
@@ -627,6 +629,13 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     [workingKeys],
   );
   const workingKeysList = useMemo(() => [...workingKeys], [workingKeys]);
+  const closedDayKeys = useMemo(() => {
+    const closed = new Set<string>();
+    for (const d of visibleDays) {
+      if (isWeekDayClosed(calendar, weekNum, d.key)) closed.add(d.key);
+    }
+    return closed;
+  }, [calendar, weekNum, visibleDays]);
   const isCurrentWeek = weekNum === calendar.currentWeekNumber;
   const todayKey = calendar.currentDayKey;
   const [activeDayKey, setActiveDayKey] = useState(todayKey);
@@ -827,6 +836,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   };
 
   const handleDayCompensationChange = async (s: Student, dayKey: string, faces: number) => {
+    if (closedDayKeys.has(dayKey)) return;
     const w = ensureWeekDays(grades[s.id]?.[weekNum] ?? emptyWeek(workingKeysList), workingKeysList);
     const max = compensationRemainingForDay(w, dayKey, workingKeysList);
     if (faces > max + 0.001) {
@@ -869,11 +879,13 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     field: "attendance" | "hifz" | "rabt" | "muraja",
     value: string,
   ) => {
+    if (closedDayKeys.has(dayKey)) return;
     setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
     refreshSciData();
   };
 
   const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
+    if (closedDayKeys.has(dayKey)) return;
     update(studentId, (w) => {
       const base = ensureWeekDays(w, workingKeysList);
       return {
@@ -912,6 +924,10 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   };
 
   const markAllPresentForDay = (dayKey: string) => {
+    if (closedDayKeys.has(dayKey)) {
+      toast.info("هذا اليوم إجازة أو خارج أيام العمل — لم يُعدَّل التسجيل");
+      return;
+    }
     const g = { ...grades };
     let updated = 0;
     students.forEach((s) => {
@@ -937,6 +953,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   };
 
   const bulkPresentBtn = (dayKey: string) => (
+    closedDayKeys.has(dayKey) ? (
+      <span className="block mb-1 text-[10px] font-bold text-warning">إجازة</span>
+    ) : (
     <button
       type="button"
       onClick={() => markAllPresentForDay(dayKey)}
@@ -945,6 +964,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     >
       حضّر الكل
     </button>
+    )
   );
 
   const tableWidthPx = useMemo(
@@ -963,6 +983,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       "p-1 border-r border-border/30",
       widthClass,
       highlightDay(dayKey) && "bg-muted/60",
+      closedDayKeys.has(dayKey) && "pointer-events-none bg-warning/5",
     );
 
   const subHeaderClass = (dayKey: string, widthClass?: string) =>
@@ -1213,9 +1234,14 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
               <span className="font-bold">الطالب</span>
             </th>
             {visibleDays.map((d) => (
-              <th key={d.key} data-day-col={d.key} colSpan={dayColSpan} className={cn(STICKY_HEAD, GRADE_HEAD_ROW1_TOP, dayHeaderClass(d.key))}>
+              <th key={d.key} data-day-col={d.key} colSpan={dayColSpan} className={cn(STICKY_HEAD, GRADE_HEAD_ROW1_TOP, dayHeaderClass(d.key), closedDayKeys.has(d.key) && "bg-warning/10")}>
                 {d.label}
-                {highlightDay(d.key) && <span className="block text-[10px] text-primary font-normal">اليوم</span>}
+                {closedDayKeys.has(d.key) && (
+                  <span className="block text-[10px] text-warning font-bold">
+                    {getWeekDaySlot(calendar, weekNum, d.key)?.isHoliday ? "إجازة" : "—"}
+                  </span>
+                )}
+                {highlightDay(d.key) && !closedDayKeys.has(d.key) && <span className="block text-[10px] text-primary font-normal">اليوم</span>}
               </th>
             ))}
             {!isTalqeen && !compensationPerDay && (
@@ -1312,12 +1338,13 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 </StudentNameCell>
                 {visibleDays.map((d) => {
                   const e = dayEntryFor(w, d.key, workingKeysList);
+                  const dayClosed = closedDayKeys.has(d.key);
                   return isTalqeen ? (
                     <React.Fragment key={d.key}>
                       <td className={cn(dayCellClass(d.key, GRADE_CELL_W.att), "!p-0.5")}>
                         <AttSelect value={e.attendance} talqeen onChange={(v) => updateDay(s.id, d.key, { attendance: v })} />
                       </td>
-                      <td className={cn("p-1 text-center", GRADE_CELL_W.wajib, highlightDay(d.key) && "bg-muted/60")}>
+                      <td className={cn("p-1 text-center", GRADE_CELL_W.wajib, highlightDay(d.key) && "bg-muted/60", dayClosed && "pointer-events-none bg-warning/5")}>
                         <Cbx checked={!!e.wajib} onChange={(v) => updateDay(s.id, d.key, { wajib: v })} />
                       </td>
                     </React.Fragment>

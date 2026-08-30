@@ -7,7 +7,6 @@ import { generateAcademicWeeks } from "@/lib/calendar-generator";
 import type { AcademicCalendar, SemesterDayRef } from "@/lib/academic-context";
 import { holidayDateStrings } from "@/lib/semester-holidays";
 import { isoDateToDayKey } from "@/lib/operational-date";
-import { isoDateToDayKey } from "@/lib/operational-date";
 import type { DayEntry, GradesStore, HifzValue, Student } from "@/lib/mock-data";
 import { DAYS, weekPercentage, compensationPoints, sumWeekCompensationFaces, type WeekRecord } from "@/lib/mock-data";
 

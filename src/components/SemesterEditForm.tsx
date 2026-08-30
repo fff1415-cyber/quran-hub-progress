@@ -228,7 +228,7 @@ export function SemesterEditForm() {
               تحرير الفصل الحالي
             </CardTitle>
             <CardDescription>
-              عدّل الأسابيع أو الإجازات أو أيام العمل — الدرجات الحالية تبقى كما هي
+              عدّل الأسابيع أو الإجازات أو أيام العمل — التسجيل السابق يبقى في نفس خلية الأسبوع واليوم. الإجازة تعطّل ذلك اليوم فقط دون سحب أيام الأسبوع التالي.
             </CardDescription>
           </div>
           <Button type="button" variant="ghost" size="sm" onClick={() => void loadActive()} disabled={saving}>

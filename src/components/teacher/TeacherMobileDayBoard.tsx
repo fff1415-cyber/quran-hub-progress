@@ -12,7 +12,7 @@ import {
   WEEKLY_COMPENSATION_CAP,
   type HifzValue,
 } from "@/lib/mock-data";
-import { formatWeekOptionLabel, getSelectableWeeks } from "@/lib/academic-context";
+import { formatWeekOptionLabel, getSelectableWeeks, isWeekDayClosed } from "@/lib/academic-context";
 import { AttSelect, CompensationSelect } from "@/components/plans/TeacherGradeInputs";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
 import {
@@ -201,7 +201,8 @@ export function TeacherMobileDayBoard({
             <button
               type="button"
               onClick={() => onMarkAllPresent(activeDayKey)}
-              className="shrink-0 h-9 px-2.5 rounded-lg bg-success/15 text-success border border-success/30 text-[11px] font-bold"
+              disabled={isWeekDayClosed(calendar, weekNum, activeDayKey)}
+              className="shrink-0 h-9 px-2.5 rounded-lg bg-success/15 text-success border border-success/30 text-[11px] font-bold disabled:opacity-40 disabled:pointer-events-none"
             >
               حضّر الكل
             </button>
@@ -211,6 +212,7 @@ export function TeacherMobileDayBoard({
             {visibleDays.map((d) => {
               const active = d.key === activeDayKey;
               const today = isCurrentWeek && d.key === todayKey;
+              const closed = isWeekDayClosed(calendar, weekNum, d.key);
               return (
                 <button
                   key={d.key}
@@ -220,12 +222,15 @@ export function TeacherMobileDayBoard({
                     "shrink-0 min-w-[3.25rem] px-2 py-1.5 rounded-lg text-xs font-bold border transition-all",
                     active
                       ? "bg-primary text-primary-foreground border-primary"
-                      : "bg-secondary/40 border-border",
+                      : closed
+                        ? "bg-warning/10 border-warning/40 text-warning"
+                        : "bg-secondary/40 border-border",
                     today && !active && "ring-1 ring-primary/35",
                   )}
                 >
                   {d.label}
-                  {today && <span className="block text-[8px] font-normal opacity-80">اليوم</span>}
+                  {closed && <span className="block text-[8px] font-bold">إجازة</span>}
+                  {today && !closed && <span className="block text-[8px] font-normal opacity-80">اليوم</span>}
                 </button>
               );
             })}
@@ -308,6 +313,9 @@ export function TeacherMobileDayBoard({
 
       <p className="text-[10px] text-muted-foreground px-1">
         {dayLabel} · {students.length} طالب
+        {isWeekDayClosed(calendar, weekNum, activeDayKey) && (
+          <span className="text-warning font-bold"> · إجازة — العرض فقط دون تعديل</span>
+        )}
       </p>
 
       {students.length === 0 ? (
@@ -315,7 +323,7 @@ export function TeacherMobileDayBoard({
           {viewerRole === "assistant" ? "لم يُعيّن لك أي طالب بعد" : "لا يوجد طلاب"}
         </div>
       ) : (
-        <div className="space-y-1.5 pb-4">
+        <div className={cn("space-y-1.5 pb-4", isWeekDayClosed(calendar, weekNum, activeDayKey) && "pointer-events-none opacity-80")}>
           {students.map((s) => {
             const week = ensureWeekDays(
               grades[s.id]?.[weekNum] ?? emptyWeek(workingKeysList),

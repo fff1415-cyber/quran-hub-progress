@@ -1,4 +1,4 @@
-import { generateAcademicWeeks } from "@/lib/calendar-generator";
+import { generateAcademicWeeks, generateWeekDaySlots, type AcademicWeekDaySlot } from "@/lib/calendar-generator";
 import { holidayDateStrings, parseSemesterHolidays, type SemesterHoliday } from "@/lib/semester-holidays";
 import { getCalendarIsoDate, getCalendarDayKey, isoDateToDayKey } from "@/lib/operational-date";
 import { getToken } from "@/lib/cloud-sync";
@@ -143,6 +143,22 @@ export function buildAcademicCalendar(
   const currentDayKey = getCalendarDayKey(now);
 
   let resolvedWeeks = weeks;
+  if (semester?.start_date && semester.weeks_count > 0) {
+    try {
+      resolvedWeeks = generateAcademicWeeks({
+        startDate: semester.start_date,
+        weeksCount: semester.weeks_count,
+        workingDays: semester.working_days,
+        excludedDates: holidayDateStrings(semester.excluded_dates),
+      }).map((w) => ({
+        week_number: w.weekNumber,
+        start_date: w.startDate,
+        end_date: w.endDate,
+      }));
+    } catch {
+      /* keep DB/fallback rows */
+    }
+  }
   if (resolvedWeeks.length === 0) {
     const count = semester?.weeks_count && semester.weeks_count > 0 ? semester.weeks_count : FALLBACK_WEEKS;
     resolvedWeeks = fallbackWeeks(count);
@@ -236,6 +252,38 @@ export const DAY_KEY_BY_JS: Record<number, string> = {
 export function workingDayKeysFromSemester(workingDays: number[] | undefined): Set<string> {
   const days = workingDays?.length ? workingDays : [0, 1, 2, 3, 4];
   return new Set(days.map((d) => DAY_KEY_BY_JS[d]).filter(Boolean));
+}
+
+function semesterGeneratorInput(calendar: AcademicCalendar) {
+  const sem = calendar.semester;
+  if (!sem?.start_date) return null;
+  return {
+    startDate: sem.start_date,
+    weeksCount: sem.weeks_count,
+    workingDays: sem.working_days,
+    excludedDates: holidayDateStrings(sem.excluded_dates),
+  };
+}
+
+/** Status of a weekday column in a given academic week (holiday vs open for entry). */
+export function getWeekDaySlot(
+  calendar: AcademicCalendar,
+  weekNumber: number,
+  dayKey: string,
+): AcademicWeekDaySlot | null {
+  const input = semesterGeneratorInput(calendar);
+  if (!input || weekNumber < 1) return null;
+  return generateWeekDaySlots(input, weekNumber).find((s) => s.dayKey === dayKey) ?? null;
+}
+
+export function isWeekDayClosed(
+  calendar: AcademicCalendar,
+  weekNumber: number,
+  dayKey: string,
+): boolean {
+  const slot = getWeekDaySlot(calendar, weekNumber, dayKey);
+  if (!slot) return false;
+  return !slot.isWorking;
 }
 
 export function formatWeekOptionLabel(week: AcademicWeekRow, isCurrent: boolean): string {
