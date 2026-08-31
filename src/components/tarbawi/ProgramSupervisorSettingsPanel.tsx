@@ -4,7 +4,7 @@ import type { AcademicCalendar } from "@/lib/academic-context";
 import {
   defaultTarbawiSettings,
   getTarbawiSettings,
-  PLAN_SPAN_OPTIONS,
+  planSpanSelectOptions,
   pushTarbawiStoreCloud,
   saveTarbawiSettings,
   loadTarbawiStore,
@@ -159,7 +159,7 @@ export function ProgramSupervisorSettingsPanel({
                         setSpan(h.id, v === "full" ? "full" : Number(v) as TarbawiPlanSpan);
                       }}
                     >
-                      {PLAN_SPAN_OPTIONS.map((o) => (
+                      {planSpanSelectOptions(settings.halaqaSpans[h.id]).map((o) => (
                         <option key={String(o.value)} value={String(o.value)}>{o.label}</option>
                       ))}
                     </select>

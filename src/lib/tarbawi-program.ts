@@ -9,7 +9,8 @@ export interface TarbawiParagraphType {
   label: string;
 }
 
-export type TarbawiPlanSpan = "full" | 2 | 4 | 6 | 8 | 10 | 12;
+/** Weeks 6–18, or the full semester. Stored numbers outside that range (legacy 2/4) still apply. */
+export type TarbawiPlanSpan = "full" | number;
 
 export type TarbawiPlanStatus = "draft" | "submitted" | "approved" | "rejected";
 
@@ -98,7 +99,13 @@ function normalizeHalaqaSpans(
   const out: Record<number, TarbawiPlanSpan> = {};
   for (const [k, v] of Object.entries(raw)) {
     const id = Number(k);
-    if (Number.isFinite(id) && id > 0 && v) out[id] = v as TarbawiPlanSpan;
+    if (!Number.isFinite(id) || id <= 0) continue;
+    if (v === "full") {
+      out[id] = "full";
+      continue;
+    }
+    const weeks = Number(v);
+    if (Number.isFinite(weeks) && weeks > 0) out[id] = Math.round(weeks);
   }
   return out;
 }
@@ -567,6 +574,32 @@ export function paragraphTypeLabel(settings: TarbawiSettings, typeId: string): s
   return settings.paragraphTypes.find((t) => t.id === typeId)?.label ?? typeId;
 }
 
+export const PLAN_SPAN_MIN_WEEKS = 6;
+export const PLAN_SPAN_MAX_WEEKS = 18;
+
+export function formatWeekCountLabel(weeks: number): string {
+  if (weeks === 1) return "أسبوع واحد";
+  if (weeks === 2) return "أسبوعان";
+  if (weeks >= 3 && weeks <= 10) return `${weeks} أسابيع`;
+  return `${weeks} أسبوعاً`;
+}
+
+export const PLAN_SPAN_OPTIONS: { value: TarbawiPlanSpan; label: string }[] = [
+  ...Array.from({ length: PLAN_SPAN_MAX_WEEKS - PLAN_SPAN_MIN_WEEKS + 1 }, (_, i) => {
+    const weeks = PLAN_SPAN_MIN_WEEKS + i;
+    return { value: weeks, label: formatWeekCountLabel(weeks) };
+  }),
+  { value: "full", label: "كامل الفصل" },
+];
+
+/** Include a saved legacy span (e.g. 2 or 4 weeks) so the dropdown still shows the current value. */
+export function planSpanSelectOptions(current: TarbawiPlanSpan | undefined): { value: TarbawiPlanSpan; label: string }[] {
+  if (current === undefined || current === "full") return PLAN_SPAN_OPTIONS;
+  const weeks = Number(current);
+  if (!Number.isFinite(weeks) || PLAN_SPAN_OPTIONS.some((o) => o.value === weeks)) return PLAN_SPAN_OPTIONS;
+  return [{ value: weeks, label: formatWeekCountLabel(weeks) }, ...PLAN_SPAN_OPTIONS];
+}
+
 export function formatPlanSpanLabel(
   spanSetting: TarbawiPlanSpan | undefined,
   spanWeeks: number,
@@ -575,17 +608,5 @@ export function formatPlanSpanLabel(
   if (spanSetting === "full" || spanWeeks >= semesterWeeks) return "كامل الفصل";
   const opt = PLAN_SPAN_OPTIONS.find((o) => o.value === spanSetting);
   if (opt) return opt.label;
-  if (spanWeeks === 1) return "أسبوع واحد";
-  if (spanWeeks === 2) return "أسبوعان";
-  return `${spanWeeks} أسابيع`;
+  return formatWeekCountLabel(spanWeeks);
 }
-
-export const PLAN_SPAN_OPTIONS: { value: TarbawiPlanSpan; label: string }[] = [
-  { value: 2, label: "أسبوعان" },
-  { value: 4, label: "4 أسابيع" },
-  { value: 6, label: "6 أسابيع" },
-  { value: 8, label: "8 أسابيع" },
-  { value: 10, label: "10 أسابيع" },
-  { value: 12, label: "12 أسبوعاً" },
-  { value: "full", label: "كامل الفصل" },
-];
