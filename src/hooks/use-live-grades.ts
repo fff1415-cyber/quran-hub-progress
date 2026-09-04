@@ -10,7 +10,7 @@ const GRADES_BROADCAST = "qs-grades-v2";
 
 /**
  * Grades that stay in sync while teacher and assistant both have the sheet open.
- * Local edits merge with the cloud copy; empty cells never overwrite filled ones.
+ * Local edits merge with the cloud copy; newer touchedAt wins per cell (including clears).
  */
 export function useLiveGrades(): [GradesStore, (g: GradesStore) => void] {
   const [grades, setGrades] = useState<GradesStore>(() => loadGrades());

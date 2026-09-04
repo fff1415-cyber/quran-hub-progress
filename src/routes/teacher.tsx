@@ -911,7 +911,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           [dayKey]: mergedEntry,
         },
       };
-    }, patch.attendance !== undefined ? "immediate" : undefined);
+    }, patch.attendance !== undefined || patch.hifz !== undefined || patch.rabt !== undefined || patch.muraja !== undefined ? "immediate" : undefined);
 
     syncScientificScoresFromDayPatch(
       halaqaId,

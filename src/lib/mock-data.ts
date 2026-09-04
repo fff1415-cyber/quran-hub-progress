@@ -249,9 +249,8 @@ function mergeDayEntries(a: DayEntry | undefined, b: DayEntry | undefined): DayE
     const rv = right[key];
     const le = isBlankGradeValue(lv);
     const re = isBlankGradeValue(rv);
-    if (le && !re) return rv;
-    if (!le && re) return lv;
     if (le && re) return lv;
+    // Newer edit wins — including deliberate clears (blank with fresh touchedAt).
     return (rt >= lt ? rv : lv) as DayEntry[K];
   };
   const custom = rt >= lt
@@ -289,7 +288,7 @@ function mergeWeekRecords(a: WeekRecord | undefined, b: WeekRecord | undefined):
   };
 }
 
-/** Union of two grade stores: filled cells win; if both filled, newer touchedAt wins. */
+/** Union of two grade stores: per-field winner is the side with newer touchedAt (clears included). */
 export function mergeGradesStores(base: GradesStore, overlay: GradesStore): GradesStore {
   const out: GradesStore = {};
   const studentIds = new Set([...Object.keys(base), ...Object.keys(overlay)]);
