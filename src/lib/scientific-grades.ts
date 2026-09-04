@@ -1,6 +1,7 @@
-/** Teacher-entered numeric grades — separate from core week percentage. */
+/** Manager-configured numeric scores — reflected in halaqa program totals only. */
 import { hasAuthToken } from "@/lib/auth-session";
-import type { DayEntry } from "@/lib/mock-data";
+import type { AttendanceOption } from "@/lib/grade-input-settings";
+import type { DayEntry, GradesStore } from "@/lib/mock-data";
 
 import {
   SCIENTIFIC_PROGRAM_ID,
@@ -12,13 +13,20 @@ export type { ScientificGradeField };
 
 export type ScientificFieldsConfig = Record<ScientificGradeField, boolean>;
 
-export type ScientificDefaultScores = Partial<Record<ScientificGradeField, string>>;
+export type ScientificAttendanceScores = Partial<Record<AttendanceOption, string>>;
+
+export type ScientificDefaultScores = {
+  attendance?: ScientificAttendanceScores;
+  hifz?: string;
+  rabt?: string;
+  muraja?: string;
+};
 
 export type ScientificGradesConfig = {
-  /** Show grade columns in التحضير والدرجات table */
+  /** Teacher enabled the scientific program for this halaqa. */
   visible: boolean;
   fields: ScientificFieldsConfig;
-  /** Auto-filled numeric score per field when the teacher activates that task (per halaqa). */
+  /** Fixed scores per halaqa — set by manager, applied automatically on teacher input. */
   defaultScores: ScientificDefaultScores;
 };
 
@@ -58,6 +66,13 @@ export const ALL_SCIENTIFIC_FIELDS: ScientificGradeField[] = [
   "muraja",
 ];
 
+export const ALL_SCIENTIFIC_ATTENDANCE_OPTIONS: AttendanceOption[] = [
+  "present",
+  "late",
+  "excused",
+  "absent",
+];
+
 export function defaultScientificFields(): ScientificFieldsConfig {
   return { attendance: false, hifz: false, rabt: false, muraja: false };
 }
@@ -66,23 +81,62 @@ export function defaultScientificConfig(): ScientificGradesConfig {
   return { visible: false, fields: defaultScientificFields(), defaultScores: {} };
 }
 
-function normalizeDefaultScores(raw: ScientificDefaultScores | undefined): ScientificDefaultScores {
-  const out: ScientificDefaultScores = {};
-  if (!raw) return out;
-  for (const field of ALL_SCIENTIFIC_FIELDS) {
-    const v = raw[field];
+function normalizeAttendanceScores(raw: unknown): ScientificAttendanceScores {
+  const out: ScientificAttendanceScores = {};
+  if (!raw || typeof raw !== "object") return out;
+  for (const opt of ALL_SCIENTIFIC_ATTENDANCE_OPTIONS) {
+    const v = (raw as Record<string, unknown>)[opt];
     if (typeof v === "string" && v.trim() !== "") {
-      out[field] = v.trim();
+      out[opt] = v.trim();
     }
   }
   return out;
 }
 
-export function scientificDefaultScore(
+function normalizeDefaultScores(raw: unknown): ScientificDefaultScores {
+  if (!raw || typeof raw !== "object") return {};
+  const obj = raw as Record<string, unknown>;
+  const out: ScientificDefaultScores = {};
+
+  if (typeof obj.attendance === "string" && obj.attendance.trim() !== "") {
+    out.attendance = { present: obj.attendance.trim() };
+  } else if (obj.attendance && typeof obj.attendance === "object") {
+    out.attendance = normalizeAttendanceScores(obj.attendance);
+  }
+
+  for (const field of ["hifz", "rabt", "muraja"] as const) {
+    const v = obj[field];
+    if (typeof v === "string" && v.trim() !== "") {
+      out[field] = v.trim();
+    }
+  }
+
+  return out;
+}
+
+/** Resolve the manager-configured score for one field given the day's entry. */
+export function resolveScientificScore(
   config: ScientificGradesConfig,
   field: ScientificGradeField,
+  entry: DayEntry,
 ): string {
-  return config.defaultScores[field]?.trim() ?? "";
+  if (!config.fields[field]) return "";
+
+  switch (field) {
+    case "attendance": {
+      const att = entry.attendance;
+      if (!att) return "";
+      return config.defaultScores.attendance?.[att]?.trim() ?? "";
+    }
+    case "hifz":
+      return entry.hifz !== "" ? (config.defaultScores.hifz?.trim() ?? "") : "";
+    case "rabt":
+      return entry.rabt === "pass" ? (config.defaultScores.rabt?.trim() ?? "") : "";
+    case "muraja":
+      return entry.muraja === "pass" ? (config.defaultScores.muraja?.trim() ?? "") : "";
+    default:
+      return "";
+  }
 }
 
 function persist(store: ScientificGradesStore) {
@@ -167,7 +221,30 @@ export function getScientificDayScore(
   return data[studentId]?.[weekNum]?.[dayKey]?.[field] ?? "";
 }
 
-/** Apply or clear per-halaqa default scientific scores after a day-entry patch. */
+function syncScientificField(
+  halaqaId: number,
+  studentId: string,
+  weekNum: number,
+  dayKey: string,
+  config: ScientificGradesConfig,
+  field: ScientificGradeField,
+  entry: DayEntry,
+): void {
+  if (!config.fields[field]) {
+    setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, "");
+    return;
+  }
+  setScientificDayScore(
+    halaqaId,
+    studentId,
+    weekNum,
+    dayKey,
+    field,
+    resolveScientificScore(config, field, entry),
+  );
+}
+
+/** Apply manager default scores after a day-entry patch (teacher never enters scores manually). */
 export function syncScientificScoresFromDayPatch(
   halaqaId: number,
   studentId: string,
@@ -177,42 +254,32 @@ export function syncScientificScoresFromDayPatch(
   patch: Partial<DayEntry>,
   entry: DayEntry,
 ): void {
-  const applyField = (
-    field: ScientificGradeField,
-    active: boolean,
-  ) => {
-    if (!config.fields[field]) {
-      if (!active) {
-        setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, "");
+  if ("hifz" in patch) syncScientificField(halaqaId, studentId, weekNum, dayKey, config, "hifz", entry);
+  if ("rabt" in patch) syncScientificField(halaqaId, studentId, weekNum, dayKey, config, "rabt", entry);
+  if ("muraja" in patch) syncScientificField(halaqaId, studentId, weekNum, dayKey, config, "muraja", entry);
+  if ("attendance" in patch) syncScientificField(halaqaId, studentId, weekNum, dayKey, config, "attendance", entry);
+}
+
+/** Recompute all stored scientific scores from current grades (after manager saves defaults). */
+export function reapplyScientificScoresForHalaqa(
+  halaqaId: number,
+  grades: GradesStore,
+  studentIds: string[],
+  config: ScientificGradesConfig,
+): void {
+  for (const studentId of studentIds) {
+    const weeks = grades[studentId];
+    if (!weeks) continue;
+    for (const [wkStr, week] of Object.entries(weeks)) {
+      const weekNum = Number(wkStr);
+      if (!week?.days) continue;
+      for (const [dayKey, entry] of Object.entries(week.days)) {
+        if (!entry) continue;
+        for (const field of ALL_SCIENTIFIC_FIELDS) {
+          syncScientificField(halaqaId, studentId, weekNum, dayKey, config, field, entry);
+        }
       }
-      return;
     }
-    if (active) {
-      const def = scientificDefaultScore(config, field);
-      if (def) {
-        setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, def);
-      }
-    } else {
-      setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, "");
-    }
-  };
-
-  if ("hifz" in patch) {
-    applyField("hifz", entry.hifz !== "");
-  }
-
-  if ("rabt" in patch) {
-    applyField("rabt", entry.rabt === "pass");
-  }
-
-  if ("muraja" in patch) {
-    applyField("muraja", entry.muraja === "pass");
-  }
-
-  if ("attendance" in patch) {
-    const att = entry.attendance;
-    const active = att === "present" || att === "late" || att === "excused";
-    applyField("attendance", active);
   }
 }
 

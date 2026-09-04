@@ -10,12 +10,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { loadGrades, loadStudents } from "@/lib/mock-data";
 import {
   ALL_SCIENTIFIC_FIELDS,
   SCIENTIFIC_FIELD_LABELS,
   defaultScientificFields,
   enabledScientificFields,
   loadScientificConfig,
+  reapplyScientificScoresForHalaqa,
   saveScientificConfig,
   type ScientificFieldsConfig,
   type ScientificGradesConfig,
@@ -46,20 +48,21 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
     onConfigChange(next);
   };
 
-  const toggleVisible = () => {
-    if (!hasSetup) {
-      openSetup();
-      return;
-    }
-    applyConfig({ ...config, visible: !config.visible });
-  };
-
   const confirmSetup = () => {
     const enabled = enabledScientificFields(draftFields);
     if (enabled.length === 0) {
       return false;
     }
-    applyConfig({ visible: true, fields: { ...draftFields } });
+    const next: ScientificGradesConfig = {
+      visible: true,
+      fields: { ...draftFields },
+      defaultScores: config.defaultScores,
+    };
+    applyConfig(next);
+    const studentIds = loadStudents()
+      .filter((s) => s.halaqaId === halaqaId)
+      .map((s) => s.id);
+    reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), studentIds, next);
     setDialogOpen(false);
     return true;
   };
@@ -69,18 +72,18 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
       <div className="flex items-center gap-2 flex-wrap">
         <Button
           type="button"
-          variant={config.visible ? "default" : "outline"}
+          variant={hasSetup ? "default" : "outline"}
           size="sm"
           className="gap-1.5"
-          onClick={toggleVisible}
+          onClick={openSetup}
         >
           <FlaskConical className="w-4 h-4" />
-          {config.visible ? "إخفاء الدرجات العلمية" : "إظهار الدرجات العلمية"}
+          {hasSetup ? "البرنامج العلمي — مفعّل" : "تفعيل البرنامج العلمي"}
         </Button>
         {hasSetup && (
           <Button type="button" variant="ghost" size="sm" className="gap-1" onClick={openSetup}>
             <Settings2 className="w-4 h-4" />
-            إعداد
+            تعديل البنود
           </Button>
         )}
       </div>
@@ -88,10 +91,11 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-md">
           <DialogHeader>
-            <DialogTitle>تفعيل الدرجات العلمية</DialogTitle>
+            <DialogTitle>تفعيل البرنامج العلمي</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            اختر البنود التي تريد إضافة عمود درجة رقمية بجانبها. تظهر المجاميع في برنامج «درجات العلمي».
+            اختر البنود التي تُحسب في برنامج الحلقة. النقاط محددة مسبقاً من المدير — لا حاجة لإدخال
+            درجة يدوياً. تظهر المجاميع في «برنامج الحلقة» فقط.
           </p>
           <div className="space-y-3 py-2">
             {ALL_SCIENTIFIC_FIELDS.map((field) => (
@@ -129,31 +133,5 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
         </DialogContent>
       </Dialog>
     </>
-  );
-}
-
-export function ScientificGradeInput({
-  value,
-  onChange,
-  disabled,
-}: {
-  value: string;
-  onChange: (v: string) => void;
-  disabled?: boolean;
-}) {
-  return (
-    <input
-      type="text"
-      inputMode="decimal"
-      value={value}
-      disabled={disabled}
-      onChange={(e) => {
-        const v = e.target.value;
-        if (v === "" || /^-?\d*\.?\d*$/.test(v)) onChange(v);
-      }}
-      placeholder="—"
-      className="w-full min-w-0 max-w-[44px] mx-auto px-0.5 py-1 text-center text-xs rounded border border-primary/30 bg-primary/5 focus:border-primary focus:outline-none disabled:opacity-50"
-      dir="ltr"
-    />
   );
 }

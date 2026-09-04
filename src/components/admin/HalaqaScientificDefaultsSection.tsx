@@ -1,10 +1,13 @@
 import { useMemo, useState } from "react";
-import { loadHalaqat } from "@/lib/mock-data";
+import { loadGrades, loadHalaqat, loadStudents } from "@/lib/mock-data";
+import { ATTENDANCE_OPTION_LABELS, type AttendanceOption } from "@/lib/grade-input-settings";
 import {
-  ALL_SCIENTIFIC_FIELDS,
+  ALL_SCIENTIFIC_ATTENDANCE_OPTIONS,
   SCIENTIFIC_FIELD_LABELS,
   loadScientificConfig,
+  reapplyScientificScoresForHalaqa,
   saveScientificConfig,
+  type ScientificAttendanceScores,
   type ScientificDefaultScores,
   type ScientificGradeField,
 } from "@/lib/scientific-grades";
@@ -14,13 +17,34 @@ import { toast } from "sonner";
 
 const TASK_FIELDS: ScientificGradeField[] = ["hifz", "rabt", "muraja"];
 
-function scoreInputValue(scores: ScientificDefaultScores, field: ScientificGradeField): string {
-  return scores[field] ?? "";
+function scoreInputClassName() {
+  return "w-full max-w-[72px] mx-auto block px-1.5 py-1.5 text-center text-xs rounded border border-border bg-input focus:border-primary focus:outline-none";
 }
 
-function patchScore(
+function patchAttendanceScore(
   scores: ScientificDefaultScores,
-  field: ScientificGradeField,
+  option: AttendanceOption,
+  raw: string,
+): ScientificDefaultScores {
+  const trimmed = raw.trim();
+  const attendance: ScientificAttendanceScores = { ...(scores.attendance ?? {}) };
+  if (trimmed === "") {
+    delete attendance[option];
+  } else {
+    attendance[option] = trimmed;
+  }
+  const next = { ...scores };
+  if (Object.keys(attendance).length === 0) {
+    delete next.attendance;
+  } else {
+    next.attendance = attendance;
+  }
+  return next;
+}
+
+function patchTaskScore(
+  scores: ScientificDefaultScores,
+  field: "hifz" | "rabt" | "muraja",
   raw: string,
 ): ScientificDefaultScores {
   const trimmed = raw.trim();
@@ -44,10 +68,19 @@ export function HalaqaScientificDefaultsSection() {
   });
   const [savingId, setSavingId] = useState<number | null>(null);
 
-  const updateDraft = (halaqaId: number, field: ScientificGradeField, raw: string) => {
+  const updateAttendanceDraft = (halaqaId: number, option: AttendanceOption, raw: string) => {
+    if (raw !== "" && !/^-?\d*\.?\d*$/.test(raw)) return;
     setDrafts((prev) => ({
       ...prev,
-      [halaqaId]: patchScore(prev[halaqaId] ?? {}, field, raw),
+      [halaqaId]: patchAttendanceScore(prev[halaqaId] ?? {}, option, raw),
+    }));
+  };
+
+  const updateTaskDraft = (halaqaId: number, field: "hifz" | "rabt" | "muraja", raw: string) => {
+    if (raw !== "" && !/^-?\d*\.?\d*$/.test(raw)) return;
+    setDrafts((prev) => ({
+      ...prev,
+      [halaqaId]: patchTaskScore(prev[halaqaId] ?? {}, field, raw),
     }));
   };
 
@@ -55,11 +88,16 @@ export function HalaqaScientificDefaultsSection() {
     setSavingId(halaqaId);
     try {
       const config = loadScientificConfig(halaqaId);
-      saveScientificConfig(halaqaId, {
+      const nextConfig = {
         ...config,
         defaultScores: { ...(drafts[halaqaId] ?? {}) },
-      });
-      toast.success(`تم حفظ درجات حلقة «${halaqaName}»`);
+      };
+      saveScientificConfig(halaqaId, nextConfig);
+      const studentIds = loadStudents()
+        .filter((s) => s.halaqaId === halaqaId)
+        .map((s) => s.id);
+      reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), studentIds, nextConfig);
+      toast.success(`تم حفظ نقاط برنامج «${halaqaName}» العلمي`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "فشل الحفظ");
     } finally {
@@ -76,25 +114,35 @@ export function HalaqaScientificDefaultsSection() {
       <div>
         <h3 className="font-bold text-primary flex items-center gap-2">
           <FlaskConical className="w-4 h-4" />
-          الدرجات العلمية الافتراضية — لكل حلقة
+          نقاط البرنامج العلمي — لكل حلقة
         </h3>
         <p className="text-xs text-muted-foreground mt-1 leading-relaxed">
-          عند تفعيل المعلّم للحفظ أو الربط أو المراجعة (✓)، تُثبَّت هذه الدرجة تلقائياً في عمود الدرجة
-          العلمية. يمكن للمعلّم تعديلها يدوياً لاحقاً إن لزم.
+          يضبط المدير النقاط مرة واحدة هنا. المعلّم يسجّل التحضير العادي فقط (حضور · حفظ · ربط · مراجعة)
+          وتُحسب النقاط تلقائياً في برنامج الحلقة الخاص — بدون أعمدة إضافية في جدول التحضير.
         </p>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[640px] border-collapse">
+        <table className="w-full text-sm min-w-[920px] border-collapse">
           <thead>
             <tr className="text-right text-muted-foreground border-b border-border">
-              <th className="p-2 font-medium">الحلقة</th>
+              <th className="p-2 font-medium sticky right-0 bg-card z-10" rowSpan={2}>الحلقة</th>
+              <th className="p-2 font-medium text-center border-r border-border/40" colSpan={4}>
+                {SCIENTIFIC_FIELD_LABELS.attendance}
+              </th>
               {TASK_FIELDS.map((field) => (
-                <th key={field} className="p-2 font-medium text-center min-w-[88px]">
+                <th key={field} className="p-2 font-medium text-center min-w-[72px]" rowSpan={2}>
                   {SCIENTIFIC_FIELD_LABELS[field]}
                 </th>
               ))}
-              <th className="p-2 w-16" />
+              <th className="p-2 w-16" rowSpan={2} />
+            </tr>
+            <tr className="text-right text-[10px] text-muted-foreground border-b border-border">
+              {ALL_SCIENTIFIC_ATTENDANCE_OPTIONS.map((opt) => (
+                <th key={opt} className="p-1.5 font-medium text-center min-w-[72px] border-r border-border/30">
+                  {ATTENDANCE_OPTION_LABELS[opt]}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -102,27 +150,35 @@ export function HalaqaScientificDefaultsSection() {
               const scores = drafts[h.id] ?? {};
               return (
                 <tr key={h.id} className="border-b border-border/40 hover:bg-muted/20">
-                  <td className="p-2 font-medium">
+                  <td className="p-2 font-medium sticky right-0 bg-card z-10">
                     {h.name}
                     {h.isTalqeen && (
                       <span className="mr-1 text-[10px] text-muted-foreground">· تلقين</span>
                     )}
                   </td>
-                  {TASK_FIELDS.map((field) => (
-                    <td key={field} className="p-2">
+                  {ALL_SCIENTIFIC_ATTENDANCE_OPTIONS.map((opt) => (
+                    <td key={opt} className="p-1.5 border-r border-border/20">
                       <input
                         type="text"
                         inputMode="decimal"
                         dir="ltr"
                         placeholder="—"
-                        value={scoreInputValue(scores, field)}
-                        onChange={(e) => {
-                          const v = e.target.value;
-                          if (v === "" || /^-?\d*\.?\d*$/.test(v)) {
-                            updateDraft(h.id, field, v);
-                          }
-                        }}
-                        className="w-full max-w-[80px] mx-auto block px-2 py-1.5 text-center text-xs rounded border border-border bg-input focus:border-primary focus:outline-none"
+                        value={scores.attendance?.[opt] ?? ""}
+                        onChange={(e) => updateAttendanceDraft(h.id, opt, e.target.value)}
+                        className={scoreInputClassName()}
+                      />
+                    </td>
+                  ))}
+                  {TASK_FIELDS.map((field) => (
+                    <td key={field} className="p-1.5">
+                      <input
+                        type="text"
+                        inputMode="decimal"
+                        dir="ltr"
+                        placeholder="—"
+                        value={scores[field] ?? ""}
+                        onChange={(e) => updateTaskDraft(h.id, field, e.target.value)}
+                        className={scoreInputClassName()}
                       />
                     </td>
                   ))}
@@ -150,8 +206,7 @@ export function HalaqaScientificDefaultsSection() {
       </div>
 
       <p className="text-[10px] text-muted-foreground">
-        تُستخدم فقط عند تفعيل «الدرجات العلمية» للحلقة وبند الحفظ/الربط/المراجعة. البنود:{" "}
-        {ALL_SCIENTIFIC_FIELDS.map((f) => SCIENTIFIC_FIELD_LABELS[f]).join(" · ")}.
+        يفعّل المعلّم البنود من صفحته؛ النقاط تظهر في «برنامج الحلقة» فقط عند تسجيل التحضير.
       </p>
     </div>
   );
