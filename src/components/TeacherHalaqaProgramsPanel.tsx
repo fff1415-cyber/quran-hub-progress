@@ -35,6 +35,7 @@ import {
   loadScientificConfig,
   loadScientificData,
   SCIENTIFIC_TOTAL_LABELS,
+  scientificPeriodMaxPossible,
   studentScientificPeriodTotals,
   type ScientificGradeField,
 } from "@/lib/scientific-grades";
@@ -552,6 +553,7 @@ function ProgramFillSection({
     }
     return enabledScientificFields(loadScientificConfig(halaqaId).fields);
   }, [scientificProgram, halaqaId]);
+  const sciConfig = useMemo(() => loadScientificConfig(halaqaId), [halaqaId]);
   const sciData = loadScientificData(halaqaId);
 
   if (programs.length === 0) {
@@ -567,6 +569,14 @@ function ProgramFillSection({
   const cumulativeWeekNums = useMemo(
     () => selectableWeeks.filter((w) => w.week_number <= weekNum).map((w) => w.week_number),
     [selectableWeeks, weekNum],
+  );
+
+  const sciPeriodMax = useMemo(
+    () =>
+      sciFields.length > 0
+        ? scientificPeriodMaxPossible(sciConfig, cumulativeWeekNums, workingDayKeys)
+        : 0,
+    [sciFields.length, sciConfig, cumulativeWeekNums, workingDayKeys],
   );
 
   return (
@@ -670,6 +680,13 @@ function ProgramFillSection({
                 program: p,
                 totals: studentSingleProgramPeriodTotals(p, grades, s.id, cumulativeWeekNums),
               }));
+              const sciEarned = sciTotals?.total ?? 0;
+              const combinedEarned = totals.earned + sciEarned;
+              const combinedMax = totals.maxPossible + sciPeriodMax;
+              const combinedPercent =
+                combinedMax > 0 ? Math.round((combinedEarned / combinedMax) * 100) : 0;
+              const hasCumulative = totals.filledSlots > 0 || sciEarned > 0;
+              const hasPercent = combinedMax > 0;
               return (
                 <tr key={s.id} className="border-b border-border/50 hover:bg-accent/20">
                   <td className="p-2 sticky right-0 bg-card font-medium">{s.name}</td>
@@ -703,12 +720,13 @@ function ProgramFillSection({
                     </>
                   )}
                   <td className="p-1 border-r border-border/30 text-center text-xs font-bold text-primary bg-primary/5">
-                    {totals.filledSlots > 0 ? totals.earned : "—"}
+                    {hasCumulative ? combinedEarned : "—"}
                   </td>
                   <td className="p-1 border-r border-border/30 text-center bg-primary/5">
                     <ProgramsCumulativeBreakdown
-                      percent={totals.percent}
-                      filled={totals.filledSlots > 0}
+                      percent={combinedPercent}
+                      filled={hasCumulative}
+                      percentAvailable={hasPercent}
                       programs={programBreakdown}
                       scientific={
                         scientificProgram && sciTotals
@@ -730,15 +748,17 @@ function ProgramFillSection({
 function ProgramsCumulativeBreakdown({
   percent,
   filled,
+  percentAvailable = true,
   programs,
   scientific,
 }: {
   percent: number;
   filled: boolean;
+  percentAvailable?: boolean;
   programs: { program: HalaqaProgram; totals: ProgramWeekTotals }[];
   scientific: { name: string; earned: number } | null;
 }) {
-  const displayPercent = filled ? `${percent}%` : "—";
+  const displayPercent = filled && percentAvailable ? `${percent}%` : "—";
   const hasBreakdown = programs.length > 0 || scientific !== null;
 
   if (!hasBreakdown) {

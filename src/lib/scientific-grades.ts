@@ -360,6 +360,38 @@ export function studentScientificPeriodTotals(
   return totals;
 }
 
+/** Best-case points per working day from manager defaults (for cumulative % denominator). */
+export function scientificDailyMaxPossible(config: ScientificGradesConfig): number {
+  const fields = enabledScientificFields(config.fields);
+  if (fields.length === 0) return 0;
+
+  let daily = 0;
+  for (const field of fields) {
+    if (field === "attendance") {
+      const att = config.defaultScores.attendance ?? {};
+      let best = 0;
+      for (const opt of ALL_SCIENTIFIC_ATTENDANCE_OPTIONS) {
+        const n = parseScientificScore(att[opt]);
+        if (n !== null && n > best) best = n;
+      }
+      daily += best;
+    } else {
+      daily += parseScientificScore(config.defaultScores[field]) ?? 0;
+    }
+  }
+  return daily;
+}
+
+export function scientificPeriodMaxPossible(
+  config: ScientificGradesConfig,
+  weekNums: number[],
+  workingDayKeys: string[],
+): number {
+  const daily = scientificDailyMaxPossible(config);
+  if (daily <= 0 || weekNums.length === 0 || workingDayKeys.length === 0) return 0;
+  return daily * weekNums.length * workingDayKeys.length;
+}
+
 export function isScientificProgramId(id: string): boolean {
   return id === SCIENTIFIC_PROGRAM_ID;
 }
