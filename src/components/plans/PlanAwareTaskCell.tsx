@@ -1,6 +1,6 @@
 import type { PlanTaskType } from "@/lib/plan-types";
-import { hifzCheckedValue, isHifzChecked, type HifzValue, type Student } from "@/lib/mock-data";
-import { HifzCheckbox, PassFail } from "@/components/plans/TeacherGradeInputs";
+import type { HifzValue, type Student } from "@/lib/mock-data";
+import { HifzTaskInput, PassFail } from "@/components/plans/TeacherGradeInputs";
 
 interface PlanAwareTaskCellProps {
   student: Student;
@@ -29,12 +29,13 @@ export function PlanAwareTaskCell({
 }: PlanAwareTaskCellProps) {
   if (task === "hifz") {
     return (
-      <HifzCheckbox
-        checked={isHifzChecked(hifzValue)}
+      <HifzTaskInput
+        value={hifzValue}
+        levelType={student.levelType}
         disabled={disabled}
-        onChange={(next) => {
-          onHifzChange(next ? hifzCheckedValue(student.levelType) : "");
-          if (hasPlan && next) onPlanHifzChange?.(true);
+        onChange={(v) => {
+          onHifzChange(v);
+          if (hasPlan && v !== "") onPlanHifzChange?.(true);
         }}
       />
     );

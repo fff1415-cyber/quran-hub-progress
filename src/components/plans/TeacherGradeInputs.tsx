@@ -1,6 +1,6 @@
 import type { HifzValue } from "@/lib/mock-data";
 import type { ReactNode } from "react";
-import { COMPENSATION_FACE_OPTIONS, COMPENSATION_MURAJA_FACE_OPTIONS, HIFZ_LABELS } from "@/lib/mock-data";
+import { COMPENSATION_FACE_OPTIONS, COMPENSATION_MURAJA_FACE_OPTIONS, HIFZ_LABELS, hifzCheckedValue, isHifzChecked, type Student } from "@/lib/mock-data";
 import { useGradeInputSettings } from "@/contexts/GradeInputSettingsContext";
 import {
   ATTENDANCE_OPTION_LABELS,
@@ -141,9 +141,58 @@ export function HifzCheckbox({
     <GradeCellCheckbox
       checked={checked}
       disabled={disabled}
-      titleChecked="قرأ مقطعاً واحداً"
-      titleUnchecked="لم يقرأ"
+      titleChecked="تم — اضغط لإلغاء"
+      titleUnchecked="لم يُسجَّل — اضغط للتفعيل"
       onChange={onChange}
+    />
+  );
+}
+
+/** Hifz cell — checkbox (toggle off) or legacy dropdown per manager settings. */
+export function HifzTaskInput({
+  value,
+  onChange,
+  disabled,
+  levelType,
+  goldOnly,
+}: {
+  value: HifzValue;
+  onChange: (v: HifzValue) => void;
+  disabled?: boolean;
+  levelType: Student["levelType"];
+  goldOnly?: boolean;
+}) {
+  const { settings } = useGradeInputSettings();
+
+  if (settings.hifz.mode === "dropdown") {
+    return (
+      <div className="flex items-center justify-center gap-0.5 min-w-0">
+        <HifzSelect
+          value={value}
+          onChange={onChange}
+          disabled={disabled}
+          goldOnly={goldOnly}
+        />
+        {value !== "" && !disabled && (
+          <button
+            type="button"
+            title="مسح الحفظ"
+            aria-label="مسح الحفظ"
+            onClick={() => onChange("")}
+            className="shrink-0 w-5 h-5 rounded text-[10px] font-bold text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+          >
+            ×
+          </button>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <HifzCheckbox
+      checked={isHifzChecked(value)}
+      disabled={disabled}
+      onChange={(next) => onChange(next ? hifzCheckedValue(levelType) : "")}
     />
   );
 }
@@ -283,16 +332,29 @@ export function PassFail({
   }
 
   return (
-    <select
-      value={value}
-      disabled={disabled}
-      onChange={(e) => onChange(e.target.value as PassFailOption | "")}
-      className={gradeCellSelectClass}
-    >
-      <option value="">—</option>
-      {cfg.options.map((opt) => (
-        <option key={opt} value={opt}>{PASS_FAIL_LABELS[opt]}</option>
-      ))}
-    </select>
+    <div className="flex items-center justify-center gap-0.5 min-w-0">
+      <select
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.target.value as PassFailOption | "")}
+        className={cn(gradeCellSelectClass, "flex-1 min-w-0")}
+      >
+        <option value="">—</option>
+        {cfg.options.map((opt) => (
+          <option key={opt} value={opt}>{PASS_FAIL_LABELS[opt]}</option>
+        ))}
+      </select>
+      {value !== "" && !disabled && (
+        <button
+          type="button"
+          title="مسح"
+          aria-label="مسح الربط/المراجعة"
+          onClick={() => onChange("")}
+          className="shrink-0 w-5 h-5 rounded text-[10px] font-bold text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+        >
+          ×
+        </button>
+      )}
+    </div>
   );
 }

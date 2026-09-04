@@ -7,7 +7,7 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { isApexBareTenantAppPath } from "@/lib/tenant";
+import { isApexBareTenantAppPath, PLATFORM_BRAND, apexDomain } from "@/lib/tenant";
 import { EvaluationSettingsProvider } from "@/contexts/EvaluationSettingsContext";
 import { GradeInputSettingsProvider } from "@/contexts/GradeInputSettingsContext";
 import { TenantProvider } from "@/contexts/TenantContext";
@@ -28,6 +28,8 @@ function NotFoundComponent() {
   );
 }
 
+const PLATFORM_OG_IMAGE = `https://${apexDomain()}/shtaiwi-logo.png`;
+
 export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()({
   beforeLoad: () => {
     if (typeof window !== "undefined" && isApexBareTenantAppPath(window.location.pathname)) {
@@ -38,14 +40,14 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
     meta: [
       { charSet: "utf-8" },
       { name: "viewport", content: "width=device-width, initial-scale=1" },
-      { title: "msht.io — منصة إدارة مجمعات تحفيظ القرآن" },
-      { name: "description", content: "منصة SaaS لإدارة مجمعات تحفيظ القرآن — تسجيل مجمع جديد أو الدخول إلى مجمعك" },
-      { property: "og:title", content: "msht.io" },
-      { name: "twitter:title", content: "msht.io" },
-      { property: "og:description", content: "منصة إدارة مجمعات تحفيظ القرآن الكريم" },
-      { name: "twitter:description", content: "منصة إدارة مجمعات تحفيظ القرآن الكريم" },
-      { property: "og:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/4c50ea6d-9216-4656-aac6-1061f61829f0/id-preview-b9794d4f--44d653ee-aa6b-4e50-9996-6690d5c2aaa9.lovable.app-1779613164736.png" },
-      { name: "twitter:image", content: "https://pub-bb2e103a32db4e198524a2e9ed8f35b4.r2.dev/4c50ea6d-9216-4656-aac6-1061f61829f0/id-preview-b9794d4f--44d653ee-aa6b-4e50-9996-6690d5c2aaa9.lovable.app-1779613164736.png" },
+      { title: `${PLATFORM_BRAND.name} — ${PLATFORM_BRAND.subtitle}` },
+      { name: "description", content: PLATFORM_BRAND.subtitle },
+      { property: "og:title", content: PLATFORM_BRAND.name },
+      { name: "twitter:title", content: PLATFORM_BRAND.name },
+      { property: "og:description", content: PLATFORM_BRAND.subtitle },
+      { name: "twitter:description", content: PLATFORM_BRAND.subtitle },
+      { property: "og:image", content: PLATFORM_OG_IMAGE },
+      { name: "twitter:image", content: PLATFORM_OG_IMAGE },
       { name: "twitter:card", content: "summary_large_image" },
       { property: "og:type", content: "website" },
     ],

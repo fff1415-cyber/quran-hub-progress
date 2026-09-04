@@ -177,38 +177,42 @@ export function syncScientificScoresFromDayPatch(
   patch: Partial<DayEntry>,
   entry: DayEntry,
 ): void {
-  if ("hifz" in patch && config.fields.hifz) {
-    const def = scientificDefaultScore(config, "hifz");
-    const value = entry.hifz !== "" ? def : "";
-    if (value || entry.hifz === "") {
-      setScientificDayScore(halaqaId, studentId, weekNum, dayKey, "hifz", value);
+  const applyField = (
+    field: ScientificGradeField,
+    active: boolean,
+  ) => {
+    if (!config.fields[field]) {
+      if (!active) {
+        setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, "");
+      }
+      return;
     }
+    if (active) {
+      const def = scientificDefaultScore(config, field);
+      if (def) {
+        setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, def);
+      }
+    } else {
+      setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, "");
+    }
+  };
+
+  if ("hifz" in patch) {
+    applyField("hifz", entry.hifz !== "");
   }
 
-  if ("rabt" in patch && config.fields.rabt) {
-    const def = scientificDefaultScore(config, "rabt");
-    const value = entry.rabt === "pass" ? def : "";
-    if (value || entry.rabt !== "pass") {
-      setScientificDayScore(halaqaId, studentId, weekNum, dayKey, "rabt", value);
-    }
+  if ("rabt" in patch) {
+    applyField("rabt", entry.rabt === "pass");
   }
 
-  if ("muraja" in patch && config.fields.muraja) {
-    const def = scientificDefaultScore(config, "muraja");
-    const value = entry.muraja === "pass" ? def : "";
-    if (value || entry.muraja !== "pass") {
-      setScientificDayScore(halaqaId, studentId, weekNum, dayKey, "muraja", value);
-    }
+  if ("muraja" in patch) {
+    applyField("muraja", entry.muraja === "pass");
   }
 
-  if ("attendance" in patch && config.fields.attendance) {
-    const def = scientificDefaultScore(config, "attendance");
+  if ("attendance" in patch) {
     const att = entry.attendance;
     const active = att === "present" || att === "late" || att === "excused";
-    const value = active ? def : "";
-    if (value || !active) {
-      setScientificDayScore(halaqaId, studentId, weekNum, dayKey, "attendance", value);
-    }
+    applyField("attendance", active);
   }
 }
 

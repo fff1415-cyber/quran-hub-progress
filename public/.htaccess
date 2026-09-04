@@ -21,6 +21,17 @@ Options -Indexes -MultiViews
   # PHP API (same docroot: public_html/api/)
   RewriteRule ^api(/|$) - [L]
 
+  # Social link previews (WhatsApp, Facebook, …) — tenant logo per complex
+  RewriteCond %{HTTP_USER_AGENT} (facebookexternalhit|WhatsApp|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Embedly|Pinterest) [NC]
+  RewriteCond %{REQUEST_URI} !^/og-preview\.php [NC]
+  RewriteCond %{HTTP_HOST} ^([a-z0-9-]+)\.msht\.io$ [NC]
+  RewriteRule ^ og-preview.php?slug=%1 [L,QSA]
+  RewriteCond %{HTTP_USER_AGENT} (facebookexternalhit|WhatsApp|Twitterbot|LinkedInBot|Slackbot|TelegramBot|Discordbot|Embedly|Pinterest) [NC]
+  RewriteCond %{REQUEST_URI} !^/og-preview\.php [NC]
+  RewriteCond %{REQUEST_URI} ^/([a-z0-9-]+)(?:/|$) [NC]
+  RewriteCond %1 !^(register|platform-admin|prelaunch-audit|admin|dashboard|daily-operations|manager|teacher|secretary|supervisor|student|musammi|kiosk|staff-attendance|program-supervisor|api|assets)$ [NC]
+  RewriteRule ^([a-z0-9-]+)(?:/.*)?$ og-preview.php?slug=$1 [L,QSA]
+
   # Bearer token for API
   RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 

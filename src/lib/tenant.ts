@@ -326,7 +326,37 @@ export function applyPlatformTheme(): void {
 
 export function tenantLogoUrl(tenant: TenantInfo): string | null {
   const url = tenant.logo_url?.trim();
-  return url ? url : null;
+  if (!url) return null;
+  if (/^https?:\/\//i.test(url)) return url;
+  if (typeof window !== "undefined") {
+    return `${window.location.origin}/${url.replace(/^\//, "")}`;
+  }
+  return `https://${apexDomain()}/${url.replace(/^\//, "")}`;
+}
+
+function upsertDocumentMeta(attr: "property" | "name", key: string, content: string): void {
+  if (typeof document === "undefined") return;
+  let el = document.querySelector(`meta[${attr}="${key}"]`) as HTMLMetaElement | null;
+  if (!el) {
+    el = document.createElement("meta");
+    el.setAttribute(attr, key);
+    document.head.appendChild(el);
+  }
+  el.content = content;
+}
+
+/** Keep share meta in sync when tenant loads (in-app; WhatsApp uses og-preview.php). */
+export function applyTenantShareMeta(tenant: TenantInfo): void {
+  if (typeof document === "undefined") return;
+  const image = tenantLogoUrl(tenant) ?? `https://${apexDomain()}/shtaiwi-logo.png`;
+  const description = `${tenant.name} — منصة إدارة مجمعات تحفيظ القرآن الكريم`;
+  document.title = tenant.name;
+  upsertDocumentMeta("property", "og:title", tenant.name);
+  upsertDocumentMeta("property", "og:description", description);
+  upsertDocumentMeta("property", "og:image", image);
+  upsertDocumentMeta("name", "twitter:title", tenant.name);
+  upsertDocumentMeta("name", "twitter:description", description);
+  upsertDocumentMeta("name", "twitter:image", image);
 }
 
 function parseTenantRow(row: TenantInfo, sub: string): TenantInfo {
@@ -479,9 +509,7 @@ export function setCachedTenant(tenant: TenantInfo | null, platform = false): vo
   ensureTenantIsolation(tenant);
   setTenantSession(tenant);
   applyTenantTheme(tenant);
-  if (typeof document !== "undefined") {
-    document.title = tenant.name;
-  }
+  applyTenantShareMeta(tenant);
 }
 
 export function getCachedTenant(): TenantInfo | null {
