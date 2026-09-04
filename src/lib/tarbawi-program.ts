@@ -361,8 +361,6 @@ export function validateTarbawiPlanEntry(
   if (plan.items.length < required) {
     return `أكمل ${required} فقرة للمدة المحددة (موجود ${plan.items.length})`;
   }
-  const emptyTopic = plan.items.slice(0, required).find((i) => !i.topic.trim());
-  if (emptyTopic) return "أكمل موضوع كل الفقرات قبل التوزيع";
   return null;
 }
 
@@ -372,8 +370,6 @@ export function validateTarbawiPlanDraft(
   semesterWeeks: number,
 ): string | null {
   if (plan.items.length === 0) return "أضف فقرات للخطة أولاً";
-  const emptyTopic = plan.items.find((i) => !i.topic.trim());
-  if (emptyTopic) return "أكمل موضوع كل الفقرات قبل الإرسال";
   const spanWeeks = getHalaqaPlanSpan(settings, plan.halaqaId, semesterWeeks);
   for (let w = 1; w <= spanWeeks; w++) {
     const count = plan.items.filter((i) => i.weekNumber === w).length;

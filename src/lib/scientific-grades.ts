@@ -1,5 +1,6 @@
 /** Teacher-entered numeric grades — separate from core week percentage. */
 import { hasAuthToken } from "@/lib/auth-session";
+import type { DayEntry } from "@/lib/mock-data";
 
 import {
   SCIENTIFIC_PROGRAM_ID,
@@ -11,10 +12,14 @@ export type { ScientificGradeField };
 
 export type ScientificFieldsConfig = Record<ScientificGradeField, boolean>;
 
+export type ScientificDefaultScores = Partial<Record<ScientificGradeField, string>>;
+
 export type ScientificGradesConfig = {
   /** Show grade columns in التحضير والدرجات table */
   visible: boolean;
   fields: ScientificFieldsConfig;
+  /** Auto-filled numeric score per field when the teacher activates that task (per halaqa). */
+  defaultScores: ScientificDefaultScores;
 };
 
 export type ScientificDayScores = Partial<Record<ScientificGradeField, string>>;
@@ -58,7 +63,26 @@ export function defaultScientificFields(): ScientificFieldsConfig {
 }
 
 export function defaultScientificConfig(): ScientificGradesConfig {
-  return { visible: false, fields: defaultScientificFields() };
+  return { visible: false, fields: defaultScientificFields(), defaultScores: {} };
+}
+
+function normalizeDefaultScores(raw: ScientificDefaultScores | undefined): ScientificDefaultScores {
+  const out: ScientificDefaultScores = {};
+  if (!raw) return out;
+  for (const field of ALL_SCIENTIFIC_FIELDS) {
+    const v = raw[field];
+    if (typeof v === "string" && v.trim() !== "") {
+      out[field] = v.trim();
+    }
+  }
+  return out;
+}
+
+export function scientificDefaultScore(
+  config: ScientificGradesConfig,
+  field: ScientificGradeField,
+): string {
+  return config.defaultScores[field]?.trim() ?? "";
 }
 
 function persist(store: ScientificGradesStore) {
@@ -95,6 +119,7 @@ export function loadScientificConfig(halaqaId: number): ScientificGradesConfig {
   return {
     visible: !!cfg.visible,
     fields: { ...defaultScientificFields(), ...cfg.fields },
+    defaultScores: normalizeDefaultScores(cfg.defaultScores),
   };
 }
 
@@ -103,6 +128,7 @@ export function saveScientificConfig(halaqaId: number, config: ScientificGradesC
   store.configs[String(halaqaId)] = {
     visible: config.visible,
     fields: { ...config.fields },
+    defaultScores: normalizeDefaultScores(config.defaultScores),
   };
   const enabled = enabledScientificFields(config.fields);
   if (enabled.length > 0) {
@@ -139,6 +165,51 @@ export function getScientificDayScore(
   field: ScientificGradeField,
 ): string {
   return data[studentId]?.[weekNum]?.[dayKey]?.[field] ?? "";
+}
+
+/** Apply or clear per-halaqa default scientific scores after a day-entry patch. */
+export function syncScientificScoresFromDayPatch(
+  halaqaId: number,
+  studentId: string,
+  weekNum: number,
+  dayKey: string,
+  config: ScientificGradesConfig,
+  patch: Partial<DayEntry>,
+  entry: DayEntry,
+): void {
+  if ("hifz" in patch && config.fields.hifz) {
+    const def = scientificDefaultScore(config, "hifz");
+    const value = entry.hifz !== "" ? def : "";
+    if (value || entry.hifz === "") {
+      setScientificDayScore(halaqaId, studentId, weekNum, dayKey, "hifz", value);
+    }
+  }
+
+  if ("rabt" in patch && config.fields.rabt) {
+    const def = scientificDefaultScore(config, "rabt");
+    const value = entry.rabt === "pass" ? def : "";
+    if (value || entry.rabt !== "pass") {
+      setScientificDayScore(halaqaId, studentId, weekNum, dayKey, "rabt", value);
+    }
+  }
+
+  if ("muraja" in patch && config.fields.muraja) {
+    const def = scientificDefaultScore(config, "muraja");
+    const value = entry.muraja === "pass" ? def : "";
+    if (value || entry.muraja !== "pass") {
+      setScientificDayScore(halaqaId, studentId, weekNum, dayKey, "muraja", value);
+    }
+  }
+
+  if ("attendance" in patch && config.fields.attendance) {
+    const def = scientificDefaultScore(config, "attendance");
+    const att = entry.attendance;
+    const active = att === "present" || att === "late" || att === "excused";
+    const value = active ? def : "";
+    if (value || !active) {
+      setScientificDayScore(halaqaId, studentId, weekNum, dayKey, "attendance", value);
+    }
+  }
 }
 
 export function setScientificDayScore(
@@ -205,10 +276,11 @@ export function studentScientificPeriodTotals(
   studentId: string,
   weekNums: number[],
   enabledFields: ScientificGradeField[],
+  dayKeys?: string[],
 ): ScientificWeekTotals {
   const totals = emptyScientificWeekTotals();
   for (const weekNum of weekNums) {
-    const w = studentScientificWeekTotals(data, studentId, weekNum, enabledFields);
+    const w = studentScientificWeekTotals(data, studentId, weekNum, enabledFields, dayKeys);
     for (const field of enabledFields) {
       totals[field] += w[field];
     }

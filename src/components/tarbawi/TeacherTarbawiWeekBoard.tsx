@@ -304,10 +304,6 @@ export function TeacherTarbawiWeekBoard({
 
   const saveContentEdit = () => {
     if (!editTarget) return;
-    if (!editTarget.topic.trim()) {
-      toast.error("الموضوع مطلوب");
-      return;
-    }
     const nextItems = plan.items.map((i) =>
       i.id === editTarget.item.id
         ? { ...i, paragraphTypeId: editTarget.paragraphTypeId, topic: editTarget.topic.trim() }

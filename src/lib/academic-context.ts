@@ -75,6 +75,39 @@ function fallbackWeeks(count: number): AcademicWeekRow[] {
   }));
 }
 
+function semesterCalendarInput(semester: ActiveSemester) {
+  return {
+    startDate: semester.start_date,
+    weeksCount: semester.weeks_count,
+    workingDays: semester.working_days,
+    excludedDates: holidayDateStrings(semester.excluded_dates),
+  };
+}
+
+/** Single source of truth: regenerate week rows from semester settings (fallback to DB rows). */
+function resolveCalendarWeeks(
+  semester: ActiveSemester | null,
+  dbWeeks: AcademicWeekRow[],
+): AcademicWeekRow[] {
+  if (!semester?.start_date || semester.weeks_count < 1) {
+    if (dbWeeks.length > 0) return dbWeeks;
+    const count =
+      semester?.weeks_count && semester.weeks_count > 0 ? semester.weeks_count : FALLBACK_WEEKS;
+    return fallbackWeeks(count);
+  }
+
+  try {
+    return generateAcademicWeeks(semesterCalendarInput(semester)).map((w) => ({
+      week_number: w.weekNumber,
+      start_date: w.startDate,
+      end_date: w.endDate,
+    }));
+  } catch {
+    if (dbWeeks.length > 0) return dbWeeks;
+    return fallbackWeeks(semester.weeks_count);
+  }
+}
+
 /** Map ISO date → grade week/day columns using generated semester calendar. */
 export function resolveSemesterDayForDate(
   calendar: AcademicCalendar,
@@ -83,12 +116,7 @@ export function resolveSemesterDayForDate(
   const sem = calendar.semester;
   if (!sem?.start_date || !isoDate) return null;
 
-  const weeks = generateAcademicWeeks({
-    startDate: sem.start_date,
-    weeksCount: sem.weeks_count,
-    workingDays: sem.working_days,
-    excludedDates: holidayDateStrings(sem.excluded_dates),
-  });
+  const weeks = generateAcademicWeeks(semesterCalendarInput(sem));
 
   for (const w of weeks) {
     if (w.workingDayDates.includes(isoDate)) {
@@ -109,16 +137,71 @@ export function getTodaySemesterDay(calendar: AcademicCalendar): SemesterDayRef 
 
 function resolveWeekFromDbRows(weeks: AcademicWeekRow[], isoDate: string): number {
   if (weeks.length === 0) return 1;
+
   for (const w of weeks) {
     if (w.start_date && w.end_date && isoDate >= w.start_date && isoDate <= w.end_date) {
       return w.week_number;
     }
   }
+
   const first = weeks[0];
   if (first?.start_date && isoDate < first.start_date) return first.week_number;
+
   const last = weeks[weeks.length - 1];
   if (last?.end_date && isoDate > last.end_date) return last.week_number;
-  return last?.week_number ?? 1;
+
+  // Gap days (e.g. Fri/Sat between Sun–Thu academic weeks): use the latest week that already started.
+  let best = first?.week_number ?? 1;
+  for (const w of weeks) {
+    if (w.end_date && w.end_date <= isoDate) {
+      best = w.week_number;
+    }
+  }
+  return best;
+}
+
+/**
+ * Resolve the academic week number for any calendar date.
+ * On working days: exact match. On weekends/gaps/holidays: most recent started week.
+ */
+export function resolveAcademicWeekNumber(
+  calendar: AcademicCalendar,
+  isoDate: string,
+): number {
+  const sem = calendar.semester;
+  if (!sem?.start_date || !isoDate) {
+    return resolveWeekFromDbRows(calendar.weeks, isoDate);
+  }
+
+  let weeks;
+  try {
+    weeks = generateAcademicWeeks(semesterCalendarInput(sem));
+  } catch {
+    return resolveWeekFromDbRows(calendar.weeks, isoDate);
+  }
+
+  for (const w of weeks) {
+    if (w.workingDayDates.includes(isoDate)) {
+      return w.weekNumber;
+    }
+  }
+
+  let bestWeek = 1;
+  let bestDate = "";
+  for (const w of weeks) {
+    for (const d of w.workingDayDates) {
+      if (d <= isoDate && d >= bestDate) {
+        bestDate = d;
+        bestWeek = w.weekNumber;
+      }
+    }
+  }
+  if (bestDate) return bestWeek;
+
+  const firstWorking = weeks[0]?.workingDayDates[0];
+  if (firstWorking && isoDate < firstWorking) return 1;
+
+  return weeks[weeks.length - 1]?.weekNumber ?? 1;
 }
 
 /** Find academic week containing operational date (generated calendar first, then DB rows). */
@@ -128,8 +211,7 @@ export function resolveWeekForDate(
   calendar?: AcademicCalendar | null,
 ): number {
   if (calendar?.semester?.start_date) {
-    const day = resolveSemesterDayForDate(calendar, isoDate);
-    if (day) return day.weekNumber;
+    return resolveAcademicWeekNumber(calendar, isoDate);
   }
   return resolveWeekFromDbRows(weeks, isoDate);
 }
@@ -141,28 +223,7 @@ export function buildAcademicCalendar(
 ): AcademicCalendar {
   const operationalDate = getCalendarIsoDate(now);
   const currentDayKey = getCalendarDayKey(now);
-
-  let resolvedWeeks = weeks;
-  if (semester?.start_date && semester.weeks_count > 0) {
-    try {
-      resolvedWeeks = generateAcademicWeeks({
-        startDate: semester.start_date,
-        weeksCount: semester.weeks_count,
-        workingDays: semester.working_days,
-        excludedDates: holidayDateStrings(semester.excluded_dates),
-      }).map((w) => ({
-        week_number: w.weekNumber,
-        start_date: w.startDate,
-        end_date: w.endDate,
-      }));
-    } catch {
-      /* keep DB/fallback rows */
-    }
-  }
-  if (resolvedWeeks.length === 0) {
-    const count = semester?.weeks_count && semester.weeks_count > 0 ? semester.weeks_count : FALLBACK_WEEKS;
-    resolvedWeeks = fallbackWeeks(count);
-  }
+  const resolvedWeeks = resolveCalendarWeeks(semester, weeks);
 
   const draft: AcademicCalendar = {
     semester,
@@ -171,9 +232,7 @@ export function buildAcademicCalendar(
     currentDayKey,
     operationalDate,
   };
-  const todayDay = getTodaySemesterDay(draft);
-  const currentWeekNumber = todayDay?.weekNumber
-    ?? resolveWeekForDate(resolvedWeeks, operationalDate, draft);
+  const currentWeekNumber = resolveAcademicWeekNumber(draft, operationalDate);
 
   return { ...draft, currentWeekNumber };
 }
@@ -202,25 +261,26 @@ export function loadCachedCalendar(): AcademicCalendar | null {
 function refreshCalendarNow(calendar: AcademicCalendar, now: Date = new Date()): AcademicCalendar {
   const operationalDate = getCalendarIsoDate(now);
   const currentDayKey = getCalendarDayKey(now);
-  const draft = { ...calendar, operationalDate, currentDayKey };
-  const todayDay = getTodaySemesterDay(draft);
-  const currentWeekNumber = todayDay?.weekNumber
-    ?? resolveWeekForDate(calendar.weeks, operationalDate, draft);
+  const weeks = resolveCalendarWeeks(calendar.semester, calendar.weeks);
+  const draft = { ...calendar, weeks, operationalDate, currentDayKey };
+  const currentWeekNumber = resolveAcademicWeekNumber(draft, operationalDate);
   return { ...draft, currentWeekNumber };
 }
 
+function calendarSemesterId(calendar: AcademicCalendar | null): string | null {
+  return calendar?.semester?.id ?? null;
+}
+
 export async function fetchActiveCalendar(force = false): Promise<AcademicCalendar> {
-  if (!force) {
-    const cached = loadCachedCalendar();
+  const cached = !force ? loadCachedCalendar() : null;
+
+  const token = getToken();
+  if (!token) {
     if (cached) {
       const fresh = refreshCalendarNow(cached);
       cacheActiveCalendar(fresh);
       return fresh;
     }
-  }
-
-  const token = getToken();
-  if (!token) {
     const cal = buildAcademicCalendar(null, []);
     cacheActiveCalendar(cal);
     return cal;
@@ -230,10 +290,28 @@ export async function fetchActiveCalendar(force = false): Promise<AcademicCalend
     const res = await secureGetActiveSemester({ data: { token } });
     const semester = parseSemester(res.semester);
     const weeks = parseWeeks(res.weeks);
+
+    if (
+      cached &&
+      !force &&
+      calendarSemesterId(cached) === semester?.id &&
+      cached.semester?.start_date === semester?.start_date &&
+      cached.semester?.weeks_count === semester?.weeks_count
+    ) {
+      const fresh = refreshCalendarNow({ ...cached, semester, weeks: resolveCalendarWeeks(semester, weeks) });
+      cacheActiveCalendar(fresh);
+      return fresh;
+    }
+
     const cal = buildAcademicCalendar(semester, weeks);
     cacheActiveCalendar(cal);
     return cal;
   } catch {
+    if (cached) {
+      const fresh = refreshCalendarNow(cached);
+      cacheActiveCalendar(fresh);
+      return fresh;
+    }
     const cal = buildAcademicCalendar(null, []);
     cacheActiveCalendar(cal);
     return cal;

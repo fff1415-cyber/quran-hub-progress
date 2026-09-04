@@ -203,6 +203,18 @@ export interface SemesterDayCompletionReport {
   completedDays: number;
   elapsedDays: number;
   totalDays: number;
+  dayCounts: SemesterDayCountBreakdown;
+}
+
+export interface SemesterDayCountBreakdown {
+  presentDays: number;
+  absentDays: number;
+  lateDays: number;
+  excusedDays: number;
+  hifzDays: number;
+  rabtPassDays: number;
+  murajaPassDays: number;
+  wajibDays: number;
 }
 
 /**
@@ -228,6 +240,16 @@ export function semesterDayCompletionReport(
     completedDays: 0,
     elapsedDays,
     totalDays,
+    dayCounts: {
+      presentDays: 0,
+      absentDays: 0,
+      lateDays: 0,
+      excusedDays: 0,
+      hifzDays: 0,
+      rabtPassDays: 0,
+      murajaPassDays: 0,
+      wajibDays: 0,
+    },
   };
 
   if (totalDays <= 0) return empty;
@@ -238,9 +260,17 @@ export function semesterDayCompletionReport(
   let rabtComplete = 0;
   let murComplete = 0;
   let wajibComplete = 0;
+  let presentDays = 0;
+  let absentDays = 0;
+  let lateDays = 0;
+  let excusedDays = 0;
 
   for (const day of elapsed) {
     const d = lookupDayEntry(grades, studentId, day) ?? EMPTY_DAY;
+    if (d.attendance === "present") presentDays += 1;
+    else if (d.attendance === "late") lateDays += 1;
+    else if (d.attendance === "absent") absentDays += 1;
+    else if (d.attendance === "excused") excusedDays += 1;
     if (dayAttendanceDone(d)) attComplete += 1;
     if (d.hifz) hifzComplete += 1;
     if (d.rabt === "pass") rabtComplete += 1;
@@ -262,6 +292,16 @@ export function semesterDayCompletionReport(
     completedDays: fullComplete,
     elapsedDays,
     totalDays,
+    dayCounts: {
+      presentDays,
+      absentDays,
+      lateDays,
+      excusedDays,
+      hifzDays: hifzComplete,
+      rabtPassDays: rabtComplete,
+      murajaPassDays: murComplete,
+      wajibDays: wajibComplete,
+    },
   };
 }
 

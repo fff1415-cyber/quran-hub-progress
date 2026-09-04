@@ -9,6 +9,7 @@ import {
 import { Plus, Trash2, Loader2, Save } from "lucide-react";
 import { toast } from "sonner";
 import { GradeInputSettingsSection } from "@/components/admin/GradeInputSettingsSection";
+import { HalaqaScientificDefaultsSection } from "@/components/admin/HalaqaScientificDefaultsSection";
 
 export function HalaqatManagementSection() {
   const [halaqat, setHalaqat] = useState<Halaqa[]>(() => loadHalaqat());
@@ -324,6 +325,7 @@ export function GradeItemsSection() {
   return (
     <div className="space-y-6">
       <GradeInputSettingsSection />
+      <HalaqaScientificDefaultsSection />
       <div className="glass-card rounded-2xl p-5">
       <h3 className="font-bold mb-3 text-primary">قيم بنود الدرجات</h3>
       <p className="text-xs text-muted-foreground mb-4">نقاط كل بند في حساب النسب (حضور، حفظ، ربط، مراجعة).</p>

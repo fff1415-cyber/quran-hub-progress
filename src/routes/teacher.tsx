@@ -74,6 +74,7 @@ import {
   loadScientificConfig,
   loadScientificData,
   setScientificDayScore,
+  syncScientificScoresFromDayPatch,
   type ScientificFieldsConfig,
   type ScientificGradesConfig,
 } from "@/lib/scientific-grades";
@@ -147,13 +148,21 @@ export function TeacherPage() {
         setCalendar(cal);
         const selectable = cal.weeks.filter((wk) => wk.week_number <= cal.currentWeekNumber);
         const fromUrl = w && selectable.some((wk) => wk.week_number === w) ? w : null;
-        setSelectedWeek(fromUrl ?? cal.currentWeekNumber);
+        const nextWeek = fromUrl ?? cal.currentWeekNumber;
+        setSelectedWeek(nextWeek);
+        if (h && w && w !== nextWeek) {
+          navigate({
+            to: tenantPath("/teacher"),
+            search: { h, w: nextWeek, view },
+            replace: true,
+          });
+        }
       })
       .finally(() => {
         if (!cancelled) setLoadingCal(false);
       });
     return () => { cancelled = true; };
-  }, [w]);
+  }, [w, h, view, navigate]);
 
   const isAssistant = role === "assistant";
   const isManager = role === "manager";
@@ -883,16 +892,38 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
   const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
     if (closedDayKeys.has(dayKey)) return;
+    const prevWeek = ensureWeekDays(
+      grades[studentId]?.[weekNum] ?? emptyWeek(workingKeysList),
+      workingKeysList,
+    );
+    const mergedEntry = {
+      ...dayEntryFor(prevWeek, dayKey, workingKeysList),
+      ...patch,
+      touchedAt: Date.now(),
+    };
+
     update(studentId, (w) => {
       const base = ensureWeekDays(w, workingKeysList);
       return {
         ...base,
         days: {
           ...base.days,
-          [dayKey]: { ...base.days[dayKey], ...patch, touchedAt: Date.now() },
+          [dayKey]: mergedEntry,
         },
       };
     }, patch.attendance !== undefined ? "immediate" : undefined);
+
+    syncScientificScoresFromDayPatch(
+      halaqaId,
+      studentId,
+      weekNum,
+      dayKey,
+      sciConfig,
+      patch,
+      mergedEntry,
+    );
+    refreshSciData();
+
     if (patch.attendance === "absent") {
       void fetchActiveCalendar(false).then(processAbsenceThresholdAlerts).catch(() => {});
       const student = students.find((s) => s.id === studentId);
@@ -933,14 +964,25 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       const week = g[s.id][weekNum];
       const prev = week.days[dayKey] ?? emptyDayEntry();
       if (prev.attendance === "present") return;
+      const merged = { ...prev, attendance: "present" as const, touchedAt: Date.now() };
       g[s.id][weekNum] = {
         ...week,
-        days: { ...week.days, [dayKey]: { ...prev, attendance: "present", touchedAt: Date.now() } },
+        days: { ...week.days, [dayKey]: merged },
       };
+      syncScientificScoresFromDayPatch(
+        halaqaId,
+        s.id,
+        weekNum,
+        dayKey,
+        sciConfig,
+        { attendance: "present" },
+        merged,
+      );
       updated++;
     });
     setGrades(g);
     saveGrades(g, { sync: "immediate" });
+    refreshSciData();
     const dayLabel = DAYS.find((d) => d.key === dayKey)?.label ?? dayKey;
     toast.success(
       updated > 0

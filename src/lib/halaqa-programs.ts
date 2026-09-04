@@ -243,6 +243,37 @@ export function studentAllProgramsWeekTotals(
   return { earned, maxPossible, percent, filledSlots, totalSlots };
 }
 
+/** Sum one program for one student across multiple weeks. */
+export function studentSingleProgramPeriodTotals(
+  program: HalaqaProgram,
+  grades: HalaqaProgramGradesStore[string] | undefined,
+  studentId: string,
+  weekNums: number[],
+): ProgramWeekTotals {
+  let earned = 0;
+  let maxPossible = 0;
+  let filledSlots = 0;
+  let totalSlots = 0;
+  const slots = programSlots(program);
+  const slotMax = programMaxSlotScore(program);
+
+  for (const weekNum of weekNums) {
+    const vals = grades?.[studentId]?.[weekNum]?.[program.id];
+    for (const slot of slots) {
+      totalSlots++;
+      maxPossible += slotMax;
+      const v = vals?.[slot.key];
+      if (v) {
+        filledSlots++;
+        earned += programLevelScore(program, v);
+      }
+    }
+  }
+
+  const percent = maxPossible > 0 ? Math.round((earned / maxPossible) * 100) : 0;
+  return { earned, maxPossible, percent, filledSlots, totalSlots };
+}
+
 /** Period totals across weeks (for export). */
 export function studentAllProgramsPeriodTotals(
   programs: HalaqaProgram[],

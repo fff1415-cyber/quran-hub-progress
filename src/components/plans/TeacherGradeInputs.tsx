@@ -275,9 +275,9 @@ export function PassFail({
       <GradeCellCheckbox
         checked={checked}
         disabled={disabled}
-        titleChecked="مجتاز"
-        titleUnchecked="لم يُقيَّم"
-        onChange={(next) => onChange(next ? "pass" : "")}
+        titleChecked="مجتاز — اضغط لإلغاء"
+        titleUnchecked={value === "fail" ? "راسب — اضغط لإلغاء" : "لم يُقيَّم — اضغط للمجتاز"}
+        onChange={() => onChange(value === "pass" || value === "fail" ? "" : "pass")}
       />
     );
   }

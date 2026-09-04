@@ -17,8 +17,10 @@ import {
   saveHalaqaPrograms,
   saveProgramGrades,
   SCHEDULE_MODE_LABELS,
-  studentAllProgramsWeekTotals,
+  studentAllProgramsPeriodTotals,
+  studentSingleProgramPeriodTotals,
   type HalaqaProgram,
+  type ProgramWeekTotals,
   type ProgramLevel,
   type ProgramScheduleMode,
 } from "@/lib/halaqa-programs";
@@ -33,7 +35,7 @@ import {
   loadScientificConfig,
   loadScientificData,
   SCIENTIFIC_TOTAL_LABELS,
-  studentScientificWeekTotals,
+  studentScientificPeriodTotals,
   type ScientificGradeField,
 } from "@/lib/scientific-grades";
 import { CustomFieldSelect } from "@/components/plans/TeacherGradeInputs";
@@ -54,7 +56,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BookOpen, Download, Plus, Settings2, Trash2 } from "lucide-react";
+import { BookOpen, Download, Info, Plus, Settings2, Trash2 } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 
@@ -561,9 +564,14 @@ function ProgramFillSection({
 
   const formatTotal = (n: number) => (n > 0 ? String(n) : "—");
 
+  const cumulativeWeekNums = useMemo(
+    () => selectableWeeks.filter((w) => w.week_number <= weekNum).map((w) => w.week_number),
+    [selectableWeeks, weekNum],
+  );
+
   return (
     <div className="glass-card rounded-2xl p-4 overflow-x-auto">
-      <div className="mb-4">
+      <div className="mb-4 flex flex-wrap items-center gap-3">
         <Select value={String(weekNum)} onValueChange={(v) => onWeekChange(Number(v))}>
           <SelectTrigger className="w-[min(100%,320px)] font-bold">
             <SelectValue />
@@ -576,6 +584,9 @@ function ProgramFillSection({
             ))}
           </SelectContent>
         </Select>
+        <p className="text-xs text-muted-foreground">
+          إدخال درجات هذا الأسبوع · المجموع تراكمي حتى الأسبوع {weekNum}
+        </p>
       </div>
 
       {students.length === 0 ? (
@@ -606,7 +617,7 @@ function ProgramFillSection({
                 </th>
               )}
               <th colSpan={2} className="p-2 border-r border-border text-primary text-center bg-primary/10">
-                إجمالي البرامج
+                إجمالي تراكمي
               </th>
             </tr>
             <tr className="bg-secondary/30 text-xs text-muted-foreground">
@@ -640,10 +651,25 @@ function ProgramFillSection({
           </thead>
           <tbody>
             {students.map((s) => {
-              const totals = studentAllProgramsWeekTotals(standardPrograms, grades, s.id, weekNum);
+              const totals = studentAllProgramsPeriodTotals(
+                standardPrograms,
+                grades,
+                s.id,
+                cumulativeWeekNums,
+              );
               const sciTotals = scientificProgram
-                ? studentScientificWeekTotals(sciData, s.id, weekNum, sciFields, workingDayKeys)
+                ? studentScientificPeriodTotals(
+                    sciData,
+                    s.id,
+                    cumulativeWeekNums,
+                    sciFields,
+                    workingDayKeys,
+                  )
                 : null;
+              const programBreakdown = standardPrograms.map((p) => ({
+                program: p,
+                totals: studentSingleProgramPeriodTotals(p, grades, s.id, cumulativeWeekNums),
+              }));
               return (
                 <tr key={s.id} className="border-b border-border/50 hover:bg-accent/20">
                   <td className="p-2 sticky right-0 bg-card font-medium">{s.name}</td>
@@ -679,8 +705,17 @@ function ProgramFillSection({
                   <td className="p-1 border-r border-border/30 text-center text-xs font-bold text-primary bg-primary/5">
                     {totals.filledSlots > 0 ? totals.earned : "—"}
                   </td>
-                  <td className="p-1 border-r border-border/30 text-center text-xs font-bold text-primary bg-primary/5">
-                    {totals.filledSlots > 0 ? `${totals.percent}%` : "—"}
+                  <td className="p-1 border-r border-border/30 text-center bg-primary/5">
+                    <ProgramsCumulativeBreakdown
+                      percent={totals.percent}
+                      filled={totals.filledSlots > 0}
+                      programs={programBreakdown}
+                      scientific={
+                        scientificProgram && sciTotals
+                          ? { name: scientificProgram.name, earned: sciTotals.total }
+                          : null
+                      }
+                    />
                   </td>
                 </tr>
               );
@@ -688,6 +723,86 @@ function ProgramFillSection({
           </tbody>
         </table>
       )}
+    </div>
+  );
+}
+
+function ProgramsCumulativeBreakdown({
+  percent,
+  filled,
+  programs,
+  scientific,
+}: {
+  percent: number;
+  filled: boolean;
+  programs: { program: HalaqaProgram; totals: ProgramWeekTotals }[];
+  scientific: { name: string; earned: number } | null;
+}) {
+  const displayPercent = filled ? `${percent}%` : "—";
+  const hasBreakdown = programs.length > 0 || scientific !== null;
+
+  if (!hasBreakdown) {
+    return <span className="text-xs font-bold text-primary">{displayPercent}</span>;
+  }
+
+  return (
+    <div className="inline-flex items-center justify-center gap-0.5 min-w-0">
+      <span className="text-xs font-bold text-primary">{displayPercent}</span>
+      <Popover>
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            className="inline-flex shrink-0 items-center justify-center w-5 h-5 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
+            aria-label="تفصيل نسب البرامج التراكمية"
+          >
+            <Info className="w-3.5 h-3.5" />
+          </button>
+        </PopoverTrigger>
+        <PopoverContent
+          side="left"
+          align="center"
+          className="w-64 p-0 overflow-hidden"
+          onOpenAutoFocus={(e) => e.preventDefault()}
+        >
+          <div className="px-3 py-2 border-b border-border bg-primary/5">
+            <p className="text-xs font-bold text-primary">البرامج — تفصيل تراكمي</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">من بداية الفصل حتى الأسبوع المحدد</p>
+          </div>
+          <ul className="p-2 space-y-1">
+            {programs.map(({ program, totals }) => (
+              <li
+                key={program.id}
+                className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-muted/50"
+              >
+                <div className="flex-1 min-w-0 text-right">
+                  <div className="text-xs font-medium text-foreground leading-tight truncate">{program.name}</div>
+                  {totals.filledSlots > 0 && (
+                    <div className="text-[9px] text-muted-foreground leading-tight mt-0.5">
+                      {totals.earned} من {totals.maxPossible}
+                    </div>
+                  )}
+                </div>
+                <span className="text-sm font-bold shrink-0 text-primary">
+                  {totals.filledSlots > 0 ? `${totals.percent}%` : "—"}
+                </span>
+              </li>
+            ))}
+            {scientific && (
+              <li className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-muted/50 bg-emerald-500/5">
+                <div className="flex-1 min-w-0 text-right">
+                  <div className="text-xs font-medium text-emerald-800 dark:text-emerald-300 leading-tight truncate">
+                    {scientific.name}
+                  </div>
+                  <div className="text-[9px] text-muted-foreground leading-tight mt-0.5">مجموع نقاط</div>
+                </div>
+                <span className="text-sm font-bold shrink-0 text-emerald-700 dark:text-emerald-400">
+                  {scientific.earned > 0 ? scientific.earned : "—"}
+                </span>
+              </li>
+            )}
+          </ul>
+        </PopoverContent>
+      </Popover>
     </div>
   );
 }
