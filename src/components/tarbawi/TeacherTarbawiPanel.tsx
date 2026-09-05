@@ -7,8 +7,10 @@ import { Input } from "@/components/ui/input";
 import {
   clearItemWeekAssignments,
   computeTarbawiStats,
+  contentRevisionItemIds,
   distributeTarbawiItems,
   formatPlanSpanLabel,
+  formatTarbawiItemLabel,
   getHalaqaPlanSpan,
   getTarbawiPlan,
   getTarbawiSettings,
@@ -17,6 +19,7 @@ import {
   mergeTarbawiStores,
   newTarbawiItem,
   paragraphTypeLabel,
+  rejectedTarbawiItems,
   requiredTarbawiItemCount,
   saveTarbawiPlan,
   saveTarbawiStore,
@@ -85,9 +88,17 @@ export function TeacherTarbawiPanel({
     if (prevStatus === "submitted" && nextPlan.status === "approved") {
       toast.success("تم اعتماد الخطة — يمكنك البدء بالتنفيذ");
     }
+    if (prevStatus === "submitted" && nextPlan.status === "needs_revision") {
+      toast.warning("رُفضت فقرة أو أكثر — راجع الملاحظات وعدّل ثم أعد الإرسال");
+    }
     if (hadContentPending && !nextPlan.contentChangeRequest) {
+      const hadRejections = contentRevisionItemIds(nextPlan).length > 0;
       setContentDraftItems(null);
-      toast.success("تم اعتماد تعديل الفقرات");
+      toast[hadRejections ? "warning" : "success"](
+        hadRejections
+          ? "رُفضت فقرة في التعديل — راجع الملاحظات وعدّل ثم أعد الإرسال"
+          : "تم اعتماد تعديل الفقرات",
+      );
     }
     return nextPlan;
   }, [semesterId, halaqaId]);
@@ -97,7 +108,11 @@ export function TeacherTarbawiPanel({
   }, [refreshFromCloud]);
 
   useEffect(() => {
-    if (plan.status !== "submitted" && !plan.contentChangeRequest) return;
+    const watchStatus =
+      plan.status === "submitted" ||
+      plan.contentChangeRequest ||
+      contentRevisionItemIds(plan).length > 0;
+    if (!watchStatus) return;
     const id = window.setInterval(() => { void refreshFromCloud(); }, 12000);
     const onVisible = () => {
       if (document.visibilityState === "visible") void refreshFromCloud();
@@ -107,11 +122,14 @@ export function TeacherTarbawiPanel({
       window.clearInterval(id);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [plan.status, plan.contentChangeRequest, refreshFromCloud]);
+  }, [plan.status, plan.contentChangeRequest, plan.contentRevisionNotes, refreshFromCloud]);
 
   const isApproved = plan.status === "approved";
   const isSubmitted = plan.status === "submitted";
-  const isDraft = plan.status === "draft" || plan.status === "rejected";
+  const isNeedsRevision = plan.status === "needs_revision" || plan.status === "rejected";
+  const rejectedItems = rejectedTarbawiItems(plan);
+  const contentRevisionIds = contentRevisionItemIds(plan);
+  const isDraft = plan.status === "draft";
   const canEditPlan = isDraft && !readOnly;
   const canExecute = isApproved && !readOnly;
   const contentChangePending = !!plan.contentChangeRequest;
@@ -147,6 +165,9 @@ export function TeacherTarbawiPanel({
   };
 
   const updateItem = (id: string, patch: Partial<TarbawiPlanItem>) => {
+    if (isNeedsRevision && rejectedItems.length > 0 && !rejectedItems.some((i) => i.id === id)) {
+      return;
+    }
     persist(plan.items.map((i) => (i.id === id ? { ...i, ...patch } : i)));
   };
 
@@ -221,6 +242,13 @@ export function TeacherTarbawiPanel({
     );
   }
 
+  const revisionItems =
+    isNeedsRevision && rejectedItems.length > 0
+      ? rejectedItems
+      : isNeedsRevision
+        ? plan.items
+        : [];
+
   return (
     <div className="space-y-4">
       <div className="glass-card rounded-2xl p-5">
@@ -239,7 +267,12 @@ export function TeacherTarbawiPanel({
               {canEditPlan && distributed && "راجع التوزيع على الأسابيع (اسحب لنقل الفقرات) ثم أرسل للاعتماد"}
               {isApproved && !contentChangePending && "مرحلة التنفيذ — اسحب الصف بين الأسابيع، أو عدّل النوع/الموضوع عبر أيقونة القلم"}
               {isApproved && contentChangePending && "تعديل الفقرات بانتظار اعتماد مشرف البرامج — نقل الأسبوع بالسحب متاح"}
-              {plan.status === "rejected" && (
+              {isNeedsRevision && rejectedItems.length > 0 && (
+                <span className="text-destructive block mt-1">
+                  فقرات تحتاج تعديل ({rejectedItems.length}) — عدّل المرفوضة ثم أعد الإرسال
+                </span>
+              )}
+              {isNeedsRevision && plan.rejectionNote && rejectedItems.length === 0 && (
                 <span className="text-destructive block mt-1">مرفوض: {plan.rejectionNote}</span>
               )}
             </p>
@@ -252,6 +285,91 @@ export function TeacherTarbawiPanel({
             <StatPill label="فقرات/أسبوع" value={String(settings.weeklyRequiredCount)} />
           </div>
         </div>
+
+        {contentRevisionIds.length > 0 && !contentChangePending && (
+          <div className="mb-4 p-3 rounded-xl bg-destructive/10 border border-destructive/30 space-y-2">
+            <p className="text-sm font-bold text-destructive">فقرات مرفوضة في التعديل — عدّلها ثم أعد الإرسال</p>
+            <ul className="text-xs space-y-1">
+              {contentRevisionIds.map((id) => {
+                const item = plan.items.find((i) => i.id === id);
+                if (!item) return null;
+                return (
+                  <li key={id}>
+                    <span className="font-medium">{formatTarbawiItemLabel(settings, item)}</span>
+                    {plan.contentRevisionNotes?.[id] && (
+                      <span className="text-muted-foreground"> — {plan.contentRevisionNotes[id]}</span>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          </div>
+        )}
+
+        {isNeedsRevision && rejectedItems.length > 0 && (
+          <div className="mb-4 p-3 rounded-xl bg-destructive/10 border border-destructive/30 space-y-2">
+            <p className="text-sm font-bold text-destructive">فقرات مرفوضة — عدّلها ثم أعد الإرسال</p>
+            <ul className="text-xs space-y-1 mb-3">
+              {rejectedItems.map((item) => (
+                <li key={item.id}>
+                  <span className="font-medium">{formatTarbawiItemLabel(settings, item)}</span>
+                  {item.rejectionNote && (
+                    <span className="text-muted-foreground"> — {item.rejectionNote}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+            <div className="overflow-x-auto">
+              <table className="w-full text-sm border-collapse min-w-[480px]">
+                <thead>
+                  <tr className="bg-destructive/10 text-right">
+                    <th className="p-2 border border-border">الأسبوع</th>
+                    <th className="p-2 border border-border">نوع الفقرة</th>
+                    <th className="p-2 border border-border">الموضوع</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {revisionItems.map((item) => (
+                    <tr key={item.id} className="bg-secondary/20">
+                      <td className="p-2 border border-border">
+                        {item.weekNumber >= 1 ? `الأسبوع ${item.weekNumber}` : "—"}
+                      </td>
+                      <td className="p-2 border border-border">
+                        <select
+                          className="w-full rounded-md border border-border bg-input px-2 py-1 text-sm"
+                          value={item.paragraphTypeId}
+                          onChange={(e) => updateItem(item.id, { paragraphTypeId: e.target.value })}
+                        >
+                          {settings.paragraphTypes.map((t) => (
+                            <option key={t.id} value={t.id}>{t.label}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="p-2 border border-border">
+                        <Input
+                          value={item.topic}
+                          onChange={(e) => updateItem(item.id, { topic: e.target.value })}
+                          placeholder="موضوع البرنامج"
+                          className="h-8"
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <Button
+              type="button"
+              size="sm"
+              className="gap-1 gold-gradient text-primary-foreground mt-2"
+              disabled={busy}
+              onClick={handleSubmit}
+            >
+              {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+              إعادة إرسال الخطة للاعتماد
+            </Button>
+          </div>
+        )}
 
         {contentChangePending && (
           <div className="mb-4 p-3 rounded-xl bg-warning/10 border border-warning/30 text-sm flex flex-wrap items-center justify-between gap-2">
@@ -419,9 +537,11 @@ export function TeacherTarbawiPanel({
             currentWeekNum={weekNum}
             weekStats={weekStats}
             canExecute={canExecute}
-            canReorder={!readOnly}
-            canEditContent={!readOnly}
+            canReorder={!readOnly && !contentChangePending}
+            canEditContent={!readOnly && (!contentChangePending || contentRevisionIds.length > 0)}
             contentChangePending={contentChangePending}
+            contentRevisionIds={contentRevisionIds}
+            contentRevisionNotes={plan.contentRevisionNotes}
             onPlanChange={handleBoardPlanChange}
             onContentDraft={(items) => setContentDraftItems(items)}
           />

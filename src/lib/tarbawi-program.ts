@@ -12,7 +12,9 @@ export interface TarbawiParagraphType {
 /** Weeks 6–18, or the full semester. Stored numbers outside that range (legacy 2/4) still apply. */
 export type TarbawiPlanSpan = "full" | number;
 
-export type TarbawiPlanStatus = "draft" | "submitted" | "approved" | "rejected";
+export type TarbawiPlanStatus = "draft" | "submitted" | "approved" | "rejected" | "needs_revision";
+
+export type TarbawiItemReviewStatus = "pending" | "accepted" | "rejected";
 
 export interface TarbawiContentChangeRequest {
   items: TarbawiPlanItem[];
@@ -37,6 +39,8 @@ export interface TarbawiPlanItem {
   executed: boolean;
   executor: string;
   beneficiaries: number;
+  reviewStatus?: TarbawiItemReviewStatus;
+  rejectionNote?: string;
 }
 
 export interface TarbawiHalaqaPlan {
@@ -49,6 +53,8 @@ export interface TarbawiHalaqaPlan {
   approvedBy?: string;
   rejectionNote?: string;
   contentChangeRequest?: TarbawiContentChangeRequest;
+  /** itemId → rejection reason after partial content-change reject */
+  contentRevisionNotes?: Record<string, string>;
   updatedAt: string;
 }
 
@@ -123,6 +129,7 @@ function normalizeSettings(raw: TarbawiSettings): TarbawiSettings {
 const PLAN_STATUS_RANK: Record<TarbawiPlanStatus, number> = {
   draft: 0,
   rejected: 1,
+  needs_revision: 1,
   submitted: 2,
   approved: 3,
 };
@@ -400,12 +407,20 @@ export function submitTarbawiContentChange(
   if (plan.status !== "approved") {
     throw new Error("التعديل على الفقرات متاح بعد اعتماد الخطة فقط");
   }
+  const submittedIds = new Set(items.map((i) => i.id));
+  const contentRevisionNotes = { ...(plan.contentRevisionNotes ?? {}) };
+  for (const id of submittedIds) {
+    delete contentRevisionNotes[id];
+  }
   const next = saveTarbawiPlan({
     ...plan,
+    items: plan.items,
     contentChangeRequest: {
       items: items.map((i) => ({ ...i })),
       submittedAt: new Date().toISOString(),
     },
+    contentRevisionNotes:
+      Object.keys(contentRevisionNotes).length > 0 ? contentRevisionNotes : undefined,
   });
   pushNotification({
     message: `تعديل فقرات البرنامج التربوي لحلقة «${halaqaName}» بانتظار الاعتماد`,
@@ -424,8 +439,9 @@ export function approveTarbawiContentChange(
   if (!req) throw new Error("لا يوجد طلب تعديل");
   const next = saveTarbawiPlan({
     ...plan,
-    items: req.items.map((i) => ({ ...i })),
+    items: req.items.map((i) => ({ ...i, reviewStatus: "accepted", rejectionNote: undefined })),
     contentChangeRequest: undefined,
+    contentRevisionNotes: undefined,
     approvedAt: new Date().toISOString(),
     approvedBy: approverName,
   });
@@ -437,17 +453,28 @@ export function approveTarbawiContentChange(
   return next;
 }
 
-export function rejectTarbawiContentChange(
+export function rejectTarbawiContentChangeItem(
   plan: TarbawiHalaqaPlan,
+  itemId: string,
   note: string,
   halaqaName: string,
+  settings: TarbawiSettings,
 ): TarbawiHalaqaPlan {
+  const req = plan.contentChangeRequest;
+  if (!req) throw new Error("لا يوجد طلب تعديل");
+  const proposed = req.items.find((i) => i.id === itemId);
+  const current = plan.items.find((i) => i.id === itemId);
+  const item = proposed ?? current;
+  if (!item) throw new Error("الفقرة غير موجودة");
+  const trimmed = note.trim() || "يُرجى مراجعة هذه الفقرة وتعديلها";
+  const contentRevisionNotes = { ...(plan.contentRevisionNotes ?? {}), [itemId]: trimmed };
   const next = saveTarbawiPlan({
     ...plan,
     contentChangeRequest: undefined,
+    contentRevisionNotes,
   });
   pushNotification({
-    message: `رُفض تعديل فقرات البرنامج التربوي لحلقة «${halaqaName}»: ${note.trim() || "يُرجى المراجعة"}`,
+    message: `رُفضت فقرة في تعديل البرنامج التربوي لحلقة «${halaqaName}»: ${formatTarbawiItemLabel(settings, item)} — ${trimmed}`,
     type: "info",
     targetHalaqaId: plan.halaqaId,
   });
@@ -467,6 +494,29 @@ export function submitTarbawiPlan(
   semesterWeeks: number,
   halaqaName: string,
 ): TarbawiHalaqaPlan {
+  if (plan.status === "needs_revision" || plan.status === "rejected") {
+    const items = plan.items.map((i) => ({
+      ...i,
+      reviewStatus: "pending" as const,
+      rejectionNote: undefined,
+    }));
+    const err = validateTarbawiPlanDraft({ ...plan, items }, settings, semesterWeeks);
+    if (err) throw new Error(err);
+    const next = saveTarbawiPlan({
+      ...plan,
+      items,
+      status: "submitted",
+      submittedAt: new Date().toISOString(),
+      rejectionNote: undefined,
+    });
+    pushNotification({
+      message: `خطة البرنامج التربوي لحلقة «${halaqaName}» بانتظار الاعتماد (بعد التعديل)`,
+      type: "info",
+      targetRole: "program_supervisor",
+    });
+    return next;
+  }
+
   const spanWeeks = getHalaqaPlanSpan(settings, plan.halaqaId, semesterWeeks);
   let items = plan.items;
   if (!isPlanDistributed(plan)) {
@@ -477,8 +527,14 @@ export function submitTarbawiPlan(
   const prepared = { ...plan, items };
   const err = validateTarbawiPlanDraft(prepared, settings, semesterWeeks);
   if (err) throw new Error(err);
+  const reviewedItems = items.map((i) => ({
+    ...i,
+    reviewStatus: "pending" as const,
+    rejectionNote: undefined,
+  }));
   const next = saveTarbawiPlan({
     ...prepared,
+    items: reviewedItems,
     status: "submitted",
     submittedAt: new Date().toISOString(),
     rejectionNote: undefined,
@@ -499,6 +555,11 @@ export function approveTarbawiPlan(
   const next = saveTarbawiPlan({
     ...plan,
     status: "approved",
+    items: plan.items.map((i) => ({
+      ...i,
+      reviewStatus: "accepted" as const,
+      rejectionNote: undefined,
+    })),
     approvedAt: new Date().toISOString(),
     approvedBy: approverName,
     rejectionNote: undefined,
@@ -511,23 +572,57 @@ export function approveTarbawiPlan(
   return next;
 }
 
-export function rejectTarbawiPlan(
+export function rejectTarbawiPlanItem(
   plan: TarbawiHalaqaPlan,
+  itemId: string,
   note: string,
   halaqaName: string,
+  settings: TarbawiSettings,
 ): TarbawiHalaqaPlan {
+  const item = plan.items.find((i) => i.id === itemId);
+  if (!item) throw new Error("الفقرة غير موجودة");
+  const trimmed = note.trim() || "يُرجى مراجعة هذه الفقرة وتعديلها";
+  const items = plan.items.map((i) =>
+    i.id === itemId
+      ? { ...i, reviewStatus: "rejected" as const, rejectionNote: trimmed }
+      : i,
+  );
   const next = saveTarbawiPlan({
     ...plan,
-    status: "rejected",
-    items: clearItemWeekAssignments(plan.items),
-    rejectionNote: note.trim() || "يُرجى مراجعة الخطة وتعديلها",
+    status: plan.status === "submitted" ? "submitted" : "needs_revision",
+    items,
+    rejectionNote: undefined,
   });
   pushNotification({
-    message: `خطة البرنامج التربوي لحلقة «${halaqaName}» تحتاج تعديل: ${next.rejectionNote}`,
+    message: `رُفضت فقرة في خطة البرنامج التربوي لحلقة «${halaqaName}»: ${formatTarbawiItemLabel(settings, item)} — ${trimmed}`,
     type: "info",
     targetHalaqaId: plan.halaqaId,
   });
   return next;
+}
+
+export function sendTarbawiPlanRevisionToTeacher(
+  plan: TarbawiHalaqaPlan,
+  halaqaName: string,
+): TarbawiHalaqaPlan {
+  const rejected = rejectedTarbawiItems(plan);
+  if (rejected.length === 0) {
+    throw new Error("لا توجد فقرات مرفوضة لإرسالها");
+  }
+  const next = saveTarbawiPlan({
+    ...plan,
+    status: "needs_revision",
+  });
+  pushNotification({
+    message: `خطة البرنامج التربوي لحلقة «${halaqaName}» تحتاج تعديل (${rejected.length} فقرة) — راجع الملاحظات`,
+    type: "info",
+    targetHalaqaId: plan.halaqaId,
+  });
+  return next;
+}
+
+export function pendingRejectedTarbawiItems(plan: TarbawiHalaqaPlan): TarbawiPlanItem[] {
+  return plan.status === "submitted" ? rejectedTarbawiItems(plan) : [];
 }
 
 export function computeTarbawiStats(
@@ -568,6 +663,22 @@ export function listSubmittedTarbawiPlans(semesterId: string): TarbawiHalaqaPlan
 
 export function paragraphTypeLabel(settings: TarbawiSettings, typeId: string): string {
   return settings.paragraphTypes.find((t) => t.id === typeId)?.label ?? typeId;
+}
+
+export function formatTarbawiItemLabel(settings: TarbawiSettings, item: TarbawiPlanItem): string {
+  const type = paragraphTypeLabel(settings, item.paragraphTypeId);
+  const week =
+    item.weekNumber >= 1 ? `الأسبوع ${item.weekNumber}` : "فقرة";
+  const topic = item.topic.trim() || "بدون موضوع";
+  return `${week} · ${type} — ${topic}`;
+}
+
+export function rejectedTarbawiItems(plan: TarbawiHalaqaPlan): TarbawiPlanItem[] {
+  return plan.items.filter((i) => i.reviewStatus === "rejected");
+}
+
+export function contentRevisionItemIds(plan: TarbawiHalaqaPlan): string[] {
+  return Object.keys(plan.contentRevisionNotes ?? {});
 }
 
 export const PLAN_SPAN_MIN_WEEKS = 6;

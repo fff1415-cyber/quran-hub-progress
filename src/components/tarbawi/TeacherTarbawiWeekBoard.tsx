@@ -45,6 +45,8 @@ type BoardProps = {
   canReorder: boolean;
   canEditContent: boolean;
   contentChangePending: boolean;
+  contentRevisionIds?: string[];
+  contentRevisionNotes?: Record<string, string>;
   onPlanChange: (plan: TarbawiHalaqaPlan) => void;
   onContentDraft: (items: TarbawiPlanItem[]) => void;
 };
@@ -86,6 +88,8 @@ function TarbawiPlanTable({
   canReorder,
   canEditContent,
   contentChangePending,
+  contentRevisionIds = [],
+  contentRevisionNotes = {},
   reorderMode,
   dragItemId,
   onDragStart,
@@ -101,6 +105,8 @@ function TarbawiPlanTable({
   canReorder: boolean;
   canEditContent: boolean;
   contentChangePending: boolean;
+  contentRevisionIds: string[];
+  contentRevisionNotes: Record<string, string>;
   reorderMode: boolean;
   dragItemId: string | null;
   onDragStart: (id: string) => void;
@@ -142,7 +148,13 @@ function TarbawiPlanTable({
               </td>
             </tr>
           ) : (
-            rows.map((row) => (
+            rows.map((row) => {
+              const needsRevision = contentRevisionIds.includes(row.item.id);
+              const itemEditable =
+                canEditContent &&
+                !contentChangePending &&
+                (contentRevisionIds.length === 0 || needsRevision);
+              return (
               <tr
                 key={row.item.id}
                 draggable={reorderMode && canReorder}
@@ -154,7 +166,8 @@ function TarbawiPlanTable({
                 onDrop={() => onDropOnWeek(row.weekNumber)}
                 className={cn(
                   "border-b border-border/60 transition-colors",
-                  row.isCurrentWeek ? "bg-primary/10" : "bg-secondary/15",
+                  needsRevision && "bg-destructive/10 ring-1 ring-inset ring-destructive/30",
+                  !needsRevision && row.isCurrentWeek ? "bg-primary/10" : !needsRevision && "bg-secondary/15",
                   reorderMode && canReorder && "cursor-grab active:cursor-grabbing",
                   dragItemId === row.item.id && "opacity-50",
                 )}
@@ -179,7 +192,12 @@ function TarbawiPlanTable({
                   </span>
                 </td>
                 <td className="p-2 border border-border/40 text-foreground leading-snug">
-                  {row.item.topic || "—"}
+                  <div>{row.item.topic || "—"}</div>
+                  {needsRevision && contentRevisionNotes[row.item.id] && (
+                    <div className="text-[10px] text-destructive mt-1">
+                      {contentRevisionNotes[row.item.id]}
+                    </div>
+                  )}
                 </td>
                 {showExecution && (
                   <>
@@ -237,7 +255,7 @@ function TarbawiPlanTable({
                 {hasActions && (
                   <td className="p-2 border border-border/40 text-center">
                     <div className="flex items-center justify-center gap-0.5">
-                      {canEditContent && !contentChangePending && (
+                      {itemEditable && (
                         <button
                           type="button"
                           title="تعديل النوع أو الموضوع"
@@ -256,7 +274,8 @@ function TarbawiPlanTable({
                   </td>
                 )}
               </tr>
-            ))
+            );
+            })
           )}
         </tbody>
       </table>
@@ -275,6 +294,8 @@ export function TeacherTarbawiWeekBoard({
   canReorder,
   canEditContent,
   contentChangePending,
+  contentRevisionIds = [],
+  contentRevisionNotes = {},
   onPlanChange,
   onContentDraft,
 }: BoardProps) {
@@ -369,6 +390,8 @@ export function TeacherTarbawiWeekBoard({
         canReorder={canReorder}
         canEditContent={canEditContent}
         contentChangePending={contentChangePending}
+        contentRevisionIds={contentRevisionIds}
+        contentRevisionNotes={contentRevisionNotes}
         reorderMode={reorderMode}
         dragItemId={dragItemId}
         onDragStart={setDragItemId}
