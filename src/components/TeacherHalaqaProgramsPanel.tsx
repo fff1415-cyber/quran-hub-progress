@@ -18,6 +18,7 @@ import {
   saveProgramGrades,
   SCHEDULE_MODE_LABELS,
   studentAllProgramsPeriodTotals,
+  studentAllProgramsWeekTotals,
   studentSingleProgramPeriodTotals,
   type HalaqaProgram,
   type ProgramWeekTotals,
@@ -34,10 +35,13 @@ import {
   enabledScientificFields,
   loadScientificConfig,
   loadScientificData,
+  SCIENTIFIC_FIELD_LABELS,
   SCIENTIFIC_TOTAL_LABELS,
   scientificPeriodMaxPossible,
   studentScientificPeriodTotals,
+  studentScientificWeekTotals,
   type ScientificGradeField,
+  type ScientificWeekTotals,
 } from "@/lib/scientific-grades";
 import { CustomFieldSelect } from "@/components/plans/TeacherGradeInputs";
 import {
@@ -520,6 +524,59 @@ function ProgramSetupSection({
   );
 }
 
+type CombinedTotals = {
+  earned: number;
+  maxPossible: number;
+  percent: number;
+  hasData: boolean;
+  hasPercent: boolean;
+  sciTotals: ScientificWeekTotals | null;
+  programBreakdown: { program: HalaqaProgram; totals: ProgramWeekTotals }[];
+};
+
+function buildCombinedTotals(
+  standardPrograms: HalaqaProgram[],
+  grades: ReturnType<typeof loadProgramGrades>,
+  studentId: string,
+  weekNums: number[],
+  sciData: ReturnType<typeof loadScientificData>,
+  sciFields: ScientificGradeField[],
+  workingDayKeys: string[],
+  sciConfig: ReturnType<typeof loadScientificConfig>,
+  scientificProgram: HalaqaProgram | null,
+): CombinedTotals {
+  const stdTotals =
+    weekNums.length === 1
+      ? studentAllProgramsWeekTotals(standardPrograms, grades, studentId, weekNums[0]!)
+      : studentAllProgramsPeriodTotals(standardPrograms, grades, studentId, weekNums);
+
+  const sciTotals =
+    scientificProgram && sciFields.length > 0
+      ? weekNums.length === 1
+        ? studentScientificWeekTotals(sciData, studentId, weekNums[0]!, sciFields, workingDayKeys)
+        : studentScientificPeriodTotals(sciData, studentId, weekNums, sciFields, workingDayKeys)
+      : null;
+
+  const sciMax =
+    sciFields.length > 0 ? scientificPeriodMaxPossible(sciConfig, weekNums, workingDayKeys) : 0;
+  const sciEarned = sciTotals?.total ?? 0;
+  const earned = stdTotals.earned + sciEarned;
+  const maxPossible = stdTotals.maxPossible + sciMax;
+
+  return {
+    earned,
+    maxPossible,
+    percent: maxPossible > 0 ? Math.round((earned / maxPossible) * 100) : 0,
+    hasData: stdTotals.filledSlots > 0 || sciEarned > 0,
+    hasPercent: maxPossible > 0,
+    sciTotals,
+    programBreakdown: standardPrograms.map((p) => ({
+      program: p,
+      totals: studentSingleProgramPeriodTotals(p, grades, studentId, weekNums),
+    })),
+  };
+}
+
 function ProgramFillSection({
   halaqaId,
   programs,
@@ -571,13 +628,8 @@ function ProgramFillSection({
     [selectableWeeks, weekNum],
   );
 
-  const sciPeriodMax = useMemo(
-    () =>
-      sciFields.length > 0
-        ? scientificPeriodMaxPossible(sciConfig, cumulativeWeekNums, workingDayKeys)
-        : 0,
-    [sciFields.length, sciConfig, cumulativeWeekNums, workingDayKeys],
-  );
+  const showScientific = !!(scientificProgram && sciFields.length > 0);
+  const sciColSpan = showScientific ? sciFields.length + 1 : 0;
 
   return (
     <div className="glass-card rounded-2xl p-4 overflow-x-auto">
@@ -595,7 +647,7 @@ function ProgramFillSection({
           </SelectContent>
         </Select>
         <p className="text-xs text-muted-foreground">
-          إدخال درجات هذا الأسبوع · المجموع تراكمي حتى الأسبوع {weekNum}
+          إدخال درجات الأسبوع {weekNum} · مجموع أسبوعي + تراكمي من الأسبوع 1
         </p>
       </div>
 
@@ -618,15 +670,26 @@ function ProgramFillSection({
                   </th>
                 );
               })}
-              {scientificProgram && sciFields.length > 0 && (
-                <th
-                  colSpan={sciFields.length + 1}
-                  className="p-2 border-r border-border text-center bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-bold"
-                >
-                  {scientificProgram.name}
-                </th>
+              {showScientific && (
+                <>
+                  <th
+                    colSpan={sciColSpan}
+                    className="p-2 border-r border-border text-center bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 font-bold"
+                  >
+                    {scientificProgram!.name} — أسبوع {weekNum}
+                  </th>
+                  <th
+                    colSpan={sciColSpan}
+                    className="p-2 border-r border-border text-center bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-bold"
+                  >
+                    {scientificProgram!.name} — تراكمي
+                  </th>
+                </>
               )}
-              <th colSpan={2} className="p-2 border-r border-border text-primary text-center bg-primary/10">
+              <th colSpan={2} className="p-2 border-r border-border text-sky-800 dark:text-sky-300 text-center bg-sky-500/10 font-bold">
+                إجمالي أسبوعي
+              </th>
+              <th colSpan={2} className="p-2 border-r border-border text-primary text-center bg-primary/10 font-bold">
                 إجمالي تراكمي
               </th>
             </tr>
@@ -640,53 +703,62 @@ function ProgramFillSection({
                   </th>
                 ));
               })}
-              {scientificProgram && sciFields.length > 0 && (
+              {showScientific && (
                 <>
                   {sciFields.map((field) => (
                     <th
-                      key={`sci-${field}`}
-                      className="p-1 border-r border-border min-w-[72px] text-emerald-700 dark:text-emerald-400 font-bold"
+                      key={`sci-w-${field}`}
+                      className="p-1 border-r border-border min-w-[64px] text-emerald-800 dark:text-emerald-400 font-bold"
+                    >
+                      {SCIENTIFIC_FIELD_LABELS[field]}
+                    </th>
+                  ))}
+                  <th className="p-1 border-r border-border min-w-[56px] text-emerald-800 dark:text-emerald-400 font-bold">
+                    الكلي
+                  </th>
+                  {sciFields.map((field) => (
+                    <th
+                      key={`sci-c-${field}`}
+                      className="p-1 border-r border-border min-w-[64px] text-emerald-700 dark:text-emerald-400 font-bold"
                     >
                       {SCIENTIFIC_TOTAL_LABELS[field]}
                     </th>
                   ))}
-                  <th className="p-1 border-r border-border min-w-[64px] text-emerald-700 dark:text-emerald-400 font-bold">
+                  <th className="p-1 border-r border-border min-w-[56px] text-emerald-700 dark:text-emerald-400 font-bold">
                     الكلي
                   </th>
                 </>
               )}
-              <th className="p-1 border-r border-border min-w-[64px] text-primary font-bold">رقم</th>
-              <th className="p-1 border-r border-border min-w-[56px] text-primary font-bold">%</th>
+              <th className="p-1 border-r border-border min-w-[56px] text-sky-800 dark:text-sky-300 font-bold">رقم</th>
+              <th className="p-1 border-r border-border min-w-[48px] text-sky-800 dark:text-sky-300 font-bold">%</th>
+              <th className="p-1 border-r border-border min-w-[56px] text-primary font-bold">رقم</th>
+              <th className="p-1 border-r border-border min-w-[48px] text-primary font-bold">%</th>
             </tr>
           </thead>
           <tbody>
             {students.map((s) => {
-              const totals = studentAllProgramsPeriodTotals(
+              const weekly = buildCombinedTotals(
+                standardPrograms,
+                grades,
+                s.id,
+                [weekNum],
+                sciData,
+                sciFields,
+                workingDayKeys,
+                sciConfig,
+                scientificProgram,
+              );
+              const cumulative = buildCombinedTotals(
                 standardPrograms,
                 grades,
                 s.id,
                 cumulativeWeekNums,
+                sciData,
+                sciFields,
+                workingDayKeys,
+                sciConfig,
+                scientificProgram,
               );
-              const sciTotals = scientificProgram
-                ? studentScientificPeriodTotals(
-                    sciData,
-                    s.id,
-                    cumulativeWeekNums,
-                    sciFields,
-                    workingDayKeys,
-                  )
-                : null;
-              const programBreakdown = standardPrograms.map((p) => ({
-                program: p,
-                totals: studentSingleProgramPeriodTotals(p, grades, s.id, cumulativeWeekNums),
-              }));
-              const sciEarned = sciTotals?.total ?? 0;
-              const combinedEarned = totals.earned + sciEarned;
-              const combinedMax = totals.maxPossible + sciPeriodMax;
-              const combinedPercent =
-                combinedMax > 0 ? Math.round((combinedEarned / combinedMax) * 100) : 0;
-              const hasCumulative = totals.filledSlots > 0 || sciEarned > 0;
-              const hasPercent = combinedMax > 0;
               return (
                 <tr key={s.id} className="border-b border-border/50 hover:bg-accent/20">
                   <td className="p-2 sticky right-0 bg-card font-medium">{s.name}</td>
@@ -704,35 +776,66 @@ function ProgramFillSection({
                       </td>
                     ));
                   })}
-                  {scientificProgram && sciFields.length > 0 && sciTotals && (
+                  {showScientific && weekly.sciTotals && cumulative.sciTotals && (
                     <>
                       {sciFields.map((field) => (
                         <td
-                          key={`${s.id}-sci-${field}`}
+                          key={`${s.id}-sci-w-${field}`}
+                          className="p-1 border-r border-border/30 text-center text-xs font-bold bg-emerald-500/10"
+                        >
+                          {formatTotal(weekly.sciTotals![field])}
+                        </td>
+                      ))}
+                      <td className="p-1 border-r border-border/30 text-center text-xs font-bold bg-emerald-500/15">
+                        {formatTotal(weekly.sciTotals.total)}
+                      </td>
+                      {sciFields.map((field) => (
+                        <td
+                          key={`${s.id}-sci-c-${field}`}
                           className="p-1 border-r border-border/30 text-center text-xs font-bold bg-emerald-500/5"
                         >
-                          {formatTotal(sciTotals[field])}
+                          {formatTotal(cumulative.sciTotals![field])}
                         </td>
                       ))}
                       <td className="p-1 border-r border-border/30 text-center text-xs font-bold bg-emerald-500/10">
-                        {formatTotal(sciTotals.total)}
+                        {formatTotal(cumulative.sciTotals.total)}
                       </td>
                     </>
                   )}
-                  <td className="p-1 border-r border-border/30 text-center text-xs font-bold text-primary bg-primary/5">
-                    {hasCumulative ? combinedEarned : "—"}
+                  <td className="p-1 border-r border-border/30 text-center text-xs font-bold text-sky-800 dark:text-sky-300 bg-sky-500/5">
+                    {weekly.hasData ? weekly.earned : "—"}
                   </td>
-                  <td className="p-1 border-r border-border/30 text-center bg-primary/5">
-                    <ProgramsCumulativeBreakdown
-                      percent={combinedPercent}
-                      filled={hasCumulative}
-                      percentAvailable={hasPercent}
-                      programs={programBreakdown}
+                  <td className="p-1 border-r border-border/30 text-center bg-sky-500/5">
+                    <ProgramsTotalsBreakdown
+                      percent={weekly.percent}
+                      filled={weekly.hasData}
+                      percentAvailable={weekly.hasPercent}
+                      programs={weekly.programBreakdown}
                       scientific={
-                        scientificProgram && sciTotals
-                          ? { name: scientificProgram.name, earned: sciTotals.total }
+                        scientificProgram && weekly.sciTotals
+                          ? { name: scientificProgram.name, earned: weekly.sciTotals.total }
                           : null
                       }
+                      title="البرامج — تفصيل أسبوعي"
+                      hint={`الأسبوع ${weekNum} فقط`}
+                    />
+                  </td>
+                  <td className="p-1 border-r border-border/30 text-center text-xs font-bold text-primary bg-primary/5">
+                    {cumulative.hasData ? cumulative.earned : "—"}
+                  </td>
+                  <td className="p-1 border-r border-border/30 text-center bg-primary/5">
+                    <ProgramsTotalsBreakdown
+                      percent={cumulative.percent}
+                      filled={cumulative.hasData}
+                      percentAvailable={cumulative.hasPercent}
+                      programs={cumulative.programBreakdown}
+                      scientific={
+                        scientificProgram && cumulative.sciTotals
+                          ? { name: scientificProgram.name, earned: cumulative.sciTotals.total }
+                          : null
+                      }
+                      title="البرامج — تفصيل تراكمي"
+                      hint="من الأسبوع 1 حتى الأسبوع المحدد"
                     />
                   </td>
                 </tr>
@@ -745,18 +848,22 @@ function ProgramFillSection({
   );
 }
 
-function ProgramsCumulativeBreakdown({
+function ProgramsTotalsBreakdown({
   percent,
   filled,
   percentAvailable = true,
   programs,
   scientific,
+  title,
+  hint,
 }: {
   percent: number;
   filled: boolean;
   percentAvailable?: boolean;
   programs: { program: HalaqaProgram; totals: ProgramWeekTotals }[];
   scientific: { name: string; earned: number } | null;
+  title: string;
+  hint: string;
 }) {
   const displayPercent = filled && percentAvailable ? `${percent}%` : "—";
   const hasBreakdown = programs.length > 0 || scientific !== null;
@@ -773,7 +880,7 @@ function ProgramsCumulativeBreakdown({
           <button
             type="button"
             className="inline-flex shrink-0 items-center justify-center w-5 h-5 rounded-full text-muted-foreground hover:text-primary hover:bg-primary/10 transition-colors"
-            aria-label="تفصيل نسب البرامج التراكمية"
+            aria-label={title}
           >
             <Info className="w-3.5 h-3.5" />
           </button>
@@ -785,8 +892,8 @@ function ProgramsCumulativeBreakdown({
           onOpenAutoFocus={(e) => e.preventDefault()}
         >
           <div className="px-3 py-2 border-b border-border bg-primary/5">
-            <p className="text-xs font-bold text-primary">البرامج — تفصيل تراكمي</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">من بداية الفصل حتى الأسبوع المحدد</p>
+            <p className="text-xs font-bold text-primary">{title}</p>
+            <p className="text-[10px] text-muted-foreground mt-0.5">{hint}</p>
           </div>
           <ul className="p-2 space-y-1">
             {programs.map(({ program, totals }) => (

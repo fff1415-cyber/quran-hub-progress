@@ -315,7 +315,7 @@ export function TeacherMobileDayBoard({
               >
                 {/* Row 1: name · plan · percentages */}
                 <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border/40 bg-secondary/20 min-h-[2.25rem]">
-                  <h3 className="flex-1 min-w-0 font-bold text-[13px] leading-tight truncate pr-0.5">
+                  <h3 className="flex-1 min-w-0 font-bold text-[11px] leading-tight truncate pr-0.5">
                     {s.name}
                     {s.assignedTo === "assistant" && viewerRole === "teacher" && (
                       <span className="text-[9px] text-muted-foreground font-normal mr-1">· مساعد</span>

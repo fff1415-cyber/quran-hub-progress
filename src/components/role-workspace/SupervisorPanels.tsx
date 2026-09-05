@@ -14,9 +14,10 @@ import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTr
 import { SupervisorPlansPanel } from "@/components/plans/SupervisorPlansPanel";
 import { WeeklyTestsOverviewPanel } from "@/components/WeeklyTestsOverviewPanel";
 import { SupervisorHalaqaResultsPanel } from "@/components/role-workspace/SupervisorHalaqaResultsPanel";
+import { SupervisorHifzTrackingPanel } from "@/components/role-workspace/SupervisorHifzTrackingPanel";
 import {
   Mic, CheckCircle2, RotateCcw, Award,
-  GraduationCap, BookOpen, ClipboardCheck, Send, BarChart3,
+  GraduationCap, BookOpen, ClipboardCheck, Send, BarChart3, ScrollText,
 } from "lucide-react";
 import type { PermissionKey } from "@/lib/permissions";
 
@@ -144,6 +145,13 @@ export function SupervisorOversightPanel({
           icon: BarChart3,
           perm: "view_attendance",
           content: <SupervisorHalaqaResultsPanel />,
+        },
+        {
+          id: "hifz-tracking",
+          label: "متابعة الحفظ",
+          icon: ScrollText,
+          perm: "view_attendance",
+          content: <SupervisorHifzTrackingPanel />,
         },
         {
           id: "weekly-tests",
