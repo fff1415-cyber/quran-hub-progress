@@ -203,7 +203,7 @@ function persistShared(key: "grades" | "sard_queue" | "sard_history" | "notifica
   void import("./cloud-sync").then((m) => m.pushAppState(key, value)).catch(() => undefined);
 }
 
-const GRADES_CLOUD_DEBOUNCE_MS = 150;
+const GRADES_CLOUD_DEBOUNCE_MS = 800;
 let gradesCloudTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingGradesCloud: GradesStore | null = null;
 

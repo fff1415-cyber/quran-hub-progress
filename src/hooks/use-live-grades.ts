@@ -5,7 +5,10 @@ import {
   type GradesStore,
 } from "@/lib/mock-data";
 
-const POLL_MS = 800;
+/** Cloud fallback poll while the tab is active (BroadcastChannel handles same-device tabs). */
+const POLL_MS_VISIBLE = 5000;
+/** Slower poll when the tab is in the background — keeps cross-device sync without hammering the server. */
+const POLL_MS_HIDDEN = 30000;
 const GRADES_BROADCAST = "qs-grades-v2";
 
 /**
@@ -35,29 +38,48 @@ export function useLiveGrades(): [GradesStore, (g: GradesStore) => void] {
     }
 
     let cancelled = false;
+    let pollTimer: ReturnType<typeof setTimeout> | null = null;
+
     const tick = async () => {
       if (cancelled) return;
-      if (document.hidden) return;
       try {
         const { pullMergedGrades } = await import("@/lib/cloud-sync");
         const next = await pullMergedGrades();
         if (!cancelled && next) {
-          setGrades((prev) => (JSON.stringify(prev) === JSON.stringify(next) ? prev : next));
+          setGrades((prev) => (prev === next ? prev : next));
         }
       } catch {
         /* keep local */
       }
     };
 
-    void tick();
-    const interval = window.setInterval(() => void tick(), POLL_MS);
-    const onResume = () => { void tick(); };
+    const pollDelay = () => (document.hidden ? POLL_MS_HIDDEN : POLL_MS_VISIBLE);
+
+    const schedulePoll = () => {
+      if (pollTimer) clearTimeout(pollTimer);
+      pollTimer = setTimeout(() => {
+        pollTimer = null;
+        if (cancelled) return;
+        void tick().finally(() => {
+          if (!cancelled) schedulePoll();
+        });
+      }, pollDelay());
+    };
+
+    void tick().finally(() => {
+      if (!cancelled) schedulePoll();
+    });
+
+    const onResume = () => {
+      void tick();
+      schedulePoll();
+    };
     document.addEventListener("visibilitychange", onResume);
     window.addEventListener("focus", onResume);
 
     return () => {
       cancelled = true;
-      window.clearInterval(interval);
+      if (pollTimer) clearTimeout(pollTimer);
       window.removeEventListener(GRADES_CHANGED_EVENT, applyLocal);
       window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", onResume);

@@ -15,9 +15,15 @@ import {
 import { formatWeekOptionLabel, getSelectableWeeks, isWeekDayClosed } from "@/lib/academic-context";
 import { AttSelect, CompensationSelect } from "@/components/plans/TeacherGradeInputs";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
-import { ScientificGradesToolbar } from "@/components/teacher/ScientificGradesToolbar";
+import { ScientificGradeInput, ScientificGradesToolbar } from "@/components/teacher/ScientificGradesToolbar";
 import { SemesterBreakdownPopover } from "@/components/teacher/SemesterBreakdownPopover";
-import type { ScientificGradesConfig } from "@/lib/scientific-grades";
+import {
+  getScientificDayScore,
+  isScientificScoreOverridden,
+  type ScientificFieldsConfig,
+  type ScientificGradesConfig,
+  type ScientificGradesDataStore,
+} from "@/lib/scientific-grades";
 import {
   Select,
   SelectContent,
@@ -47,6 +53,9 @@ type Props = {
   isCurrentWeek: boolean;
   todayKey: string;
   onSciConfigChange: (cfg: ScientificGradesConfig) => void;
+  sciVisible: boolean;
+  sciFields: ScientificFieldsConfig;
+  sciData: ScientificGradesDataStore[string];
   halaqaId: number;
   halaqaSemesterPct: number;
   showTransferButton: boolean;
@@ -63,6 +72,12 @@ type Props = {
   onOpenPlanSheet: (s: Student) => void;
   onShowAssign: () => void;
   onUpdateDay: (studentId: string, dayKey: string, patch: Partial<DayEntry>) => void;
+  onUpdateSciScore: (
+    studentId: string,
+    dayKey: string,
+    field: "attendance" | "hifz" | "rabt" | "muraja",
+    value: string,
+  ) => void;
   onPlanHifz: (s: Student, dayKey: string) => void;
   onPlanPassFail: (s: Student, dayKey: string, task: "rabt" | "muraja", value: "pass" | "fail" | "") => void;
   onCompensationChange: (s: Student, dayKey: string, faces: number) => void;
@@ -78,10 +93,12 @@ function pctClass(pct: number): string {
 function TaskColumn({
   label,
   children,
+  sci,
   cellClassName,
 }: {
   label: string;
   children: ReactNode;
+  sci?: ReactNode;
   cellClassName?: string;
 }) {
   return (
@@ -93,6 +110,9 @@ function TaskColumn({
       )}>
         {children}
       </div>
+      {sci != null && (
+        <div className="mt-0.5 flex justify-center">{sci}</div>
+      )}
     </div>
   );
 }
@@ -129,6 +149,9 @@ export function TeacherMobileDayBoard({
   isCurrentWeek,
   todayKey,
   onSciConfigChange,
+  sciVisible,
+  sciFields,
+  sciData,
   halaqaId,
   showTransferButton,
   transferOpen,
@@ -144,6 +167,7 @@ export function TeacherMobileDayBoard({
   onOpenPlanSheet,
   onShowAssign,
   onUpdateDay,
+  onUpdateSciScore,
   onPlanHifz,
   onPlanPassFail,
   onCompensationChange,
@@ -151,6 +175,20 @@ export function TeacherMobileDayBoard({
 }: Props) {
   const selectableWeeks = getSelectableWeeks(calendar);
   const dayLabel = DAYS.find((d) => d.key === activeDayKey)?.label ?? activeDayKey;
+  const showSciRow =
+    sciVisible &&
+    (sciFields.attendance || sciFields.hifz || sciFields.rabt || sciFields.muraja);
+
+  const sciInput = (
+    field: "attendance" | "hifz" | "rabt" | "muraja",
+    studentId: string,
+  ) => (
+    <ScientificGradeInput
+      value={getScientificDayScore(sciData, studentId, weekNum, activeDayKey, field)}
+      overridden={isScientificScoreOverridden(halaqaId, studentId, weekNum, activeDayKey, field)}
+      onChange={(v) => onUpdateSciScore(studentId, activeDayKey, field, v)}
+    />
+  );
 
   return (
     <div className="space-y-2">
@@ -391,6 +429,7 @@ export function TeacherMobileDayBoard({
                       <TaskColumn
                         label="حضور"
                         cellClassName="bg-transparent border-transparent p-0"
+                        sci={showSciRow && sciFields.attendance ? sciInput("attendance", s.id) : undefined}
                       >
                         <AttSelect
                           value={e.attendance}
@@ -410,13 +449,17 @@ export function TeacherMobileDayBoard({
                       <TaskColumn
                         label="حضور"
                         cellClassName="bg-transparent border-transparent p-0"
+                        sci={showSciRow && sciFields.attendance ? sciInput("attendance", s.id) : undefined}
                       >
                         <AttSelect
                           value={e.attendance}
                           onChange={(v) => onUpdateDay(s.id, activeDayKey, { attendance: v })}
                         />
                       </TaskColumn>
-                      <TaskColumn label="حفظ">
+                      <TaskColumn
+                        label="حفظ"
+                        sci={showSciRow && sciFields.hifz ? sciInput("hifz", s.id) : undefined}
+                      >
                         <PlanAwareTaskCell
                           student={s}
                           task="hifz"
@@ -428,7 +471,10 @@ export function TeacherMobileDayBoard({
                           onPlanHifzChange={() => onPlanHifz(s, activeDayKey)}
                         />
                       </TaskColumn>
-                      <TaskColumn label="ربط">
+                      <TaskColumn
+                        label="ربط"
+                        sci={showSciRow && sciFields.rabt ? sciInput("rabt", s.id) : undefined}
+                      >
                         <PlanAwareTaskCell
                           student={s}
                           task="rabt"
@@ -440,7 +486,10 @@ export function TeacherMobileDayBoard({
                           onPlanPassFailChange={(v) => onPlanPassFail(s, activeDayKey, "rabt", v)}
                         />
                       </TaskColumn>
-                      <TaskColumn label="مراجعة">
+                      <TaskColumn
+                        label="مراجعة"
+                        sci={showSciRow && sciFields.muraja ? sciInput("muraja", s.id) : undefined}
+                      >
                         <PlanAwareTaskCell
                           student={s}
                           task="muraja"

@@ -1,6 +1,7 @@
 import { buildRphpUrl } from "@/lib/api-base";
 import type {
   EducationPlan,
+  HalaqaPlanStatusEntry,
   ImportPlanPayload,
   PlanTaskType,
   StudentPlanSheetData,
@@ -14,6 +15,7 @@ import {
   localClearPlansCatalogCache,
   localDeletePlan,
   localGetStudentSheet,
+  localGetHalaqaPlanStatuses,
   localImportPlans,
   localListPlans,
   localPatchAssignment,
@@ -101,6 +103,50 @@ export async function fetchStudentPlanSheet(studentId: string): Promise<StudentP
   } catch (e) {
     if (isPlansDbUnavailableError(e)) {
       return localGetStudentSheet(studentId);
+    }
+    throw e;
+  }
+}
+
+/** One request for all plan link statuses in a halaqa (replaces per-student sheet prefetch). */
+async function fetchHalaqaPlanStatusesLegacy(studentIds: string[]): Promise<HalaqaPlanStatusEntry[]> {
+  const out: HalaqaPlanStatusEntry[] = [];
+  const batchSize = 5;
+  for (let i = 0; i < studentIds.length; i += batchSize) {
+    const chunk = studentIds.slice(i, i + batchSize);
+    await Promise.all(
+      chunk.map(async (studentId) => {
+        try {
+          const sheet = await fetchStudentPlanSheet(studentId);
+          const status = sheet.assignment?.status;
+          if (status === "active" || status === "frozen") {
+            out.push({ student_id: studentId, status });
+          }
+        } catch {
+          /* optional UI hint */
+        }
+      }),
+    );
+  }
+  return out;
+}
+
+export async function fetchHalaqaPlanStatuses(
+  halaqaId: number,
+  studentIds: string[] = [],
+): Promise<HalaqaPlanStatusEntry[]> {
+  try {
+    const res = await planFetch<{ statuses: HalaqaPlanStatusEntry[] }>(
+      `/plans/halaqa-status?halaqa_id=${encodeURIComponent(String(halaqaId))}`,
+    );
+    return res.statuses ?? [];
+  } catch (e) {
+    if (isPlansDbUnavailableError(e)) {
+      return localGetHalaqaPlanStatuses(halaqaId);
+    }
+    const msg = e instanceof Error ? e.message : "";
+    if (studentIds.length > 0 && (msg.includes("404") || msg.includes("Not Found"))) {
+      return fetchHalaqaPlanStatusesLegacy(studentIds);
     }
     throw e;
   }

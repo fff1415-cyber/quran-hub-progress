@@ -152,6 +152,10 @@ function route_request(string $method, string $path): void
         handle_student_plan_sheet();
         return;
     }
+    if ($path === '/plans/halaqa-status' && $method === 'GET') {
+        handle_halaqa_plan_status();
+        return;
+    }
     if ($path === '/plans/import' && $method === 'POST') {
         handle_import_plans();
         return;

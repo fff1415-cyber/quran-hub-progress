@@ -11,6 +11,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { loadGrades, loadStudents } from "@/lib/mock-data";
+import { cn } from "@/lib/utils";
 import {
   ALL_SCIENTIFIC_FIELDS,
   SCIENTIFIC_FIELD_LABELS,
@@ -94,8 +95,8 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
             <DialogTitle>تفعيل البرنامج العلمي</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            اختر البنود التي تُحسب في برنامج الحلقة. النقاط محددة مسبقاً من المدير — لا حاجة لإدخال
-            درجة يدوياً. تظهر المجاميع في «برنامج الحلقة» فقط.
+            اختر البنود التي تُحسب في برنامج الحلقة. النقاط الافتراضية من المدير — تُطبَّق تلقائياً
+            عند التحضير، ويمكنك تعديل الدرجة يدوياً عند الحاجة.
           </p>
           <div className="space-y-3 py-2">
             {ALL_SCIENTIFIC_FIELDS.map((field) => (
@@ -133,5 +134,39 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
         </DialogContent>
       </Dialog>
     </>
+  );
+}
+
+export function ScientificGradeInput({
+  value,
+  onChange,
+  disabled,
+  overridden,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  disabled?: boolean;
+  overridden?: boolean;
+}) {
+  return (
+    <input
+      type="text"
+      inputMode="decimal"
+      value={value}
+      disabled={disabled}
+      onChange={(e) => {
+        const v = e.target.value;
+        if (v === "" || /^-?\d*\.?\d*$/.test(v)) onChange(v);
+      }}
+      placeholder="—"
+      title={overridden ? "درجة معدّلة يدوياً" : undefined}
+      className={cn(
+        "w-full min-w-0 max-w-[44px] mx-auto px-0.5 py-1 text-center text-xs rounded border focus:outline-none disabled:opacity-50",
+        overridden
+          ? "border-warning/50 bg-warning/10 focus:border-warning"
+          : "border-primary/30 bg-primary/5 focus:border-primary",
+      )}
+      dir="ltr"
+    />
   );
 }

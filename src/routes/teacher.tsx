@@ -33,7 +33,7 @@ import {
   Smartphone, Sparkles, Users, X,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
-import { applyPlanInput, fetchStudentPlanSheet, syncCompensationToPlan } from "@/lib/plans-service";
+import { applyPlanInput, fetchHalaqaPlanStatuses, fetchStudentPlanSheet, syncCompensationToPlan } from "@/lib/plans-service";
 import { checkAndHandlePlanCompletion } from "@/lib/plan-completion";
 import { processAbsenceThresholdAlerts } from "@/lib/semester-absence";
 import { loadComplexFeatures } from "@/lib/complex-features";
@@ -66,11 +66,17 @@ import {
   type TeacherGradeLayoutMode,
 } from "@/lib/teacher-grade-layout";
 import {
+  ScientificGradeInput,
   ScientificGradesToolbar,
 } from "@/components/teacher/ScientificGradesToolbar";
 import {
+  getScientificDayScore,
+  isScientificScoreOverridden,
   loadScientificConfig,
+  loadScientificData,
+  setTeacherScientificDayScore,
   syncScientificScoresFromDayPatch,
+  type ScientificFieldsConfig,
   type ScientificGradesConfig,
 } from "@/lib/scientific-grades";
 
@@ -454,20 +460,43 @@ const STICKY_HEAD_CORNER = "sticky z-40 bg-secondary shadow-[0_1px_0_var(--borde
 const STICKY_NAME =
   "sticky right-0 z-10 bg-card shadow-[-8px_0_12px_-6px_rgba(0,0,0,0.12)] group-hover:bg-accent/30 transition-colors";
 
-function dayColumnCount(isTalqeen: boolean, compensationPerDay: boolean): number {
-  if (isTalqeen) return 2;
-  return compensationPerDay ? 5 : 4;
+type SciTableCtx = { visible: boolean; fields: ScientificFieldsConfig };
+
+function dayColumnCount(isTalqeen: boolean, sci: SciTableCtx, compensationPerDay: boolean): number {
+  if (isTalqeen) {
+    return 2 + (sci.visible && sci.fields.attendance ? 1 : 0);
+  }
+  let n = compensationPerDay ? 5 : 4;
+  if (sci.visible) {
+    if (sci.fields.attendance) n += 1;
+    if (sci.fields.hifz) n += 1;
+    if (sci.fields.rabt) n += 1;
+    if (sci.fields.muraja) n += 1;
+  }
+  return n;
+}
+
+function extraScientificWidth(sci: SciTableCtx): number {
+  if (!sci.visible) return 0;
+  let w = 0;
+  if (sci.fields.attendance) w += GRADE_COL.scientific;
+  if (sci.fields.hifz) w += GRADE_COL.scientific;
+  if (sci.fields.rabt) w += GRADE_COL.scientific;
+  if (sci.fields.muraja) w += GRADE_COL.scientific;
+  return w;
 }
 
 function gradeTableWidthPx(
   dayCount: number,
   isTalqeen: boolean,
+  sci: SciTableCtx,
   compensationPerDay: boolean,
 ): number {
   const perDay = isTalqeen
-    ? GRADE_COL.attendance + GRADE_COL.wajib
+    ? GRADE_COL.attendance + GRADE_COL.wajib + (sci.visible && sci.fields.attendance ? GRADE_COL.scientific : 0)
     : GRADE_COL.attendance + GRADE_COL.hifz + GRADE_COL.passFail * 2
-      + (compensationPerDay ? GRADE_COL.compensation : 0);
+      + (compensationPerDay ? GRADE_COL.compensation : 0)
+      + extraScientificWidth(sci);
   const consolidatedComp = !isTalqeen && !compensationPerDay ? GRADE_COL.compensation : 0;
   return (
     GRADE_COL.student
@@ -478,11 +507,20 @@ function gradeTableWidthPx(
   );
 }
 
-function buildDayColWidths(isTalqeen: boolean, compensationPerDay: boolean): number[] {
+function buildDayColWidths(isTalqeen: boolean, sci: SciTableCtx, compensationPerDay: boolean): number[] {
   if (isTalqeen) {
-    return [GRADE_COL.attendance, GRADE_COL.wajib];
+    const out = [GRADE_COL.attendance, GRADE_COL.wajib];
+    if (sci.visible && sci.fields.attendance) out.splice(1, 0, GRADE_COL.scientific);
+    return out;
   }
-  const out: number[] = [GRADE_COL.attendance, GRADE_COL.hifz, GRADE_COL.passFail, GRADE_COL.passFail];
+  const out: number[] = [GRADE_COL.attendance];
+  if (sci.visible && sci.fields.attendance) out.push(GRADE_COL.scientific);
+  out.push(GRADE_COL.hifz);
+  if (sci.visible && sci.fields.hifz) out.push(GRADE_COL.scientific);
+  out.push(GRADE_COL.passFail);
+  if (sci.visible && sci.fields.rabt) out.push(GRADE_COL.scientific);
+  out.push(GRADE_COL.passFail);
+  if (sci.visible && sci.fields.muraja) out.push(GRADE_COL.scientific);
   if (compensationPerDay) out.push(GRADE_COL.compensation);
   return out;
 }
@@ -490,13 +528,15 @@ function buildDayColWidths(isTalqeen: boolean, compensationPerDay: boolean): num
 function GradeTableColGroup({
   dayCount,
   isTalqeen,
+  sci,
   compensationPerDay,
 }: {
   dayCount: number;
   isTalqeen: boolean;
+  sci: SciTableCtx;
   compensationPerDay: boolean;
 }) {
-  const dayWidths = buildDayColWidths(isTalqeen, compensationPerDay);
+  const dayWidths = buildDayColWidths(isTalqeen, sci, compensationPerDay);
 
   return (
     <colgroup>
@@ -555,13 +595,18 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   );
   const [grades, setGrades] = useLiveGrades();
   const [sciConfig, setSciConfig] = useState<ScientificGradesConfig>(() => loadScientificConfig(halaqaId));
+  const [sciData, setSciData] = useState(() => loadScientificData(halaqaId));
+  const sciCtx: SciTableCtx = useMemo(
+    () => ({ visible: sciConfig.visible, fields: sciConfig.fields }),
+    [sciConfig],
+  );
   const deviceMobile = useIsMobile();
   const [layoutMode, setLayoutMode] = useState<TeacherGradeLayoutMode>(() => loadTeacherGradeLayoutMode());
   const { useMobileBoard, compensationPerDay } = useMemo(
     () => resolveTeacherGradeLayout(layoutMode, deviceMobile),
     [layoutMode, deviceMobile],
   );
-  const dayColSpan = dayColumnCount(isTalqeen, compensationPerDay);
+  const dayColSpan = dayColumnCount(isTalqeen, sciCtx, compensationPerDay);
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferStudentId, setTransferStudentId] = useState("");
   const [transferReason, setTransferReason] = useState("");
@@ -699,27 +744,17 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       const active = new Set<string>();
       const frozen = new Set<string>();
       const linked = new Set<string>();
-      const batchSize = 5;
-      for (let i = 0; i < students.length; i += batchSize) {
+      try {
+        const rosterIds = studentIdsKey.split(",").filter(Boolean);
+        const statuses = await fetchHalaqaPlanStatuses(halaqaId, rosterIds);
         if (cancelled) return;
-        const chunk = students.slice(i, i + batchSize);
-        await Promise.all(
-          chunk.map(async (s) => {
-            try {
-              const sheet = await fetchStudentPlanSheet(s.id);
-              if (!sheet.assignment) return;
-              if (sheet.assignment.status === "active") {
-                active.add(s.id);
-                linked.add(s.id);
-              } else if (sheet.assignment.status === "frozen") {
-                frozen.add(s.id);
-                linked.add(s.id);
-              }
-            } catch {
-              /* ignore — plan status is optional UI hint */
-            }
-          }),
-        );
+        for (const row of statuses) {
+          linked.add(row.student_id);
+          if (row.status === "active") active.add(row.student_id);
+          else if (row.status === "frozen") frozen.add(row.student_id);
+        }
+      } catch {
+        /* ignore — plan status is optional UI hint */
       }
       if (!cancelled) {
         setPlanStudentIds(active);
@@ -728,8 +763,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       }
     })();
     return () => { cancelled = true; };
-    // studentIdsKey is stable; students is memoized — avoids infinite refetch loop
-  }, [studentIdsKey, students]);
+  }, [studentIdsKey, halaqaId]);
 
   const openPlanSheet = async (s: Student) => {
     setPlanSheetStudent(s);
@@ -833,6 +867,19 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }
   };
 
+  const refreshSciData = () => setSciData(loadScientificData(halaqaId));
+
+  const updateSciScore = (
+    studentId: string,
+    dayKey: string,
+    field: "attendance" | "hifz" | "rabt" | "muraja",
+    value: string,
+  ) => {
+    if (closedDayKeys.has(dayKey)) return;
+    setTeacherScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
+    refreshSciData();
+  };
+
   const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
     if (closedDayKeys.has(dayKey)) return;
     const prevWeek = ensureWeekDays(
@@ -865,6 +912,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       patch,
       mergedEntry,
     );
+    refreshSciData();
 
     if (patch.attendance === "absent") {
       void fetchActiveCalendar(false).then(processAbsenceThresholdAlerts).catch(() => {});
@@ -924,6 +972,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     });
     setGrades(g);
     saveGrades(g, { sync: "immediate" });
+    refreshSciData();
     const dayLabel = DAYS.find((d) => d.key === dayKey)?.label ?? dayKey;
     toast.success(
       updated > 0
@@ -948,8 +997,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   );
 
   const tableWidthPx = useMemo(
-    () => gradeTableWidthPx(visibleDays.length, isTalqeen, compensationPerDay),
-    [visibleDays.length, isTalqeen, compensationPerDay],
+    () => gradeTableWidthPx(visibleDays.length, isTalqeen, sciCtx, compensationPerDay),
+    [visibleDays.length, isTalqeen, sciCtx, compensationPerDay],
   );
 
   const dayHeaderClass = (dayKey: string) =>
@@ -1023,7 +1072,13 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           onActiveDayChange={setActiveDayKey}
           isCurrentWeek={isCurrentWeek}
           todayKey={todayKey}
-          onSciConfigChange={setSciConfig}
+          onSciConfigChange={(cfg) => {
+            setSciConfig(cfg);
+            refreshSciData();
+          }}
+          sciVisible={sciCtx.visible}
+          sciFields={sciCtx.fields}
+          sciData={sciData}
           halaqaId={halaqaId}
           halaqaSemesterPct={halaqaSemesterPct}
           showTransferButton={showTransferButton}
@@ -1040,6 +1095,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           onOpenPlanSheet={(s) => void openPlanSheet(s)}
           onShowAssign={() => setShowAssign(true)}
           onUpdateDay={updateDay}
+          onUpdateSciScore={updateSciScore}
           onPlanHifz={(s, dayKey) => void handlePlanHifz(s, dayKey)}
           onPlanPassFail={(s, dayKey, task, value) => void handlePlanPassFail(s, dayKey, task, value)}
           onCompensationChange={(s, dayKey, faces) => void handleDayCompensationChange(s, dayKey, faces)}
@@ -1202,6 +1258,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         <GradeTableColGroup
           dayCount={visibleDays.length}
           isTalqeen={isTalqeen}
+          sci={sciCtx}
           compensationPerDay={compensationPerDay}
         />
         <thead>
@@ -1253,9 +1310,29 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                     {bulkPresentBtn(d.key)}
                     <span className="block">الحضور</span>
                   </th>
+                  {sciCtx.visible && sciCtx.fields.attendance && (
+                    <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.scientific), "text-primary text-[10px]")}>
+                      درجة
+                    </th>
+                  )}
                   <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.hifz))}>حفظ</th>
+                  {sciCtx.visible && sciCtx.fields.hifz && (
+                    <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.scientific), "text-primary text-[10px]")}>
+                      درجة
+                    </th>
+                  )}
                   <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.pf))}>ربط</th>
+                  {sciCtx.visible && sciCtx.fields.rabt && (
+                    <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.scientific), "text-primary text-[10px]")}>
+                      درجة
+                    </th>
+                  )}
                   <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.pf))}>مراجعة</th>
+                  {sciCtx.visible && sciCtx.fields.muraja && (
+                    <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.scientific), "text-primary text-[10px]")}>
+                      درجة
+                    </th>
+                  )}
                   {compensationPerDay && (
                     <th className={cn(STICKY_HEAD, GRADE_HEAD_ROW2_TOP, subHeaderClass(d.key, GRADE_CELL_W.compensation), "text-success text-[10px]")}>
                       تع
@@ -1309,6 +1386,15 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                       <td className={cn(dayCellClass(d.key, GRADE_CELL_W.att), "!p-0.5")}>
                         <AttSelect value={e.attendance} onChange={(v) => updateDay(s.id, d.key, { attendance: v })} />
                       </td>
+                      {sciCtx.visible && sciCtx.fields.attendance && (
+                        <td className={dayCellClass(d.key, GRADE_CELL_W.scientific)}>
+                          <ScientificGradeInput
+                            value={getScientificDayScore(sciData, s.id, weekNum, d.key, "attendance")}
+                            overridden={isScientificScoreOverridden(halaqaId, s.id, weekNum, d.key, "attendance")}
+                            onChange={(v) => updateSciScore(s.id, d.key, "attendance", v)}
+                          />
+                        </td>
+                      )}
                       <td className={dayCellClass(d.key, GRADE_CELL_W.hifz)}>
                         <PlanAwareTaskCell
                           student={s}
@@ -1321,6 +1407,15 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           onPlanHifzChange={() => void handlePlanHifz(s, d.key)}
                         />
                       </td>
+                      {sciCtx.visible && sciCtx.fields.hifz && (
+                        <td className={dayCellClass(d.key, GRADE_CELL_W.scientific)}>
+                          <ScientificGradeInput
+                            value={getScientificDayScore(sciData, s.id, weekNum, d.key, "hifz")}
+                            overridden={isScientificScoreOverridden(halaqaId, s.id, weekNum, d.key, "hifz")}
+                            onChange={(v) => updateSciScore(s.id, d.key, "hifz", v)}
+                          />
+                        </td>
+                      )}
                       <td className={dayCellClass(d.key, GRADE_CELL_W.pf)}>
                         <PlanAwareTaskCell
                           student={s}
@@ -1333,6 +1428,15 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           onPlanPassFailChange={(v) => void handlePlanPassFail(s, d.key, "rabt", v)}
                         />
                       </td>
+                      {sciCtx.visible && sciCtx.fields.rabt && (
+                        <td className={dayCellClass(d.key, GRADE_CELL_W.scientific)}>
+                          <ScientificGradeInput
+                            value={getScientificDayScore(sciData, s.id, weekNum, d.key, "rabt")}
+                            overridden={isScientificScoreOverridden(halaqaId, s.id, weekNum, d.key, "rabt")}
+                            onChange={(v) => updateSciScore(s.id, d.key, "rabt", v)}
+                          />
+                        </td>
+                      )}
                       <td className={dayCellClass(d.key, GRADE_CELL_W.pf)}>
                         <PlanAwareTaskCell
                           student={s}
@@ -1345,6 +1449,15 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           onPlanPassFailChange={(v) => void handlePlanPassFail(s, d.key, "muraja", v)}
                         />
                       </td>
+                      {sciCtx.visible && sciCtx.fields.muraja && (
+                        <td className={dayCellClass(d.key, GRADE_CELL_W.scientific)}>
+                          <ScientificGradeInput
+                            value={getScientificDayScore(sciData, s.id, weekNum, d.key, "muraja")}
+                            overridden={isScientificScoreOverridden(halaqaId, s.id, weekNum, d.key, "muraja")}
+                            onChange={(v) => updateSciScore(s.id, d.key, "muraja", v)}
+                          />
+                        </td>
+                      )}
                       {compensationPerDay && (
                         <td className={dayCellClass(d.key, GRADE_CELL_W.compensation)}>
                           <CompensationSelect

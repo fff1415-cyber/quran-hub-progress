@@ -38,9 +38,16 @@ export type ScientificGradesDataStore = Record<
   Record<string, Record<number, Record<string, ScientificDayScores>>>
 >;
 
+export type ScientificOverrideStore = Record<
+  string,
+  Record<string, Record<number, Record<string, Partial<Record<ScientificGradeField, true>>>>>
+>;
+
 export type ScientificGradesStore = {
   configs: Record<string, ScientificGradesConfig>;
   data: ScientificGradesDataStore;
+  /** Teacher manually edited scores — skip auto-default until prep changes. */
+  overrides?: ScientificOverrideStore;
 };
 
 const KEY = "qshatawi_scientific_grades_v1";
@@ -147,18 +154,19 @@ function persist(store: ScientificGradesStore) {
 
 export function loadScientificGradesStore(): ScientificGradesStore {
   if (typeof window === "undefined") {
-    return { configs: {}, data: {} };
+    return { configs: {}, data: {}, overrides: {} };
   }
   const raw = localStorage.getItem(KEY);
-  if (!raw) return { configs: {}, data: {} };
+  if (!raw) return { configs: {}, data: {}, overrides: {} };
   try {
     const parsed = JSON.parse(raw) as Partial<ScientificGradesStore>;
     return {
       configs: parsed.configs ?? {},
       data: parsed.data ?? {},
+      overrides: parsed.overrides ?? {},
     };
   } catch {
-    return { configs: {}, data: {} };
+    return { configs: {}, data: {}, overrides: {} };
   }
 }
 
@@ -221,6 +229,76 @@ export function getScientificDayScore(
   return data[studentId]?.[weekNum]?.[dayKey]?.[field] ?? "";
 }
 
+function halaqaOverrideRoot(store: ScientificGradesStore, halaqaId: number) {
+  const key = String(halaqaId);
+  if (!store.overrides) store.overrides = {};
+  if (!store.overrides[key]) store.overrides[key] = {};
+  return store.overrides[key];
+}
+
+export function isScientificScoreOverridden(
+  halaqaId: number,
+  studentId: string,
+  weekNum: number,
+  dayKey: string,
+  field: ScientificGradeField,
+): boolean {
+  return !!loadScientificGradesStore().overrides?.[String(halaqaId)]?.[studentId]?.[weekNum]?.[dayKey]?.[field];
+}
+
+export function clearScientificScoreOverride(
+  halaqaId: number,
+  studentId: string,
+  weekNum: number,
+  dayKey: string,
+  field: ScientificGradeField,
+): void {
+  const store = loadScientificGradesStore();
+  const cell = store.overrides?.[String(halaqaId)]?.[studentId]?.[weekNum]?.[dayKey];
+  if (!cell?.[field]) return;
+  delete cell[field];
+  if (Object.keys(cell).length === 0) {
+    delete store.overrides![String(halaqaId)]![studentId]![weekNum]![dayKey];
+  }
+  saveScientificGradesStore(store);
+}
+
+function setScientificScoreOverride(
+  halaqaId: number,
+  studentId: string,
+  weekNum: number,
+  dayKey: string,
+  field: ScientificGradeField,
+): void {
+  const store = loadScientificGradesStore();
+  const halaqaOverrides = halaqaOverrideRoot(store, halaqaId);
+  if (!halaqaOverrides[studentId]) halaqaOverrides[studentId] = {};
+  if (!halaqaOverrides[studentId][weekNum]) halaqaOverrides[studentId][weekNum] = {};
+  if (!halaqaOverrides[studentId][weekNum][dayKey]) halaqaOverrides[studentId][weekNum][dayKey] = {};
+  halaqaOverrides[studentId][weekNum][dayKey][field] = true;
+  saveScientificGradesStore(store);
+}
+
+export function clearScientificOverridesForHalaqa(halaqaId: number): void {
+  const store = loadScientificGradesStore();
+  if (!store.overrides?.[String(halaqaId)]) return;
+  delete store.overrides[String(halaqaId)];
+  saveScientificGradesStore(store);
+}
+
+function clearScientificOverridesForPatch(
+  halaqaId: number,
+  studentId: string,
+  weekNum: number,
+  dayKey: string,
+  patch: Partial<DayEntry>,
+): void {
+  if ("hifz" in patch) clearScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, "hifz");
+  if ("rabt" in patch) clearScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, "rabt");
+  if ("muraja" in patch) clearScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, "muraja");
+  if ("attendance" in patch) clearScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, "attendance");
+}
+
 function syncScientificField(
   halaqaId: number,
   studentId: string,
@@ -231,7 +309,11 @@ function syncScientificField(
   entry: DayEntry,
 ): void {
   if (!config.fields[field]) {
+    clearScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, field);
     setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, "");
+    return;
+  }
+  if (isScientificScoreOverridden(halaqaId, studentId, weekNum, dayKey, field)) {
     return;
   }
   setScientificDayScore(
@@ -244,7 +326,7 @@ function syncScientificField(
   );
 }
 
-/** Apply manager default scores after a day-entry patch (teacher never enters scores manually). */
+/** Apply manager default scores after a day-entry patch unless teacher overrode the score. */
 export function syncScientificScoresFromDayPatch(
   halaqaId: number,
   studentId: string,
@@ -254,6 +336,7 @@ export function syncScientificScoresFromDayPatch(
   patch: Partial<DayEntry>,
   entry: DayEntry,
 ): void {
+  clearScientificOverridesForPatch(halaqaId, studentId, weekNum, dayKey, patch);
   if ("hifz" in patch) syncScientificField(halaqaId, studentId, weekNum, dayKey, config, "hifz", entry);
   if ("rabt" in patch) syncScientificField(halaqaId, studentId, weekNum, dayKey, config, "rabt", entry);
   if ("muraja" in patch) syncScientificField(halaqaId, studentId, weekNum, dayKey, config, "muraja", entry);
@@ -267,6 +350,7 @@ export function reapplyScientificScoresForHalaqa(
   studentIds: string[],
   config: ScientificGradesConfig,
 ): void {
+  clearScientificOverridesForHalaqa(halaqaId);
   for (const studentId of studentIds) {
     const weeks = grades[studentId];
     if (!weeks) continue;
@@ -306,6 +390,24 @@ export function setScientificDayScore(
     all[studentId][weekNum][dayKey][field] = trimmed;
   }
   saveScientificData(halaqaId, all);
+}
+
+/** Teacher manual score edit — preserved until prep changes or manager re-applies defaults. */
+export function setTeacherScientificDayScore(
+  halaqaId: number,
+  studentId: string,
+  weekNum: number,
+  dayKey: string,
+  field: ScientificGradeField,
+  value: string,
+): void {
+  const trimmed = value.trim();
+  setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
+  if (trimmed === "") {
+    clearScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, field);
+  } else {
+    setScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, field);
+  }
 }
 
 export type ScientificWeekTotals = Record<ScientificGradeField, number> & { total: number };

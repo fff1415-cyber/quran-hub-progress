@@ -3,6 +3,7 @@
  */
 import type {
   EducationPlan,
+  HalaqaPlanStatusEntry,
   ImportPlanPayload,
   PlanSegment,
   SegmentCompletion,
@@ -14,6 +15,7 @@ import type {
 import { nextSegmentsToApply, nextSegmentForTask, segmentsForTap } from "@/lib/plan-translator";
 import { resolveFaceQuotas, normalizeFaceQuotas } from "@/lib/plan-daily-faces";
 import { getCalendarIsoDate } from "@/lib/operational-date";
+import { loadStudents } from "@/lib/mock-data";
 
 const KEY_PLANS = "qshatawi_education_plans_v1";
 const KEY_SEGMENTS = "qshatawi_plan_segments_v1";
@@ -201,6 +203,31 @@ export function localGetStudentSheet(studentId: string): StudentPlanSheetData {
     }));
 
   return { assignment: assignment ? withFaceDefaults(assignment) : null, plan, segments, completions };
+}
+
+/** Local fallback for batch halaqa plan status (teacher prep board). */
+export function localGetHalaqaPlanStatuses(halaqaId: number): HalaqaPlanStatusEntry[] {
+  const rosterIds = new Set(
+    loadStudents().filter((s) => s.halaqaId === halaqaId).map((s) => s.id),
+  );
+  if (rosterIds.size === 0) return [];
+
+  const assignments = read<StudentPlanAssignment[]>(KEY_ASSIGNMENTS, []);
+  const latest = new Map<string, StudentPlanAssignment>();
+
+  for (const a of assignments) {
+    if (!rosterIds.has(a.student_id)) continue;
+    if (a.status !== "active" && a.status !== "frozen") continue;
+    const prev = latest.get(a.student_id);
+    if (!prev || (a.assigned_at ?? "").localeCompare(prev.assigned_at ?? "") > 0) {
+      latest.set(a.student_id, a);
+    }
+  }
+
+  return [...latest.entries()].map(([student_id, a]) => ({
+    student_id,
+    status: a.status as "active" | "frozen",
+  }));
 }
 
 export function localApplyInput(

@@ -847,6 +847,82 @@ function handle_student_plan_sheet(): void
     }
 }
 
+function handle_halaqa_plan_status(): void
+{
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
+    $role = (string) ($auth['role'] ?? '');
+    $halaqaId = (int) ($_GET['halaqa_id'] ?? 0);
+    if ($halaqaId <= 0) {
+        error_response('halaqa_id مطلوب');
+    }
+
+    if ($role === 'teacher' || $role === 'assistant') {
+        $authHalaqa = (int) ($auth['halaqaId'] ?? 0);
+        if ($authHalaqa !== $halaqaId) {
+            error_response('لا يمكنك عرض خطط حلقة أخرى', 403);
+        }
+    } elseif (!in_array($role, ['supervisor', 'secretary', 'manager'], true)) {
+        error_response('Forbidden', 403);
+    }
+
+    $pdo = db();
+    $tenants = plans_tenant_enabled($pdo);
+
+    if (!plans_table_exists($pdo, 'student_plan_assignments')) {
+        json_response(['statuses' => []]);
+        return;
+    }
+
+    try {
+        if (plans_students_tenant_scoped($pdo, $tenants)) {
+            $stmt = $pdo->prepare(
+                'SELECT spa.student_id, spa.status, spa.assigned_at
+                 FROM student_plan_assignments spa
+                 INNER JOIN students s ON s.id = spa.student_id
+                 WHERE s.halaqa_id = ? AND s.complex_id = ?
+                   AND spa.status IN (\'active\', \'frozen\')
+                 ORDER BY spa.assigned_at DESC'
+            );
+            $stmt->execute([$halaqaId, $cid]);
+        } else {
+            $stmt = $pdo->prepare(
+                'SELECT spa.student_id, spa.status, spa.assigned_at
+                 FROM student_plan_assignments spa
+                 INNER JOIN students s ON s.id = spa.student_id
+                 WHERE s.halaqa_id = ?
+                   AND spa.status IN (\'active\', \'frozen\')
+                 ORDER BY spa.assigned_at DESC'
+            );
+            $stmt->execute([$halaqaId]);
+        }
+
+        $seen = [];
+        $statuses = [];
+        foreach ($stmt->fetchAll() as $row) {
+            $studentId = (string) ($row['student_id'] ?? '');
+            if ($studentId === '' || isset($seen[$studentId])) {
+                continue;
+            }
+            $seen[$studentId] = true;
+            $status = (string) ($row['status'] ?? '');
+            if ($status !== 'active' && $status !== 'frozen') {
+                continue;
+            }
+            $statuses[] = [
+                'student_id' => $studentId,
+                'status' => $status,
+            ];
+        }
+
+        json_response(['statuses' => $statuses]);
+    } catch (PDOException $e) {
+        plans_abort_with_sql_error($pdo, $e, 'حالة خطط الحلقة');
+    } catch (Throwable $e) {
+        error_response('فشل تحميل حالة الخطط: ' . $e->getMessage(), 500);
+    }
+}
+
 function handle_apply_plan_input(): void
 {
     $auth = require_auth();

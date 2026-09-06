@@ -3,6 +3,12 @@ export type PlanTaskType = "hifz" | "rabt" | "muraja";
 export type TapValue = "half" | "one" | "two";
 export type AssignmentStatus = "active" | "frozen" | "transferred";
 
+/** Lightweight plan link status for a halaqa roster (teacher prep board). */
+export type HalaqaPlanStatusEntry = {
+  student_id: string;
+  status: "active" | "frozen";
+};
+
 /** Daily face quotas + tap→face mapping (plan defaults, copied to assignment on link). */
 export interface DailyFaceQuotas {
   daily_hifz_faces: number;

@@ -474,6 +474,13 @@ export async function fetchCloudGrades(): Promise<GradesStore> {
 
 let gradesPushQueue: Promise<GradesStore> = Promise.resolve({} as GradesStore);
 
+/** Skip redundant cloud pulls when the remote grades blob is unchanged. */
+let lastPulledCloudHash = "";
+
+function gradesPayloadHash(g: GradesStore): string {
+  return JSON.stringify(g);
+}
+
 /** Upload local grades after merging with the latest cloud copy (teacher + assistant). */
 export async function pushMergedGrades(local: GradesStore): Promise<GradesStore> {
   const run = async (): Promise<GradesStore> => {
@@ -486,6 +493,7 @@ export async function pushMergedGrades(local: GradesStore): Promise<GradesStore>
     const merged = mergeGradesStores(cloud, local);
     await secureSetAppState({ data: { token: tokenOrThrow(), key: "grades", value: merged } });
     saveGrades(merged, { sync: false });
+    lastPulledCloudHash = gradesPayloadHash(merged);
     return merged;
   };
   const next = gradesPushQueue.then(run, run);
@@ -501,7 +509,16 @@ export async function pullMergedGrades(): Promise<GradesStore | null> {
   const token = getToken();
   if (!token) return null;
   const cloud = await fetchCloudGrades();
-  const merged = mergeGradesStores(loadGrades(), cloud);
+  const cloudHash = gradesPayloadHash(cloud);
+  if (cloudHash === lastPulledCloudHash) return null;
+
+  const local = loadGrades();
+  const merged = mergeGradesStores(local, cloud);
+  const mergedHash = gradesPayloadHash(merged);
+  lastPulledCloudHash = cloudHash;
+
+  if (mergedHash === gradesPayloadHash(local)) return null;
+
   const prev = sessionStorage.getItem("qs_syncing");
   sessionStorage.setItem("qs_syncing", "1");
   try {
