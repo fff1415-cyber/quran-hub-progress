@@ -1,8 +1,14 @@
 import { useEffect, useState } from "react";
-import { FlaskConical, Settings2 } from "lucide-react";
+import { ChevronDown, FlaskConical, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
   Dialog,
   DialogContent,
@@ -94,32 +100,33 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
   return (
     <>
       <div className="flex items-center gap-2 flex-wrap">
-        <Button
-          type="button"
-          variant={isActive ? "default" : "outline"}
-          size="sm"
-          className="gap-1.5"
-          onClick={openSetup}
-        >
-          <FlaskConical className="w-4 h-4" />
-          {isActive ? "البرنامج العلمي — مفعّل" : "تفعيل البرنامج العلمي"}
-        </Button>
-        {isActive && (
-          <>
-            <Button type="button" variant="ghost" size="sm" className="gap-1" onClick={openSetup}>
-              <Settings2 className="w-4 h-4" />
-              تعديل البنود
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              className="text-destructive hover:text-destructive"
-              onClick={() => setDisableOpen(true)}
-            >
-              إيقاف البرنامج
-            </Button>
-          </>
+        {isActive ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button type="button" variant="default" size="sm" className="gap-1.5">
+                <FlaskConical className="w-4 h-4" />
+                البرنامج العلمي — مفعّل
+                <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start">
+              <DropdownMenuItem onClick={openSetup} className="gap-2 cursor-pointer">
+                <Settings2 className="w-4 h-4" />
+                تعديل البنود
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => setDisableOpen(true)}
+                className="gap-2 cursor-pointer text-destructive focus:text-destructive"
+              >
+                إيقاف التفعيل
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <Button type="button" variant="outline" size="sm" className="gap-1.5" onClick={openSetup}>
+            <FlaskConical className="w-4 h-4" />
+            تفعيل البرنامج العلمي
+          </Button>
         )}
       </div>
 
