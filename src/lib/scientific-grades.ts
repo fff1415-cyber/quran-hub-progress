@@ -6,6 +6,7 @@ import type { DayEntry, GradesStore } from "@/lib/mock-data";
 import {
   SCIENTIFIC_PROGRAM_ID,
   ensureScientificHalaqaProgram,
+  removeScientificHalaqaProgram,
   type ScientificGradeField,
 } from "@/lib/scientific-grades-program";
 
@@ -204,8 +205,10 @@ export function saveScientificConfig(halaqaId: number, config: ScientificGradesC
       : normalizeDefaultScores(existing?.defaultScores ?? {}),
   };
   const enabled = enabledScientificFields(config.fields);
-  if (enabled.length > 0) {
+  if (config.visible && enabled.length > 0) {
     ensureScientificHalaqaProgram(halaqaId, enabled);
+  } else {
+    removeScientificHalaqaProgram(halaqaId);
   }
   saveScientificGradesStore(store);
 }
@@ -222,6 +225,10 @@ function saveScientificData(halaqaId: number, data: ScientificGradesDataStore[st
 
 export function enabledScientificFields(fields: ScientificFieldsConfig): ScientificGradeField[] {
   return ALL_SCIENTIFIC_FIELDS.filter((f) => fields[f]);
+}
+
+export function isScientificProgramEnabled(config: ScientificGradesConfig): boolean {
+  return !!config.visible && enabledScientificFields(config.fields).length > 0;
 }
 
 export function parseScientificScore(raw: string | undefined): number | null {
@@ -376,6 +383,47 @@ export function reapplyScientificScoresForHalaqa(
       }
     }
   }
+}
+
+/** Fill empty scientific scores from existing prep — preserves teacher overrides and prior scores. */
+export function backfillMissingScientificScoresForHalaqa(
+  halaqaId: number,
+  grades: GradesStore,
+  studentIds: string[],
+  config: ScientificGradesConfig,
+): boolean {
+  if (!isScientificProgramEnabled(config)) return false;
+
+  const all = loadScientificData(halaqaId);
+  let changed = false;
+
+  for (const studentId of studentIds) {
+    const weeks = grades[studentId];
+    if (!weeks) continue;
+    for (const [wkStr, week] of Object.entries(weeks)) {
+      const weekNum = Number(wkStr);
+      if (!week?.days) continue;
+      for (const [dayKey, entry] of Object.entries(week.days)) {
+        if (!entry) continue;
+        for (const field of ALL_SCIENTIFIC_FIELDS) {
+          if (!config.fields[field]) continue;
+          if (isScientificScoreOverridden(halaqaId, studentId, weekNum, dayKey, field)) continue;
+          const existing = getScientificDayScore(all, studentId, weekNum, dayKey, field);
+          if (existing.trim() !== "") continue;
+          const score = resolveScientificScore(config, field, entry);
+          if (score.trim() === "") continue;
+          if (!all[studentId]) all[studentId] = {};
+          if (!all[studentId][weekNum]) all[studentId][weekNum] = {};
+          if (!all[studentId][weekNum][dayKey]) all[studentId][weekNum][dayKey] = {};
+          all[studentId][weekNum][dayKey][field] = score;
+          changed = true;
+        }
+      }
+    }
+  }
+
+  if (changed) saveScientificData(halaqaId, all);
+  return changed;
 }
 
 export function setScientificDayScore(

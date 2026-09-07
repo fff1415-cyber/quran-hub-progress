@@ -2,7 +2,7 @@ import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router"
 import React, { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { z } from "zod";
 import {
-  loadHalaqat, loadStudents, saveStudents, saveGrades, emptyWeek, emptyDayEntry, ensureWeekDays, dayEntryFor, DAYS,
+  loadHalaqat, loadStudents, saveStudents, saveGrades, loadGrades, emptyWeek, emptyDayEntry, ensureWeekDays, dayEntryFor, DAYS,
   weekPercentage, loadNotifications, dismissNotification, pushNotification,
   ensureGradesSemester,
   sumWeekCompensationFaces, compensationRemainingForDay,
@@ -70,7 +70,10 @@ import {
   ScientificGradesToolbar,
 } from "@/components/teacher/ScientificGradesToolbar";
 import {
+  backfillMissingScientificScoresForHalaqa,
+  enabledScientificFields,
   getScientificDayScore,
+  isScientificProgramEnabled,
   isScientificScoreOverridden,
   loadScientificConfig,
   loadScientificData,
@@ -598,7 +601,10 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const [sciConfig, setSciConfig] = useState<ScientificGradesConfig>(() => loadScientificConfig(halaqaId));
   const [sciData, setSciData] = useState(() => loadScientificData(halaqaId));
   const sciCtx: SciTableCtx = useMemo(
-    () => ({ visible: sciConfig.visible, fields: sciConfig.fields }),
+    () => ({
+      visible: isScientificProgramEnabled(sciConfig),
+      fields: sciConfig.fields,
+    }),
     [sciConfig],
   );
   const deviceMobile = useIsMobile();
@@ -659,16 +665,32 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
   const handleSciConfigChange = (cfg: ScientificGradesConfig) => {
     setSciConfig(cfg);
-    reapplyScientificScoresForHalaqa(
-      halaqaId,
-      grades,
-      students.map((s) => s.id),
-      cfg,
-    );
+    const ids = students.map((s) => s.id);
+    if (isScientificProgramEnabled(cfg) && ids.length > 0) {
+      reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg);
+    }
     setSciData(loadScientificData(halaqaId));
   };
 
   const refreshSciData = () => setSciData(loadScientificData(halaqaId));
+
+  const sciFieldsKey = useMemo(
+    () => enabledScientificFields(sciConfig.fields).join(","),
+    [sciConfig.fields],
+  );
+
+  useEffect(() => {
+    if (!isScientificProgramEnabled(sciConfig)) return;
+    const ids = students.map((s) => s.id);
+    if (ids.length === 0) return;
+    const changed = backfillMissingScientificScoresForHalaqa(
+      halaqaId,
+      loadGrades(),
+      ids,
+      sciConfig,
+    );
+    if (changed) refreshSciData();
+  }, [halaqaId, sciConfig.visible, sciFieldsKey, studentIdsKey, grades]);
 
   const updateSciScore = (
     studentId: string,

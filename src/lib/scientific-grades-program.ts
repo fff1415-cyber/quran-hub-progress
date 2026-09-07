@@ -48,3 +48,12 @@ export function filterStandardPrograms(programs: HalaqaProgram[]): HalaqaProgram
 export function findScientificProgram(programs: HalaqaProgram[]): HalaqaProgram | null {
   return programs.find(isScientificHalaqaProgram) ?? null;
 }
+
+/** Remove auto scientific program from halaqa programs when teacher disables the feature. */
+export function removeScientificHalaqaProgram(halaqaId: number): void {
+  const all = loadHalaqaProgramsAll(halaqaId);
+  const next = all.filter((p) => !isScientificHalaqaProgram(p));
+  if (next.length !== all.length) {
+    saveHalaqaPrograms(halaqaId, next);
+  }
+}

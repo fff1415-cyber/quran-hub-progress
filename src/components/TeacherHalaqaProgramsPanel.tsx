@@ -32,10 +32,11 @@ import {
   isScientificHalaqaProgram,
 } from "@/lib/scientific-grades-program";
 import {
+  backfillMissingScientificScoresForHalaqa,
   enabledScientificFields,
+  isScientificProgramEnabled,
   loadScientificConfig,
   loadScientificData,
-  reapplyScientificScoresForHalaqa,
   SCIENTIFIC_FIELD_LABELS,
   scientificPeriodMaxPossible,
   studentScientificPeriodTotals,
@@ -629,13 +630,12 @@ function ProgramFillSection({
 
   useEffect(() => {
     const cfg = loadScientificConfig(halaqaId);
-    const fields = enabledScientificFields(cfg.fields);
-    if (fields.length === 0) return;
+    if (!isScientificProgramEnabled(cfg)) return;
     const ids = studentIdsKey ? studentIdsKey.split(",").filter(Boolean) : [];
     if (ids.length === 0) return;
-    reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg);
-    setSciDataVersion((v) => v + 1);
-  }, [halaqaId, sciConfig.fields, studentIdsKey, weekNum]);
+    const changed = backfillMissingScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg);
+    if (changed) setSciDataVersion((v) => v + 1);
+  }, [halaqaId, sciConfig.visible, sciConfig.fields, studentIdsKey]);
 
   if (programs.length === 0) {
     return (
