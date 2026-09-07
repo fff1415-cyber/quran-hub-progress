@@ -74,6 +74,7 @@ import {
   isScientificScoreOverridden,
   loadScientificConfig,
   loadScientificData,
+  reapplyScientificScoresForHalaqa,
   setTeacherScientificDayScore,
   syncScientificScoresFromDayPatch,
   type ScientificFieldsConfig,
@@ -656,6 +657,30 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     saveTeacherGradeLayoutMode(mode);
   };
 
+  const handleSciConfigChange = (cfg: ScientificGradesConfig) => {
+    setSciConfig(cfg);
+    reapplyScientificScoresForHalaqa(
+      halaqaId,
+      grades,
+      students.map((s) => s.id),
+      cfg,
+    );
+    setSciData(loadScientificData(halaqaId));
+  };
+
+  const refreshSciData = () => setSciData(loadScientificData(halaqaId));
+
+  const updateSciScore = (
+    studentId: string,
+    dayKey: string,
+    field: "attendance" | "hifz" | "rabt" | "muraja",
+    value: string,
+  ) => {
+    if (closedDayKeys.has(dayKey)) return;
+    setTeacherScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
+    refreshSciData();
+  };
+
   const highlightDay = (dayKey: string) => isCurrentWeek && dayKey === todayKey;
 
   useEffect(() => {
@@ -867,19 +892,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }
   };
 
-  const refreshSciData = () => setSciData(loadScientificData(halaqaId));
-
-  const updateSciScore = (
-    studentId: string,
-    dayKey: string,
-    field: "attendance" | "hifz" | "rabt" | "muraja",
-    value: string,
-  ) => {
-    if (closedDayKeys.has(dayKey)) return;
-    setTeacherScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
-    refreshSciData();
-  };
-
   const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
     if (closedDayKeys.has(dayKey)) return;
     const prevWeek = ensureWeekDays(
@@ -1072,10 +1084,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           onActiveDayChange={setActiveDayKey}
           isCurrentWeek={isCurrentWeek}
           todayKey={todayKey}
-          onSciConfigChange={(cfg) => {
-            setSciConfig(cfg);
-            refreshSciData();
-          }}
+          onSciConfigChange={handleSciConfigChange}
           sciVisible={sciCtx.visible}
           sciFields={sciCtx.fields}
           sciData={sciData}
@@ -1210,7 +1219,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           {!isTalqeen && (
             <ScientificGradesToolbar
               halaqaId={halaqaId}
-              onConfigChange={setSciConfig}
+              onConfigChange={handleSciConfigChange}
             />
           )}
           {canAssign && (

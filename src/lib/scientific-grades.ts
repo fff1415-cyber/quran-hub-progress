@@ -185,12 +185,23 @@ export function loadScientificConfig(halaqaId: number): ScientificGradesConfig {
   };
 }
 
+function hasDefaultScoresContent(scores: ScientificDefaultScores): boolean {
+  if (scores.hifz?.trim() || scores.rabt?.trim() || scores.muraja?.trim()) return true;
+  const att = scores.attendance ?? {};
+  return Object.values(att).some((v) => typeof v === "string" && v.trim() !== "");
+}
+
 export function saveScientificConfig(halaqaId: number, config: ScientificGradesConfig) {
   const store = loadScientificGradesStore();
+  const existing = store.configs[String(halaqaId)];
+  const incoming = normalizeDefaultScores(config.defaultScores);
   store.configs[String(halaqaId)] = {
     visible: config.visible,
     fields: { ...config.fields },
-    defaultScores: normalizeDefaultScores(config.defaultScores),
+    // Teacher toggles fields only — never wipe manager-configured default scores.
+    defaultScores: hasDefaultScoresContent(incoming)
+      ? incoming
+      : normalizeDefaultScores(existing?.defaultScores ?? {}),
   };
   const enabled = enabledScientificFields(config.fields);
   if (enabled.length > 0) {

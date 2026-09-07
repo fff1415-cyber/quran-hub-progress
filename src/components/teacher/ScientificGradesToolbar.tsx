@@ -54,10 +54,11 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
     if (enabled.length === 0) {
       return false;
     }
+    const fresh = loadScientificConfig(halaqaId);
     const next: ScientificGradesConfig = {
       visible: true,
       fields: { ...draftFields },
-      defaultScores: config.defaultScores,
+      defaultScores: fresh.defaultScores,
     };
     applyConfig(next);
     const studentIds = loadStudents()
@@ -95,8 +96,8 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
             <DialogTitle>تفعيل البرنامج العلمي</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            اختر البنود التي تُحسب في برنامج الحلقة. النقاط الافتراضية من المدير — تُطبَّق تلقائياً
-            عند التحضير، ويمكنك تعديل الدرجة يدوياً عند الحاجة.
+            اختر البنود التي تُحسب في «برنامج الحلقة». تُملأ الدرجة تلقائياً من نقاط المدير
+            عند التحضير، ويمكنك زيادتها أو تقليلها يدوياً.
           </p>
           <div className="space-y-3 py-2">
             {ALL_SCIENTIFIC_FIELDS.map((field) => (
@@ -159,7 +160,7 @@ export function ScientificGradeInput({
         if (v === "" || /^-?\d*\.?\d*$/.test(v)) onChange(v);
       }}
       placeholder="—"
-      title={overridden ? "درجة معدّلة يدوياً" : undefined}
+      title={overridden ? "درجة معدّلة يدوياً عن نقطة المدير" : "درجة معتمدة من المدير — يمكن التعديل"}
       className={cn(
         "w-full min-w-0 max-w-[44px] mx-auto px-0.5 py-1 text-center text-xs rounded border focus:outline-none disabled:opacity-50",
         overridden

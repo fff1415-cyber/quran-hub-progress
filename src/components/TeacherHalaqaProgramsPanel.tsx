@@ -1,5 +1,5 @@
-import { useMemo, useState } from "react";
-import { loadStudents } from "@/lib/mock-data";
+import { useEffect, useMemo, useState } from "react";
+import { loadGrades, loadStudents } from "@/lib/mock-data";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import {
   formatWeekOptionLabel,
@@ -35,8 +35,8 @@ import {
   enabledScientificFields,
   loadScientificConfig,
   loadScientificData,
+  reapplyScientificScoresForHalaqa,
   SCIENTIFIC_FIELD_LABELS,
-  SCIENTIFIC_TOTAL_LABELS,
   scientificPeriodMaxPossible,
   studentScientificPeriodTotals,
   studentScientificWeekTotals,
@@ -611,7 +611,31 @@ function ProgramFillSection({
     return enabledScientificFields(loadScientificConfig(halaqaId).fields);
   }, [scientificProgram, halaqaId]);
   const sciConfig = useMemo(() => loadScientificConfig(halaqaId), [halaqaId]);
-  const sciData = loadScientificData(halaqaId);
+  const [sciDataVersion, setSciDataVersion] = useState(0);
+  const sciData = useMemo(
+    () => loadScientificData(halaqaId),
+    [halaqaId, sciDataVersion],
+  );
+
+  const cumulativeWeekNums = useMemo(
+    () => selectableWeeks.filter((w) => w.week_number <= weekNum).map((w) => w.week_number),
+    [selectableWeeks, weekNum],
+  );
+
+  const studentIdsKey = useMemo(
+    () => students.map((s) => s.id).sort().join(","),
+    [students],
+  );
+
+  useEffect(() => {
+    const cfg = loadScientificConfig(halaqaId);
+    const fields = enabledScientificFields(cfg.fields);
+    if (fields.length === 0) return;
+    const ids = studentIdsKey ? studentIdsKey.split(",").filter(Boolean) : [];
+    if (ids.length === 0) return;
+    reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg);
+    setSciDataVersion((v) => v + 1);
+  }, [halaqaId, sciConfig.fields, studentIdsKey, weekNum]);
 
   if (programs.length === 0) {
     return (
@@ -623,13 +647,9 @@ function ProgramFillSection({
 
   const formatTotal = (n: number) => (n > 0 ? String(n) : "—");
 
-  const cumulativeWeekNums = useMemo(
-    () => selectableWeeks.filter((w) => w.week_number <= weekNum).map((w) => w.week_number),
-    [selectableWeeks, weekNum],
-  );
-
   const showScientific = !!(scientificProgram && sciFields.length > 0);
-  const sciColSpan = showScientific ? sciFields.length + 1 : 0;
+  const sciWeeklyColSpan = showScientific ? sciFields.length + 1 : 0;
+  const sciCumulativeColSpan = showScientific ? 1 : 0;
 
   return (
     <div className="glass-card rounded-2xl p-4 overflow-x-auto">
@@ -673,13 +693,13 @@ function ProgramFillSection({
               {showScientific && (
                 <>
                   <th
-                    colSpan={sciColSpan}
+                    colSpan={sciWeeklyColSpan}
                     className="p-2 border-r border-border text-center bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 font-bold"
                   >
                     {scientificProgram!.name} — أسبوع {weekNum}
                   </th>
                   <th
-                    colSpan={sciColSpan}
+                    colSpan={sciCumulativeColSpan}
                     className="p-2 border-r border-border text-center bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-bold"
                   >
                     {scientificProgram!.name} — تراكمي
@@ -716,14 +736,6 @@ function ProgramFillSection({
                   <th className="p-1 border-r border-border min-w-[56px] text-emerald-800 dark:text-emerald-400 font-bold">
                     الكلي
                   </th>
-                  {sciFields.map((field) => (
-                    <th
-                      key={`sci-c-${field}`}
-                      className="p-1 border-r border-border min-w-[64px] text-emerald-700 dark:text-emerald-400 font-bold"
-                    >
-                      {SCIENTIFIC_TOTAL_LABELS[field]}
-                    </th>
-                  ))}
                   <th className="p-1 border-r border-border min-w-[56px] text-emerald-700 dark:text-emerald-400 font-bold">
                     الكلي
                   </th>
@@ -789,14 +801,6 @@ function ProgramFillSection({
                       <td className="p-1 border-r border-border/30 text-center text-xs font-bold bg-emerald-500/15">
                         {formatTotal(weekly.sciTotals.total)}
                       </td>
-                      {sciFields.map((field) => (
-                        <td
-                          key={`${s.id}-sci-c-${field}`}
-                          className="p-1 border-r border-border/30 text-center text-xs font-bold bg-emerald-500/5"
-                        >
-                          {formatTotal(cumulative.sciTotals![field])}
-                        </td>
-                      ))}
                       <td className="p-1 border-r border-border/30 text-center text-xs font-bold bg-emerald-500/10">
                         {formatTotal(cumulative.sciTotals.total)}
                       </td>
