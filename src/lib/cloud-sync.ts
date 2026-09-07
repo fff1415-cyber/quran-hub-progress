@@ -309,7 +309,14 @@ export async function syncFromCloud(options?: {
         if (state.has("sard_queue")) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
         if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
         if (state.has("academic_records")) saveAcademicRecords(state.get("academic_records") as AcademicPhaseRecord[]);
-        if (state.has("halaqa_programs")) saveAllHalaqaPrograms(state.get("halaqa_programs") as HalaqaProgramsStore);
+        if (state.has("halaqa_programs")) {
+          const cloud = state.get("halaqa_programs") as HalaqaProgramsStore;
+          const { loadAllHalaqaPrograms, mergeHalaqaProgramsStores, saveAllHalaqaPrograms } = await import(
+            "./halaqa-programs"
+          );
+          const merged = mergeHalaqaProgramsStores(cloud, loadAllHalaqaPrograms());
+          saveAllHalaqaPrograms(merged);
+        }
         if (state.has("halaqa_program_grades")) saveAllProgramGrades(state.get("halaqa_program_grades") as HalaqaProgramGradesStore);
         if (state.has("scientific_grades")) {
           const {

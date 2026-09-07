@@ -1,5 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
-import { loadGrades, loadStudents } from "@/lib/mock-data";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { loadGrades, loadStudents, GRADES_CHANGED_EVENT } from "@/lib/mock-data";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import {
   formatWeekOptionLabel,
@@ -8,6 +8,7 @@ import {
 } from "@/lib/academic-context";
 import {
   defaultNewProgram,
+  HALAQA_PROGRAMS_CHANGED_EVENT,
   loadHalaqaPrograms,
   loadHalaqaProgramsAll,
   loadProgramGrades,
@@ -30,14 +31,17 @@ import {
   filterStandardPrograms,
   findScientificProgram,
   isScientificHalaqaProgram,
+  SCIENTIFIC_PROGRAM_NAME,
 } from "@/lib/scientific-grades-program";
 import {
-  backfillMissingScientificScoresForHalaqa,
   enabledScientificFields,
   isScientificProgramEnabled,
   loadScientificConfig,
   loadScientificData,
+  reapplyScientificScoresForHalaqa,
+  repairScientificHalaqaProgram,
   SCIENTIFIC_FIELD_LABELS,
+  SCIENTIFIC_GRADES_CHANGED_EVENT,
   scientificPeriodMaxPossible,
   studentScientificPeriodTotals,
   studentScientificWeekTotals,
@@ -114,6 +118,25 @@ export function TeacherHalaqaProgramsPanel({
   const refreshPrograms = () => {
     setPrograms(loadHalaqaPrograms(halaqaId));
   };
+
+  useEffect(() => {
+    refreshPrograms();
+    const onProgramsChanged = () => refreshPrograms();
+    const onSciChanged = () => refreshPrograms();
+    window.addEventListener(HALAQA_PROGRAMS_CHANGED_EVENT, onProgramsChanged);
+    window.addEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onSciChanged);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "qshatawi_halaqa_programs_v1" || e.key === "qshatawi_scientific_grades_v1") {
+        refreshPrograms();
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(HALAQA_PROGRAMS_CHANGED_EVENT, onProgramsChanged);
+      window.removeEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onSciChanged);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [halaqaId]);
 
   const persistGrades = (next: typeof grades) => {
     setGrades(next);
@@ -270,6 +293,7 @@ export function TeacherHalaqaProgramsPanel({
           halaqaId={halaqaId}
           programs={programs}
           students={students}
+          allStudentIds={allStudents.map((s) => s.id)}
           weekNum={weekNum}
           calendar={calendar}
           selectableWeeks={selectableWeeks}
@@ -552,7 +576,7 @@ function buildCombinedTotals(
       : studentAllProgramsPeriodTotals(standardPrograms, grades, studentId, weekNums);
 
   const sciTotals =
-    scientificProgram && sciFields.length > 0
+    isScientificProgramEnabled(sciConfig) && sciFields.length > 0
       ? weekNums.length === 1
         ? studentScientificWeekTotals(sciData, studentId, weekNums[0]!, sciFields, workingDayKeys)
         : studentScientificPeriodTotals(sciData, studentId, weekNums, sciFields, workingDayKeys)
@@ -582,6 +606,7 @@ function ProgramFillSection({
   halaqaId,
   programs,
   students,
+  allStudentIds,
   weekNum,
   calendar,
   selectableWeeks,
@@ -594,6 +619,7 @@ function ProgramFillSection({
   halaqaId: number;
   programs: HalaqaProgram[];
   students: ReturnType<typeof loadStudents>;
+  allStudentIds: string[];
   weekNum: number;
   calendar: AcademicCalendar;
   selectableWeeks: ReturnType<typeof getSelectableWeeks>;
@@ -611,8 +637,8 @@ function ProgramFillSection({
     }
     return enabledScientificFields(loadScientificConfig(halaqaId).fields);
   }, [scientificProgram, halaqaId]);
-  const sciConfig = useMemo(() => loadScientificConfig(halaqaId), [halaqaId]);
   const [sciDataVersion, setSciDataVersion] = useState(0);
+  const sciConfig = useMemo(() => loadScientificConfig(halaqaId), [halaqaId, sciDataVersion]);
   const sciData = useMemo(
     () => loadScientificData(halaqaId),
     [halaqaId, sciDataVersion],
@@ -623,19 +649,38 @@ function ProgramFillSection({
     [selectableWeeks, weekNum],
   );
 
-  const studentIdsKey = useMemo(
-    () => students.map((s) => s.id).sort().join(","),
-    [students],
-  );
+  const allStudentIdsKey = useMemo(() => [...allStudentIds].sort().join(","), [allStudentIds]);
+
+  const syncScientificScores = useCallback(() => {
+    const cfg = repairScientificHalaqaProgram(halaqaId);
+    if (!isScientificProgramEnabled(cfg)) return;
+    const ids = allStudentIdsKey ? allStudentIdsKey.split(",").filter(Boolean) : [];
+    if (ids.length === 0) return;
+    reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg, { preserveOverrides: true });
+    setSciDataVersion((v) => v + 1);
+  }, [halaqaId, allStudentIdsKey]);
 
   useEffect(() => {
-    const cfg = loadScientificConfig(halaqaId);
-    if (!isScientificProgramEnabled(cfg)) return;
-    const ids = studentIdsKey ? studentIdsKey.split(",").filter(Boolean) : [];
-    if (ids.length === 0) return;
-    const changed = backfillMissingScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg);
-    if (changed) setSciDataVersion((v) => v + 1);
-  }, [halaqaId, sciConfig.visible, sciConfig.fields, studentIdsKey]);
+    syncScientificScores();
+  }, [syncScientificScores]);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const onGradesChanged = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        syncScientificScores();
+      }, 300);
+    };
+    window.addEventListener(GRADES_CHANGED_EVENT, onGradesChanged);
+    window.addEventListener(HALAQA_PROGRAMS_CHANGED_EVENT, onGradesChanged);
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener(GRADES_CHANGED_EVENT, onGradesChanged);
+      window.removeEventListener(HALAQA_PROGRAMS_CHANGED_EVENT, onGradesChanged);
+    };
+  }, [syncScientificScores]);
 
   if (programs.length === 0) {
     return (
@@ -647,7 +692,7 @@ function ProgramFillSection({
 
   const formatTotal = (n: number) => (n > 0 ? String(n) : "—");
 
-  const showScientific = !!(scientificProgram && sciFields.length > 0);
+  const showScientific = isScientificProgramEnabled(sciConfig) && sciFields.length > 0;
   const sciWeeklyColSpan = showScientific ? sciFields.length + 1 : 0;
   const sciCumulativeColSpan = showScientific ? 1 : 0;
 
@@ -696,13 +741,13 @@ function ProgramFillSection({
                     colSpan={sciWeeklyColSpan}
                     className="p-2 border-r border-border text-center bg-emerald-500/15 text-emerald-800 dark:text-emerald-300 font-bold"
                   >
-                    {scientificProgram!.name} — أسبوع {weekNum}
+                    {scientificProgram?.name ?? SCIENTIFIC_PROGRAM_NAME} — أسبوع {weekNum}
                   </th>
                   <th
                     colSpan={sciCumulativeColSpan}
                     className="p-2 border-r border-border text-center bg-emerald-500/10 text-emerald-800 dark:text-emerald-300 font-bold"
                   >
-                    {scientificProgram!.name} — تراكمي
+                    {scientificProgram?.name ?? SCIENTIFIC_PROGRAM_NAME} — تراكمي
                   </th>
                 </>
               )}
@@ -816,8 +861,8 @@ function ProgramFillSection({
                       percentAvailable={weekly.hasPercent}
                       programs={weekly.programBreakdown}
                       scientific={
-                        scientificProgram && weekly.sciTotals
-                          ? { name: scientificProgram.name, earned: weekly.sciTotals.total }
+                        showScientific && weekly.sciTotals
+                          ? { name: scientificProgram?.name ?? SCIENTIFIC_PROGRAM_NAME, earned: weekly.sciTotals.total }
                           : null
                       }
                       title="البرامج — تفصيل أسبوعي"
@@ -834,8 +879,8 @@ function ProgramFillSection({
                       percentAvailable={cumulative.hasPercent}
                       programs={cumulative.programBreakdown}
                       scientific={
-                        scientificProgram && cumulative.sciTotals
-                          ? { name: scientificProgram.name, earned: cumulative.sciTotals.total }
+                        showScientific && cumulative.sciTotals
+                          ? { name: scientificProgram?.name ?? SCIENTIFIC_PROGRAM_NAME, earned: cumulative.sciTotals.total }
                           : null
                       }
                       title="البرامج — تفصيل تراكمي"

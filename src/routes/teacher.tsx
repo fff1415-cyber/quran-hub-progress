@@ -79,6 +79,7 @@ import {
   loadScientificConfig,
   loadScientificData,
   reapplyScientificScoresForHalaqa,
+  repairScientificHalaqaProgram,
   SCIENTIFIC_GRADES_CHANGED_EVENT,
   setTeacherScientificDayScore,
   syncScientificScoresFromDayPatch,
@@ -672,6 +673,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     setSciConfig(cfg);
     const ids = students.map((s) => s.id);
     if (isScientificProgramEnabled(cfg) && ids.length > 0) {
+      repairScientificHalaqaProgram(halaqaId);
       reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg, {
         preserveOverrides: !options?.resetOverrides,
       });
@@ -686,18 +688,25 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     [sciConfig.fields],
   );
 
+  useEffect(() => {
+    setSciConfig(loadScientificConfig(halaqaId));
+    setSciData(loadScientificData(halaqaId));
+  }, [halaqaId]);
+
   const backfillSciScores = useCallback(() => {
-    if (!isScientificProgramEnabled(sciConfig)) return;
+    const cfg = loadScientificConfig(halaqaId);
+    if (!isScientificProgramEnabled(cfg)) return;
     const ids = students.map((s) => s.id);
     if (ids.length === 0) return;
+    repairScientificHalaqaProgram(halaqaId);
     const changed = backfillMissingScientificScoresForHalaqa(
       halaqaId,
       loadGrades(),
       ids,
-      sciConfig,
+      cfg,
     );
     if (changed) refreshSciData();
-  }, [halaqaId, sciConfig, students]);
+  }, [halaqaId, students]);
 
   const gradesBackfillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -722,6 +731,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
   useEffect(() => {
     const onSciChanged = () => {
+      setSciConfig(loadScientificConfig(halaqaId));
       backfillSciScores();
       refreshSciData();
     };
@@ -734,7 +744,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       window.removeEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onSciChanged);
       window.removeEventListener("storage", onStorage);
     };
-  }, [backfillSciScores]);
+  }, [backfillSciScores, halaqaId]);
 
   const updateSciScore = (
     studentId: string,

@@ -255,6 +255,15 @@ export function isScientificProgramEnabled(config: ScientificGradesConfig): bool
   return !!config.visible && enabledScientificFields(config.fields).length > 0;
 }
 
+/** Ensure halaqa program registry matches enabled scientific config (self-heal after cloud sync). */
+export function repairScientificHalaqaProgram(halaqaId: number): ScientificGradesConfig {
+  const cfg = loadScientificConfig(halaqaId);
+  if (isScientificProgramEnabled(cfg)) {
+    ensureScientificHalaqaProgram(halaqaId, enabledScientificFields(cfg.fields));
+  }
+  return cfg;
+}
+
 export function parseScientificScore(raw: string | undefined): number | null {
   if (raw === undefined || raw.trim() === "") return null;
   const n = Number.parseFloat(raw.replace(",", ".").trim());

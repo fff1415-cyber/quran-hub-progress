@@ -4,6 +4,7 @@ import { ATTENDANCE_OPTION_LABELS, type AttendanceOption } from "@/lib/grade-inp
 import {
   ALL_SCIENTIFIC_ATTENDANCE_OPTIONS,
   SCIENTIFIC_FIELD_LABELS,
+  isScientificProgramEnabled,
   loadScientificConfig,
   reapplyScientificScoresForHalaqa,
   saveScientificConfig,
@@ -96,7 +97,9 @@ export function HalaqaScientificDefaultsSection() {
       const studentIds = loadStudents()
         .filter((s) => s.halaqaId === halaqaId)
         .map((s) => s.id);
-      reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), studentIds, nextConfig);
+      if (isScientificProgramEnabled(nextConfig) && studentIds.length > 0) {
+        reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), studentIds, nextConfig);
+      }
       toast.success(`تم حفظ نقاط برنامج «${halaqaName}» العلمي`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "فشل الحفظ");

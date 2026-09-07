@@ -52,6 +52,13 @@ export const PROGRAM_DAYS = [
 const KEY_PROGRAMS = "qshatawi_halaqa_programs_v1";
 const KEY_PROGRAM_GRADES = "qshatawi_halaqa_program_grades_v1";
 
+export const HALAQA_PROGRAMS_CHANGED_EVENT = "qs-halaqa-programs-changed";
+
+function notifyHalaqaProgramsChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(HALAQA_PROGRAMS_CHANGED_EVENT));
+}
+
 const DEFAULT_LEVELS: ProgramLevel[] = [
   { label: "ممتاز", score: 100 },
   { label: "جيد", score: 75 },
@@ -118,7 +125,35 @@ export function loadAllHalaqaPrograms(): HalaqaProgramsStore {
 
 export function saveAllHalaqaPrograms(store: HalaqaProgramsStore) {
   localStorage.setItem(KEY_PROGRAMS, JSON.stringify(store));
+  notifyHalaqaProgramsChanged();
   persistPrograms(store);
+}
+
+/** Merge cloud + local program lists — overlay (local) wins; keep local scientific auto-program when present. */
+export function mergeHalaqaProgramsStores(
+  base: HalaqaProgramsStore,
+  overlay: HalaqaProgramsStore,
+): HalaqaProgramsStore {
+  const isSci = (p: HalaqaProgram) => p.id === "scientific-grades-auto" || p.kind === "scientific";
+  const halaqaIds = new Set([...Object.keys(base), ...Object.keys(overlay)]);
+  const out: HalaqaProgramsStore = {};
+
+  for (const halaqaId of halaqaIds) {
+    const baseList = (base[halaqaId] ?? []).map((p) => normalizeProgram(p as LegacyHalaqaProgram));
+    const overlayList = (overlay[halaqaId] ?? []).map((p) => normalizeProgram(p as LegacyHalaqaProgram));
+
+    const stdById = new Map<string, HalaqaProgram>();
+    for (const p of baseList.filter((p) => !isSci(p))) stdById.set(p.id, p);
+    for (const p of overlayList.filter((p) => !isSci(p))) stdById.set(p.id, p);
+
+    const sci = overlayList.find(isSci) ?? baseList.find(isSci);
+    const merged = [...stdById.values()];
+    if (sci) merged.push(sci);
+    merged.sort((a, b) => a.sortOrder - b.sortOrder);
+    out[halaqaId] = merged;
+  }
+
+  return out;
 }
 
 export function loadHalaqaPrograms(halaqaId: number): HalaqaProgram[] {
