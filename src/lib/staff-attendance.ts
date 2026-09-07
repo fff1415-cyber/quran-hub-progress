@@ -1,8 +1,48 @@
 /**
- * Staff (teacher/assistant) attendance — start time from daily Asr + offset.
+ * Staff attendance — start time from daily Asr + offset.
  * Check-in is never blocked; late status applies after grace minutes.
  */
 import { hasAuthToken } from "@/lib/auth-session";
+
+/** Complex-level staff (no halaqa binding). */
+export const COMPLEX_STAFF_HALAQA_ID = 0;
+export const COMPLEX_STAFF_HALAQA_NAME = "المجمع";
+
+/** Roles that may self check-in (manager excluded). */
+export const STAFF_CHECKIN_ROLES = [
+  "teacher",
+  "assistant",
+  "musammi",
+  "secretary",
+  "supervisor",
+  "program_supervisor",
+] as const;
+
+export type StaffCheckInRole = (typeof STAFF_CHECKIN_ROLES)[number];
+
+export const STAFF_ROLE_LABEL: Record<string, string> = {
+  teacher: "معلم",
+  assistant: "مساعد",
+  musammi: "مسمّع",
+  secretary: "سكرتير",
+  supervisor: "مشرف",
+  program_supervisor: "مشرف برامج",
+  manager: "مدير",
+};
+
+export function canStaffCheckIn(role: string | null | undefined): role is StaffCheckInRole {
+  return !!role && (STAFF_CHECKIN_ROLES as readonly string[]).includes(role);
+}
+
+export function isHalaqaBoundStaffRole(role: string): boolean {
+  return role === "teacher" || role === "assistant";
+}
+
+export function staffRoleLabel(role: string): string {
+  return STAFF_ROLE_LABEL[role] ?? role;
+}
+
+export const STAFF_ATTENDANCE_CHANGED = "qshatawi:staff-attendance-changed";
 
 export type StaffCheckInStatus = "present" | "late";
 
@@ -60,7 +100,9 @@ function persistSettings(value: StaffAttendanceSettings) {
 function persistStore(value: StaffCheckIn[]) {
   if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
-  void import("./cloud-sync").then((m) => m.pushAppState("staff_attendance", value)).catch(() => undefined);
+  void import("./cloud-sync")
+    .then((m) => m.pushMergedStaffCheckIns(value))
+    .catch(() => undefined);
 }
 
 function clampInt(n: number, min: number, max: number, fallback: number): number {
@@ -111,9 +153,28 @@ export function loadStaffCheckIns(): StaffCheckIn[] {
   }
 }
 
-export function saveStaffCheckIns(list: StaffCheckIn[]) {
+export function mergeStaffCheckIns(cloud: StaffCheckIn[], local: StaffCheckIn[]): StaffCheckIn[] {
+  const byDayKey = new Map<string, StaffCheckIn>();
+  for (const entry of [...local, ...cloud]) {
+    if (!entry?.userKey || !entry.date) continue;
+    const dayKey = `${entry.userKey}:${entry.date}`;
+    const prev = byDayKey.get(dayKey);
+    if (!prev || entry.checkedInAt < prev.checkedInAt) {
+      byDayKey.set(dayKey, entry);
+    }
+  }
+  return Array.from(byDayKey.values())
+    .sort((a, b) => b.checkedInAt.localeCompare(a.checkedInAt))
+    .slice(0, 5000);
+}
+
+export function saveStaffCheckIns(list: StaffCheckIn[], options?: { sync?: boolean }) {
   const trimmed = list.slice(0, 5000);
   localStorage.setItem(KEY_STORE, JSON.stringify(trimmed));
+  if (typeof window !== "undefined") {
+    window.dispatchEvent(new Event(STAFF_ATTENDANCE_CHANGED));
+  }
+  if (options?.sync === false) return;
   persistStore(trimmed);
 }
 

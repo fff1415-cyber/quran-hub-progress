@@ -1,13 +1,18 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { z } from "zod";
 import { AppHeader } from "@/components/AppHeader";
 import {
+  canStaffCheckIn,
+  COMPLEX_STAFF_HALAQA_ID,
+  COMPLEX_STAFF_HALAQA_NAME,
   findTodayCheckIn,
   formatTime12,
   getDailySchedule,
+  isHalaqaBoundStaffRole,
   loadStaffAttendanceSettings,
   registerStaffCheckIn,
+  staffRoleLabel,
   staffUserKey,
   STAFF_STATUS_LABEL,
   type DailySchedule,
@@ -17,7 +22,12 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight, Clock, Loader2, UserCheck } from "lucide-react";
 import { toast, Toaster } from "sonner";
-import { findHalaqaById, findHalaqaForTeacher, halaqaSearchParamSchema, readLocalHalaqat, resolveTeacherHalaqaId } from "@/lib/teacher-halaqa-access";
+import {
+  findHalaqaForTeacher,
+  halaqaSearchParamSchema,
+  readLocalHalaqat,
+  resolveTeacherHalaqaId,
+} from "@/lib/teacher-halaqa-access";
 import { useTenant } from "@/contexts/TenantContext";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { dispatchPushEvent } from "@/lib/push-notifications";
@@ -31,6 +41,24 @@ export const Route = createFileRoute("/staff-attendance")({
   validateSearch: staffAttendanceSearchSchema,
   component: StaffAttendancePage,
 });
+
+function roleHomePath(role: string, halaqaId?: number): string {
+  switch (role) {
+    case "teacher":
+    case "assistant":
+      return tenantPath("/teacher");
+    case "secretary":
+      return tenantPath("/secretary");
+    case "supervisor":
+      return tenantPath("/supervisor");
+    case "program_supervisor":
+      return tenantPath("/program-supervisor");
+    case "musammi":
+      return tenantPath("/musammi");
+    default:
+      return tenantPath("/");
+  }
+}
 
 export function StaffAttendancePage() {
   const { h } = useSearch({ strict: false }) as z.infer<typeof staffAttendanceSearchSchema>;
@@ -46,7 +74,9 @@ export function StaffAttendancePage() {
   const settings = loadStaffAttendanceSettings();
   const halaqat = tenantLoading ? [] : readLocalHalaqat();
   const halaqa = findHalaqaForTeacher(halaqat, resolveTeacherHalaqaId(h));
-  const halaqaId = halaqa?.id ?? resolveTeacherHalaqaId(h);
+  const halaqaBound = role ? isHalaqaBoundStaffRole(role) : false;
+  const effectiveHalaqaId = halaqaBound ? (halaqa?.id ?? resolveTeacherHalaqaId(h) ?? 0) : COMPLEX_STAFF_HALAQA_ID;
+  const effectiveHalaqaName = halaqaBound ? (halaqa?.name ?? "—") : COMPLEX_STAFF_HALAQA_NAME;
 
   useEffect(() => {
     setRole(getSessionRole());
@@ -67,16 +97,27 @@ export function StaffAttendancePage() {
   }, []);
 
   useEffect(() => {
-    if (!role || !name || !halaqaId) return;
-    const key = staffUserKey(role, halaqaId, name);
+    if (!role || !name || effectiveHalaqaId === undefined) return;
+    const key = staffUserKey(role, effectiveHalaqaId, name);
     setTodayRecord(findTodayCheckIn(key) ?? null);
-  }, [role, name, halaqaId, busy]);
+  }, [role, name, effectiveHalaqaId, busy]);
 
-  const canCheckIn = role === "teacher" || role === "assistant" || role === "manager";
+  const canCheckIn = canStaffCheckIn(role);
+  const missingHalaqa = halaqaBound && !halaqa && effectiveHalaqaId <= 0;
+
+  const backLabel = useMemo(() => {
+    if (!role) return "العودة";
+    if (halaqaBound) return "العودة للحلقة";
+    return "العودة للوحة";
+  }, [role, halaqaBound]);
 
   const onCheckIn = async () => {
-    if (!role || !name || !halaqa) {
+    if (!role || !name) {
       toast.error("بيانات الجلسة غير مكتملة");
+      return;
+    }
+    if (missingHalaqa) {
+      toast.error("لم تُحدَّد الحلقة — افتح صفحة حلقتك ثم سجّل الحضور");
       return;
     }
     setBusy(true);
@@ -84,8 +125,8 @@ export function StaffAttendancePage() {
       const { checkIn, alreadyRegistered } = await registerStaffCheckIn({
         role,
         name,
-        halaqaId: halaqa.id,
-        halaqaName: halaqa.name,
+        halaqaId: effectiveHalaqaId,
+        halaqaName: effectiveHalaqaName,
       });
       setTodayRecord(checkIn);
       if (alreadyRegistered) {
@@ -94,7 +135,7 @@ export function StaffAttendancePage() {
         void dispatchPushEvent({
           event: "staff_checkin",
           title: "تسجيل حضور كادر",
-          body: `${name} (${role}) — ${halaqa.name} · ${STAFF_STATUS_LABEL[checkIn.status]}`,
+          body: `${name} (${staffRoleLabel(role)}) — ${effectiveHalaqaName} · ${STAFF_STATUS_LABEL[checkIn.status]}`,
           url: tenantPath("/manager"),
           targets: { roles: ["manager"] },
         });
@@ -111,11 +152,16 @@ export function StaffAttendancePage() {
     }
   };
 
-  const backToTeacher = () => {
-    if (halaqa) {
-      navigate({ to: tenantPath("/teacher"), search: { h: halaqa.id } });
-    } else {
+  const goBack = () => {
+    if (!role) {
       navigate({ to: tenantPath("/") });
+      return;
+    }
+    const home = roleHomePath(role, effectiveHalaqaId);
+    if (halaqaBound && halaqa) {
+      navigate({ to: home, search: { h: halaqa.id } });
+    } else {
+      navigate({ to: home });
     }
   };
 
@@ -125,7 +171,7 @@ export function StaffAttendancePage() {
         <AppHeader title="حضور العاملين" />
         <main className="max-w-lg mx-auto px-4 py-12 text-center text-muted-foreground">
           <p>حضور العاملين غير مفعّل حالياً</p>
-          <Button variant="outline" className="mt-4" onClick={backToTeacher}>العودة</Button>
+          <Button variant="outline" className="mt-4" onClick={goBack}>العودة</Button>
         </main>
       </div>
     );
@@ -134,14 +180,14 @@ export function StaffAttendancePage() {
   return (
     <div className="min-h-screen">
       <Toaster position="top-center" richColors />
-      <AppHeader title="حضور العاملين" subtitle={halaqa?.name ?? ""} />
+      <AppHeader title="حضور العاملين" subtitle={effectiveHalaqaName} />
       <main className="max-w-lg mx-auto px-4 py-8 space-y-6">
         <button
           type="button"
-          onClick={backToTeacher}
+          onClick={goBack}
           className="flex items-center gap-1 text-sm text-muted-foreground hover:text-primary"
         >
-          <ArrowRight className="w-4 h-4" /> العودة للحلقة
+          <ArrowRight className="w-4 h-4" /> {backLabel}
         </button>
 
         <div className="glass-card rounded-2xl p-6 space-y-5">
@@ -151,8 +197,8 @@ export function StaffAttendancePage() {
             </div>
             <h1 className="text-xl font-bold gold-text">{name || "—"}</h1>
             <p className="text-sm text-muted-foreground mt-1">
-              {role === "assistant" ? "مساعد" : role === "manager" ? "مدير (معلم)" : "معلم"}
-              {halaqa ? ` · ${halaqa.name}` : ""}
+              {role ? staffRoleLabel(role) : "—"}
+              {halaqaBound && halaqa ? ` · ${halaqa.name}` : !halaqaBound ? ` · ${COMPLEX_STAFF_HALAQA_NAME}` : ""}
             </p>
           </div>
 
@@ -169,7 +215,7 @@ export function StaffAttendancePage() {
               <p>العصر: <strong>{formatTime12(schedule.asrTime)}</strong></p>
               <p>بداية الحلقة: <strong className="text-primary">{formatTime12(schedule.scheduledStart)}</strong></p>
               <p className="text-xs text-muted-foreground">
-                مهلة التأخير: {settings.late_grace_minutes} د · التسجيل مفتوح دائماً
+                مهلة التأخير: {settings.late_grace_minutes} د · التسجيل مفتوح دائماً (حتى بعد التأخر)
               </p>
             </div>
           ) : (
@@ -189,7 +235,7 @@ export function StaffAttendancePage() {
               </p>
               <p className="text-xs text-muted-foreground">لا يمكن التسجيل مرتين في نفس اليوم</p>
             </div>
-          ) : canCheckIn ? (
+          ) : canCheckIn && !missingHalaqa ? (
             <Button
               type="button"
               onClick={() => void onCheckIn()}
@@ -199,8 +245,10 @@ export function StaffAttendancePage() {
               {busy ? <Loader2 className="w-5 h-5 animate-spin" /> : <UserCheck className="w-5 h-5" />}
               تسجيل حضور الآن
             </Button>
+          ) : missingHalaqa ? (
+            <p className="text-center text-destructive text-sm">افتح صفحة حلقتك من القائمة ثم عد لتسجيل الحضور</p>
           ) : (
-            <p className="text-center text-muted-foreground text-sm">هذه الصفحة للمعلمين والمساعدين</p>
+            <p className="text-center text-muted-foreground text-sm">هذه الصفحة للعاملين — المدير لا يسجّل حضوراً هنا</p>
           )}
         </div>
       </main>

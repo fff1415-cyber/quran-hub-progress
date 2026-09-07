@@ -15,6 +15,8 @@ import { loadHalaqat } from "@/lib/mock-data";
 import { useTenant } from "@/contexts/TenantContext";
 import { tenantPath } from "@/lib/tenant";
 import { TenantLogo } from "@/components/TenantLogo";
+import { StaffAttendanceCheckInButton } from "@/components/StaffAttendanceCheckInButton";
+import { canStaffCheckIn, isHalaqaBoundStaffRole } from "@/lib/staff-attendance";
 
 interface NavItem {
   to: string;
@@ -58,6 +60,11 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
     const id = getSessionHalaqaId() ?? getTokenHalaqaId();
     return id ? { h: id } : undefined;
   }, [open]);
+  const staffCheckInHalaqaId = useMemo(() => {
+    if (!isHalaqaBoundStaffRole(role)) return 0;
+    return getSessionHalaqaId() ?? getTokenHalaqaId() ?? 0;
+  }, [role, open]);
+  const showStaffCheckIn = canStaffCheckIn(role) && role !== "teacher" && role !== "assistant";
 
   const goBack = () => {
     if (typeof window !== "undefined" && window.history.length > 1) {
@@ -197,6 +204,14 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
         </Link>
 
         <div className="hidden md:block text-sm text-muted-foreground truncate max-w-[40%]">{title}</div>
+
+        {showStaffCheckIn && name && (
+          <StaffAttendanceCheckInButton
+            role={role}
+            name={name}
+            halaqaId={staffCheckInHalaqaId}
+          />
+        )}
       </div>
     </header>
   );

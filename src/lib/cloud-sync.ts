@@ -305,7 +305,16 @@ export async function syncFromCloud(options?: {
         if (!weeklyTestsReset && state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
         if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
         if (state.has("staff_attendance_settings")) saveStaffAttendanceSettings(state.get("staff_attendance_settings") as import("./staff-attendance").StaffAttendanceSettings);
-        if (state.has("staff_attendance")) saveStaffCheckIns(state.get("staff_attendance") as import("./staff-attendance").StaffCheckIn[]);
+        if (state.has("staff_attendance")) {
+          const {
+            loadStaffCheckIns,
+            mergeStaffCheckIns,
+            saveStaffCheckIns,
+          } = await import("./staff-attendance");
+          const cloud = state.get("staff_attendance") as import("./staff-attendance").StaffCheckIn[];
+          const merged = mergeStaffCheckIns(cloud, loadStaffCheckIns());
+          saveStaffCheckIns(merged, { sync: false });
+        }
         if (state.has("sard_queue")) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
         if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
         if (state.has("academic_records")) saveAcademicRecords(state.get("academic_records") as AcademicPhaseRecord[]);
@@ -584,6 +593,47 @@ export async function pushMergedScientificGrades(
   };
   const next = scientificPushQueue.then(run, run);
   scientificPushQueue = next.then(
+    (v) => v,
+    () => local,
+  );
+  return next;
+}
+
+export async function fetchCloudStaffCheckIns(): Promise<import("./staff-attendance").StaffCheckIn[]> {
+  const rows = await secureListAppState({ data: { token: tokenOrThrow(), key: "staff_attendance" } });
+  const row = rows.find((r) => r.key === "staff_attendance");
+  if (!row?.value || !Array.isArray(row.value)) return [];
+  return row.value as import("./staff-attendance").StaffCheckIn[];
+}
+
+let staffAttendancePushQueue: Promise<import("./staff-attendance").StaffCheckIn[]> = Promise.resolve([]);
+
+/** Upload local staff check-ins after merging with the latest cloud copy. */
+export async function pushMergedStaffCheckIns(
+  local: import("./staff-attendance").StaffCheckIn[],
+): Promise<import("./staff-attendance").StaffCheckIn[]> {
+  const run = async (): Promise<import("./staff-attendance").StaffCheckIn[]> => {
+    const { mergeStaffCheckIns, saveStaffCheckIns } = await import("./staff-attendance");
+    let cloud: import("./staff-attendance").StaffCheckIn[] = [];
+    try {
+      cloud = await fetchCloudStaffCheckIns();
+    } catch {
+      cloud = [];
+    }
+    const merged = mergeStaffCheckIns(cloud, local);
+    await secureSetAppState({ data: { token: tokenOrThrow(), key: "staff_attendance", value: merged } });
+    const prev = sessionStorage.getItem("qs_syncing");
+    sessionStorage.setItem("qs_syncing", "1");
+    try {
+      saveStaffCheckIns(merged, { sync: false });
+    } finally {
+      if (prev) sessionStorage.setItem("qs_syncing", prev);
+      else sessionStorage.removeItem("qs_syncing");
+    }
+    return merged;
+  };
+  const next = staffAttendancePushQueue.then(run, run);
+  staffAttendancePushQueue = next.then(
     (v) => v,
     () => local,
   );
