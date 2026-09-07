@@ -35,7 +35,7 @@ import {
 
 type Props = {
   halaqaId: number;
-  onConfigChange: (config: ScientificGradesConfig) => void;
+  onConfigChange: (config: ScientificGradesConfig, options?: { resetOverrides?: boolean }) => void;
 };
 
 export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
@@ -57,10 +57,10 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
     setDialogOpen(true);
   };
 
-  const applyConfig = (next: ScientificGradesConfig) => {
+  const applyConfig = (next: ScientificGradesConfig, resetOverrides = false) => {
     setConfig(next);
     saveScientificConfig(halaqaId, next);
-    onConfigChange(next);
+    onConfigChange(next, resetOverrides ? { resetOverrides: true } : undefined);
   };
 
   const confirmSetup = () => {
@@ -74,7 +74,7 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
       fields: { ...draftFields },
       defaultScores: fresh.defaultScores,
     };
-    applyConfig(next);
+    applyConfig(next, !isActive);
     setDialogOpen(false);
     return true;
   };

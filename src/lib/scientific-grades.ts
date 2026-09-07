@@ -52,6 +52,16 @@ export type ScientificGradesStore = {
 };
 
 const KEY = "qshatawi_scientific_grades_v1";
+export const SCIENTIFIC_GRADES_CHANGED_EVENT = "qs-scientific-grades-changed";
+
+const SCIENTIFIC_CLOUD_DEBOUNCE_MS = 800;
+let scientificCloudTimer: ReturnType<typeof setTimeout> | null = null;
+let pendingScientificCloud: ScientificGradesStore | null = null;
+
+function notifyScientificGradesChanged(): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new Event(SCIENTIFIC_GRADES_CHANGED_EVENT));
+}
 
 export const SCIENTIFIC_FIELD_LABELS: Record<ScientificGradeField, string> = {
   attendance: "الحضور",
@@ -139,9 +149,9 @@ export function resolveScientificScore(
     case "hifz":
       return entry.hifz !== "" ? (config.defaultScores.hifz?.trim() ?? "") : "";
     case "rabt":
-      return entry.rabt === "pass" ? (config.defaultScores.rabt?.trim() ?? "") : "";
+      return entry.rabt !== "" ? (config.defaultScores.rabt?.trim() ?? "") : "";
     case "muraja":
-      return entry.muraja === "pass" ? (config.defaultScores.muraja?.trim() ?? "") : "";
+      return entry.muraja !== "" ? (config.defaultScores.muraja?.trim() ?? "") : "";
     default:
       return "";
   }
@@ -150,7 +160,17 @@ export function resolveScientificScore(
 function persist(store: ScientificGradesStore) {
   if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
-  void import("./cloud-sync").then((m) => m.pushAppState("scientific_grades", store)).catch(() => undefined);
+  pendingScientificCloud = store;
+  if (scientificCloudTimer) clearTimeout(scientificCloudTimer);
+  scientificCloudTimer = setTimeout(() => {
+    scientificCloudTimer = null;
+    const payload = pendingScientificCloud;
+    pendingScientificCloud = null;
+    if (!payload) return;
+    void import("./cloud-sync")
+      .then((m) => m.pushMergedScientificGrades(payload))
+      .catch(() => undefined);
+  }, SCIENTIFIC_CLOUD_DEBOUNCE_MS);
 }
 
 export function loadScientificGradesStore(): ScientificGradesStore {
@@ -173,15 +193,19 @@ export function loadScientificGradesStore(): ScientificGradesStore {
 
 export function saveScientificGradesStore(store: ScientificGradesStore) {
   localStorage.setItem(KEY, JSON.stringify(store));
+  notifyScientificGradesChanged();
   persist(store);
 }
 
 export function loadScientificConfig(halaqaId: number): ScientificGradesConfig {
   const cfg = loadScientificGradesStore().configs[String(halaqaId)];
   if (!cfg) return defaultScientificConfig();
+  const fields = { ...defaultScientificFields(), ...cfg.fields };
+  const enabled = enabledScientificFields(fields);
   return {
-    visible: !!cfg.visible,
-    fields: { ...defaultScientificFields(), ...cfg.fields },
+    // Legacy rows may have fields enabled before visible was persisted.
+    visible: !!cfg.visible || enabled.length > 0,
+    fields,
     defaultScores: normalizeDefaultScores(cfg.defaultScores),
   };
 }
@@ -361,14 +385,17 @@ export function syncScientificScoresFromDayPatch(
   if ("attendance" in patch) syncScientificField(halaqaId, studentId, weekNum, dayKey, config, "attendance", entry);
 }
 
-/** Recompute all stored scientific scores from current grades (after manager saves defaults). */
+/** Recompute stored scientific scores from current grades (after manager saves defaults). */
 export function reapplyScientificScoresForHalaqa(
   halaqaId: number,
   grades: GradesStore,
   studentIds: string[],
   config: ScientificGradesConfig,
+  options?: { preserveOverrides?: boolean },
 ): void {
-  clearScientificOverridesForHalaqa(halaqaId);
+  if (!options?.preserveOverrides) {
+    clearScientificOverridesForHalaqa(halaqaId);
+  }
   for (const studentId of studentIds) {
     const weeks = grades[studentId];
     if (!weeks) continue;
@@ -460,13 +487,9 @@ export function setTeacherScientificDayScore(
   field: ScientificGradeField,
   value: string,
 ): void {
-  const trimmed = value.trim();
   setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
-  if (trimmed === "") {
-    clearScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, field);
-  } else {
-    setScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, field);
-  }
+  // Mark overridden even when clearing — prevents auto-backfill from refilling while retyping.
+  setScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, field);
 }
 
 export type ScientificWeekTotals = Record<ScientificGradeField, number> & { total: number };
@@ -555,6 +578,126 @@ export function scientificPeriodMaxPossible(
 
 export function isScientificProgramId(id: string): boolean {
   return id === SCIENTIFIC_PROGRAM_ID;
+}
+
+function mergeDefaultScores(
+  base: ScientificDefaultScores,
+  overlay: ScientificDefaultScores,
+): ScientificDefaultScores {
+  const out: ScientificDefaultScores = { ...base };
+  if (overlay.hifz?.trim()) out.hifz = overlay.hifz.trim();
+  if (overlay.rabt?.trim()) out.rabt = overlay.rabt.trim();
+  if (overlay.muraja?.trim()) out.muraja = overlay.muraja.trim();
+  const att: ScientificAttendanceScores = { ...(base.attendance ?? {}), ...(overlay.attendance ?? {}) };
+  if (Object.keys(att).length > 0) out.attendance = att;
+  else delete out.attendance;
+  return out;
+}
+
+function mergeScientificConfigs(
+  base: ScientificGradesConfig | undefined,
+  overlay: ScientificGradesConfig | undefined,
+): ScientificGradesConfig | undefined {
+  if (!base && !overlay) return undefined;
+  if (!base) return overlay;
+  if (!overlay) return base;
+  const fields = { ...defaultScientificFields(), ...base.fields, ...overlay.fields };
+  const enabled = enabledScientificFields(fields);
+  return {
+    visible: base.visible || overlay.visible || enabled.length > 0,
+    fields,
+    defaultScores: mergeDefaultScores(base.defaultScores, overlay.defaultScores),
+  };
+}
+
+function mergeScientificHalaqaData(
+  base: ScientificGradesDataStore[string] | undefined,
+  overlay: ScientificGradesDataStore[string] | undefined,
+): ScientificGradesDataStore[string] {
+  const out: ScientificGradesDataStore[string] = {};
+  const studentIds = new Set([...Object.keys(base ?? {}), ...Object.keys(overlay ?? {})]);
+  for (const studentId of studentIds) {
+    const bWeeks = base?.[studentId] ?? {};
+    const oWeeks = overlay?.[studentId] ?? {};
+    const weekKeys = new Set([...Object.keys(bWeeks), ...Object.keys(oWeeks)]);
+    if (weekKeys.size === 0) continue;
+    out[studentId] = {};
+    for (const wk of weekKeys) {
+      const weekNum = Number(wk);
+      const bDays = bWeeks[weekNum] ?? bWeeks[wk as unknown as number] ?? {};
+      const oDays = oWeeks[weekNum] ?? oWeeks[wk as unknown as number] ?? {};
+      const dayKeys = new Set([...Object.keys(bDays), ...Object.keys(oDays)]);
+      out[studentId][weekNum] = {};
+      for (const dayKey of dayKeys) {
+        out[studentId][weekNum][dayKey] = {
+          ...(bDays[dayKey] ?? {}),
+          ...(oDays[dayKey] ?? {}),
+        };
+      }
+    }
+  }
+  return out;
+}
+
+function mergeScientificHalaqaOverrides(
+  base: ScientificOverrideStore[string] | undefined,
+  overlay: ScientificOverrideStore[string] | undefined,
+): ScientificOverrideStore[string] {
+  const out: ScientificOverrideStore[string] = {};
+  const studentIds = new Set([...Object.keys(base ?? {}), ...Object.keys(overlay ?? {})]);
+  for (const studentId of studentIds) {
+    const bWeeks = base?.[studentId] ?? {};
+    const oWeeks = overlay?.[studentId] ?? {};
+    const weekKeys = new Set([...Object.keys(bWeeks), ...Object.keys(oWeeks)]);
+    if (weekKeys.size === 0) continue;
+    out[studentId] = {};
+    for (const wk of weekKeys) {
+      const weekNum = Number(wk);
+      const bDays = bWeeks[weekNum] ?? bWeeks[wk as unknown as number] ?? {};
+      const oDays = oWeeks[weekNum] ?? oWeeks[wk as unknown as number] ?? {};
+      const dayKeys = new Set([...Object.keys(bDays), ...Object.keys(oDays)]);
+      out[studentId][weekNum] = {};
+      for (const dayKey of dayKeys) {
+        out[studentId][weekNum][dayKey] = {
+          ...(bDays[dayKey] ?? {}),
+          ...(oDays[dayKey] ?? {}),
+        };
+      }
+    }
+  }
+  return out;
+}
+
+/** Merge cloud + local scientific grades — overlay (local) wins per cell. */
+export function mergeScientificGradesStores(
+  base: ScientificGradesStore,
+  overlay: ScientificGradesStore,
+): ScientificGradesStore {
+  const halaqaIds = new Set([
+    ...Object.keys(base.configs ?? {}),
+    ...Object.keys(overlay.configs ?? {}),
+    ...Object.keys(base.data ?? {}),
+    ...Object.keys(overlay.data ?? {}),
+    ...Object.keys(base.overrides ?? {}),
+    ...Object.keys(overlay.overrides ?? {}),
+  ]);
+
+  const configs: Record<string, ScientificGradesConfig> = {};
+  const data: ScientificGradesDataStore = {};
+  const overrides: ScientificOverrideStore = {};
+
+  for (const halaqaId of halaqaIds) {
+    const mergedConfig = mergeScientificConfigs(base.configs?.[halaqaId], overlay.configs?.[halaqaId]);
+    if (mergedConfig) configs[halaqaId] = mergedConfig;
+    data[halaqaId] = mergeScientificHalaqaData(base.data?.[halaqaId], overlay.data?.[halaqaId]);
+    const mergedOverrides = mergeScientificHalaqaOverrides(
+      base.overrides?.[halaqaId],
+      overlay.overrides?.[halaqaId],
+    );
+    if (Object.keys(mergedOverrides).length > 0) overrides[halaqaId] = mergedOverrides;
+  }
+
+  return { configs, data, overrides };
 }
 
 export function replaceScientificGradesStore(store: ScientificGradesStore) {

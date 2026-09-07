@@ -1,8 +1,9 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import React, { useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { z } from "zod";
 import {
   loadHalaqat, loadStudents, saveStudents, saveGrades, loadGrades, emptyWeek, emptyDayEntry, ensureWeekDays, dayEntryFor, DAYS,
+  GRADES_CHANGED_EVENT,
   weekPercentage, loadNotifications, dismissNotification, pushNotification,
   ensureGradesSemester,
   sumWeekCompensationFaces, compensationRemainingForDay,
@@ -78,6 +79,7 @@ import {
   loadScientificConfig,
   loadScientificData,
   reapplyScientificScoresForHalaqa,
+  SCIENTIFIC_GRADES_CHANGED_EVENT,
   setTeacherScientificDayScore,
   syncScientificScoresFromDayPatch,
   type ScientificFieldsConfig,
@@ -663,11 +665,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     saveTeacherGradeLayoutMode(mode);
   };
 
-  const handleSciConfigChange = (cfg: ScientificGradesConfig) => {
+  const handleSciConfigChange = (
+    cfg: ScientificGradesConfig,
+    options?: { resetOverrides?: boolean },
+  ) => {
     setSciConfig(cfg);
     const ids = students.map((s) => s.id);
     if (isScientificProgramEnabled(cfg) && ids.length > 0) {
-      reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg);
+      reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg, {
+        preserveOverrides: !options?.resetOverrides,
+      });
     }
     setSciData(loadScientificData(halaqaId));
   };
@@ -679,7 +686,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     [sciConfig.fields],
   );
 
-  useEffect(() => {
+  const backfillSciScores = useCallback(() => {
     if (!isScientificProgramEnabled(sciConfig)) return;
     const ids = students.map((s) => s.id);
     if (ids.length === 0) return;
@@ -690,7 +697,44 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       sciConfig,
     );
     if (changed) refreshSciData();
-  }, [halaqaId, sciConfig.visible, sciFieldsKey, studentIdsKey, grades]);
+  }, [halaqaId, sciConfig, students]);
+
+  const gradesBackfillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    backfillSciScores();
+  }, [backfillSciScores, sciFieldsKey, studentIdsKey]);
+
+  useEffect(() => {
+    const onGradesChanged = () => {
+      if (gradesBackfillTimerRef.current) clearTimeout(gradesBackfillTimerRef.current);
+      gradesBackfillTimerRef.current = setTimeout(() => {
+        gradesBackfillTimerRef.current = null;
+        backfillSciScores();
+      }, 300);
+    };
+    window.addEventListener(GRADES_CHANGED_EVENT, onGradesChanged);
+    return () => {
+      if (gradesBackfillTimerRef.current) clearTimeout(gradesBackfillTimerRef.current);
+      window.removeEventListener(GRADES_CHANGED_EVENT, onGradesChanged);
+    };
+  }, [backfillSciScores]);
+
+  useEffect(() => {
+    const onSciChanged = () => {
+      backfillSciScores();
+      refreshSciData();
+    };
+    window.addEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onSciChanged);
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === "qshatawi_scientific_grades_v1") onSciChanged();
+    };
+    window.addEventListener("storage", onStorage);
+    return () => {
+      window.removeEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onSciChanged);
+      window.removeEventListener("storage", onStorage);
+    };
+  }, [backfillSciScores]);
 
   const updateSciScore = (
     studentId: string,

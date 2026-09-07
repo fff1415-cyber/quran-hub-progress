@@ -312,8 +312,14 @@ export async function syncFromCloud(options?: {
         if (state.has("halaqa_programs")) saveAllHalaqaPrograms(state.get("halaqa_programs") as HalaqaProgramsStore);
         if (state.has("halaqa_program_grades")) saveAllProgramGrades(state.get("halaqa_program_grades") as HalaqaProgramGradesStore);
         if (state.has("scientific_grades")) {
-          const { replaceScientificGradesStore } = await import("./scientific-grades");
-          replaceScientificGradesStore(state.get("scientific_grades") as import("./scientific-grades").ScientificGradesStore);
+          const {
+            loadScientificGradesStore,
+            mergeScientificGradesStores,
+            saveScientificGradesStore,
+          } = await import("./scientific-grades");
+          const cloud = state.get("scientific_grades") as import("./scientific-grades").ScientificGradesStore;
+          const merged = mergeScientificGradesStores(cloud, loadScientificGradesStore());
+          saveScientificGradesStore(merged);
         }
         if (state.has("notifications")) saveNotifications(state.get("notifications") as Notification[]);
         if (state.has(ABSENCE_ALERTS_APP_STATE_KEY)) {
@@ -528,4 +534,98 @@ export async function pullMergedGrades(): Promise<GradesStore | null> {
     else sessionStorage.removeItem("qs_syncing");
   }
   return merged;
+}
+
+export async function fetchCloudScientificGrades(): Promise<import("./scientific-grades").ScientificGradesStore> {
+  const rows = await secureListAppState({ data: { token: tokenOrThrow(), key: "scientific_grades" } });
+  const row = rows.find((r) => r.key === "scientific_grades");
+  if (!row?.value || typeof row.value !== "object" || Array.isArray(row.value)) {
+    return { configs: {}, data: {}, overrides: {} };
+  }
+  return row.value as import("./scientific-grades").ScientificGradesStore;
+}
+
+let scientificPushQueue: Promise<import("./scientific-grades").ScientificGradesStore> = Promise.resolve({
+  configs: {},
+  data: {},
+  overrides: {},
+});
+
+/** Upload local scientific grades after merging with the latest cloud copy. */
+export async function pushMergedScientificGrades(
+  local: import("./scientific-grades").ScientificGradesStore,
+): Promise<import("./scientific-grades").ScientificGradesStore> {
+  const run = async (): Promise<import("./scientific-grades").ScientificGradesStore> => {
+    const { mergeScientificGradesStores, saveScientificGradesStore } = await import("./scientific-grades");
+    let cloud: import("./scientific-grades").ScientificGradesStore = { configs: {}, data: {}, overrides: {} };
+    try {
+      cloud = await fetchCloudScientificGrades();
+    } catch {
+      cloud = { configs: {}, data: {}, overrides: {} };
+    }
+    const merged = mergeScientificGradesStores(cloud, local);
+    await secureSetAppState({ data: { token: tokenOrThrow(), key: "scientific_grades", value: merged } });
+    const prev = sessionStorage.getItem("qs_syncing");
+    sessionStorage.setItem("qs_syncing", "1");
+    try {
+      saveScientificGradesStore(merged);
+    } finally {
+      if (prev) sessionStorage.setItem("qs_syncing", prev);
+      else sessionStorage.removeItem("qs_syncing");
+    }
+    return merged;
+  };
+  const next = scientificPushQueue.then(run, run);
+  scientificPushQueue = next.then(
+    (v) => v,
+    () => local,
+  );
+  return next;
+}
+
+export async function fetchCloudScientificGrades(): Promise<import("./scientific-grades").ScientificGradesStore> {
+  const rows = await secureListAppState({ data: { token: tokenOrThrow(), key: "scientific_grades" } });
+  const row = rows.find((r) => r.key === "scientific_grades");
+  if (!row?.value || typeof row.value !== "object" || Array.isArray(row.value)) {
+    return { configs: {}, data: {}, overrides: {} };
+  }
+  return row.value as import("./scientific-grades").ScientificGradesStore;
+}
+
+let scientificPushQueue: Promise<import("./scientific-grades").ScientificGradesStore> = Promise.resolve({
+  configs: {},
+  data: {},
+  overrides: {},
+});
+
+/** Upload local scientific grades after merging with the latest cloud copy. */
+export async function pushMergedScientificGrades(
+  local: import("./scientific-grades").ScientificGradesStore,
+): Promise<import("./scientific-grades").ScientificGradesStore> {
+  const run = async (): Promise<import("./scientific-grades").ScientificGradesStore> => {
+    const { mergeScientificGradesStores, saveScientificGradesStore } = await import("./scientific-grades");
+    let cloud: import("./scientific-grades").ScientificGradesStore = { configs: {}, data: {}, overrides: {} };
+    try {
+      cloud = await fetchCloudScientificGrades();
+    } catch {
+      cloud = { configs: {}, data: {}, overrides: {} };
+    }
+    const merged = mergeScientificGradesStores(cloud, local);
+    await secureSetAppState({ data: { token: tokenOrThrow(), key: "scientific_grades", value: merged } });
+    const prev = sessionStorage.getItem("qs_syncing");
+    sessionStorage.setItem("qs_syncing", "1");
+    try {
+      saveScientificGradesStore(merged);
+    } finally {
+      if (prev) sessionStorage.setItem("qs_syncing", prev);
+      else sessionStorage.removeItem("qs_syncing");
+    }
+    return merged;
+  };
+  const next = scientificPushQueue.then(run, run);
+  scientificPushQueue = next.then(
+    (v) => v,
+    () => local,
+  );
+  return next;
 }
