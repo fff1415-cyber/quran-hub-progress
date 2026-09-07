@@ -14,6 +14,7 @@ import { HalaqaScientificDefaultsSection } from "@/components/admin/HalaqaScient
 export function HalaqatManagementSection() {
   const [halaqat, setHalaqat] = useState<Halaqa[]>(() => loadHalaqat());
   const [saving, setSaving] = useState(false);
+  const [savingId, setSavingId] = useState<number | null>(null);
   const [form, setForm] = useState<Omit<Halaqa, "id">>({
     name: "", isTalqeen: false,
     teacherName: "", teacherCode: "",
@@ -52,6 +53,26 @@ export function HalaqatManagementSection() {
     }
   };
 
+  const update = (id: number, patch: Partial<Halaqa>) => {
+    setHalaqat((cur) => cur.map((h) => (h.id === id ? { ...h, ...patch } : h)));
+  };
+
+  const saveName = async (h: Halaqa) => {
+    if (!h.name.trim()) {
+      toast.error("اسم الحلقة مطلوب");
+      return;
+    }
+    setSavingId(h.id);
+    try {
+      await pushHalaqat(halaqat);
+      toast.success(`تم حفظ اسم «${h.name.trim()}»`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "فشل حفظ اسم الحلقة");
+    } finally {
+      setSavingId(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="glass-card rounded-2xl p-5">
@@ -74,20 +95,37 @@ export function HalaqatManagementSection() {
 
       <div className="glass-card rounded-2xl p-5">
         <h3 className="font-bold mb-3 text-primary">الحلقات الحالية ({halaqat.length})</h3>
+        <p className="text-xs text-muted-foreground mb-3">عدّل اسم الحلقة ثم اضغط «حفظ» لإرساله إلى قاعدة البيانات.</p>
         <div className="space-y-2">
           {halaqat.map((h) => (
-            <div key={h.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
-              <div>
-                <div className="font-medium">{h.name}</div>
+            <div key={h.id} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-secondary/50">
+              <div className="flex-1 min-w-0">
+                <input
+                  className="w-full max-w-md px-3 py-1.5 rounded-lg bg-input border border-border font-medium mb-1.5"
+                  value={h.name}
+                  onChange={(e) => update(h.id, { name: e.target.value })}
+                  placeholder="اسم الحلقة"
+                />
                 <div className="text-xs text-muted-foreground">
                   معلم: {h.teacherName} (<span className="text-primary font-mono">{h.teacherCode || "—"}</span>) ·
                   مساعد: {h.assistantName} (<span className="text-primary font-mono">{h.assistantCode || "—"}</span>)
                   {h.isTalqeen && " · تلقين"}
                 </div>
               </div>
-              <button type="button" onClick={() => del(h.id)} disabled={saving} className="p-2 rounded-lg hover:bg-destructive/20 text-destructive disabled:opacity-50">
-                <Trash2 className="w-4 h-4" />
-              </button>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => void saveName(h)}
+                  disabled={saving || savingId === h.id}
+                  title="حفظ اسم الحلقة"
+                  className="p-2 rounded-lg bg-primary/15 text-primary border border-primary/30 disabled:opacity-50"
+                >
+                  {savingId === h.id ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                </button>
+                <button type="button" onClick={() => del(h.id)} disabled={saving || savingId === h.id} className="p-2 rounded-lg hover:bg-destructive/20 text-destructive disabled:opacity-50">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           ))}
         </div>
