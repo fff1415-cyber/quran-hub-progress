@@ -6,9 +6,9 @@ import {
 } from "@/lib/mock-data";
 
 /** Cloud fallback poll while the tab is active (BroadcastChannel handles same-device tabs). */
-const POLL_MS_VISIBLE = 5000;
+const POLL_MS_VISIBLE = 12_000;
 /** Slower poll when the tab is in the background — keeps cross-device sync without hammering the server. */
-const POLL_MS_HIDDEN = 30000;
+const POLL_MS_HIDDEN = 45_000;
 const GRADES_BROADCAST = "qs-grades-v2";
 
 /**
@@ -42,6 +42,7 @@ export function useLiveGrades(): [GradesStore, (g: GradesStore) => void] {
 
     const tick = async () => {
       if (cancelled) return;
+      if (document.hidden) return;
       try {
         const { pullMergedGrades } = await import("@/lib/cloud-sync");
         const next = await pullMergedGrades();

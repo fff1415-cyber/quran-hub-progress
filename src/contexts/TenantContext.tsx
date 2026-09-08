@@ -56,16 +56,20 @@ export function TenantProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const loadGeneration = useRef(0);
+  const lastTenantScopeKey = useRef<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const runId = ++loadGeneration.current;
-    setLoading(true);
+    const scopeChanged = lastTenantScopeKey.current !== tenantScopeKey;
+    if (scopeChanged) {
+      setLoading(true);
+    }
     void (async () => {
       try {
         const resolved = await resolveTenantFromLocation(
           typeof window !== "undefined" ? window.location.hostname : undefined,
-          typeof window !== "undefined" ? window.location.pathname : pathname,
+          typeof window !== "undefined" ? window.location.pathname : "",
         );
 
         // Always sync roster after tenant resolve — even if this effect instance
@@ -85,6 +89,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
         setTenant(resolved);
         setIsPlatform(resolved === null);
         setError(null);
+        lastTenantScopeKey.current = tenantScopeKey;
       } catch (e) {
         if (cancelled || runId !== loadGeneration.current) return;
         const msg = e instanceof Error ? e.message : "تعذّر تحميل بيانات المجمع";
@@ -99,7 +104,7 @@ export function TenantProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [tenantScopeKey, pathname]);
+  }, [tenantScopeKey]);
 
   const setTenantState = useCallback((next: TenantInfo) => {
     setTenant(next);

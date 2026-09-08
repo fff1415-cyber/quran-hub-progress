@@ -155,23 +155,27 @@ export function TeacherPage() {
         if (testsReset) toast.info("بدء فصل دراسي جديد — تم تصفير الاختبارات الأسبوعية");
         if (tarbawiReset) toast.info("بدء فصل دراسي جديد — تم تصفير البرنامج التربوي");
         setCalendar(cal);
-        const selectable = cal.weeks.filter((wk) => wk.week_number <= cal.currentWeekNumber);
-        const fromUrl = w && selectable.some((wk) => wk.week_number === w) ? w : null;
-        const nextWeek = fromUrl ?? cal.currentWeekNumber;
-        setSelectedWeek(nextWeek);
-        if (h && w && w !== nextWeek) {
-          navigate({
-            to: tenantPath("/teacher"),
-            search: { h, w: nextWeek, view },
-            replace: true,
-          });
-        }
       })
       .finally(() => {
         if (!cancelled) setLoadingCal(false);
       });
     return () => { cancelled = true; };
-  }, [w, h, view, navigate]);
+  }, [h]);
+
+  useEffect(() => {
+    if (!calendar) return;
+    const selectable = calendar.weeks.filter((wk) => wk.week_number <= calendar.currentWeekNumber);
+    const fromUrl = w && selectable.some((wk) => wk.week_number === w) ? w : null;
+    const nextWeek = fromUrl ?? calendar.currentWeekNumber;
+    setSelectedWeek(nextWeek);
+    if (h && w && w !== nextWeek) {
+      navigate({
+        to: tenantPath("/teacher"),
+        search: { h, w: nextWeek, view },
+        replace: true,
+      });
+    }
+  }, [calendar, w, h, view, navigate]);
 
   const isAssistant = role === "assistant";
   const isManager = role === "manager";
@@ -305,15 +309,17 @@ export function TeacherPage() {
               </TabsTrigger>
             </TabsList>
             <TabsContent value="grades" className="mt-0 space-y-4">
-              <WeekTable
-                halaqaId={halaqa.id}
-                weekNum={selectedWeek}
-                calendar={calendar}
-                onWeekChange={handleWeekChange}
-                isTalqeen={halaqa.isTalqeen}
-                viewerRole={isAssistant ? "assistant" : "teacher"}
-                canAssign={!isAssistant}
-              />
+              {view === "grades" && (
+                <WeekTable
+                  halaqaId={halaqa.id}
+                  weekNum={selectedWeek}
+                  calendar={calendar}
+                  onWeekChange={handleWeekChange}
+                  isTalqeen={halaqa.isTalqeen}
+                  viewerRole={isAssistant ? "assistant" : "teacher"}
+                  canAssign={!isAssistant}
+                />
+              )}
             </TabsContent>
             <TabsContent value="programs" className="mt-0">
               {view === "programs" && (
@@ -682,7 +688,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     setSciData(loadScientificData(halaqaId));
   };
 
-  const refreshSciData = () => setSciData(loadScientificData(halaqaId));
+  const gradesBackfillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const sciRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refreshSciData = useCallback(() => {
+    if (sciRefreshTimerRef.current) clearTimeout(sciRefreshTimerRef.current);
+    sciRefreshTimerRef.current = setTimeout(() => {
+      sciRefreshTimerRef.current = null;
+      setSciData(loadScientificData(halaqaId));
+    }, 150);
+  }, [halaqaId]);
 
   const sciFieldsKey = useMemo(
     () => enabledScientificFields(sciConfig.fields).join(","),
@@ -707,9 +722,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       cfg,
     );
     if (changed) refreshSciData();
-  }, [halaqaId, students]);
-
-  const gradesBackfillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  }, [halaqaId, students, refreshSciData]);
 
   useEffect(() => {
     backfillSciScores();
@@ -717,15 +730,18 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
   useEffect(() => {
     const onGradesChanged = () => {
+      if (sessionStorage.getItem("qs_syncing") === "1") return;
       if (gradesBackfillTimerRef.current) clearTimeout(gradesBackfillTimerRef.current);
       gradesBackfillTimerRef.current = setTimeout(() => {
         gradesBackfillTimerRef.current = null;
+        if (sessionStorage.getItem("qs_syncing") === "1") return;
         backfillSciScores();
       }, 300);
     };
     window.addEventListener(GRADES_CHANGED_EVENT, onGradesChanged);
     return () => {
       if (gradesBackfillTimerRef.current) clearTimeout(gradesBackfillTimerRef.current);
+      if (sciRefreshTimerRef.current) clearTimeout(sciRefreshTimerRef.current);
       window.removeEventListener(GRADES_CHANGED_EVENT, onGradesChanged);
     };
   }, [backfillSciScores]);
