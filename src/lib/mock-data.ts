@@ -45,7 +45,20 @@ export interface DayEntry {
   custom?: Record<string, string>;
   /** Last local edit time — used to merge teacher/assistant concurrent saves. */
   touchedAt?: number;
+  /** Per-field edit times — clears and rapid saves merge without clobbering other cells. */
+  fieldTouchedAt?: Partial<Record<DayGradeFieldKey, number>>;
 }
+
+export const DAY_GRADE_FIELDS = [
+  "attendance",
+  "hifz",
+  "rabt",
+  "muraja",
+  "wajib",
+  "compensationFaces",
+] as const;
+
+export type DayGradeFieldKey = (typeof DAY_GRADE_FIELDS)[number];
 
 export interface WeekRecord {
   days: Record<string, DayEntry>;
@@ -239,25 +252,67 @@ function isBlankGradeValue(v: unknown): boolean {
   return false;
 }
 
+function fieldEditTime(entry: DayEntry, key: DayGradeFieldKey): number {
+  const ft = entry.fieldTouchedAt?.[key];
+  if (ft !== undefined) return ft;
+  if (!isBlankGradeValue(entry[key])) return entry.touchedAt ?? 0;
+  return 0;
+}
+
+/** Apply a partial day patch and stamp only the fields that changed. */
+export function mergeDayEntryPatch(base: DayEntry, patch: Partial<DayEntry>): DayEntry {
+  const now = Date.now();
+  const fieldTouchedAt = { ...base.fieldTouchedAt };
+  for (const key of DAY_GRADE_FIELDS) {
+    if (Object.prototype.hasOwnProperty.call(patch, key)) {
+      fieldTouchedAt[key] = now;
+    }
+  }
+  return {
+    ...base,
+    ...patch,
+    fieldTouchedAt,
+    touchedAt: now,
+  };
+}
+
 function mergeDayEntries(a: DayEntry | undefined, b: DayEntry | undefined): DayEntry {
   const left = a ?? emptyDayEntry();
   const right = b ?? emptyDayEntry();
-  const lt = left.touchedAt ?? 0;
-  const rt = right.touchedAt ?? 0;
-  const pick = <K extends keyof DayEntry>(key: K): DayEntry[K] => {
+  const pick = <K extends DayGradeFieldKey>(key: K): DayEntry[K] => {
     const lv = left[key];
     const rv = right[key];
     const le = isBlankGradeValue(lv);
     const re = isBlankGradeValue(rv);
+    const lft = fieldEditTime(left, key);
+    const rft = fieldEditTime(right, key);
     if (le && re) return lv;
-    if (le && !re) return rv;
-    if (!le && re) return lv;
-    // Both set — newer edit wins (including deliberate clears).
-    return (rt >= lt ? rv : lv) as DayEntry[K];
+    if (lft === rft) {
+      if (le && !re) return rv;
+      if (!le && re) {
+        const rExplicit = right.fieldTouchedAt?.[key] !== undefined;
+        const lExplicit = left.fieldTouchedAt?.[key] !== undefined;
+        if (rExplicit && !lExplicit) return rv;
+        return lv;
+      }
+      return lv;
+    }
+    return rft > lft ? rv : lv;
   };
-  const custom = rt >= lt
-    ? { ...(left.custom ?? {}), ...(right.custom ?? {}) }
-    : { ...(right.custom ?? {}), ...(left.custom ?? {}) };
+  const custom = (() => {
+    const lt = left.touchedAt ?? 0;
+    const rt = right.touchedAt ?? 0;
+    return rt >= lt
+      ? { ...(left.custom ?? {}), ...(right.custom ?? {}) }
+      : { ...(right.custom ?? {}), ...(left.custom ?? {}) };
+  })();
+  const lt = left.touchedAt ?? 0;
+  const rt = right.touchedAt ?? 0;
+  const fieldTouchedAt: Partial<Record<DayGradeFieldKey, number>> = {};
+  for (const key of DAY_GRADE_FIELDS) {
+    const ts = Math.max(fieldEditTime(left, key), fieldEditTime(right, key));
+    if (ts > 0) fieldTouchedAt[key] = ts;
+  }
   return {
     attendance: pick("attendance") as DayEntry["attendance"],
     hifz: pick("hifz") as HifzValue,
@@ -266,6 +321,7 @@ function mergeDayEntries(a: DayEntry | undefined, b: DayEntry | undefined): DayE
     wajib: pick("wajib") as boolean | undefined,
     compensationFaces: pick("compensationFaces") as number | undefined,
     custom: Object.keys(custom).length ? custom : undefined,
+    fieldTouchedAt: Object.keys(fieldTouchedAt).length ? fieldTouchedAt : undefined,
     touchedAt: Math.max(lt, rt) || undefined,
   };
 }

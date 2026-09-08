@@ -3,6 +3,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspens
 import { z } from "zod";
 import {
   loadHalaqat, loadStudents, saveStudents, saveGrades, loadGrades, emptyWeek, emptyDayEntry, ensureWeekDays, dayEntryFor, DAYS,
+  mergeDayEntryPatch,
   GRADES_CHANGED_EVENT,
   weekPercentage, loadNotifications, dismissNotification, pushNotification,
   ensureGradesSemester,
@@ -945,7 +946,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       return;
     }
     const days = { ...w.days };
-    days[dayKey] = { ...dayEntryFor(w, dayKey, workingKeysList), compensationFaces: faces, touchedAt: Date.now() };
+    days[dayKey] = mergeDayEntryPatch(dayEntryFor(w, dayKey, workingKeysList), { compensationFaces: faces });
     let nextWeek: WeekRecord = { ...w, days };
     const total = sumWeekCompensationFaces(nextWeek, workingKeysList);
     nextWeek = { ...nextWeek, compensationFaces: total };
@@ -978,11 +979,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
     update(studentId, (w) => {
       const base = ensureWeekDays(w, workingKeysList);
-      mergedEntry = {
-        ...dayEntryFor(base, dayKey, workingKeysList),
-        ...patch,
-        touchedAt: Date.now(),
-      };
+      mergedEntry = mergeDayEntryPatch(dayEntryFor(base, dayKey, workingKeysList), patch);
       return {
         ...base,
         days: {
@@ -1035,7 +1032,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       toast.info("هذا اليوم إجازة أو خارج أيام العمل — لم يُعدَّل التسجيل");
       return;
     }
-    const g = { ...grades };
+    const g = loadGrades();
     let updated = 0;
     students.forEach((s) => {
       if (!g[s.id]) g[s.id] = {};
@@ -1043,7 +1040,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       const week = g[s.id][weekNum];
       const prev = week.days[dayKey] ?? emptyDayEntry();
       if (prev.attendance === "present") return;
-      const merged = { ...prev, attendance: "present" as const, touchedAt: Date.now() };
+      const merged = mergeDayEntryPatch(prev, { attendance: "present" });
       g[s.id][weekNum] = {
         ...week,
         days: { ...week.days, [dayKey]: merged },
