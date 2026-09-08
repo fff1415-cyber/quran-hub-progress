@@ -250,7 +250,9 @@ function mergeDayEntries(a: DayEntry | undefined, b: DayEntry | undefined): DayE
     const le = isBlankGradeValue(lv);
     const re = isBlankGradeValue(rv);
     if (le && re) return lv;
-    // Newer edit wins — including deliberate clears (blank with fresh touchedAt).
+    if (le && !re) return rv;
+    if (!le && re) return lv;
+    // Both set — newer edit wins (including deliberate clears).
     return (rt >= lt ? rv : lv) as DayEntry[K];
   };
   const custom = rt >= lt

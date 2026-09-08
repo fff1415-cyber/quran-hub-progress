@@ -7,7 +7,7 @@ import {
   weekPercentage, loadNotifications, dismissNotification, pushNotification,
   ensureGradesSemester,
   sumWeekCompensationFaces, compensationRemainingForDay,
-  type WeekRecord, type DayEntry, type Student,
+  type WeekRecord, type DayEntry, type Student, type GradesStore,
 } from "@/lib/mock-data";
 import {
   fetchActiveCalendar,
@@ -924,12 +924,16 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   };
 
   const update = (studentId: string, fn: (w: WeekRecord) => WeekRecord, sync?: boolean | "immediate") => {
-    const g = { ...grades };
-    if (!g[studentId]) g[studentId] = {};
-    if (!g[studentId][weekNum]) g[studentId][weekNum] = emptyWeek(workingKeysList);
-    g[studentId][weekNum] = fn(g[studentId][weekNum]);
-    setGrades(g);
-    saveGrades(g, sync === undefined ? undefined : { sync });
+    const g = loadGrades();
+    const next: GradesStore = { ...g };
+    if (!next[studentId]) next[studentId] = {};
+    if (!next[studentId][weekNum]) next[studentId][weekNum] = emptyWeek(workingKeysList);
+    next[studentId] = {
+      ...next[studentId],
+      [weekNum]: fn(next[studentId][weekNum]!),
+    };
+    setGrades(next);
+    saveGrades(next, sync === undefined ? undefined : { sync });
   };
 
   const handleDayCompensationChange = async (s: Student, dayKey: string, faces: number) => {
@@ -970,18 +974,15 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
   const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
     if (closedDayKeys.has(dayKey)) return;
-    const prevWeek = ensureWeekDays(
-      grades[studentId]?.[weekNum] ?? emptyWeek(workingKeysList),
-      workingKeysList,
-    );
-    const mergedEntry = {
-      ...dayEntryFor(prevWeek, dayKey, workingKeysList),
-      ...patch,
-      touchedAt: Date.now(),
-    };
+    let mergedEntry!: DayEntry;
 
     update(studentId, (w) => {
       const base = ensureWeekDays(w, workingKeysList);
+      mergedEntry = {
+        ...dayEntryFor(base, dayKey, workingKeysList),
+        ...patch,
+        touchedAt: Date.now(),
+      };
       return {
         ...base,
         days: {
@@ -989,7 +990,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           [dayKey]: mergedEntry,
         },
       };
-    }, patch.attendance !== undefined || patch.hifz !== undefined || patch.rabt !== undefined || patch.muraja !== undefined ? "immediate" : undefined);
+    });
 
     syncScientificScoresFromDayPatch(
       halaqaId,
