@@ -293,15 +293,36 @@ export async function removePlanHifzCompletions(
   localRemoveHifzCompletions(studentId, segmentIndexes);
 }
 
+export async function lastCompletedHifzSegments(studentId: string, count: number): Promise<number[]> {
+  if (count <= 0) return [];
+  const sheet = await fetchStudentPlanSheet(studentId);
+  const done = sheet.completions
+    .filter((c) => c.task_type === "hifz")
+    .sort((a, b) => {
+      const dt = (a.completed_at ?? "").localeCompare(b.completed_at ?? "");
+      if (dt !== 0) return dt;
+      return a.segment_index - b.segment_index;
+    });
+  return done.slice(-count).map((c) => c.segment_index);
+}
+
 /** Sync plan hifz completions to match weekly compensation faces (add or revert). */
 export async function syncCompensationToPlan(
   student: Student,
   faces: number,
   trackedSegments: number[],
   recordedBy: string,
+  previousFaces?: number,
 ): Promise<number[]> {
   const target = compensationHifzSegmentTarget(faces, student.levelType);
   const tracked = [...trackedSegments];
+
+  if (tracked.length === 0 && previousFaces != null) {
+    const prevTarget = compensationHifzSegmentTarget(previousFaces, student.levelType);
+    if (prevTarget > target) {
+      tracked.push(...await lastCompletedHifzSegments(student.id, prevTarget - target));
+    }
+  }
 
   if (target > tracked.length) {
     const tap = compensationHifzTap(student.levelType);

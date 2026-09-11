@@ -35,7 +35,7 @@ import {
   Smartphone, Sparkles, Users, X,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
-import { applyPlanInput, fetchHalaqaPlanStatuses, fetchStudentPlanSheet, syncCompensationToPlan } from "@/lib/plans-service";
+import { applyPlanInput, fetchHalaqaPlanStatuses, fetchStudentPlanSheet, lastCompletedHifzSegments, removePlanHifzCompletions, syncCompensationToPlan } from "@/lib/plans-service";
 import { checkAndHandlePlanCompletion } from "@/lib/plan-completion";
 import { processAbsenceThresholdAlerts } from "@/lib/semester-absence";
 import { loadComplexFeatures } from "@/lib/complex-features";
@@ -44,6 +44,7 @@ import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
 import { AttSelect, CompensationSelect } from "@/components/plans/TeacherGradeInputs";
 import { hifzCheckedValue } from "@/lib/mock-data";
+import { segmentsForTap } from "@/lib/plan-translator";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -899,12 +900,36 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }
   };
 
-  const handlePlanHifz = async (s: Student, dayKey: string) => {
-    const gradeVal = hifzCheckedValue(s.levelType);
+  const handlePlanHifz = async (s: Student, dayKey: string, checked: boolean) => {
     const tap: TapValue = s.levelType === "gold" ? "one" : "half";
+    const store = loadGrades();
+    const w = ensureWeekDays(store[s.id]?.[weekNum] ?? emptyWeek(workingKeysList), workingKeysList);
+    const day = dayEntryFor(w, dayKey, workingKeysList);
+
+    if (!checked) {
+      updateDay(s.id, dayKey, { hifz: "", hifzPlanSegments: [] });
+      if (!planStudentIds.has(s.id)) return;
+      try {
+        let toRemove = day.hifzPlanSegments ?? [];
+        if (toRemove.length === 0) {
+          toRemove = await lastCompletedHifzSegments(s.id, Math.max(1, segmentsForTap(s.levelType, tap)));
+        }
+        await removePlanHifzCompletions(s.id, toRemove);
+        toast.success("أُلغي الحفظ من الجدول وورقة الخطة");
+        if (planSheetStudent?.id === s.id) {
+          setPlanSheetData(await fetchStudentPlanSheet(s.id));
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "فشل إلغاء الحفظ من الخطة");
+      }
+      return;
+    }
+
+    const gradeVal = hifzCheckedValue(s.levelType);
     updateDay(s.id, dayKey, { hifz: gradeVal });
     try {
       const segs = await applyPlanInput(s.id, "hifz", tap, senderName);
+      updateDay(s.id, dayKey, { hifz: gradeVal, hifzPlanSegments: segs });
       toast.success(`تم تسجيل ${segs.length} مقطع — حفظ`);
       if (planSheetStudent?.id === s.id) {
         setPlanSheetData(await fetchStudentPlanSheet(s.id));
@@ -967,10 +992,11 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     const total = sumWeekCompensationFaces(nextWeek, workingKeysList);
     nextWeek = { ...nextWeek, compensationFaces: total };
     const tracked = w.compensationPlanSegments ?? [];
+    const prevTotal = sumWeekCompensationFaces(w, workingKeysList);
     try {
       let newTracked = tracked;
       if (planStudentIds.has(s.id)) {
-        newTracked = await syncCompensationToPlan(s, total, tracked, senderName);
+        newTracked = await syncCompensationToPlan(s, total, tracked, senderName, prevTotal);
       }
       update(s.id, () => ({ ...nextWeek, compensationPlanSegments: newTracked }));
       if (planSheetStudent?.id === s.id) {
@@ -981,8 +1007,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       }
       if (faces > 0) {
         toast.success(`تعويض ${faces} — متبقي ${compensationRemainingForDay(nextWeek, dayKey, workingKeysList)}`);
-      } else if (tracked.length > 0) {
-        toast.success("تم إلغاء التعويض وتراجع المقاطع");
+      } else {
+        toast.success("تم إلغاء التعويض وحذف خاناته من ورقة الخطة");
       }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "فشل تحديث التعويض");
@@ -1195,7 +1221,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           onShowAssign={() => setShowAssign(true)}
           onUpdateDay={updateDay}
           onUpdateSciScore={updateSciScore}
-          onPlanHifz={(s, dayKey) => void handlePlanHifz(s, dayKey)}
+          onPlanHifz={(s, dayKey, checked) => void handlePlanHifz(s, dayKey, checked)}
           onPlanPassFail={(s, dayKey, task, value) => void handlePlanPassFail(s, dayKey, task, value)}
           onCompensationChange={(s, dayKey, faces) => void handleDayCompensationChange(s, dayKey, faces)}
           onMarkAllPresent={markAllPresentForDay}
@@ -1503,7 +1529,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           passFailValue=""
                           onHifzChange={(v) => updateDay(s.id, d.key, { hifz: v })}
                           onPassFailChange={() => {}}
-                          onPlanHifzChange={() => void handlePlanHifz(s, d.key)}
+                          onPlanHifzChange={(checked) => void handlePlanHifz(s, d.key, checked)}
                         />
                       </td>
                       {sciCtx.visible && sciCtx.fields.hifz && (
