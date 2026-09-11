@@ -78,7 +78,7 @@ type Props = {
     field: "attendance" | "hifz" | "rabt" | "muraja",
     value: string,
   ) => void;
-  onPlanHifz: (s: Student, dayKey: string) => void;
+  onPlanHifz: (s: Student, dayKey: string, checked: boolean) => void;
   onPlanPassFail: (s: Student, dayKey: string, task: "rabt" | "muraja", value: "pass" | "fail" | "") => void;
   onCompensationChange: (s: Student, dayKey: string, faces: number) => void;
   onMarkAllPresent: (dayKey: string) => void;
@@ -468,7 +468,7 @@ export function TeacherMobileDayBoard({
                           passFailValue=""
                           onHifzChange={(v: HifzValue) => onUpdateDay(s.id, activeDayKey, { hifz: v })}
                           onPassFailChange={() => {}}
-                          onPlanHifzChange={() => onPlanHifz(s, activeDayKey)}
+                          onPlanHifzChange={(checked) => onPlanHifz(s, activeDayKey, checked)}
                         />
                       </TaskColumn>
                       <TaskColumn

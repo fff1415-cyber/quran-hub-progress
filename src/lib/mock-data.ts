@@ -41,6 +41,8 @@ export interface DayEntry {
   wajib?: boolean; // talqeen
   /** Daily hifz compensation faces (½–5 total per week across days). */
   compensationFaces?: number;
+  /** Plan hifz segment indexes applied when this day's hifz was recorded (for undo). */
+  hifzPlanSegments?: number[];
   /** Custom field id → selected option (per halaqa field definitions). */
   custom?: Record<string, string>;
   /** Last local edit time — used to merge teacher/assistant concurrent saves. */
@@ -158,7 +160,7 @@ function defaultWorkingDayKeys(workingDayKeys?: Iterable<string>): string[] {
 }
 
 export function emptyDayEntry(): DayEntry {
-  return { attendance: "", hifz: "", rabt: "", muraja: "", wajib: false, compensationFaces: 0 };
+  return { attendance: "", hifz: "", rabt: "", muraja: "", wajib: false, compensationFaces: 0, hifzPlanSegments: [] };
 }
 
 export function emptyWeek(workingDayKeys?: Iterable<string>): WeekRecord {
@@ -279,6 +281,13 @@ export function mergeDayEntryPatch(base: DayEntry, patch: Partial<DayEntry>): Da
 function mergeDayEntries(a: DayEntry | undefined, b: DayEntry | undefined): DayEntry {
   const left = a ?? emptyDayEntry();
   const right = b ?? emptyDayEntry();
+  const pickHifzPlanSegments = (): number[] | undefined => {
+    const lft = fieldEditTime(left, "hifz");
+    const rft = fieldEditTime(right, "hifz");
+    const src = rft > lft ? right : lft > rft ? left : right.hifzPlanSegments !== undefined ? right : left;
+    const segs = src.hifzPlanSegments;
+    return segs?.length ? segs : segs ? [] : undefined;
+  };
   const pick = <K extends DayGradeFieldKey>(key: K): DayEntry[K] => {
     const lv = left[key];
     const rv = right[key];
@@ -320,10 +329,19 @@ function mergeDayEntries(a: DayEntry | undefined, b: DayEntry | undefined): DayE
     muraja: pick("muraja") as DayEntry["muraja"],
     wajib: pick("wajib") as boolean | undefined,
     compensationFaces: pick("compensationFaces") as number | undefined,
+    hifzPlanSegments: pickHifzPlanSegments(),
     custom: Object.keys(custom).length ? custom : undefined,
     fieldTouchedAt: Object.keys(fieldTouchedAt).length ? fieldTouchedAt : undefined,
     touchedAt: Math.max(lt, rt) || undefined,
   };
+}
+
+function weekMaxTouchedAt(w: WeekRecord): number {
+  let max = 0;
+  for (const d of Object.values(w.days ?? {})) {
+    max = Math.max(max, d.touchedAt ?? 0, d.fieldTouchedAt?.compensationFaces ?? 0);
+  }
+  return max;
 }
 
 function mergeWeekRecords(a: WeekRecord | undefined, b: WeekRecord | undefined): WeekRecord {
@@ -334,15 +352,24 @@ function mergeWeekRecords(a: WeekRecord | undefined, b: WeekRecord | undefined):
   for (const key of dayKeys) {
     days[key] = mergeDayEntries(left.days[key], right.days[key]);
   }
-  const segs = [...new Set([...(left.compensationPlanSegments ?? []), ...(right.compensationPlanSegments ?? [])])];
+  let dailyComp = 0;
+  let sawDaily = false;
+  for (const d of Object.values(days)) {
+    if (d.compensationFaces !== undefined) {
+      sawDaily = true;
+      dailyComp += d.compensationFaces;
+    }
+  }
+  const newerWeek = weekMaxTouchedAt(right) >= weekMaxTouchedAt(left) ? right : left;
+  const segs = newerWeek.compensationPlanSegments ?? [];
   return {
     days,
     testMuraja: left.testMuraja || right.testMuraja,
     testRabt: left.testRabt || right.testRabt,
     sard: left.sard || right.sard,
-    compensationFaces: Math.max(left.compensationFaces ?? 0, right.compensationFaces ?? 0) || undefined,
-    compensationMurajaFaces: Math.max(left.compensationMurajaFaces ?? 0, right.compensationMurajaFaces ?? 0) || undefined,
-    compensationPlanSegments: segs.length ? segs : undefined,
+    compensationFaces: sawDaily ? dailyComp : newerWeek.compensationFaces,
+    compensationMurajaFaces: newerWeek.compensationMurajaFaces,
+    compensationPlanSegments: segs,
   };
 }
 
@@ -851,13 +878,16 @@ export function sumWeekCompensationFaces(
 ): number {
   if (!w) return 0;
   let sum = 0;
+  let sawDaily = false;
   for (const key of defaultWorkingDayKeys(workingDayKeys)) {
-    sum += w.days[key]?.compensationFaces ?? 0;
+    const v = w.days[key]?.compensationFaces;
+    if (v !== undefined) {
+      sawDaily = true;
+      sum += v;
+    }
   }
-  if (sum === 0 && (w.compensationFaces ?? 0) > 0) {
-    return w.compensationFaces ?? 0;
-  }
-  return sum;
+  if (sawDaily) return sum;
+  return w.compensationFaces ?? 0;
 }
 
 /** How many faces can still be assigned on `dayKey` this week. */
