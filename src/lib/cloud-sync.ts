@@ -19,7 +19,12 @@ import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } f
 import { saveStaffAttendanceSettings, saveStaffCheckIns } from "./staff-attendance";
 import { saveStudentPortalVisibility, type StudentPortalVisibility } from "./student-portal-settings";
 import { saveComplexFeatures, type ComplexFeatures } from "./complex-features";
-import { saveFinancialLedger, type FinancialLedgerStore } from "./financial-ledger";
+import {
+  loadFinancialLedger,
+  mergeFinancialLedgerStores,
+  saveFinancialLedger,
+  type FinancialLedgerStore,
+} from "./financial-ledger";
 import { savePushNotificationSettings, type PushNotificationSettings } from "./push-notification-settings";
 import { saveTarbawiStore, type TarbawiStore, ensureTarbawiSemester, mergeTarbawiStores, loadTarbawiStore } from "./tarbawi-program";
 import type { AcademicPhaseRecord } from "./academic-record";
@@ -348,7 +353,28 @@ export async function syncFromCloud(options?: {
           savePushNotificationSettings(state.get("push_notification_settings") as PushNotificationSettings);
         }
         if (state.has("complex_features")) saveComplexFeatures(state.get("complex_features") as ComplexFeatures);
-        if (state.has("financial_ledger")) saveFinancialLedger(state.get("financial_ledger") as FinancialLedgerStore);
+        if (state.has("financial_ledger")) {
+          const cloud = state.get("financial_ledger") as FinancialLedgerStore;
+          const local = loadFinancialLedger();
+          const { merged, pushToCloud } = mergeFinancialLedgerStores(cloud, local);
+          saveFinancialLedger(merged, { sync: false });
+          if (pushToCloud) {
+            try {
+              await secureSetAppState({ data: { token, key: "financial_ledger", value: merged } });
+            } catch {
+              /* local merge kept — will retry on next save */
+            }
+          }
+        } else {
+          const local = loadFinancialLedger();
+          if (local.entries.length > 0 || (local.deletedIds?.length ?? 0) > 0) {
+            try {
+              await secureSetAppState({ data: { token, key: "financial_ledger", value: local } });
+            } catch {
+              /* ignore */
+            }
+          }
+        }
         if (!tarbawiReset && state.has("tarbawi_program")) {
           const cloud = state.get("tarbawi_program") as TarbawiStore;
           const local = loadTarbawiStore();
@@ -609,6 +635,46 @@ export async function fetchCloudStaffCheckIns(): Promise<import("./staff-attenda
 let staffAttendancePushQueue: Promise<import("./staff-attendance").StaffCheckIn[]> = Promise.resolve([]);
 
 /** Upload local staff check-ins after merging with the latest cloud copy. */
+export async function fetchCloudFinancialLedger(): Promise<FinancialLedgerStore> {
+  const rows = await secureListAppState({ data: { token: tokenOrThrow(), key: "financial_ledger" } });
+  const row = rows.find((r) => r.key === "financial_ledger");
+  if (!row?.value || typeof row.value !== "object" || Array.isArray(row.value)) {
+    return { entries: [] };
+  }
+  return row.value as FinancialLedgerStore;
+}
+
+let financialLedgerPushQueue: Promise<FinancialLedgerStore> = Promise.resolve({ entries: [] });
+
+/** Upload local financial ledger after merging with the latest cloud copy. */
+export async function pushMergedFinancialLedger(local: FinancialLedgerStore): Promise<FinancialLedgerStore> {
+  const run = async (): Promise<FinancialLedgerStore> => {
+    let cloud: FinancialLedgerStore = { entries: [] };
+    try {
+      cloud = await fetchCloudFinancialLedger();
+    } catch {
+      cloud = { entries: [] };
+    }
+    const { merged } = mergeFinancialLedgerStores(cloud, local);
+    await secureSetAppState({ data: { token: tokenOrThrow(), key: "financial_ledger", value: merged } });
+    const prev = sessionStorage.getItem("qs_syncing");
+    sessionStorage.setItem("qs_syncing", "1");
+    try {
+      saveFinancialLedger(merged, { sync: false });
+    } finally {
+      if (prev) sessionStorage.setItem("qs_syncing", prev);
+      else sessionStorage.removeItem("qs_syncing");
+    }
+    return merged;
+  };
+  const next = financialLedgerPushQueue.then(run, run);
+  financialLedgerPushQueue = next.then(
+    (v) => v,
+    () => local,
+  );
+  return next;
+}
+
 export async function pushMergedStaffCheckIns(
   local: import("./staff-attendance").StaffCheckIn[],
 ): Promise<import("./staff-attendance").StaffCheckIn[]> {

@@ -35,25 +35,47 @@ export type FinancialEntry = FinancialIncomeEntry | FinancialExpenseEntry;
 
 export interface FinancialLedgerStore {
   entries: FinancialEntry[];
+  /** Tombstones so deletes survive cloud merge. */
+  deletedIds?: string[];
 }
 
 const KEY = "qshatawi_financial_ledger_v1";
+const MAX_DELETED_IDS = 5000;
 
 function newId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 }
 
-function persist(store: FinancialLedgerStore) {
+function entryTimestamp(entry: FinancialEntry): string {
+  return entry.updatedAt ?? entry.createdAt;
+}
+
+function normalizeFinancialLedger(raw: Partial<FinancialLedgerStore> | null | undefined): FinancialLedgerStore {
+  if (!raw || !Array.isArray(raw.entries)) return { entries: [] };
+  const deleted = new Set(
+    Array.isArray(raw.deletedIds) ? raw.deletedIds.filter((id) => typeof id === "string") : [],
+  );
+  const entries = raw.entries
+    .filter(isFinancialEntry)
+    .filter((e) => !deleted.has(e.id))
+    .sort((a, b) => b.date.localeCompare(a.date) || entryTimestamp(b).localeCompare(entryTimestamp(a)));
+  const deletedIds = deleted.size > 0 ? [...deleted].slice(-MAX_DELETED_IDS) : undefined;
+  return deletedIds ? { entries, deletedIds } : { entries };
+}
+
+function persist(store: FinancialLedgerStore, sync = true) {
   if (typeof window === "undefined") return;
+  const normalized = normalizeFinancialLedger(store);
   try {
-    localStorage.setItem(KEY, JSON.stringify(store));
+    localStorage.setItem(KEY, JSON.stringify(normalized));
   } catch {
     /* ignore */
   }
+  if (!sync) return;
   if (!hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync")
-    .then((m) => m.pushAppState("financial_ledger", store))
+    .then((m) => m.pushMergedFinancialLedger(normalized))
     .catch(() => undefined);
 }
 
@@ -62,16 +84,66 @@ export function loadFinancialLedger(): FinancialLedgerStore {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return { entries: [] };
-    const parsed = JSON.parse(raw) as Partial<FinancialLedgerStore>;
-    if (!parsed || !Array.isArray(parsed.entries)) return { entries: [] };
-    return { entries: parsed.entries.filter(isFinancialEntry) };
+    return normalizeFinancialLedger(JSON.parse(raw) as Partial<FinancialLedgerStore>);
   } catch {
     return { entries: [] };
   }
 }
 
-export function saveFinancialLedger(store: FinancialLedgerStore): void {
-  persist(store);
+export function saveFinancialLedger(store: FinancialLedgerStore, options?: { sync?: boolean }): void {
+  persist(store, options?.sync !== false);
+}
+
+/** Merge cloud + local — union by entry id, newer timestamp wins; honor deletedIds. */
+export function mergeFinancialLedgerStores(
+  cloud: FinancialLedgerStore,
+  local: FinancialLedgerStore,
+): { merged: FinancialLedgerStore; pushToCloud: boolean } {
+  const cloudNorm = normalizeFinancialLedger(cloud);
+  const localNorm = normalizeFinancialLedger(local);
+  const deletedIds = [
+    ...new Set([...(cloudNorm.deletedIds ?? []), ...(localNorm.deletedIds ?? [])]),
+  ].slice(-MAX_DELETED_IDS);
+  const deleted = new Set(deletedIds);
+  const byId = new Map<string, FinancialEntry>();
+
+  for (const source of [cloudNorm.entries, localNorm.entries]) {
+    for (const entry of source) {
+      if (deleted.has(entry.id)) continue;
+      const prev = byId.get(entry.id);
+      if (!prev || entryTimestamp(entry) >= entryTimestamp(prev)) {
+        byId.set(entry.id, entry);
+      }
+    }
+  }
+
+  const merged = normalizeFinancialLedger({
+    entries: Array.from(byId.values()),
+    deletedIds: deletedIds.length > 0 ? deletedIds : undefined,
+  });
+
+  const cloudById = new Map(cloudNorm.entries.map((e) => [e.id, e]));
+  let pushToCloud = false;
+  for (const entry of localNorm.entries) {
+    const remote = cloudById.get(entry.id);
+    if (!remote || entryTimestamp(entry) > entryTimestamp(remote)) {
+      pushToCloud = true;
+      break;
+    }
+  }
+  if (!pushToCloud) {
+    for (const id of localNorm.deletedIds ?? []) {
+      if (!(cloudNorm.deletedIds ?? []).includes(id)) {
+        pushToCloud = true;
+        break;
+      }
+    }
+  }
+  if (!pushToCloud && merged.entries.length > cloudNorm.entries.length) {
+    pushToCloud = true;
+  }
+
+  return { merged, pushToCloud };
 }
 
 function isFinancialEntry(raw: unknown): raw is FinancialEntry {
@@ -192,7 +264,12 @@ export function deleteFinancialEntry(id: string): boolean {
   const store = loadFinancialLedger();
   const next = store.entries.filter((e) => e.id !== id);
   if (next.length === store.entries.length) return false;
-  saveFinancialLedger({ entries: next });
+  const deletedIds = [...(store.deletedIds ?? [])];
+  if (!deletedIds.includes(id)) deletedIds.push(id);
+  saveFinancialLedger({
+    entries: next,
+    deletedIds: deletedIds.slice(-MAX_DELETED_IDS),
+  });
   return true;
 }
 
