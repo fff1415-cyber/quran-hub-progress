@@ -10,7 +10,7 @@ import { ManagerInboxPanel } from "@/components/role-workspace/ManagerInboxPanel
 import { ManagerDataPanel } from "@/components/role-workspace/ManagerDataPanel";
 import { ManagerGradesEvaluationPanel } from "@/components/role-workspace/ManagerGradesEvaluationPanel";
 import { ManagerGeneralSettingsPanel } from "@/components/role-workspace/ManagerGeneralSettingsPanel";
-import { ManagerStaffAttendanceMonitorPanel } from "@/components/ManagerStaffAttendanceMonitorPanel";
+import { ManagerStaffPanel } from "@/components/role-workspace/ManagerStaffPanel";
 import { FinancialLedgerPanel } from "@/components/role-workspace/FinancialLedgerPanel";
 import {
   Crown, Inbox, Database, UserCheck, GraduationCap, Settings, Wallet,
@@ -33,7 +33,7 @@ const VALID_SECTIONS: Record<MainTab, string[]> = {
   inbox: ["transfers", "notifications"],
   data: ["import", "halaqat", "students", "codes"],
   finances: ["ledger"],
-  staff: ["monitor"],
+  staff: ["monitor", "report"],
   grades: ["sard", "items", "weekly", "staff-settings"],
   settings: ["branding", "kiosk", "semesters", "messages", "push-notifications", "teacher-features", "student-portal"],
 };
@@ -129,7 +129,7 @@ export function ManagerPage() {
       label: "العاملين",
       icon: UserCheck,
       roles: ["manager"],
-      content: <ManagerStaffAttendanceMonitorPanel />,
+      content: <ManagerStaffPanel section={section} onSectionChange={setSection} />,
     },
     {
       id: "grades",
