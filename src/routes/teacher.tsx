@@ -682,9 +682,14 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     const ids = students.map((s) => s.id);
     if (isScientificProgramEnabled(cfg) && ids.length > 0) {
       repairScientificHalaqaProgram(halaqaId);
-      reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg, {
-        preserveOverrides: !options?.resetOverrides,
-      });
+      const preserveOverrides = !options?.resetOverrides;
+      window.setTimeout(() => {
+        reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg, {
+          preserveOverrides,
+        });
+        setSciData(loadScientificData(halaqaId));
+      }, 0);
+      return;
     }
     setSciData(loadScientificData(halaqaId));
   };
