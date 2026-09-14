@@ -36,8 +36,8 @@ import {
   isScientificProgramEnabled,
   loadScientificConfig,
   loadScientificData,
-  backfillMissingScientificScoresForHalaqa,
   repairScientificHalaqaProgram,
+  syncScientificScoresFromPrepForHalaqa,
   SCIENTIFIC_FIELD_LABELS,
   SCIENTIFIC_GRADES_CHANGED_EVENT,
   type ScientificGradeField,
@@ -109,6 +109,41 @@ export function TeacherHalaqaProgramsPanel({
   );
 
   const selectableWeeks = useMemo(() => getSelectableWeeks(calendar), [calendar]);
+
+  const allStudentIdsKey = useMemo(
+    () => allStudents.map((s) => s.id).sort().join(","),
+    [allStudents],
+  );
+
+  const syncScientificFromPrep = useCallback(() => {
+    const cfg = repairScientificHalaqaProgram(halaqaId);
+    if (!isScientificProgramEnabled(cfg)) return;
+    const ids = allStudentIdsKey ? allStudentIdsKey.split(",").filter(Boolean) : [];
+    if (ids.length === 0) return;
+    syncScientificScoresFromPrepForHalaqa(halaqaId, loadGrades(), ids, cfg);
+  }, [halaqaId, allStudentIdsKey]);
+
+  useEffect(() => {
+    syncScientificFromPrep();
+  }, [syncScientificFromPrep]);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const scheduleSync = () => {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(() => {
+        timer = null;
+        syncScientificFromPrep();
+      }, 300);
+    };
+    window.addEventListener(GRADES_CHANGED_EVENT, scheduleSync);
+    window.addEventListener(HALAQA_PROGRAMS_CHANGED_EVENT, scheduleSync);
+    return () => {
+      if (timer) clearTimeout(timer);
+      window.removeEventListener(GRADES_CHANGED_EVENT, scheduleSync);
+      window.removeEventListener(HALAQA_PROGRAMS_CHANGED_EVENT, scheduleSync);
+    };
+  }, [syncScientificFromPrep]);
 
   const refreshPrograms = () => {
     setPrograms(loadHalaqaPrograms(halaqaId));
@@ -612,14 +647,12 @@ function ProgramFillSection({
 }) {
   const standardPrograms = useMemo(() => filterStandardPrograms(programs), [programs]);
   const scientificProgram = useMemo(() => findScientificProgram(programs), [programs]);
-  const sciFields = useMemo((): ScientificGradeField[] => {
-    if (scientificProgram?.scientificFields?.length) {
-      return scientificProgram.scientificFields;
-    }
-    return enabledScientificFields(loadScientificConfig(halaqaId).fields);
-  }, [scientificProgram, halaqaId]);
   const [sciDataVersion, setSciDataVersion] = useState(0);
   const sciConfig = useMemo(() => loadScientificConfig(halaqaId), [halaqaId, sciDataVersion]);
+  const sciFields = useMemo(
+    (): ScientificGradeField[] => enabledScientificFields(sciConfig.fields),
+    [sciConfig.fields, sciDataVersion],
+  );
   const sciData = useMemo(
     () => loadScientificData(halaqaId),
     [halaqaId, sciDataVersion],
@@ -636,45 +669,11 @@ function ProgramFillSection({
     setSciDataVersion((v) => v + 1);
   }, []);
 
-  const backfillScientificScores = useCallback(() => {
-    const cfg = repairScientificHalaqaProgram(halaqaId);
-    if (!isScientificProgramEnabled(cfg)) {
-      refreshScientificData();
-      return;
-    }
-    const ids = allStudentIdsKey ? allStudentIdsKey.split(",").filter(Boolean) : [];
-    if (ids.length === 0) {
-      refreshScientificData();
-      return;
-    }
-    backfillMissingScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg);
-    refreshScientificData();
-  }, [halaqaId, allStudentIdsKey, refreshScientificData]);
-
   useEffect(() => {
-    backfillScientificScores();
-  }, [backfillScientificScores]);
-
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleBackfill = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        timer = null;
-        backfillScientificScores();
-      }, 300);
-    };
     const onScientificChanged = () => refreshScientificData();
     window.addEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onScientificChanged);
-    window.addEventListener(GRADES_CHANGED_EVENT, scheduleBackfill);
-    window.addEventListener(HALAQA_PROGRAMS_CHANGED_EVENT, scheduleBackfill);
-    return () => {
-      if (timer) clearTimeout(timer);
-      window.removeEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onScientificChanged);
-      window.removeEventListener(GRADES_CHANGED_EVENT, scheduleBackfill);
-      window.removeEventListener(HALAQA_PROGRAMS_CHANGED_EVENT, scheduleBackfill);
-    };
-  }, [backfillScientificScores, refreshScientificData]);
+    return () => window.removeEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onScientificChanged);
+  }, [refreshScientificData]);
 
   if (programs.length === 0) {
     return (
@@ -684,7 +683,7 @@ function ProgramFillSection({
     );
   }
 
-  const formatTotal = (n: number) => (n > 0 ? String(n) : "—");
+  const formatTotal = (n: number) => (Number.isFinite(n) && n !== 0 ? String(n) : n === 0 ? "0" : "—");
 
   const showScientific = isScientificProgramEnabled(sciConfig) && sciFields.length > 0;
   const sciWeeklyColSpan = showScientific ? sciFields.length + 1 : 0;

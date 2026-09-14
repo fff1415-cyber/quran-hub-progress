@@ -1,4 +1,5 @@
 import { hasAuthToken } from "@/lib/auth-session";
+import { getActiveComplexId } from "@/lib/tenant";
 
 /**
  * Semester-scoped financial ledger — income & expense entries per complex.
@@ -39,8 +40,32 @@ export interface FinancialLedgerStore {
   deletedIds?: string[];
 }
 
-const KEY = "qshatawi_financial_ledger_v1";
+const KEY_PREFIX = "qshatawi_financial_ledger_v1";
+const LEGACY_KEY = KEY_PREFIX;
 const MAX_DELETED_IDS = 5000;
+
+function storageKey(): string {
+  const cid = getActiveComplexId();
+  return cid && cid > 0 ? `${KEY_PREFIX}_c${cid}` : LEGACY_KEY;
+}
+
+/** Accept { entries } or legacy array / loose shapes from cloud JSON. */
+export function parseFinancialLedgerRaw(raw: unknown): FinancialLedgerStore {
+  if (raw == null) return { entries: [] };
+  if (Array.isArray(raw)) {
+    return normalizeFinancialLedger({ entries: raw });
+  }
+  if (typeof raw === "object") {
+    const obj = raw as Record<string, unknown>;
+    if (Array.isArray(obj.entries)) {
+      return normalizeFinancialLedger({
+        entries: obj.entries,
+        deletedIds: obj.deletedIds,
+      });
+    }
+  }
+  return { entries: [] };
+}
 
 function newId(prefix: string): string {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -51,23 +76,41 @@ function entryTimestamp(entry: FinancialEntry): string {
 }
 
 function normalizeFinancialLedger(raw: Partial<FinancialLedgerStore> | null | undefined): FinancialLedgerStore {
-  if (!raw || !Array.isArray(raw.entries)) return { entries: [] };
+  const base = raw && Array.isArray(raw.entries) ? raw : parseFinancialLedgerRaw(raw);
+  if (!Array.isArray(base.entries)) return { entries: [] };
   const deleted = new Set(
-    Array.isArray(raw.deletedIds) ? raw.deletedIds.filter((id) => typeof id === "string") : [],
+    Array.isArray(base.deletedIds) ? base.deletedIds.filter((id) => typeof id === "string") : [],
   );
-  const entries = raw.entries
-    .filter(isFinancialEntry)
+  const entries = base.entries
+    .map((e) => coerceFinancialEntry(e))
+    .filter((e): e is FinancialEntry => e !== null)
     .filter((e) => !deleted.has(e.id))
     .sort((a, b) => b.date.localeCompare(a.date) || entryTimestamp(b).localeCompare(entryTimestamp(a)));
   const deletedIds = deleted.size > 0 ? [...deleted].slice(-MAX_DELETED_IDS) : undefined;
   return deletedIds ? { entries, deletedIds } : { entries };
 }
 
+function readLocalLedger(): FinancialLedgerStore {
+  if (typeof window === "undefined") return { entries: [] };
+  const key = storageKey();
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) return parseFinancialLedgerRaw(JSON.parse(raw));
+    if (key !== LEGACY_KEY) {
+      const legacy = localStorage.getItem(LEGACY_KEY);
+      if (legacy) return parseFinancialLedgerRaw(JSON.parse(legacy));
+    }
+    return { entries: [] };
+  } catch {
+    return { entries: [] };
+  }
+}
+
 function persist(store: FinancialLedgerStore, sync = true) {
   if (typeof window === "undefined") return;
   const normalized = normalizeFinancialLedger(store);
   try {
-    localStorage.setItem(KEY, JSON.stringify(normalized));
+    localStorage.setItem(storageKey(), JSON.stringify(normalized));
   } catch {
     /* ignore */
   }
@@ -80,14 +123,24 @@ function persist(store: FinancialLedgerStore, sync = true) {
 }
 
 export function loadFinancialLedger(): FinancialLedgerStore {
+  return readLocalLedger();
+}
+
+/** Pull cloud ledger, merge with local, save — never overwrites cloud on read. */
+export async function refreshFinancialLedgerFromCloud(): Promise<FinancialLedgerStore> {
   if (typeof window === "undefined") return { entries: [] };
+  const local = readLocalLedger();
+  if (!hasAuthToken()) return local;
+  const { fetchCloudFinancialLedger } = await import("./cloud-sync");
+  let cloud: FinancialLedgerStore = { entries: [] };
   try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return { entries: [] };
-    return normalizeFinancialLedger(JSON.parse(raw) as Partial<FinancialLedgerStore>);
+    cloud = await fetchCloudFinancialLedger();
   } catch {
-    return { entries: [] };
+    return local;
   }
+  const { merged } = mergeFinancialLedgerStores(cloud, local);
+  saveFinancialLedger(merged, { sync: false });
+  return merged;
 }
 
 export function saveFinancialLedger(store: FinancialLedgerStore, options?: { sync?: boolean }): void {
@@ -146,15 +199,59 @@ export function mergeFinancialLedgerStores(
   return { merged, pushToCloud };
 }
 
-function isFinancialEntry(raw: unknown): raw is FinancialEntry {
-  if (!raw || typeof raw !== "object") return false;
+function parseFiniteNumber(raw: unknown): number | null {
+  if (typeof raw === "number" && Number.isFinite(raw)) return raw;
+  if (typeof raw === "string" && raw.trim() !== "") {
+    const n = Number.parseFloat(raw.replace(",", ".").trim());
+    return Number.isFinite(n) ? n : null;
+  }
+  return null;
+}
+
+function coerceFinancialEntry(raw: unknown): FinancialEntry | null {
+  if (!raw || typeof raw !== "object") return null;
   const e = raw as Record<string, unknown>;
-  if (e.type !== "income" && e.type !== "expense") return false;
-  if (typeof e.id !== "string" || typeof e.semesterId !== "string") return false;
-  if (typeof e.amount !== "number" || !Number.isFinite(e.amount)) return false;
-  if (typeof e.date !== "string" || typeof e.createdBy !== "string") return false;
-  if (e.type === "income") return typeof e.donorName === "string";
-  return typeof e.programName === "string" && typeof e.beneficiariesCount === "number";
+  if (e.type !== "income" && e.type !== "expense") return null;
+  if (typeof e.id !== "string" || typeof e.semesterId !== "string") return null;
+  const amount = parseFiniteNumber(e.amount);
+  if (amount === null) return null;
+  if (typeof e.date !== "string" || typeof e.createdBy !== "string") return null;
+  const createdAt = typeof e.createdAt === "string" ? e.createdAt : new Date().toISOString();
+  const updatedAt = typeof e.updatedAt === "string" ? e.updatedAt : undefined;
+
+  if (e.type === "income") {
+    if (typeof e.donorName !== "string") return null;
+    return {
+      id: e.id,
+      type: "income",
+      semesterId: e.semesterId,
+      donorName: e.donorName,
+      amount,
+      date: e.date,
+      createdBy: e.createdBy,
+      createdAt,
+      updatedAt,
+    };
+  }
+
+  const beneficiaries = parseFiniteNumber(e.beneficiariesCount);
+  if (typeof e.programName !== "string" || beneficiaries === null) return null;
+  return {
+    id: e.id,
+    type: "expense",
+    semesterId: e.semesterId,
+    programName: e.programName,
+    beneficiariesCount: Math.max(0, Math.round(beneficiaries)),
+    amount,
+    date: e.date,
+    createdBy: e.createdBy,
+    createdAt,
+    updatedAt,
+  };
+}
+
+function isFinancialEntry(raw: unknown): raw is FinancialEntry {
+  return coerceFinancialEntry(raw) !== null;
 }
 
 export function entriesForSemester(

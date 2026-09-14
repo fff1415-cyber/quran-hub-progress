@@ -46,8 +46,8 @@ export function buildCombinedProgramTotals(
   const sciTotals =
     isScientificProgramEnabled(sciConfig) && sciFields.length > 0
       ? weekNums.length === 1
-        ? studentScientificWeekTotals(sciData, studentId, weekNums[0]!, sciFields, workingDayKeys)
-        : studentScientificPeriodTotals(sciData, studentId, weekNums, sciFields, workingDayKeys)
+        ? studentScientificWeekTotals(sciData, studentId, weekNums[0]!, sciFields)
+        : studentScientificPeriodTotals(sciData, studentId, weekNums, sciFields)
       : null;
 
   const sciMax =

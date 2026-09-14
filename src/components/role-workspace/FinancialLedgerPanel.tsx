@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
-import { syncFromCloud } from "@/lib/cloud-sync";
 import {
   addExpenseEntry,
   addIncomeEntry,
@@ -8,6 +7,7 @@ import {
   entriesForSemester,
   formatMoney,
   loadFinancialLedger,
+  refreshFinancialLedgerFromCloud,
   sumAmounts,
   updateExpenseEntry,
   updateIncomeEntry,
@@ -26,7 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
-import { ArrowDownCircle, ArrowUpCircle, Loader2, Pencil, Plus, Trash2, Wallet } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, Loader2, Pencil, Plus, RefreshCw, Trash2, Wallet } from "lucide-react";
 import { toast } from "sonner";
 
 function todayIso(): string {
@@ -90,14 +90,27 @@ export function FinancialLedgerPanel() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [saving, setSaving] = useState(false);
+  const [syncing, setSyncing] = useState(false);
 
   const refreshLedger = useCallback(() => setLedgerTick((n) => n + 1), []);
+
+  const pullLedgerFromCloud = useCallback(async () => {
+    setSyncing(true);
+    try {
+      await refreshFinancialLedgerFromCloud();
+      refreshLedger();
+    } catch {
+      toast.error("تعذّر مزامنة الحركات المالية من السحابة");
+    } finally {
+      setSyncing(false);
+    }
+  }, [refreshLedger]);
 
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        await syncFromCloud({ force: true });
+        await refreshFinancialLedgerFromCloud();
         refreshLedger();
         const cal = await fetchActiveCalendar(true);
         if (!cancelled) setCalendar(cal);
@@ -110,25 +123,42 @@ export function FinancialLedgerPanel() {
     return () => { cancelled = true; };
   }, [refreshLedger]);
 
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === "visible") void pullLedgerFromCloud();
+    };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [pullLedgerFromCloud]);
+
   const semesterId = calendar?.semester?.id ?? null;
   const semesterName = calendar?.semester?.name ?? "—";
 
-  const { incomes, expenses, incomeTotal, expenseTotal, netTotal } = useMemo(() => {
+  const { incomes, expenses, incomeTotal, expenseTotal, netTotal, otherSemesterCount } = useMemo(() => {
     void ledgerTick;
-    if (!semesterId) {
-      return { incomes: [], expenses: [], incomeTotal: 0, expenseTotal: 0, netTotal: 0 };
-    }
     const store = loadFinancialLedger();
+    if (!semesterId) {
+      return {
+        incomes: [],
+        expenses: [],
+        incomeTotal: 0,
+        expenseTotal: 0,
+        netTotal: 0,
+        otherSemesterCount: store.entries.length,
+      };
+    }
     const inc = entriesForSemester(store, semesterId, "income") as FinancialIncomeEntry[];
     const exp = entriesForSemester(store, semesterId, "expense") as FinancialExpenseEntry[];
     const incomeTotal = sumAmounts(inc);
     const expenseTotal = sumAmounts(exp);
+    const otherSemesterCount = store.entries.filter((e) => e.semesterId !== semesterId).length;
     return {
       incomes: inc,
       expenses: exp,
       incomeTotal,
       expenseTotal,
       netTotal: incomeTotal - expenseTotal,
+      otherSemesterCount,
     };
   }, [ledgerTick, semesterId]);
 
@@ -249,20 +279,40 @@ export function FinancialLedgerPanel() {
           <p className="text-xs text-muted-foreground mt-1">
             الفصل الحالي: <span className="font-bold text-foreground">{semesterName}</span>
             {!semesterId && " — عرّف فصلاً دراسياً نشطاً لإضافة الحركات"}
+            {" · "}
+            الحركات مشتركة بين المدير والسكرتير
           </p>
         </div>
-        {canManage && (
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={openCreate}
-            disabled={!semesterId}
-            className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl gold-gradient text-primary-foreground font-bold text-sm disabled:opacity-50"
+            onClick={() => void pullLedgerFromCloud()}
+            disabled={syncing}
+            className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm font-bold hover:bg-secondary disabled:opacity-50"
           >
-            <Plus className="w-4 h-4" />
-            إضافة حركة
+            <RefreshCw className={cn("w-4 h-4", syncing && "animate-spin")} />
+            تحديث
           </button>
-        )}
+          {canManage && (
+            <button
+              type="button"
+              onClick={openCreate}
+              disabled={!semesterId}
+              className="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl gold-gradient text-primary-foreground font-bold text-sm disabled:opacity-50"
+            >
+              <Plus className="w-4 h-4" />
+              إضافة حركة
+            </button>
+          )}
+        </div>
       </div>
+
+      {otherSemesterCount > 0 && incomes.length === 0 && expenses.length === 0 && semesterId && (
+        <p className="text-xs text-amber-800 dark:text-amber-300 bg-amber-500/10 border border-amber-500/30 rounded-lg px-3 py-2">
+          يوجد {otherSemesterCount} حركة محفوظة لفصل دراسي مختلف عن الفصل النشط ({semesterName}).
+          راجع إعداد الفصل النشط من المدير إن كانت الحركات متوقعة لهذا الفصل.
+        </p>
+      )}
 
       <div className="grid sm:grid-cols-3 gap-3">
         <SummaryCard

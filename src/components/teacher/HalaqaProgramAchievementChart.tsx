@@ -1,15 +1,16 @@
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import { formatWeekOptionLabel, getSelectableWeeks } from "@/lib/academic-context";
 import { buildCombinedProgramTotals } from "@/lib/halaqa-program-combined-totals";
 import type { HalaqaProgram } from "@/lib/halaqa-programs";
 import { loadProgramGrades } from "@/lib/halaqa-programs";
-import { filterStandardPrograms, findScientificProgram } from "@/lib/scientific-grades-program";
+import { filterStandardPrograms } from "@/lib/scientific-grades-program";
 import {
   enabledScientificFields,
   loadScientificConfig,
   loadScientificData,
+  SCIENTIFIC_GRADES_CHANGED_EVENT,
   type ScientificGradeField,
 } from "@/lib/scientific-grades";
 import { loadStudents } from "@/lib/mock-data";
@@ -173,18 +174,25 @@ export function HalaqaProgramAchievementChart({
   onWeekChange,
 }: Props) {
   const [view, setView] = useState<"weekly" | "cumulative">("weekly");
+  const [sciDataVersion, setSciDataVersion] = useState(0);
   const chartRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {
+    const bump = () => setSciDataVersion((v) => v + 1);
+    window.addEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, bump);
+    return () => window.removeEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, bump);
+  }, []);
+
   const standardPrograms = useMemo(() => filterStandardPrograms(programs), [programs]);
-  const scientificProgram = useMemo(() => findScientificProgram(programs), [programs]);
-  const sciFields = useMemo((): ScientificGradeField[] => {
-    if (scientificProgram?.scientificFields?.length) {
-      return scientificProgram.scientificFields;
-    }
-    return enabledScientificFields(loadScientificConfig(halaqaId).fields);
-  }, [scientificProgram, halaqaId]);
-  const sciConfig = useMemo(() => loadScientificConfig(halaqaId), [halaqaId]);
-  const sciData = useMemo(() => loadScientificData(halaqaId), [halaqaId, grades]);
+  const sciConfig = useMemo(() => loadScientificConfig(halaqaId), [halaqaId, sciDataVersion]);
+  const sciFields = useMemo(
+    (): ScientificGradeField[] => enabledScientificFields(sciConfig.fields),
+    [sciConfig.fields, sciDataVersion],
+  );
+  const sciData = useMemo(
+    () => loadScientificData(halaqaId),
+    [halaqaId, sciDataVersion],
+  );
 
   const cumulativeWeekNums = useMemo(
     () => selectableWeeks.filter((w) => w.week_number <= weekNum).map((w) => w.week_number),

@@ -73,7 +73,7 @@ import {
   ScientificGradesToolbar,
 } from "@/components/teacher/ScientificGradesToolbar";
 import {
-  backfillMissingScientificScoresForHalaqa,
+  syncScientificScoresFromPrepForHalaqa,
   enabledScientificFields,
   getScientificDayScore,
   isScientificProgramEnabled,
@@ -683,12 +683,10 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     if (isScientificProgramEnabled(cfg) && ids.length > 0) {
       repairScientificHalaqaProgram(halaqaId);
       const preserveOverrides = !options?.resetOverrides;
-      window.setTimeout(() => {
-        reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg, {
-          preserveOverrides,
-        });
-        setSciData(loadScientificData(halaqaId));
-      }, 0);
+      reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg, {
+        preserveOverrides,
+      });
+      setSciData(loadScientificData(halaqaId));
       return;
     }
     setSciData(loadScientificData(halaqaId));
@@ -715,24 +713,19 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     setSciData(loadScientificData(halaqaId));
   }, [halaqaId]);
 
-  const backfillSciScores = useCallback(() => {
+  const syncSciScoresFromPrep = useCallback(() => {
     const cfg = loadScientificConfig(halaqaId);
     if (!isScientificProgramEnabled(cfg)) return;
     const ids = students.map((s) => s.id);
     if (ids.length === 0) return;
     repairScientificHalaqaProgram(halaqaId);
-    const changed = backfillMissingScientificScoresForHalaqa(
-      halaqaId,
-      loadGrades(),
-      ids,
-      cfg,
-    );
-    if (changed) refreshSciData();
+    syncScientificScoresFromPrepForHalaqa(halaqaId, loadGrades(), ids, cfg);
+    refreshSciData();
   }, [halaqaId, students, refreshSciData]);
 
   useEffect(() => {
-    backfillSciScores();
-  }, [backfillSciScores, sciFieldsKey, studentIdsKey]);
+    syncSciScoresFromPrep();
+  }, [syncSciScoresFromPrep, sciFieldsKey, studentIdsKey]);
 
   useEffect(() => {
     const onGradesChanged = () => {
@@ -741,7 +734,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       gradesBackfillTimerRef.current = setTimeout(() => {
         gradesBackfillTimerRef.current = null;
         if (sessionStorage.getItem("qs_syncing") === "1") return;
-        backfillSciScores();
+        syncSciScoresFromPrep();
       }, 300);
     };
     window.addEventListener(GRADES_CHANGED_EVENT, onGradesChanged);
@@ -750,7 +743,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       if (sciRefreshTimerRef.current) clearTimeout(sciRefreshTimerRef.current);
       window.removeEventListener(GRADES_CHANGED_EVENT, onGradesChanged);
     };
-  }, [backfillSciScores]);
+  }, [syncSciScoresFromPrep]);
 
   useEffect(() => {
     const onSciChanged = () => {

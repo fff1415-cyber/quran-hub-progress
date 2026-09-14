@@ -22,6 +22,7 @@ import { saveComplexFeatures, type ComplexFeatures } from "./complex-features";
 import {
   loadFinancialLedger,
   mergeFinancialLedgerStores,
+  parseFinancialLedgerRaw,
   saveFinancialLedger,
   type FinancialLedgerStore,
 } from "./financial-ledger";
@@ -354,24 +355,17 @@ export async function syncFromCloud(options?: {
         }
         if (state.has("complex_features")) saveComplexFeatures(state.get("complex_features") as ComplexFeatures);
         if (state.has("financial_ledger")) {
-          const cloud = state.get("financial_ledger") as FinancialLedgerStore;
+          const cloud = parseFinancialLedgerRaw(state.get("financial_ledger"));
           const local = loadFinancialLedger();
-          const { merged, pushToCloud } = mergeFinancialLedgerStores(cloud, local);
+          const { merged } = mergeFinancialLedgerStores(cloud, local);
           saveFinancialLedger(merged, { sync: false });
-          if (pushToCloud) {
-            try {
-              await secureSetAppState({ data: { token, key: "financial_ledger", value: merged } });
-            } catch {
-              /* local merge kept — will retry on next save */
-            }
-          }
         } else {
           const local = loadFinancialLedger();
-          if (local.entries.length > 0 || (local.deletedIds?.length ?? 0) > 0) {
+          if (local.entries.length > 0) {
             try {
               await secureSetAppState({ data: { token, key: "financial_ledger", value: local } });
             } catch {
-              /* ignore */
+              /* ignore — will retry on next save */
             }
           }
         }
@@ -638,10 +632,8 @@ let staffAttendancePushQueue: Promise<import("./staff-attendance").StaffCheckIn[
 export async function fetchCloudFinancialLedger(): Promise<FinancialLedgerStore> {
   const rows = await secureListAppState({ data: { token: tokenOrThrow(), key: "financial_ledger" } });
   const row = rows.find((r) => r.key === "financial_ledger");
-  if (!row?.value || typeof row.value !== "object" || Array.isArray(row.value)) {
-    return { entries: [] };
-  }
-  return row.value as FinancialLedgerStore;
+  if (!row?.value) return { entries: [] };
+  return parseFinancialLedgerRaw(row.value);
 }
 
 let financialLedgerPushQueue: Promise<FinancialLedgerStore> = Promise.resolve({ entries: [] });

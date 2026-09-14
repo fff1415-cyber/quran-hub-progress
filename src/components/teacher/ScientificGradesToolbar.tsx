@@ -87,7 +87,7 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
 
   const applyConfig = (next: ScientificGradesConfig, resetOverrides = false) => {
     setConfig(next);
-    saveScientificConfig(halaqaId, next);
+    saveScientificConfig(halaqaId, next, resetOverrides ? { resetOverrides: true } : undefined);
     onConfigChange(next, resetOverrides ? { resetOverrides: true } : undefined);
   };
 

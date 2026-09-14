@@ -253,7 +253,11 @@ export function validateDefaultScoresForFields(
   return null;
 }
 
-export function saveScientificConfig(halaqaId: number, config: ScientificGradesConfig) {
+export function saveScientificConfig(
+  halaqaId: number,
+  config: ScientificGradesConfig,
+  options?: { resetOverrides?: boolean },
+) {
   const store = loadScientificGradesStore();
   const incoming = pruneDefaultScoresForFields(
     normalizeDefaultScores(config.defaultScores),
@@ -264,6 +268,9 @@ export function saveScientificConfig(halaqaId: number, config: ScientificGradesC
     fields: { ...config.fields },
     defaultScores: incoming,
   };
+  if (options?.resetOverrides && store.overrides?.[String(halaqaId)]) {
+    delete store.overrides[String(halaqaId)];
+  }
   const enabled = enabledScientificFields(config.fields);
   if (config.visible && enabled.length > 0) {
     ensureScientificHalaqaProgram(halaqaId, enabled);
@@ -512,7 +519,9 @@ function syncScientificFieldInStore(
   if (
     isScientificScoreOverriddenInStore(store, halaqaId, studentId, weekNum, dayKey, field)
   ) {
-    return false;
+    const existing = getScientificDayScore(data, studentId, weekNum, dayKey, field);
+    if (existing.trim() !== "") return false;
+    clearScientificScoreOverrideInStore(store, halaqaId, studentId, weekNum, dayKey, field);
   }
   return writeScientificDayScoreInPlace(
     data,
@@ -651,6 +660,20 @@ export function reapplyScientificScoresForHalaqa(
   if (changed) saveScientificGradesStore(store);
 }
 
+/** Sync every prep day → scientific store for this halaqa (all weeks). Keeps manual edits. */
+export function syncScientificScoresFromPrepForHalaqa(
+  halaqaId: number,
+  grades: GradesStore,
+  studentIds: string[],
+  config?: ScientificGradesConfig,
+): void {
+  const cfg = config ?? loadScientificConfig(halaqaId);
+  if (!isScientificProgramEnabled(cfg)) return;
+  reapplyScientificScoresForHalaqa(halaqaId, grades, studentIds, cfg, {
+    preserveOverrides: true,
+  });
+}
+
 /** Fill empty scientific scores from existing prep — preserves teacher overrides and prior scores. */
 export function backfillMissingScientificScoresForHalaqa(
   halaqaId: number,
@@ -674,18 +697,6 @@ export function backfillMissingScientificScoresForHalaqa(
         if (!entry) continue;
         for (const field of ALL_SCIENTIFIC_FIELDS) {
           if (!config.fields[field]) continue;
-          if (
-            isScientificScoreOverriddenInStore(
-              store,
-              halaqaId,
-              studentId,
-              weekNum,
-              dayKey,
-              field,
-            )
-          ) {
-            continue;
-          }
           const existing = getScientificDayScore(data, studentId, weekNum, dayKey, field);
           if (existing.trim() !== "") continue;
           const score = resolveScientificScore(config, field, entry);
