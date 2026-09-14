@@ -748,7 +748,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   useEffect(() => {
     const onSciChanged = () => {
       setSciConfig(loadScientificConfig(halaqaId));
-      backfillSciScores();
+      syncSciScoresFromPrep();
       refreshSciData();
     };
     window.addEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onSciChanged);
@@ -760,7 +760,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       window.removeEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onSciChanged);
       window.removeEventListener("storage", onStorage);
     };
-  }, [backfillSciScores, halaqaId]);
+  }, [syncSciScoresFromPrep, halaqaId, refreshSciData]);
 
   const updateSciScore = (
     studentId: string,
