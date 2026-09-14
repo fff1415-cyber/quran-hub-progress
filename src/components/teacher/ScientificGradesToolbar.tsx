@@ -27,7 +27,10 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { cn } from "@/lib/utils";
+import { ATTENDANCE_OPTION_LABELS } from "@/lib/grade-input-settings";
+import { toast } from "sonner";
 import {
+  ALL_SCIENTIFIC_ATTENDANCE_OPTIONS,
   ALL_SCIENTIFIC_FIELDS,
   SCIENTIFIC_FIELD_LABELS,
   defaultScientificFields,
@@ -35,6 +38,8 @@ import {
   isScientificProgramEnabled,
   loadScientificConfig,
   saveScientificConfig,
+  validateDefaultScoresForFields,
+  type ScientificDefaultScores,
   type ScientificFieldsConfig,
   type ScientificGradesConfig,
 } from "@/lib/scientific-grades";
@@ -44,6 +49,17 @@ type Props = {
   onConfigChange: (config: ScientificGradesConfig, options?: { resetOverrides?: boolean }) => void;
 };
 
+function cloneDefaultScores(scores: ScientificDefaultScores): ScientificDefaultScores {
+  return {
+    ...scores,
+    attendance: scores.attendance ? { ...scores.attendance } : undefined,
+  };
+}
+
+function scoreInputClassName() {
+  return "w-full max-w-[80px] px-2 py-1.5 text-center text-xs rounded border border-border bg-input focus:border-primary focus:outline-none";
+}
+
 export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
   const [config, setConfig] = useState(() => loadScientificConfig(halaqaId));
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -51,15 +67,21 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
   const [draftFields, setDraftFields] = useState<ScientificFieldsConfig>(() => ({
     ...config.fields,
   }));
+  const [draftScores, setDraftScores] = useState<ScientificDefaultScores>(() =>
+    cloneDefaultScores(config.defaultScores),
+  );
 
   useEffect(() => {
-    setConfig(loadScientificConfig(halaqaId));
+    const next = loadScientificConfig(halaqaId);
+    setConfig(next);
   }, [halaqaId]);
 
   const isActive = isScientificProgramEnabled(config);
 
   const openSetup = () => {
-    setDraftFields({ ...config.fields });
+    const fresh = loadScientificConfig(halaqaId);
+    setDraftFields({ ...fresh.fields });
+    setDraftScores(cloneDefaultScores(fresh.defaultScores));
     setDialogOpen(true);
   };
 
@@ -69,28 +91,48 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
     onConfigChange(next, resetOverrides ? { resetOverrides: true } : undefined);
   };
 
+  const updateAttendanceScore = (option: (typeof ALL_SCIENTIFIC_ATTENDANCE_OPTIONS)[number], raw: string) => {
+    if (raw !== "" && !/^-?\d*\.?\d*$/.test(raw)) return;
+    setDraftScores((prev) => {
+      const attendance = { ...(prev.attendance ?? {}) };
+      if (raw.trim() === "") delete attendance[option];
+      else attendance[option] = raw;
+      return { ...prev, attendance };
+    });
+  };
+
+  const updateTaskScore = (field: "hifz" | "rabt" | "muraja", raw: string) => {
+    if (raw !== "" && !/^-?\d*\.?\d*$/.test(raw)) return;
+    setDraftScores((prev) => {
+      const next = { ...prev };
+      if (raw.trim() === "") delete next[field];
+      else next[field] = raw;
+      return next;
+    });
+  };
+
   const confirmSetup = () => {
-    const enabled = enabledScientificFields(draftFields);
-    if (enabled.length === 0) {
+    const err = validateDefaultScoresForFields(draftFields, draftScores);
+    if (err) {
+      toast.error(err);
       return false;
     }
-    const fresh = loadScientificConfig(halaqaId);
     const next: ScientificGradesConfig = {
       visible: true,
       fields: { ...draftFields },
-      defaultScores: fresh.defaultScores,
+      defaultScores: cloneDefaultScores(draftScores),
     };
-    applyConfig(next, !isActive);
+    applyConfig(next, true);
     setDialogOpen(false);
+    toast.success(isActive ? "تم حفظ إعدادات البرنامج العلمي" : "تم تفعيل البرنامج العلمي");
     return true;
   };
 
   const disableProgram = () => {
-    const fresh = loadScientificConfig(halaqaId);
     const next: ScientificGradesConfig = {
       visible: false,
       fields: defaultScientificFields(),
-      defaultScores: fresh.defaultScores,
+      defaultScores: {},
     };
     applyConfig(next);
     setDisableOpen(false);
@@ -112,7 +154,7 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
             <DropdownMenuContent align="start">
               <DropdownMenuItem onClick={openSetup} className="gap-2 cursor-pointer">
                 <Settings2 className="w-4 h-4" />
-                تعديل البنود
+                تعديل البنود والنقاط
               </DropdownMenuItem>
               <DropdownMenuItem
                 onClick={() => setDisableOpen(true)}
@@ -131,27 +173,62 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
       </div>
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>{isActive ? "تعديل البرنامج العلمي" : "تفعيل البرنامج العلمي"}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            اختر البنود التي تُحسب في «برنامج الحلقة». تُملأ الدرجة تلقائياً من نقاط المدير
-            عند التحضير، ويمكنك زيادتها أو تقليلها يدوياً.
+            فعّل البنود وحدّد نقاط كل بند. تُحسب الدرجات تلقائياً في «برنامج الحلقة» عند التحضير.
           </p>
-          <div className="space-y-3 py-2">
+          <div className="space-y-4 py-2">
             {ALL_SCIENTIFIC_FIELDS.map((field) => (
-              <div key={field} className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
-                <Label htmlFor={`sci-${field}`} className="font-medium cursor-pointer">
-                  {SCIENTIFIC_FIELD_LABELS[field]}
-                </Label>
-                <Switch
-                  id={`sci-${field}`}
-                  checked={draftFields[field]}
-                  onCheckedChange={(checked) =>
-                    setDraftFields((prev) => ({ ...prev, [field]: checked }))
-                  }
-                />
+              <div key={field} className="rounded-lg border border-border overflow-hidden">
+                <div className="flex items-center justify-between gap-3 px-3 py-2.5 bg-secondary/30">
+                  <Label htmlFor={`sci-${field}`} className="font-medium cursor-pointer">
+                    {SCIENTIFIC_FIELD_LABELS[field]}
+                  </Label>
+                  <Switch
+                    id={`sci-${field}`}
+                    checked={draftFields[field]}
+                    onCheckedChange={(checked) =>
+                      setDraftFields((prev) => ({ ...prev, [field]: checked }))
+                    }
+                  />
+                </div>
+                {draftFields[field] && field === "attendance" && (
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 p-3 border-t border-border/50">
+                    {ALL_SCIENTIFIC_ATTENDANCE_OPTIONS.map((opt) => (
+                      <div key={opt} className="space-y-1">
+                        <Label className="text-[10px] text-muted-foreground block text-center">
+                          {ATTENDANCE_OPTION_LABELS[opt]}
+                        </Label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          dir="ltr"
+                          placeholder="0"
+                          value={draftScores.attendance?.[opt] ?? ""}
+                          onChange={(e) => updateAttendanceScore(opt, e.target.value)}
+                          className={scoreInputClassName()}
+                        />
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {draftFields[field] && field !== "attendance" && (
+                  <div className="p-3 border-t border-border/50 flex items-center justify-between gap-3">
+                    <span className="text-xs text-muted-foreground">درجة {SCIENTIFIC_FIELD_LABELS[field]}</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      dir="ltr"
+                      placeholder="0"
+                      value={draftScores[field] ?? ""}
+                      onChange={(e) => updateTaskScore(field, e.target.value)}
+                      className={scoreInputClassName()}
+                    />
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -182,7 +259,7 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
               }}
               disabled={enabledScientificFields(draftFields).length === 0}
             >
-              {isActive ? "حفظ التعديلات" : "تفعيل وحفظ"}
+              {isActive ? "حفظ وإتمام" : "تفعيل وإتمام"}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -234,7 +311,7 @@ export function ScientificGradeInput({
         if (v === "" || /^-?\d*\.?\d*$/.test(v)) onChange(v);
       }}
       placeholder="—"
-      title={overridden ? "درجة معدّلة يدوياً عن نقطة المدير" : "درجة معتمدة من المدير — يمكن التعديل"}
+      title={overridden ? "درجة معدّلة يدوياً" : "درجة تلقائية — يمكن التعديل"}
       className={cn(
         "w-full min-w-0 max-w-[44px] mx-auto px-0.5 py-1 text-center text-xs rounded border focus:outline-none disabled:opacity-50",
         overridden

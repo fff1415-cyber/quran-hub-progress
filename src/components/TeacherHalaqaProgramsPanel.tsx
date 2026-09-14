@@ -18,14 +18,12 @@ import {
   saveHalaqaPrograms,
   saveProgramGrades,
   SCHEDULE_MODE_LABELS,
-  studentAllProgramsPeriodTotals,
-  studentAllProgramsWeekTotals,
-  studentSingleProgramPeriodTotals,
   type HalaqaProgram,
   type ProgramWeekTotals,
   type ProgramLevel,
   type ProgramScheduleMode,
 } from "@/lib/halaqa-programs";
+import { buildCombinedProgramTotals } from "@/lib/halaqa-program-combined-totals";
 import { downloadHalaqaProgramsWorkbook } from "@/lib/halaqa-programs-export";
 import {
   filterStandardPrograms,
@@ -42,11 +40,7 @@ import {
   repairScientificHalaqaProgram,
   SCIENTIFIC_FIELD_LABELS,
   SCIENTIFIC_GRADES_CHANGED_EVENT,
-  scientificPeriodMaxPossible,
-  studentScientificPeriodTotals,
-  studentScientificWeekTotals,
   type ScientificGradeField,
-  type ScientificWeekTotals,
 } from "@/lib/scientific-grades";
 import { CustomFieldSelect } from "@/components/plans/TeacherGradeInputs";
 import {
@@ -66,7 +60,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { BookOpen, Download, Info, Plus, Settings2, Trash2 } from "lucide-react";
+import { HalaqaProgramAchievementChart } from "@/components/teacher/HalaqaProgramAchievementChart";
+import { BarChart3, BookOpen, Download, Info, Plus, Settings2, Trash2 } from "lucide-react";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
@@ -92,7 +87,7 @@ export function TeacherHalaqaProgramsPanel({
   canManagePrograms,
   readOnly = false,
 }: Props) {
-  const [mode, setMode] = useState<"fill" | "setup">("fill");
+  const [mode, setMode] = useState<"fill" | "charts" | "setup">("fill");
   const [programs, setPrograms] = useState<HalaqaProgram[]>(() => loadHalaqaPrograms(halaqaId));
   const [grades, setGrades] = useState(() => loadProgramGrades(halaqaId));
   const [editorOpen, setEditorOpen] = useState(false);
@@ -163,7 +158,7 @@ export function TeacherHalaqaProgramsPanel({
 
   const openEditProgram = (p: HalaqaProgram) => {
     if (isScientificHalaqaProgram(p)) {
-      toast.info("برنامج درجات العلمي يُحدَّث تلقائياً من إعداد الدرجات العلمية");
+      toast.info("برنامج درجات العلمي يُحدَّث من تبويب التحضير — تعديل البنود والنقاط");
       return;
     }
     setEditing({
@@ -255,10 +250,36 @@ export function TeacherHalaqaProgramsPanel({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {!readOnly && (
+          <button
+            type="button"
+            onClick={() => setMode("fill")}
+            className={cn(
+              "px-3 py-2 rounded-lg text-sm font-bold border",
+              mode === "fill"
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border hover:bg-secondary",
+            )}
+          >
+            <BookOpen className="w-4 h-4 inline ml-1" />
+            التعبئة
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("charts")}
+            className={cn(
+              "px-3 py-2 rounded-lg text-sm font-bold border",
+              mode === "charts"
+                ? "border-primary bg-primary/10 text-primary"
+                : "border-border hover:bg-secondary",
+            )}
+          >
+            <BarChart3 className="w-4 h-4 inline ml-1" />
+            متابعة الإنجاز
+          </button>
+          {!readOnly && canManagePrograms && (
             <button
               type="button"
-              onClick={() => setMode(mode === "fill" ? "setup" : "fill")}
+              onClick={() => setMode("setup")}
               className={cn(
                 "px-3 py-2 rounded-lg text-sm font-bold border",
                 mode === "setup"
@@ -267,7 +288,7 @@ export function TeacherHalaqaProgramsPanel({
               )}
             >
               <Settings2 className="w-4 h-4 inline ml-1" />
-              {mode === "setup" ? "العودة للتعبئة" : "إعداد البرامج"}
+              إعداد البرامج
             </button>
           )}
           <button
@@ -287,6 +308,19 @@ export function TeacherHalaqaProgramsPanel({
           onAdd={openNewProgram}
           onEdit={openEditProgram}
           onRemove={removeProgram}
+        />
+      ) : mode === "charts" ? (
+        <HalaqaProgramAchievementChart
+          halaqaId={halaqaId}
+          halaqaName={halaqaName}
+          programs={programs}
+          grades={grades}
+          students={students}
+          weekNum={weekNum}
+          calendar={calendar}
+          selectableWeeks={selectableWeeks}
+          workingDayKeys={[...workingDayKeysFromSemester(calendar.semester?.working_days)]}
+          onWeekChange={onWeekChange}
         />
       ) : (
         <ProgramFillSection
@@ -549,59 +583,6 @@ function ProgramSetupSection({
   );
 }
 
-type CombinedTotals = {
-  earned: number;
-  maxPossible: number;
-  percent: number;
-  hasData: boolean;
-  hasPercent: boolean;
-  sciTotals: ScientificWeekTotals | null;
-  programBreakdown: { program: HalaqaProgram; totals: ProgramWeekTotals }[];
-};
-
-function buildCombinedTotals(
-  standardPrograms: HalaqaProgram[],
-  grades: ReturnType<typeof loadProgramGrades>,
-  studentId: string,
-  weekNums: number[],
-  sciData: ReturnType<typeof loadScientificData>,
-  sciFields: ScientificGradeField[],
-  workingDayKeys: string[],
-  sciConfig: ReturnType<typeof loadScientificConfig>,
-  scientificProgram: HalaqaProgram | null,
-): CombinedTotals {
-  const stdTotals =
-    weekNums.length === 1
-      ? studentAllProgramsWeekTotals(standardPrograms, grades, studentId, weekNums[0]!)
-      : studentAllProgramsPeriodTotals(standardPrograms, grades, studentId, weekNums);
-
-  const sciTotals =
-    isScientificProgramEnabled(sciConfig) && sciFields.length > 0
-      ? weekNums.length === 1
-        ? studentScientificWeekTotals(sciData, studentId, weekNums[0]!, sciFields, workingDayKeys)
-        : studentScientificPeriodTotals(sciData, studentId, weekNums, sciFields, workingDayKeys)
-      : null;
-
-  const sciMax =
-    sciFields.length > 0 ? scientificPeriodMaxPossible(sciConfig, weekNums, workingDayKeys) : 0;
-  const sciEarned = sciTotals?.total ?? 0;
-  const earned = stdTotals.earned + sciEarned;
-  const maxPossible = stdTotals.maxPossible + sciMax;
-
-  return {
-    earned,
-    maxPossible,
-    percent: maxPossible > 0 ? Math.round((earned / maxPossible) * 100) : 0,
-    hasData: stdTotals.filledSlots > 0 || sciEarned > 0,
-    hasPercent: maxPossible > 0,
-    sciTotals,
-    programBreakdown: standardPrograms.map((p) => ({
-      program: p,
-      totals: studentSingleProgramPeriodTotals(p, grades, studentId, weekNums),
-    })),
-  };
-}
-
 function ProgramFillSection({
   halaqaId,
   programs,
@@ -794,7 +775,7 @@ function ProgramFillSection({
           </thead>
           <tbody>
             {students.map((s) => {
-              const weekly = buildCombinedTotals(
+              const weekly = buildCombinedProgramTotals(
                 standardPrograms,
                 grades,
                 s.id,
@@ -803,9 +784,8 @@ function ProgramFillSection({
                 sciFields,
                 workingDayKeys,
                 sciConfig,
-                scientificProgram,
               );
-              const cumulative = buildCombinedTotals(
+              const cumulative = buildCombinedProgramTotals(
                 standardPrograms,
                 grades,
                 s.id,
@@ -814,7 +794,6 @@ function ProgramFillSection({
                 sciFields,
                 workingDayKeys,
                 sciConfig,
-                scientificProgram,
               );
               return (
                 <tr key={s.id} className="border-b border-border/50 hover:bg-accent/20">

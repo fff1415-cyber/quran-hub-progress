@@ -1,6 +1,6 @@
-/** Manager-configured numeric scores — reflected in halaqa program totals only. */
+/** Teacher-configured numeric scores — reflected in halaqa program totals only. */
 import { hasAuthToken } from "@/lib/auth-session";
-import type { AttendanceOption } from "@/lib/grade-input-settings";
+import { ATTENDANCE_OPTION_LABELS, type AttendanceOption } from "@/lib/grade-input-settings";
 import type { DayEntry, GradesStore } from "@/lib/mock-data";
 
 import {
@@ -27,7 +27,7 @@ export type ScientificGradesConfig = {
   /** Teacher enabled the scientific program for this halaqa. */
   visible: boolean;
   fields: ScientificFieldsConfig;
-  /** Fixed scores per halaqa — set by manager, applied automatically on teacher input. */
+  /** Fixed scores per halaqa — set by teacher when enabling the program. */
   defaultScores: ScientificDefaultScores;
 };
 
@@ -210,23 +210,59 @@ export function loadScientificConfig(halaqaId: number): ScientificGradesConfig {
   };
 }
 
-function hasDefaultScoresContent(scores: ScientificDefaultScores): boolean {
-  if (scores.hifz?.trim() || scores.rabt?.trim() || scores.muraja?.trim()) return true;
-  const att = scores.attendance ?? {};
-  return Object.values(att).some((v) => typeof v === "string" && v.trim() !== "");
+export function pruneDefaultScoresForFields(
+  scores: ScientificDefaultScores,
+  fields: ScientificFieldsConfig,
+): ScientificDefaultScores {
+  const normalized = normalizeDefaultScores(scores);
+  const out: ScientificDefaultScores = {};
+  if (fields.attendance && normalized.attendance) {
+    out.attendance = { ...normalized.attendance };
+  }
+  if (fields.hifz && normalized.hifz?.trim()) out.hifz = normalized.hifz;
+  if (fields.rabt && normalized.rabt?.trim()) out.rabt = normalized.rabt;
+  if (fields.muraja && normalized.muraja?.trim()) out.muraja = normalized.muraja;
+  return out;
+}
+
+/** Validate teacher score setup for enabled fields. Returns Arabic error or null. */
+export function validateDefaultScoresForFields(
+  fields: ScientificFieldsConfig,
+  scores: ScientificDefaultScores,
+): string | null {
+  const enabled = enabledScientificFields(fields);
+  if (enabled.length === 0) return "فعّل بنداً واحداً على الأقل";
+
+  if (fields.attendance) {
+    for (const opt of ALL_SCIENTIFIC_ATTENDANCE_OPTIONS) {
+      const raw = scores.attendance?.[opt];
+      if (raw === undefined || raw.trim() === "" || parseScientificScore(raw) === null) {
+        return `أدخل درجة «${ATTENDANCE_OPTION_LABELS[opt]}» للحضور`;
+      }
+    }
+  }
+
+  for (const field of ["hifz", "rabt", "muraja"] as const) {
+    if (!fields[field]) continue;
+    const raw = scores[field];
+    if (!raw?.trim() || parseScientificScore(raw) === null) {
+      return `أدخل درجة ${SCIENTIFIC_FIELD_LABELS[field]}`;
+    }
+  }
+
+  return null;
 }
 
 export function saveScientificConfig(halaqaId: number, config: ScientificGradesConfig) {
   const store = loadScientificGradesStore();
-  const existing = store.configs[String(halaqaId)];
-  const incoming = normalizeDefaultScores(config.defaultScores);
+  const incoming = pruneDefaultScoresForFields(
+    normalizeDefaultScores(config.defaultScores),
+    config.fields,
+  );
   store.configs[String(halaqaId)] = {
     visible: config.visible,
     fields: { ...config.fields },
-    // Teacher toggles fields only — never wipe manager-configured default scores.
-    defaultScores: hasDefaultScoresContent(incoming)
-      ? incoming
-      : normalizeDefaultScores(existing?.defaultScores ?? {}),
+    defaultScores: incoming,
   };
   const enabled = enabledScientificFields(config.fields);
   if (config.visible && enabled.length > 0) {
