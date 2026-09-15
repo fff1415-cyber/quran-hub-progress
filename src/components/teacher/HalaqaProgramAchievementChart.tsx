@@ -127,30 +127,61 @@ function buildChartRows(
   }));
 }
 
-async function downloadSvgAsPng(container: HTMLElement, filename: string) {
-  const svg = container.querySelector("svg.recharts-surface");
+async function downloadSvgAsPng(
+  container: HTMLElement,
+  filename: string,
+  labelPadBottom: number,
+) {
+  const svg = container.querySelector("svg.recharts-surface") as SVGSVGElement | null;
   if (!svg) {
     toast.error("تعذّر العثور على الرسم — جرّب بعد ظهور الأعمدة");
     return;
   }
 
-  const rect = svg.getBoundingClientRect();
-  const width = Math.max(1, Math.ceil(rect.width || container.clientWidth));
-  const height = Math.max(1, Math.ceil(rect.height || container.clientHeight));
-  if (width <= 1 || height <= 1) {
-    toast.error("الرسم غير جاهز بعد — انتظر ثانية ثم أعد المحاولة");
-    return;
-  }
-  const clone = svg.cloneNode(true) as SVGSVGElement;
-  clone.setAttribute("width", String(width));
-  clone.setAttribute("height", String(height));
-  if (!clone.getAttribute("xmlns")) {
-    clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  let bbox: DOMRect;
+  try {
+    bbox = svg.getBBox();
+  } catch {
+    const rect = svg.getBoundingClientRect();
+    bbox = {
+      x: 0,
+      y: 0,
+      width: rect.width,
+      height: rect.height,
+    } as DOMRect;
   }
 
+  const pad = {
+    top: 16,
+    right: 16,
+    bottom: Math.max(28, labelPadBottom + 12),
+    left: 12,
+  };
+  const viewX = bbox.x - pad.left;
+  const viewY = bbox.y - pad.top;
+  const width = Math.max(1, Math.ceil(bbox.width + pad.left + pad.right));
+  const height = Math.max(1, Math.ceil(bbox.height + pad.top + pad.bottom));
+
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
+  clone.setAttribute("viewBox", `${viewX} ${viewY} ${width} ${height}`);
+  clone.setAttribute("width", String(width));
+  clone.setAttribute("height", String(height));
+  clone.style.overflow = "visible";
+
+  const fg = getComputedStyle(container).color || "#292524";
+  clone.querySelectorAll("text, tspan").forEach((node) => {
+    const el = node as SVGElement;
+    const fill = el.getAttribute("fill");
+    if (!fill || fill === "currentColor") el.setAttribute("fill", fg);
+  });
+
   const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  bg.setAttribute("width", "100%");
-  bg.setAttribute("height", "100%");
+  bg.setAttribute("x", String(viewX));
+  bg.setAttribute("y", String(viewY));
+  bg.setAttribute("width", String(width));
+  bg.setAttribute("height", String(height));
   bg.setAttribute("fill", "#ffffff");
   clone.insertBefore(bg, clone.firstChild);
 
@@ -273,7 +304,7 @@ export function HalaqaProgramAchievementChart({
   const handleExport = async () => {
     if (!chartRef.current) return;
     try {
-      await downloadSvgAsPng(chartRef.current, exportFilename);
+      await downloadSvgAsPng(chartRef.current, exportFilename, nameLabelArea);
       toast.success("تم تنزيل صورة الرسم");
     } catch {
       toast.error("تعذّر تصدير الصورة");
