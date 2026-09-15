@@ -102,15 +102,19 @@ function buildChartRows(
 }
 
 async function downloadSvgAsPng(container: HTMLElement, filename: string) {
-  const svg = container.querySelector("svg");
+  const svg = container.querySelector("svg.recharts-surface");
   if (!svg) {
-    toast.error("تعذّر العثور على الرسم");
+    toast.error("تعذّر العثور على الرسم — جرّب بعد ظهور الأعمدة");
     return;
   }
 
   const rect = svg.getBoundingClientRect();
-  const width = Math.max(1, Math.ceil(rect.width));
-  const height = Math.max(1, Math.ceil(rect.height));
+  const width = Math.max(1, Math.ceil(rect.width || container.clientWidth));
+  const height = Math.max(1, Math.ceil(rect.height || container.clientHeight));
+  if (width <= 1 || height <= 1) {
+    toast.error("الرسم غير جاهز بعد — انتظر ثانية ثم أعد المحاولة");
+    return;
+  }
   const clone = svg.cloneNode(true) as SVGSVGElement;
   clone.setAttribute("width", String(width));
   clone.setAttribute("height", String(height));
@@ -310,12 +314,16 @@ export function HalaqaProgramAchievementChart({
           <p className="text-sm">لا توجد بيانات إنجاز بعد لهذه الفترة</p>
         </div>
       ) : (
-        <div ref={chartRef} className="w-full">
+        <div ref={chartRef} className="h-[min(420px,60vh)] min-h-[320px] w-full">
           <ChartContainer
             config={chartConfig}
-            className="aspect-auto min-h-[320px] w-full [&_.recharts-cartesian-axis-tick_text]:text-[11px]"
+            className="!aspect-auto h-full w-full [&_.recharts-cartesian-axis-tick_text]:fill-foreground [&_.recharts-cartesian-axis-tick_text]:text-[11px] [&_.recharts-responsive-container]:!h-full"
           >
-            <BarChart data={chartData} margin={{ top: 12, right: 8, left: 0, bottom: 64 }}>
+          <BarChart
+            data={chartData}
+            margin={{ top: 12, right: 8, left: 0, bottom: 64 }}
+            accessibilityLayer
+          >
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
               <XAxis
                 dataKey="name"
@@ -352,7 +360,13 @@ export function HalaqaProgramAchievementChart({
                   />
                 }
               />
-              <Bar dataKey="percent" radius={[6, 6, 0, 0]} maxBarSize={56}>
+              <Bar
+                dataKey="percent"
+                radius={[6, 6, 0, 0]}
+                maxBarSize={56}
+                isAnimationActive={false}
+                minPointSize={3}
+              >
                 {chartData.map((row) => (
                   <Cell key={row.id} fill={row.color} />
                 ))}
