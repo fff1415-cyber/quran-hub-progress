@@ -69,6 +69,32 @@ function lerpColor(
   return `rgb(${r}, ${g}, ${b})`;
 }
 
+/** Vertical student name under each bar — pivot below axis so labels don't overlap bars. */
+function VerticalNameTick({
+  x,
+  y,
+  payload,
+}: {
+  x?: number;
+  y?: number;
+  payload?: { value?: string };
+}) {
+  if (x == null || y == null || !payload?.value) return null;
+  const pivotY = y + 22;
+  return (
+    <text
+      x={x}
+      y={pivotY}
+      fill="currentColor"
+      fontSize={11}
+      textAnchor="end"
+      transform={`rotate(-90, ${x}, ${pivotY})`}
+    >
+      {payload.value}
+    </text>
+  );
+}
+
 /** أخضر غامق للأفضل → أخضر فاتح في الوسط → أحمر للأضعف */
 export function rankBarColor(rankIndex: number, total: number): string {
   if (total <= 1) return lerpColor(DARK_GREEN, DARK_GREEN, 0);
@@ -232,6 +258,11 @@ export function HalaqaProgramAchievementChart({
 
   const chartData = useMemo(() => buildChartRows(students, getTotals), [students, getTotals]);
 
+  const nameLabelArea = useMemo(() => {
+    const longest = chartData.reduce((max, row) => Math.max(max, row.name.length), 0);
+    return Math.min(200, Math.max(104, longest * 11 + 32));
+  }, [chartData]);
+
   const chartConfig = {
     percent: { label: "النسبة", color: "hsl(var(--primary))" },
   };
@@ -321,7 +352,7 @@ export function HalaqaProgramAchievementChart({
           >
           <BarChart
             data={chartData}
-            margin={{ top: 12, right: 8, left: 0, bottom: 92 }}
+            margin={{ top: 12, right: 8, left: 0, bottom: nameLabelArea }}
             accessibilityLayer
           >
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -330,10 +361,8 @@ export function HalaqaProgramAchievementChart({
                 tickLine={false}
                 axisLine={false}
                 interval={0}
-                angle={-35}
-                textAnchor="end"
-                height={88}
-                tick={{ fontSize: 11, dy: 14 }}
+                height={nameLabelArea}
+                tick={VerticalNameTick}
               />
               <YAxis
                 tickLine={false}
