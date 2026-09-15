@@ -232,11 +232,6 @@ export function HalaqaProgramAchievementChart({
 
   const chartData = useMemo(() => buildChartRows(students, getTotals), [students, getTotals]);
 
-  const xAxisHeight = useMemo(() => {
-    const longest = chartData.reduce((max, row) => Math.max(max, row.name.length), 0);
-    return Math.min(180, Math.max(96, longest * 8));
-  }, [chartData]);
-
   const chartConfig = {
     percent: { label: "النسبة", color: "hsl(var(--primary))" },
   };
@@ -326,7 +321,7 @@ export function HalaqaProgramAchievementChart({
           >
           <BarChart
             data={chartData}
-            margin={{ top: 12, right: 8, left: 0, bottom: xAxisHeight - 8 }}
+            margin={{ top: 12, right: 8, left: 0, bottom: 92 }}
             accessibilityLayer
           >
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
@@ -335,10 +330,10 @@ export function HalaqaProgramAchievementChart({
                 tickLine={false}
                 axisLine={false}
                 interval={0}
-                angle={-90}
-                textAnchor="middle"
-                height={xAxisHeight}
-                tick={{ fontSize: 11 }}
+                angle={-35}
+                textAnchor="end"
+                height={88}
+                tick={{ fontSize: 11, dy: 14 }}
               />
               <YAxis
                 tickLine={false}
