@@ -80,14 +80,14 @@ function VerticalNameTick({
   payload?: { value?: string };
 }) {
   if (x == null || y == null || !payload?.value) return null;
-  const pivotY = y + 22;
+  const pivotY = y + 8;
   return (
     <text
       x={x}
       y={pivotY}
       fill="currentColor"
       fontSize={11}
-      textAnchor="end"
+      textAnchor="start"
       transform={`rotate(-90, ${x}, ${pivotY})`}
     >
       {payload.value}
@@ -260,7 +260,7 @@ export function HalaqaProgramAchievementChart({
 
   const nameLabelArea = useMemo(() => {
     const longest = chartData.reduce((max, row) => Math.max(max, row.name.length), 0);
-    return Math.min(200, Math.max(104, longest * 11 + 32));
+    return Math.min(140, Math.max(72, longest * 7 + 16));
   }, [chartData]);
 
   const chartConfig = {
@@ -345,14 +345,18 @@ export function HalaqaProgramAchievementChart({
           <p className="text-sm">لا توجد بيانات إنجاز بعد لهذه الفترة</p>
         </div>
       ) : (
-        <div ref={chartRef} className="h-[min(420px,60vh)] min-h-[320px] w-full">
+        <div
+          ref={chartRef}
+          className="w-full"
+          style={{ height: Math.min(560, Math.max(380, 280 + nameLabelArea)) }}
+        >
           <ChartContainer
             config={chartConfig}
             className="!aspect-auto h-full w-full [&_.recharts-cartesian-axis-tick_text]:fill-foreground [&_.recharts-cartesian-axis-tick_text]:text-[11px] [&_.recharts-responsive-container]:!h-full"
           >
           <BarChart
             data={chartData}
-            margin={{ top: 12, right: 8, left: 0, bottom: nameLabelArea }}
+            margin={{ top: 12, right: 8, left: 0, bottom: 8 }}
             accessibilityLayer
           >
               <CartesianGrid vertical={false} strokeDasharray="3 3" />
