@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { toPng } from "html-to-image";
 import { Bar, BarChart, CartesianGrid, Cell, XAxis, YAxis } from "recharts";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import { formatWeekOptionLabel, getSelectableWeeks } from "@/lib/academic-context";
@@ -127,99 +128,18 @@ function buildChartRows(
   }));
 }
 
-async function downloadSvgAsPng(
-  container: HTMLElement,
-  filename: string,
-  labelPadBottom: number,
-) {
-  const svg = container.querySelector("svg.recharts-surface") as SVGSVGElement | null;
-  if (!svg) {
-    toast.error("تعذّر العثور على الرسم — جرّب بعد ظهور الأعمدة");
-    return;
-  }
-
-  let bbox: DOMRect;
-  try {
-    bbox = svg.getBBox();
-  } catch {
-    const rect = svg.getBoundingClientRect();
-    bbox = {
-      x: 0,
-      y: 0,
-      width: rect.width,
-      height: rect.height,
-    } as DOMRect;
-  }
-
-  const pad = {
-    top: 16,
-    right: 16,
-    bottom: Math.max(28, labelPadBottom + 12),
-    left: 12,
-  };
-  const viewX = bbox.x - pad.left;
-  const viewY = bbox.y - pad.top;
-  const width = Math.max(1, Math.ceil(bbox.width + pad.left + pad.right));
-  const height = Math.max(1, Math.ceil(bbox.height + pad.top + pad.bottom));
-
-  const clone = svg.cloneNode(true) as SVGSVGElement;
-  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
-  clone.setAttribute("xmlns:xlink", "http://www.w3.org/1999/xlink");
-  clone.setAttribute("viewBox", `${viewX} ${viewY} ${width} ${height}`);
-  clone.setAttribute("width", String(width));
-  clone.setAttribute("height", String(height));
-  clone.style.overflow = "visible";
-
-  const fg = getComputedStyle(container).color || "#292524";
-  clone.querySelectorAll("text, tspan").forEach((node) => {
-    const el = node as SVGElement;
-    const fill = el.getAttribute("fill");
-    if (!fill || fill === "currentColor") el.setAttribute("fill", fg);
+/** Capture the chart block as rendered on screen (WYSIWYG). */
+async function downloadChartAsPng(node: HTMLElement, filename: string) {
+  const dataUrl = await toPng(node, {
+    pixelRatio: 2,
+    backgroundColor: "#ffffff",
+    cacheBust: true,
+    skipFonts: false,
   });
-
-  const bg = document.createElementNS("http://www.w3.org/2000/svg", "rect");
-  bg.setAttribute("x", String(viewX));
-  bg.setAttribute("y", String(viewY));
-  bg.setAttribute("width", String(width));
-  bg.setAttribute("height", String(height));
-  bg.setAttribute("fill", "#ffffff");
-  clone.insertBefore(bg, clone.firstChild);
-
-  const source = new XMLSerializer().serializeToString(clone);
-  const url = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(source)}`;
-
-  await new Promise<void>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      const scale = 2;
-      const canvas = document.createElement("canvas");
-      canvas.width = width * scale;
-      canvas.height = height * scale;
-      const ctx = canvas.getContext("2d");
-      if (!ctx) {
-        reject(new Error("canvas"));
-        return;
-      }
-      ctx.fillStyle = "#ffffff";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.scale(scale, scale);
-      ctx.drawImage(img, 0, 0, width, height);
-      canvas.toBlob((blob) => {
-        if (!blob) {
-          reject(new Error("blob"));
-          return;
-        }
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
-        link.download = filename;
-        link.click();
-        URL.revokeObjectURL(link.href);
-        resolve();
-      }, "image/png");
-    };
-    img.onerror = () => reject(new Error("image"));
-    img.src = url;
-  });
+  const link = document.createElement("a");
+  link.href = dataUrl;
+  link.download = filename;
+  link.click();
 }
 
 export function HalaqaProgramAchievementChart({
@@ -236,7 +156,7 @@ export function HalaqaProgramAchievementChart({
 }: Props) {
   const [view, setView] = useState<"weekly" | "cumulative">("weekly");
   const [sciDataVersion, setSciDataVersion] = useState(0);
-  const chartRef = useRef<HTMLDivElement>(null);
+  const exportRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const bump = () => setSciDataVersion((v) => v + 1);
@@ -302,9 +222,9 @@ export function HalaqaProgramAchievementChart({
   const exportFilename = `${halaqaName}-انجاز-${view === "weekly" ? `اسبوع-${weekNum}` : `تراكمي-${weekNum}`}.png`;
 
   const handleExport = async () => {
-    if (!chartRef.current) return;
+    if (!exportRef.current) return;
     try {
-      await downloadSvgAsPng(chartRef.current, exportFilename, nameLabelArea);
+      await downloadChartAsPng(exportRef.current, exportFilename);
       toast.success("تم تنزيل صورة الرسم");
     } catch {
       toast.error("تعذّر تصدير الصورة");
@@ -376,85 +296,86 @@ export function HalaqaProgramAchievementChart({
           <p className="text-sm">لا توجد بيانات إنجاز بعد لهذه الفترة</p>
         </div>
       ) : (
-        <div
-          ref={chartRef}
-          className="w-full"
-          style={{ height: Math.min(560, Math.max(380, 280 + nameLabelArea)) }}
-        >
-          <ChartContainer
-            config={chartConfig}
-            className="!aspect-auto h-full w-full [&_.recharts-cartesian-axis-tick_text]:fill-foreground [&_.recharts-cartesian-axis-tick_text]:text-[11px] [&_.recharts-responsive-container]:!h-full"
+        <div ref={exportRef} className="space-y-2">
+          <div
+            className="w-full"
+            style={{ height: Math.min(560, Math.max(380, 280 + nameLabelArea)) }}
           >
-          <BarChart
-            data={chartData}
-            margin={{ top: 12, right: 8, left: 0, bottom: 8 }}
-            accessibilityLayer
-          >
-              <CartesianGrid vertical={false} strokeDasharray="3 3" />
-              <XAxis
-                dataKey="name"
-                tickLine={false}
-                axisLine={false}
-                interval={0}
-                height={nameLabelArea}
-                tick={VerticalNameTick}
-              />
-              <YAxis
-                tickLine={false}
-                axisLine={false}
-                domain={[0, 100]}
-                tickFormatter={(v) => `${v}%`}
-                width={40}
-              />
-              <ChartTooltip
-                cursor={{ fill: "hsl(var(--muted) / 0.35)" }}
-                content={
-                  <ChartTooltipContent
-                    formatter={(value, _name, item) => {
-                      const row = item.payload as ChartRow;
-                      return (
-                        <div className="flex flex-col gap-0.5 text-right">
-                          <span className="font-bold">{row.percent}%</span>
-                          <span className="text-muted-foreground text-xs">
-                            {row.hasData ? `${row.earned} / ${row.maxPossible}` : "لا بيانات بعد"}
-                          </span>
-                        </div>
-                      );
-                    }}
-                    labelFormatter={(label) => String(label)}
-                  />
-                }
-              />
-              <Bar
-                dataKey="percent"
-                radius={[6, 6, 0, 0]}
-                maxBarSize={56}
-                isAnimationActive={false}
-                minPointSize={3}
+            <ChartContainer
+              config={chartConfig}
+              className="!aspect-auto h-full w-full [&_.recharts-cartesian-axis-tick_text]:fill-foreground [&_.recharts-cartesian-axis-tick_text]:text-[11px] [&_.recharts-responsive-container]:!h-full"
+            >
+              <BarChart
+                data={chartData}
+                margin={{ top: 12, right: 8, left: 0, bottom: 8 }}
+                accessibilityLayer
               >
-                {chartData.map((row) => (
-                  <Cell key={row.id} fill={row.color} />
-                ))}
-              </Bar>
-            </BarChart>
-          </ChartContainer>
+                <CartesianGrid vertical={false} strokeDasharray="3 3" />
+                <XAxis
+                  dataKey="name"
+                  tickLine={false}
+                  axisLine={false}
+                  interval={0}
+                  height={nameLabelArea}
+                  tick={VerticalNameTick}
+                />
+                <YAxis
+                  tickLine={false}
+                  axisLine={false}
+                  domain={[0, 100]}
+                  tickFormatter={(v) => `${v}%`}
+                  width={40}
+                />
+                <ChartTooltip
+                  cursor={{ fill: "hsl(var(--muted) / 0.35)" }}
+                  content={
+                    <ChartTooltipContent
+                      formatter={(value, _name, item) => {
+                        const row = item.payload as ChartRow;
+                        return (
+                          <div className="flex flex-col gap-0.5 text-right">
+                            <span className="font-bold">{row.percent}%</span>
+                            <span className="text-muted-foreground text-xs">
+                              {row.hasData ? `${row.earned} / ${row.maxPossible}` : "لا بيانات بعد"}
+                            </span>
+                          </div>
+                        );
+                      }}
+                      labelFormatter={(label) => String(label)}
+                    />
+                  }
+                />
+                <Bar
+                  dataKey="percent"
+                  radius={[6, 6, 0, 0]}
+                  maxBarSize={56}
+                  isAnimationActive={false}
+                  minPointSize={3}
+                >
+                  {chartData.map((row) => (
+                    <Cell key={row.id} fill={row.color} />
+                  ))}
+                </Bar>
+              </BarChart>
+            </ChartContainer>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground pt-1">
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: lerpColor(DARK_GREEN, DARK_GREEN, 0) }} />
+              الأفضل
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: lerpColor(DARK_GREEN, LIGHT_GREEN, 1) }} />
+              متوسط
+            </span>
+            <span className="inline-flex items-center gap-1.5">
+              <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: lerpColor(LIGHT_GREEN, RED, 1) }} />
+              الأضعف
+            </span>
+          </div>
         </div>
       )}
-
-      <div className="flex flex-wrap items-center justify-center gap-4 text-xs text-muted-foreground pt-1">
-        <span className="inline-flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: lerpColor(DARK_GREEN, DARK_GREEN, 0) }} />
-          الأفضل
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: lerpColor(DARK_GREEN, LIGHT_GREEN, 1) }} />
-          متوسط
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="w-3 h-3 rounded-sm" style={{ backgroundColor: lerpColor(LIGHT_GREEN, RED, 1) }} />
-          الأضعف
-        </span>
-      </div>
     </div>
   );
 }
