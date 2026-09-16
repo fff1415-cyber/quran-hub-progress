@@ -55,6 +55,13 @@ import {
 } from "@/lib/semester-grading";
 import { TeacherGradesExport } from "@/components/TeacherGradesExport";
 import { StaffAttendanceCheckInButton } from "@/components/StaffAttendanceCheckInButton";
+import { StaffAttendancePromptDialog } from "@/components/StaffAttendancePromptDialog";
+import {
+  COMPLEX_STAFF_HALAQA_ID,
+  COMPLEX_STAFF_HALAQA_NAME,
+  isHalaqaBoundStaffRole,
+  shouldPromptStaffAttendance,
+} from "@/lib/staff-attendance";
 import { SemesterBreakdownPopover } from "@/components/teacher/SemesterBreakdownPopover";
 import { TeacherMobileDayBoard } from "@/components/teacher/TeacherMobileDayBoard";
 import { ensureWeeklyTestsSemester } from "@/lib/weekly-tests";
@@ -83,6 +90,7 @@ import {
   reapplyScientificScoresForHalaqa,
   repairScientificHalaqaProgram,
   SCIENTIFIC_GRADES_CHANGED_EVENT,
+  finalizeTeacherScientificDayScore,
   setTeacherScientificDayScore,
   syncScientificScoresFromDayPatch,
   type ScientificFieldsConfig,
@@ -241,9 +249,20 @@ export function TeacherPage() {
   const canManagePrograms = role === "teacher";
   const programsReadOnly = role === "manager";
 
+  const promptHalaqaId = role && isHalaqaBoundStaffRole(role) ? halaqa.id : COMPLEX_STAFF_HALAQA_ID;
+  const promptHalaqaName = role && isHalaqaBoundStaffRole(role) ? halaqa.name : COMPLEX_STAFF_HALAQA_NAME;
+
   return (
     <div className="min-h-screen">
       <Toaster position="top-center" richColors />
+      {name && role && shouldPromptStaffAttendance(role) && (
+        <StaffAttendancePromptDialog
+          role={role}
+          name={name}
+          halaqaId={promptHalaqaId}
+          halaqaName={promptHalaqaName}
+        />
+      )}
       <AppHeader title={halaqa.name} subtitle={roleLabel} />
       <main className="max-w-7xl mx-auto px-3 sm:px-4 py-4 sm:py-8">
         <div className="glass-card rounded-2xl p-4 sm:p-6 mb-4 sm:mb-6">
@@ -748,7 +767,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   useEffect(() => {
     const onSciChanged = () => {
       setSciConfig(loadScientificConfig(halaqaId));
-      syncSciScoresFromPrep();
       refreshSciData();
     };
     window.addEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onSciChanged);
@@ -770,7 +788,29 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   ) => {
     if (closedDayKeys.has(dayKey)) return;
     setTeacherScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
-    refreshSciData();
+    setSciData(loadScientificData(halaqaId));
+  };
+
+  const finalizeSciScore = (
+    studentId: string,
+    dayKey: string,
+    field: "attendance" | "hifz" | "rabt" | "muraja",
+    value: string,
+  ) => {
+    if (closedDayKeys.has(dayKey)) return;
+    const week = grades[studentId]?.[weekNum] ?? emptyWeek(workingKeysList);
+    const entry = dayEntryFor(week, dayKey, workingKeysList);
+    finalizeTeacherScientificDayScore(
+      halaqaId,
+      studentId,
+      weekNum,
+      dayKey,
+      field,
+      value,
+      entry,
+      sciConfig,
+    );
+    setSciData(loadScientificData(halaqaId));
   };
 
   const highlightDay = (dayKey: string) => isCurrentWeek && dayKey === todayKey;
@@ -1219,6 +1259,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           onShowAssign={() => setShowAssign(true)}
           onUpdateDay={updateDay}
           onUpdateSciScore={updateSciScore}
+          onFinalizeSciScore={finalizeSciScore}
           onPlanHifz={(s, dayKey, checked) => void handlePlanHifz(s, dayKey, checked)}
           onPlanPassFail={(s, dayKey, task, value) => void handlePlanPassFail(s, dayKey, task, value)}
           onCompensationChange={(s, dayKey, faces) => void handleDayCompensationChange(s, dayKey, faces)}
@@ -1515,6 +1556,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                             value={getScientificDayScore(sciData, s.id, weekNum, d.key, "attendance")}
                             overridden={isScientificScoreOverridden(halaqaId, s.id, weekNum, d.key, "attendance")}
                             onChange={(v) => updateSciScore(s.id, d.key, "attendance", v)}
+                            onBlur={(v) => finalizeSciScore(s.id, d.key, "attendance", v)}
                           />
                         </td>
                       )}
@@ -1536,6 +1578,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                             value={getScientificDayScore(sciData, s.id, weekNum, d.key, "hifz")}
                             overridden={isScientificScoreOverridden(halaqaId, s.id, weekNum, d.key, "hifz")}
                             onChange={(v) => updateSciScore(s.id, d.key, "hifz", v)}
+                            onBlur={(v) => finalizeSciScore(s.id, d.key, "hifz", v)}
                           />
                         </td>
                       )}
@@ -1557,6 +1600,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                             value={getScientificDayScore(sciData, s.id, weekNum, d.key, "rabt")}
                             overridden={isScientificScoreOverridden(halaqaId, s.id, weekNum, d.key, "rabt")}
                             onChange={(v) => updateSciScore(s.id, d.key, "rabt", v)}
+                            onBlur={(v) => finalizeSciScore(s.id, d.key, "rabt", v)}
                           />
                         </td>
                       )}
@@ -1578,6 +1622,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                             value={getScientificDayScore(sciData, s.id, weekNum, d.key, "muraja")}
                             overridden={isScientificScoreOverridden(halaqaId, s.id, weekNum, d.key, "muraja")}
                             onChange={(v) => updateSciScore(s.id, d.key, "muraja", v)}
+                            onBlur={(v) => finalizeSciScore(s.id, d.key, "muraja", v)}
                           />
                         </td>
                       )}

@@ -78,6 +78,12 @@ type Props = {
     field: "attendance" | "hifz" | "rabt" | "muraja",
     value: string,
   ) => void;
+  onFinalizeSciScore: (
+    studentId: string,
+    dayKey: string,
+    field: "attendance" | "hifz" | "rabt" | "muraja",
+    value: string,
+  ) => void;
   onPlanHifz: (s: Student, dayKey: string, checked: boolean) => void;
   onPlanPassFail: (s: Student, dayKey: string, task: "rabt" | "muraja", value: "pass" | "fail" | "") => void;
   onCompensationChange: (s: Student, dayKey: string, faces: number) => void;
@@ -168,6 +174,7 @@ export function TeacherMobileDayBoard({
   onShowAssign,
   onUpdateDay,
   onUpdateSciScore,
+  onFinalizeSciScore,
   onPlanHifz,
   onPlanPassFail,
   onCompensationChange,
@@ -187,6 +194,7 @@ export function TeacherMobileDayBoard({
       value={getScientificDayScore(sciData, studentId, weekNum, activeDayKey, field)}
       overridden={isScientificScoreOverridden(halaqaId, studentId, weekNum, activeDayKey, field)}
       onChange={(v) => onUpdateSciScore(studentId, activeDayKey, field, v)}
+      onBlur={(v) => onFinalizeSciScore(studentId, activeDayKey, field, v)}
     />
   );
 

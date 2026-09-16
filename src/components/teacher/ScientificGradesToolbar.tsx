@@ -292,11 +292,13 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
 export function ScientificGradeInput({
   value,
   onChange,
+  onBlur,
   disabled,
   overridden,
 }: {
   value: string;
   onChange: (v: string) => void;
+  onBlur?: (value: string) => void;
   disabled?: boolean;
   overridden?: boolean;
 }) {
@@ -310,8 +312,9 @@ export function ScientificGradeInput({
         const v = e.target.value;
         if (v === "" || /^-?\d*\.?\d*$/.test(v)) onChange(v);
       }}
+      onBlur={(e) => onBlur?.(e.target.value)}
       placeholder="—"
-      title={overridden ? "درجة معدّلة يدوياً" : "درجة تلقائية — يمكن التعديل"}
+      title={overridden ? "درجة معدّلة يدوياً — عدّل أو امسح ثم اخرج من الحقل للعودة للدرجة التلقائية" : "درجة تلقائية — يمكن التعديل"}
       className={cn(
         "w-full min-w-0 max-w-[44px] mx-auto px-0.5 py-1 text-center text-xs rounded border focus:outline-none disabled:opacity-50",
         overridden

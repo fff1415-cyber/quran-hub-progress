@@ -8,7 +8,13 @@ import { ProgramSupervisorApprovalsPanel } from "@/components/tarbawi/ProgramSup
 import { ProgramSupervisorMonitorPanel } from "@/components/tarbawi/ProgramSupervisorMonitorPanel";
 import { RoleShell, RolePageHeader, type RoleTab } from "@/components/role-workspace/RoleShell";
 import { AppHeader } from "@/components/AppHeader";
-import { getSessionName } from "@/lib/session-role";
+import { getSessionName, getSessionRole } from "@/lib/session-role";
+import { StaffAttendancePromptDialog } from "@/components/StaffAttendancePromptDialog";
+import {
+  COMPLEX_STAFF_HALAQA_ID,
+  COMPLEX_STAFF_HALAQA_NAME,
+  shouldPromptStaffAttendance,
+} from "@/lib/staff-attendance";
 import { listSubmittedTarbawiPlans } from "@/lib/tarbawi-program";
 import { ClipboardList, Eye, Settings2, Loader2 } from "lucide-react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
@@ -29,7 +35,12 @@ export function ProgramSupervisorPage() {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as ReturnType<typeof programSupervisorValidateSearch>;
   const name = getSessionName("مشرف البرامج");
+  const [role, setRole] = useState<string | null>(null);
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
+
+  useEffect(() => {
+    setRole(getSessionRole());
+  }, []);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -97,6 +108,14 @@ export function ProgramSupervisorPage() {
   return (
     <div className="min-h-screen">
       <Toaster position="top-center" richColors />
+      {name && role && shouldPromptStaffAttendance(role) && (
+        <StaffAttendancePromptDialog
+          role={role}
+          name={name}
+          halaqaId={COMPLEX_STAFF_HALAQA_ID}
+          halaqaName={COMPLEX_STAFF_HALAQA_NAME}
+        />
+      )}
       <AppHeader title="مشرف البرامج" subtitle={name} />
       <main className="mx-auto px-4 py-8">
         <RoleShell

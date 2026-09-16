@@ -1,7 +1,13 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
-import { getSessionName } from "@/lib/session-role";
+import { getSessionName, getSessionRole } from "@/lib/session-role";
+import { StaffAttendancePromptDialog } from "@/components/StaffAttendancePromptDialog";
+import {
+  COMPLEX_STAFF_HALAQA_ID,
+  COMPLEX_STAFF_HALAQA_NAME,
+  shouldPromptStaffAttendance,
+} from "@/lib/staff-attendance";
 import { AppHeader } from "@/components/AppHeader";
 import { RoleShell, RolePageHeader, type RoleTab } from "@/components/role-workspace/RoleShell";
 import {
@@ -70,7 +76,12 @@ export function SupervisorPage() {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as ReturnType<typeof supervisorValidateSearch>;
   const name = getSessionName("المشرف التعليمي");
+  const [role, setRole] = useState<string | null>(null);
   const [queue, setQueue] = useState(() => loadSardQueue());
+
+  useEffect(() => {
+    setRole(getSessionRole());
+  }, []);
 
   useEffect(() => {
     const id = setInterval(() => setQueue(loadSardQueue()), 5000);
@@ -158,6 +169,14 @@ export function SupervisorPage() {
   return (
     <div className="min-h-screen">
       <Toaster position="top-center" richColors />
+      {name && role && shouldPromptStaffAttendance(role) && (
+        <StaffAttendancePromptDialog
+          role={role}
+          name={name}
+          halaqaId={COMPLEX_STAFF_HALAQA_ID}
+          halaqaName={COMPLEX_STAFF_HALAQA_NAME}
+        />
+      )}
       <AppHeader title="الإشراف التعليمي" subtitle={name} />
       <main className="mx-auto px-4 py-8">
         <RoleShell

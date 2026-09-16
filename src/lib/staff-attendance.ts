@@ -38,6 +38,45 @@ export function isHalaqaBoundStaffRole(role: string): boolean {
   return role === "teacher" || role === "assistant";
 }
 
+/** Roles that see the auto check-in prompt on page load (teachers + supervisors). */
+export const STAFF_ATTENDANCE_PROMPT_ROLES = [
+  "teacher",
+  "assistant",
+  "supervisor",
+  "program_supervisor",
+] as const;
+
+export function shouldPromptStaffAttendance(role: string | null | undefined): boolean {
+  return !!role && (STAFF_ATTENDANCE_PROMPT_ROLES as readonly string[]).includes(role);
+}
+
+export function isAfterScheduledStart(now: Date, schedule: DailySchedule): boolean {
+  const startAt = parseLocalDateTime(schedule.date, schedule.scheduledStart);
+  return now >= startAt;
+}
+
+const KEY_PROMPT_DISMISS_PREFIX = "qs_staff_attendance_prompt_dismissed:";
+
+export function staffAttendancePromptDismissKey(userKey: string, date: string): string {
+  return `${KEY_PROMPT_DISMISS_PREFIX}${userKey}:${date}`;
+}
+
+export function dismissStaffAttendancePrompt(
+  userKey: string,
+  date: string = getCalendarIsoDate(),
+): void {
+  if (typeof window === "undefined") return;
+  sessionStorage.setItem(staffAttendancePromptDismissKey(userKey, date), "1");
+}
+
+export function isStaffAttendancePromptDismissed(
+  userKey: string,
+  date: string = getCalendarIsoDate(),
+): boolean {
+  if (typeof window === "undefined") return false;
+  return sessionStorage.getItem(staffAttendancePromptDismissKey(userKey, date)) === "1";
+}
+
 export function staffRoleLabel(role: string): string {
   return STAFF_ROLE_LABEL[role] ?? role;
 }

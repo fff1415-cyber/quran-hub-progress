@@ -516,12 +516,9 @@ function syncScientificFieldInStore(
     );
     return overrideChanged || dataChanged;
   }
-  if (
-    isScientificScoreOverriddenInStore(store, halaqaId, studentId, weekNum, dayKey, field)
-  ) {
-    const existing = getScientificDayScore(data, studentId, weekNum, dayKey, field);
-    if (existing.trim() !== "") return false;
-    clearScientificScoreOverrideInStore(store, halaqaId, studentId, weekNum, dayKey, field);
+  // Manual edits stay until the matching prep field changes (see clearScientificOverridesForPatchInStore).
+  if (isScientificScoreOverriddenInStore(store, halaqaId, studentId, weekNum, dayKey, field)) {
+    return false;
   }
   return writeScientificDayScoreInPlace(
     data,
@@ -741,6 +738,42 @@ export function setTeacherScientificDayScore(
   setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
   // Mark overridden even when clearing — prevents auto-backfill from refilling while retyping.
   setScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, field);
+}
+
+/**
+ * After the teacher finishes editing a cell: keep custom scores, or revert to auto when empty
+ * or identical to the default score from prep + teacher config.
+ */
+export function finalizeTeacherScientificDayScore(
+  halaqaId: number,
+  studentId: string,
+  weekNum: number,
+  dayKey: string,
+  field: ScientificGradeField,
+  value: string,
+  entry: DayEntry,
+  config: ScientificGradesConfig = loadScientificConfig(halaqaId),
+): void {
+  const auto = resolveScientificScore(config, field, entry).trim();
+  const trimmed = value.trim();
+
+  if (trimmed !== "" && trimmed !== auto) {
+    setTeacherScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, trimmed);
+    return;
+  }
+
+  const store = loadScientificGradesStore();
+  const overrideCleared = clearScientificScoreOverrideInStore(
+    store,
+    halaqaId,
+    studentId,
+    weekNum,
+    dayKey,
+    field,
+  );
+  const data = halaqaDataRoot(store, halaqaId);
+  const dataChanged = writeScientificDayScoreInPlace(data, studentId, weekNum, dayKey, field, auto);
+  if (overrideCleared || dataChanged) saveScientificGradesStore(store);
 }
 
 export type ScientificWeekTotals = Record<ScientificGradeField, number> & { total: number };
