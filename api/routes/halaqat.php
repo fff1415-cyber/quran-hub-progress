@@ -7,6 +7,39 @@ function halaqat_tenant_enabled(PDO $pdo): bool
     return table_column_exists($pdo, 'halaqat', 'complex_id');
 }
 
+function halaqat_ensure_extra_assistants_column(PDO $pdo): void
+{
+    if (!table_column_exists($pdo, 'halaqat', 'extra_assistants')) {
+        $pdo->exec(
+            'ALTER TABLE `halaqat`
+             ADD COLUMN `extra_assistants` JSON NULL DEFAULT NULL AFTER `assistant_code`'
+        );
+    }
+}
+
+function halaqat_encode_extra_assistants($raw): ?string
+{
+    if (!is_array($raw) || count($raw) === 0) {
+        return null;
+    }
+    $clean = [];
+    foreach ($raw as $item) {
+        if (!is_array($item)) {
+            continue;
+        }
+        $name = trim((string) ($item['name'] ?? ''));
+        $code = trim((string) ($item['code'] ?? ''));
+        if ($name === '' && $code === '') {
+            continue;
+        }
+        $clean[] = ['name' => $name !== '' ? $name : '—', 'code' => $code];
+    }
+    if (count($clean) === 0) {
+        return null;
+    }
+    return json_encode($clean, JSON_UNESCAPED_UNICODE);
+}
+
 function handle_list_halaqat_public(): void
 {
     $pdo = db();
@@ -33,6 +66,7 @@ function handle_list_halaqat(): void
     $auth = require_auth();
     $cid = require_complex_id($auth);
     $pdo = db();
+    halaqat_ensure_extra_assistants_column($pdo);
     $tenants = halaqat_tenant_enabled($pdo);
 
     if ($tenants) {
@@ -56,10 +90,24 @@ function handle_upsert_halaqat(): void
     }
 
     $pdo = db();
+    halaqat_ensure_extra_assistants_column($pdo);
     $tenants = halaqat_tenant_enabled($pdo);
+    $hasExtras = table_column_exists($pdo, 'halaqat', 'extra_assistants');
 
     if ($tenants) {
-        $sql = 'INSERT INTO halaqat (complex_id, id, name, is_talqeen, teacher_name, teacher_code, assistant_name, assistant_code)
+        $sql = $hasExtras
+            ? 'INSERT INTO halaqat (complex_id, id, name, is_talqeen, teacher_name, teacher_code, assistant_name, assistant_code, extra_assistants)
+                VALUES (:complex_id, :id, :name, :is_talqeen, :teacher_name, :teacher_code, :assistant_name, :assistant_code, :extra_assistants)
+                ON DUPLICATE KEY UPDATE
+                  name = VALUES(name),
+                  is_talqeen = VALUES(is_talqeen),
+                  teacher_name = VALUES(teacher_name),
+                  teacher_code = VALUES(teacher_code),
+                  assistant_name = VALUES(assistant_name),
+                  assistant_code = VALUES(assistant_code),
+                  extra_assistants = VALUES(extra_assistants),
+                  complex_id = VALUES(complex_id)'
+            : 'INSERT INTO halaqat (complex_id, id, name, is_talqeen, teacher_name, teacher_code, assistant_name, assistant_code)
                 VALUES (:complex_id, :id, :name, :is_talqeen, :teacher_name, :teacher_code, :assistant_name, :assistant_code)
                 ON DUPLICATE KEY UPDATE
                   name = VALUES(name),
@@ -70,7 +118,18 @@ function handle_upsert_halaqat(): void
                   assistant_code = VALUES(assistant_code),
                   complex_id = VALUES(complex_id)';
     } else {
-        $sql = 'INSERT INTO halaqat (id, name, is_talqeen, teacher_name, teacher_code, assistant_name, assistant_code)
+        $sql = $hasExtras
+            ? 'INSERT INTO halaqat (id, name, is_talqeen, teacher_name, teacher_code, assistant_name, assistant_code, extra_assistants)
+                VALUES (:id, :name, :is_talqeen, :teacher_name, :teacher_code, :assistant_name, :assistant_code, :extra_assistants)
+                ON DUPLICATE KEY UPDATE
+                  name = VALUES(name),
+                  is_talqeen = VALUES(is_talqeen),
+                  teacher_name = VALUES(teacher_name),
+                  teacher_code = VALUES(teacher_code),
+                  assistant_name = VALUES(assistant_name),
+                  assistant_code = VALUES(assistant_code),
+                  extra_assistants = VALUES(extra_assistants)'
+            : 'INSERT INTO halaqat (id, name, is_talqeen, teacher_name, teacher_code, assistant_name, assistant_code)
                 VALUES (:id, :name, :is_talqeen, :teacher_name, :teacher_code, :assistant_name, :assistant_code)
                 ON DUPLICATE KEY UPDATE
                   name = VALUES(name),
@@ -100,6 +159,9 @@ function handle_upsert_halaqat(): void
                 ':assistant_name' => trim((string) ($h['assistant_name'] ?? '')) ?: '—',
                 ':assistant_code' => trim((string) ($h['assistant_code'] ?? '')),
             ];
+            if ($hasExtras) {
+                $params[':extra_assistants'] = halaqat_encode_extra_assistants($h['extra_assistants'] ?? null);
+            }
             if ($tenants) {
                 $params[':complex_id'] = $cid;
             }

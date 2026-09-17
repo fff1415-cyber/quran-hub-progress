@@ -12,6 +12,7 @@ import {
   type DailySchedule,
 } from "@/lib/staff-attendance";
 import { loadHalaqat } from "@/lib/mock-data";
+import { collectHalaqaStaffRows } from "@/lib/halaqa-assistants";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -61,18 +62,7 @@ export function ManagerStaffAttendancePanel() {
 
   const halaqat = useMemo(() => loadHalaqat(), [checkIns]);
 
-  const expectedStaff = useMemo(() => {
-    const rows: { role: string; name: string; halaqaId: number; halaqaName: string }[] = [];
-    halaqat.forEach((h) => {
-      if (h.teacherName?.trim()) {
-        rows.push({ role: "teacher", name: h.teacherName.trim(), halaqaId: h.id, halaqaName: h.name });
-      }
-      if (h.assistantName?.trim()) {
-        rows.push({ role: "assistant", name: h.assistantName.trim(), halaqaId: h.id, halaqaName: h.name });
-      }
-    });
-    return rows;
-  }, [halaqat]);
+  const expectedStaff = useMemo(() => collectHalaqaStaffRows(halaqat), [halaqat]);
 
   const checkedKeys = useMemo(
     () => new Set(checkIns.map((c) => `${c.role}:${c.halaqaId}:${c.name}`)),

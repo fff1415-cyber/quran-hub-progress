@@ -2,6 +2,7 @@ import { z } from "zod";
 import { decodeAuthTokenPayload, getAuthItem, setAuthItem } from "@/lib/auth-session";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { loadHalaqat, type Halaqa } from "@/lib/mock-data";
+import { findAssistantByName } from "@/lib/halaqa-assistants";
 
 /** Normalize ?h= from URL (string/number/empty) to a positive id or undefined. */
 export function parseHalaqaSearchParam(value: unknown): number | undefined {
@@ -64,7 +65,7 @@ export function findHalaqaForTeacher(halaqat: Halaqa[], preferredId?: number): H
     return halaqat.find((h) => namesMatch(name, h.teacherName));
   }
   if (role === "assistant") {
-    return halaqat.find((h) => namesMatch(name, h.assistantName));
+    return halaqat.find((h) => findAssistantByName(h, name) || namesMatch(name, h.assistantName));
   }
   return undefined;
 }

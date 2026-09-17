@@ -65,6 +65,7 @@ import { BarChart3, BookOpen, Download, Info, Plus, Settings2, Trash2 } from "lu
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { useGradeViewerStudents } from "@/hooks/use-grade-viewer-students";
 
 type Props = {
   halaqaId: number;
@@ -100,12 +101,9 @@ export function TeacherHalaqaProgramsPanel({
     () => loadStudents().filter((s) => s.halaqaId === halaqaId),
     [halaqaId],
   );
-  const students = useMemo(
-    () =>
-      viewerRole === "assistant"
-        ? allStudents.filter((s) => s.assignedTo !== "teacher")
-        : allStudents.filter((s) => s.assignedTo !== "assistant"),
-    [allStudents, viewerRole],
+  const students = useGradeViewerStudents(
+    halaqaId,
+    viewerRole === "manager" ? "teacher" : viewerRole,
   );
 
   const selectableWeeks = useMemo(() => getSelectableWeeks(calendar), [calendar]);

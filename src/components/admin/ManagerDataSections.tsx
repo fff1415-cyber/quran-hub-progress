@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import {
-  loadHalaqat, saveHalaqat, type Halaqa,
+  loadHalaqat, saveHalaqat, type Halaqa, type HalaqaAssistant,
 } from "@/lib/mock-data";
+import { getExtraAssistants } from "@/lib/halaqa-assistants";
 import {
   loadRoleAccountsCloud, upsertRoleAccount, deleteRoleAccount, pushHalaqat, deleteHalaqa,
   type CloudRoleAccount,
@@ -153,38 +154,124 @@ export function CodesManagementSection() {
     }
   };
 
+  const addExtraAssistant = (id: number) => {
+    setHalaqat((cur) =>
+      cur.map((h) => {
+        if (h.id !== id) return h;
+        const extras = [...getExtraAssistants(h), { name: "", code: "" }];
+        return { ...h, extraAssistants: extras };
+      }),
+    );
+  };
+
+  const updateExtraAssistant = (
+    id: number,
+    index: number,
+    patch: Partial<HalaqaAssistant>,
+  ) => {
+    setHalaqat((cur) =>
+      cur.map((h) => {
+        if (h.id !== id) return h;
+        const extras = getExtraAssistants(h).map((a, i) =>
+          i === index ? { ...a, ...patch } : a,
+        );
+        return { ...h, extraAssistants: extras };
+      }),
+    );
+  };
+
+  const removeExtraAssistant = (id: number, index: number) => {
+    setHalaqat((cur) =>
+      cur.map((h) => {
+        if (h.id !== id) return h;
+        const extras = getExtraAssistants(h).filter((_, i) => i !== index);
+        return {
+          ...h,
+          extraAssistants: extras.length > 0 ? extras : undefined,
+        };
+      }),
+    );
+  };
+
   return (
     <div className="space-y-4">
       <div className="glass-card rounded-2xl p-5">
         <h3 className="font-bold mb-3 text-primary">رموز المعلمين والمساعدين</h3>
-        <p className="text-xs text-muted-foreground mb-4">عدّل البيانات ثم اضغط «حفظ» لكل حلقة لإرسالها إلى قاعدة البيانات.</p>
+        <p className="text-xs text-muted-foreground mb-4">
+          عدّل البيانات ثم اضغط «حفظ» لكل حلقة. لإضافة مساعد ثانٍ لحلقة معيّنة فقط، استخدم زر ➕ بجانب المساعد الأول.
+        </p>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm min-w-[700px]">
+          <table className="w-full text-sm min-w-[760px]">
             <thead>
               <tr className="text-right text-muted-foreground border-b border-border">
                 <th className="p-2">الحلقة</th>
                 <th className="p-2">اسم المعلم</th>
                 <th className="p-2">رمزه</th>
-                <th className="p-2">اسم المساعد</th>
-                <th className="p-2">رمزه</th>
+                <th className="p-2">المساعدون</th>
                 <th className="p-2" />
               </tr>
             </thead>
             <tbody>
-              {halaqat.map((h) => (
-                <tr key={h.id} className="border-b border-border/30">
-                  <td className="p-2 font-medium">{h.name}</td>
-                  <td className="p-2"><input className="px-2 py-1 rounded bg-input border border-border w-full" value={h.teacherName} onChange={(e) => update(h.id, { teacherName: e.target.value })} /></td>
-                  <td className="p-2"><input className="px-2 py-1 rounded bg-input border border-border font-mono text-primary text-center w-24" value={h.teacherCode} onChange={(e) => update(h.id, { teacherCode: e.target.value })} /></td>
-                  <td className="p-2"><input className="px-2 py-1 rounded bg-input border border-border w-full" value={h.assistantName} onChange={(e) => update(h.id, { assistantName: e.target.value })} /></td>
-                  <td className="p-2"><input className="px-2 py-1 rounded bg-input border border-border font-mono text-primary text-center w-24" value={h.assistantCode} onChange={(e) => update(h.id, { assistantCode: e.target.value })} /></td>
-                  <td className="p-2">
-                    <button type="button" onClick={() => saveRow(h)} disabled={savingId === h.id} title="حفظ" className="p-1.5 rounded bg-primary/15 text-primary border border-primary/30 disabled:opacity-50">
-                      {savingId === h.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                    </button>
-                  </td>
-                </tr>
-              ))}
+              {halaqat.map((h) => {
+                const extras = getExtraAssistants(h);
+                return (
+                  <tr key={h.id} className="border-b border-border/30 align-top">
+                    <td className="p-2 font-medium">{h.name}</td>
+                    <td className="p-2">
+                      <input className="px-2 py-1 rounded bg-input border border-border w-full" value={h.teacherName} onChange={(e) => update(h.id, { teacherName: e.target.value })} />
+                    </td>
+                    <td className="p-2">
+                      <input className="px-2 py-1 rounded bg-input border border-border font-mono text-primary text-center w-24" value={h.teacherCode} onChange={(e) => update(h.id, { teacherCode: e.target.value })} />
+                    </td>
+                    <td className="p-2">
+                      <div className="space-y-2 min-w-[240px]">
+                        <div className="flex items-center gap-2">
+                          <input className="px-2 py-1 rounded bg-input border border-border flex-1 min-w-0" placeholder="اسم المساعد" value={h.assistantName} onChange={(e) => update(h.id, { assistantName: e.target.value })} />
+                          <input className="px-2 py-1 rounded bg-input border border-border font-mono text-primary text-center w-20 shrink-0" placeholder="رمز" value={h.assistantCode} onChange={(e) => update(h.id, { assistantCode: e.target.value })} />
+                          <button
+                            type="button"
+                            onClick={() => addExtraAssistant(h.id)}
+                            title="إضافة مساعد لهذه الحلقة"
+                            className="p-1.5 rounded bg-primary/10 text-primary border border-primary/30 shrink-0 hover:bg-primary/20"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                        {extras.map((assistant, index) => (
+                          <div key={`${h.id}-extra-${index}`} className="flex items-center gap-2 pr-1">
+                            <span className="text-[10px] text-muted-foreground shrink-0">+{index + 2}</span>
+                            <input
+                              className="px-2 py-1 rounded bg-input border border-border flex-1 min-w-0"
+                              placeholder="اسم المساعد الإضافي"
+                              value={assistant.name}
+                              onChange={(e) => updateExtraAssistant(h.id, index, { name: e.target.value })}
+                            />
+                            <input
+                              className="px-2 py-1 rounded bg-input border border-border font-mono text-primary text-center w-20 shrink-0"
+                              placeholder="رمز"
+                              value={assistant.code}
+                              onChange={(e) => updateExtraAssistant(h.id, index, { code: e.target.value })}
+                            />
+                            <button
+                              type="button"
+                              onClick={() => removeExtraAssistant(h.id, index)}
+                              title="حذف المساعد الإضافي"
+                              className="p-1.5 rounded hover:bg-destructive/15 text-destructive shrink-0"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </td>
+                    <td className="p-2">
+                      <button type="button" onClick={() => saveRow(h)} disabled={savingId === h.id} title="حفظ" className="p-1.5 rounded bg-primary/15 text-primary border border-primary/30 disabled:opacity-50">
+                        {savingId === h.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { loadStudents } from "@/lib/mock-data";
+import { useGradeViewerStudents } from "@/hooks/use-grade-viewer-students";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import { getSelectableWeeks } from "@/lib/academic-context";
 import {
@@ -36,12 +36,7 @@ export function TeacherGradesExport({
   const [fromDate, setFromDate] = useState(() => defaultExportFromDate(calendar));
   const [toDate, setToDate] = useState(() => calendar.operationalDate);
 
-  const students = useMemo(() => {
-    const all = loadStudents().filter((s) => s.halaqaId === halaqaId);
-    return viewerRole === "assistant"
-      ? all.filter((s) => s.assignedTo !== "teacher")
-      : all.filter((s) => s.assignedTo !== "assistant");
-  }, [halaqaId, viewerRole]);
+  const students = useGradeViewerStudents(halaqaId, viewerRole);
 
   const weekPreview = useMemo(
     () => weeksInExportRange(calendar, fromDate, toDate),

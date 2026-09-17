@@ -2,6 +2,47 @@
 
 declare(strict_types=1);
 
+function login_decode_extra_assistants(?string $json): array
+{
+    if ($json === null || trim($json) === '') {
+        return [];
+    }
+    $decoded = json_decode($json, true);
+    return is_array($decoded) ? $decoded : [];
+}
+
+function login_find_extra_assistant(PDO $pdo, bool $tenantsHalaqa, int $complexId, string $code): ?array
+{
+    if (!table_column_exists($pdo, 'halaqat', 'extra_assistants')) {
+        return null;
+    }
+
+    if ($tenantsHalaqa) {
+        $stmt = $pdo->prepare('SELECT complex_id, id, extra_assistants FROM halaqat WHERE complex_id = ?');
+        $stmt->execute([$complexId]);
+    } else {
+        $stmt = $pdo->query('SELECT id, extra_assistants FROM halaqat');
+    }
+
+    while ($row = $stmt->fetch()) {
+        foreach (login_decode_extra_assistants($row['extra_assistants'] ?? null) as $assistant) {
+            if (!is_array($assistant)) {
+                continue;
+            }
+            if (trim((string) ($assistant['code'] ?? '')) !== $code) {
+                continue;
+            }
+            return [
+                'complex_id' => $row['complex_id'] ?? null,
+                'id' => (int) $row['id'],
+                'assistant_name' => trim((string) ($assistant['name'] ?? '')) ?: 'مساعد',
+            ];
+        }
+    }
+
+    return null;
+}
+
 function handle_login_by_code(): void
 {
     $input = json_input();
@@ -104,6 +145,23 @@ function handle_login_by_code(): void
                 'complexId' => $tenantsHalaqa ? $complexId : null,
             ]);
         }
+    }
+
+    $extra = login_find_extra_assistant($pdo, $tenantsHalaqa, $requestedComplexId, $code);
+    if ($extra) {
+        $complexId = $tenantsHalaqa ? (int) $extra['complex_id'] : $requestedComplexId;
+        $tokenPayload = login_token_payload(
+            ['role' => 'assistant', 'name' => $extra['assistant_name'], 'halaqaId' => (int) $extra['id']],
+            $complexId,
+            $tenantsHalaqa,
+        );
+        json_response([
+            'token' => generate_token($tokenPayload),
+            'role' => 'assistant',
+            'name' => $extra['assistant_name'],
+            'halaqaId' => (int) $extra['id'],
+            'complexId' => $tenantsHalaqa ? $complexId : null,
+        ]);
     }
 
     error_response('رمز العضوية غير صحيح', 401);

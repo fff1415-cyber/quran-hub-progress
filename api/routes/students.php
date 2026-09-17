@@ -32,6 +32,12 @@ function students_ensure_extended_columns(PDO $pdo): void
              ADD COLUMN `phase_number` INT UNSIGNED NULL DEFAULT NULL AFTER `institute_level`'
         );
     }
+    if (!students_column_exists($pdo, 'assigned_assistant_code')) {
+        $pdo->exec(
+            'ALTER TABLE `students`
+             ADD COLUMN `assigned_assistant_code` VARCHAR(50) NULL DEFAULT NULL AFTER `assigned_to`'
+        );
+    }
 }
 
 function handle_list_students_public(): void
@@ -44,14 +50,15 @@ function handle_list_students_public(): void
     if ($tenants) {
         $stmt = $pdo->prepare(
             'SELECT id, name, halaqa_id, level, level_type, institute_level, phase_number,
-                    assigned_to, memorized, complex_id
+                    assigned_to, assigned_assistant_code, memorized, complex_id
              FROM students WHERE complex_id = ? ORDER BY name'
         );
         $stmt->execute([$cid]);
         $rows = $stmt->fetchAll();
     } else {
         $rows = $pdo->query(
-            'SELECT id, name, halaqa_id, level, level_type, institute_level, phase_number, assigned_to, memorized
+            'SELECT id, name, halaqa_id, level, level_type, institute_level, phase_number,
+                    assigned_to, assigned_assistant_code, memorized
              FROM students ORDER BY name'
         )->fetchAll();
     }
@@ -93,10 +100,10 @@ function handle_upsert_students(): void
     if ($tenants) {
         $sql = 'INSERT INTO students (
                   id, complex_id, name, halaqa_id, national_id, parent_phone, student_phone,
-                  level, level_type, institute_level, phase_number, assigned_to, memorized
+                  level, level_type, institute_level, phase_number, assigned_to, assigned_assistant_code, memorized
                 ) VALUES (
                   :id, :complex_id, :name, :halaqa_id, :national_id, :parent_phone, :student_phone,
-                  :level, :level_type, :institute_level, :phase_number, :assigned_to, :memorized
+                  :level, :level_type, :institute_level, :phase_number, :assigned_to, :assigned_assistant_code, :memorized
                 )
                 ON DUPLICATE KEY UPDATE
                   name = VALUES(name),
@@ -109,11 +116,12 @@ function handle_upsert_students(): void
                   institute_level = VALUES(institute_level),
                   phase_number = VALUES(phase_number),
                   assigned_to = VALUES(assigned_to),
+                  assigned_assistant_code = VALUES(assigned_assistant_code),
                   memorized = VALUES(memorized),
                   complex_id = VALUES(complex_id)';
     } else {
-        $sql = 'INSERT INTO students (id, name, halaqa_id, national_id, parent_phone, student_phone, level, level_type, institute_level, phase_number, assigned_to, memorized)
-                VALUES (:id, :name, :halaqa_id, :national_id, :parent_phone, :student_phone, :level, :level_type, :institute_level, :phase_number, :assigned_to, :memorized)
+        $sql = 'INSERT INTO students (id, name, halaqa_id, national_id, parent_phone, student_phone, level, level_type, institute_level, phase_number, assigned_to, assigned_assistant_code, memorized)
+                VALUES (:id, :name, :halaqa_id, :national_id, :parent_phone, :student_phone, :level, :level_type, :institute_level, :phase_number, :assigned_to, :assigned_assistant_code, :memorized)
                 ON DUPLICATE KEY UPDATE
                   name = VALUES(name),
                   halaqa_id = VALUES(halaqa_id),
@@ -125,6 +133,7 @@ function handle_upsert_students(): void
                   institute_level = VALUES(institute_level),
                   phase_number = VALUES(phase_number),
                   assigned_to = VALUES(assigned_to),
+                  assigned_assistant_code = VALUES(assigned_assistant_code),
                   memorized = VALUES(memorized)';
     }
     $stmt = $pdo->prepare($sql);
@@ -143,6 +152,7 @@ function handle_upsert_students(): void
             ':institute_level' => $s['institute_level'] ?? null,
             ':phase_number' => $phase > 0 ? $phase : null,
             ':assigned_to' => $s['assigned_to'] ?? null,
+            ':assigned_assistant_code' => $s['assigned_assistant_code'] ?? null,
             ':memorized' => $s['memorized'] ?? null,
         ];
         if ($tenants) {
@@ -170,7 +180,7 @@ function handle_patch_student(): void
 
     $allowed = [
         'name', 'halaqa_id', 'national_id', 'parent_phone', 'student_phone',
-        'level', 'level_type', 'institute_level', 'phase_number', 'assigned_to', 'memorized',
+        'level', 'level_type', 'institute_level', 'phase_number', 'assigned_to', 'assigned_assistant_code', 'memorized',
     ];
     $sets = [];
     $params = [':id' => $id];

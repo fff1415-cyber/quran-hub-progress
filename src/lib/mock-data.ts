@@ -3,6 +3,8 @@ import { hasAuthToken } from "@/lib/auth-session";
 
 export type Role = "manager" | "secretary" | "supervisor" | "program_supervisor" | "teacher" | "assistant" | "musammi" | "student" | "parent";
 
+export type HalaqaAssistant = { name: string; code: string };
+
 export interface Halaqa {
   id: number;
   name: string;
@@ -11,6 +13,8 @@ export interface Halaqa {
   teacherCode: string;
   assistantName: string;
   assistantCode: string;
+  /** Optional — only for halaqas that need more than one assistant. */
+  extraAssistants?: HalaqaAssistant[];
 }
 
 export interface Student {
@@ -28,6 +32,8 @@ export interface Student {
   phaseNumber?: number;
   studentPhone?: string;
   assignedTo?: "teacher" | "assistant";
+  /** When multiple assistants exist — which assistant owns this student. */
+  assignedAssistantCode?: string;
   memorized?: string;
 }
 

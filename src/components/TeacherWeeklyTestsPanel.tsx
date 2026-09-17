@@ -1,8 +1,6 @@
 import { useMemo, useState } from "react";
-import {
-  loadStudents,
-  type Student,
-} from "@/lib/mock-data";
+import type { Student } from "@/lib/mock-data";
+import { useGradeViewerStudents } from "@/hooks/use-grade-viewer-students";
 import {
   getSelectableWeeks,
   formatWeekOptionLabel,
@@ -94,13 +92,7 @@ export function TeacherWeeklyTestsPanel({
   viewerRole,
 }: TeacherWeeklyTestsPanelProps) {
   const settings = useMemo(() => loadWeeklyTestsSettings(), []);
-  const allStudents = useMemo(
-    () => loadStudents().filter((s) => s.halaqaId === halaqaId),
-    [halaqaId],
-  );
-  const students = viewerRole === "assistant"
-    ? allStudents.filter((s) => s.assignedTo !== "teacher")
-    : allStudents.filter((s) => s.assignedTo !== "assistant");
+  const students = useGradeViewerStudents(halaqaId, viewerRole);
 
   const [store, setStore] = useState<WeeklyTestsStore>(() => loadWeeklyTests());
   const selectableWeeks = useMemo(() => getSelectableWeeks(calendar), [calendar]);

@@ -23,6 +23,12 @@ import { cn } from "@/lib/utils";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { halaqaSearchParamSchema } from "@/lib/teacher-halaqa-access";
 import { useTeacherHalaqaAccess } from "@/hooks/use-teacher-halaqa-access";
+import { useGradeViewerStudents } from "@/hooks/use-grade-viewer-students";
+import {
+  assistantDisplayLabel,
+  assignmentLabel,
+  getAllAssistants,
+} from "@/lib/halaqa-assistants";
 import { useLiveGrades } from "@/hooks/use-live-grades";
 import { dispatchPushEvent } from "@/lib/push-notifications";
 import { tenantPath } from "@/lib/tenant";
@@ -409,12 +415,35 @@ function HalaqaSwitcher({ current }: { current: number }) {
 }
 
 function AssignmentDialog({ halaqaId, onClose }: { halaqaId: number; onClose: () => void }) {
+  const halaqa = useMemo(() => loadHalaqat().find((h) => h.id === halaqaId), [halaqaId]);
+  const assistants = useMemo(
+    () => (halaqa ? getAllAssistants(halaqa) : []),
+    [halaqa],
+  );
+  const multiAssistants = assistants.length > 1;
   const [students, setStudents] = useState<Student[]>(() => loadStudents().filter((s) => s.halaqaId === halaqaId));
-  const setAssign = (id: string, to: "teacher" | "assistant" | undefined) => {
+  const setAssign = (
+    id: string,
+    to: "teacher" | "assistant" | undefined,
+    assignedAssistantCode?: string,
+  ) => {
     const all = loadStudents();
-    const next = all.map((s) => s.id === id ? { ...s, assignedTo: to } : s);
+    const next = all.map((s) =>
+      s.id === id
+        ? {
+            ...s,
+            assignedTo: to,
+            assignedAssistantCode: to === "assistant" ? assignedAssistantCode : undefined,
+          }
+        : s,
+    );
     saveStudents(next);
-    void import("@/lib/cloud-sync").then((m) => m.patchStudent(id, { assignedTo: to }));
+    void import("@/lib/cloud-sync").then((m) =>
+      m.patchStudent(id, {
+        assignedTo: to,
+        assignedAssistantCode: to === "assistant" ? assignedAssistantCode : undefined,
+      }),
+    );
     setStudents(next.filter((s) => s.halaqaId === halaqaId));
   };
   return (
@@ -425,11 +454,14 @@ function AssignmentDialog({ halaqaId, onClose }: { halaqaId: number; onClose: ()
           <button onClick={onClose} className="p-2 hover:bg-secondary rounded-lg"><X className="w-5 h-5" /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5 space-y-2">
-          <p className="text-xs text-muted-foreground mb-2">الأصل: كل الطلاب يظهرون عند المعلم وعند المساعد. عيّن طالباً لجهة معينة لإخفائه عن الجهة الأخرى.</p>
+          <p className="text-xs text-muted-foreground mb-2">
+            الأصل: كل الطلاب يظهرون عند المعلم وعند المساعد. عيّن طالباً لجهة معينة لإخفائه عن الأخرى.
+            {multiAssistants && " عند وجود أكثر من مساعد، اختر المساعد المحدّد."}
+          </p>
           {students.map((s) => (
-            <div key={s.id} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
+            <div key={s.id} className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 p-3 rounded-lg bg-secondary/50">
               <span className="font-medium">{s.name}</span>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 justify-end">
                 <button onClick={() => setAssign(s.id, undefined)}
                   className={`px-3 py-1 rounded text-xs font-bold ${!s.assignedTo ? "gold-gradient text-primary-foreground" : "border border-border text-muted-foreground"}`}>
                   كلاهما
@@ -438,10 +470,27 @@ function AssignmentDialog({ halaqaId, onClose }: { halaqaId: number; onClose: ()
                   className={`px-3 py-1 rounded text-xs font-bold ${s.assignedTo === "teacher" ? "bg-primary text-primary-foreground" : "border border-border text-muted-foreground"}`}>
                   معي فقط
                 </button>
-                <button onClick={() => setAssign(s.id, "assistant")}
-                  className={`px-3 py-1 rounded text-xs font-bold ${s.assignedTo === "assistant" ? "bg-primary/20 text-primary border border-primary" : "border border-border text-muted-foreground"}`}>
-                  المساعد فقط
-                </button>
+                {multiAssistants ? (
+                  assistants.map((assistant) => {
+                    const active =
+                      s.assignedTo === "assistant" &&
+                      (s.assignedAssistantCode?.trim() || halaqa?.assistantCode.trim()) === assistant.code.trim();
+                    return (
+                      <button
+                        key={assistant.code || assistant.name}
+                        onClick={() => setAssign(s.id, "assistant", assistant.code.trim() || undefined)}
+                        className={`px-3 py-1 rounded text-xs font-bold ${active ? "bg-primary/20 text-primary border border-primary" : "border border-border text-muted-foreground"}`}
+                      >
+                        {assistantDisplayLabel(halaqa!, assistant)}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <button onClick={() => setAssign(s.id, "assistant")}
+                    className={`px-3 py-1 rounded text-xs font-bold ${s.assignedTo === "assistant" ? "bg-primary/20 text-primary border border-primary" : "border border-border text-muted-foreground"}`}>
+                    المساعد فقط
+                  </button>
+                )}
               </div>
             </div>
           ))}
@@ -620,9 +669,9 @@ function StudentNameCell({
 
 function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewerRole, canAssign }: WeekTableProps) {
   const tableRef = useRef<HTMLDivElement>(null);
-  const allStudents = useMemo(() => loadStudents().filter((s) => s.halaqaId === halaqaId), [halaqaId]);
-  /** Teacher and assistant both see the full halaqa roster so attendance stays live for everyone. */
-  const students = allStudents;
+  const halaqa = useMemo(() => loadHalaqat().find((h) => h.id === halaqaId), [halaqaId]);
+  /** Teacher and assistant see roster filtered by assignment; unassigned students stay shared. */
+  const students = useGradeViewerStudents(halaqaId, viewerRole);
   const studentIdsKey = useMemo(
     () => students.map((s) => s.id).sort().join(","),
     [students],
@@ -1243,6 +1292,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           sciFields={sciCtx.fields}
           sciData={sciData}
           halaqaId={halaqaId}
+          halaqa={halaqa}
           halaqaSemesterPct={halaqaSemesterPct}
           showTransferButton={showTransferButton}
           transferOpen={transferOpen}
@@ -1516,8 +1566,10 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
             return (
               <tr key={s.id} className="group border-b border-border/50 hover:bg-accent/30">
                 <StudentNameCell index={studentIndex} name={s.name}>
-                  {s.assignedTo === "assistant" && viewerRole === "teacher" && (
-                    <span className="text-[10px] text-muted-foreground">مع المساعد</span>
+                  {s.assignedTo === "assistant" && viewerRole === "teacher" && halaqa && (
+                    <span className="text-[10px] text-muted-foreground">
+                      {assignmentLabel(s, halaqa) ? `مع ${assignmentLabel(s, halaqa)}` : "مع المساعد"}
+                    </span>
                   )}
                   {frozenPlanStudentIds.has(s.id) && (
                     <span className="text-[10px] text-warning">الخطة مجمّدة</span>

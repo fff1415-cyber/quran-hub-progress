@@ -24,6 +24,8 @@ import {
   type ScientificGradesConfig,
   type ScientificGradesDataStore,
 } from "@/lib/scientific-grades";
+import type { Halaqa } from "@/lib/mock-data";
+import { assignmentLabel } from "@/lib/halaqa-assistants";
 import {
   Select,
   SelectContent,
@@ -57,6 +59,7 @@ type Props = {
   sciFields: ScientificFieldsConfig;
   sciData: ScientificGradesDataStore[string];
   halaqaId: number;
+  halaqa?: Halaqa;
   halaqaSemesterPct: number;
   showTransferButton: boolean;
   transferOpen: boolean;
@@ -159,6 +162,7 @@ export function TeacherMobileDayBoard({
   sciFields,
   sciData,
   halaqaId,
+  halaqa,
   showTransferButton,
   transferOpen,
   onTransferOpenChange,
@@ -363,8 +367,10 @@ export function TeacherMobileDayBoard({
                 <div className="flex items-center gap-1 px-2 py-1.5 border-b border-border/40 bg-secondary/20 min-h-[2.25rem]">
                   <h3 className="flex-1 min-w-0 font-bold text-[11px] leading-tight truncate pr-0.5">
                     {s.name}
-                    {s.assignedTo === "assistant" && viewerRole === "teacher" && (
-                      <span className="text-[9px] text-muted-foreground font-normal mr-1">· مساعد</span>
+                    {s.assignedTo === "assistant" && viewerRole === "teacher" && halaqa && (
+                      <span className="text-[9px] text-muted-foreground font-normal mr-1">
+                        · {assignmentLabel(s, halaqa) ?? "مساعد"}
+                      </span>
                     )}
                     {frozenPlanStudentIds.has(s.id) && (
                       <span className="text-[9px] text-warning font-normal mr-1">· مجمد</span>

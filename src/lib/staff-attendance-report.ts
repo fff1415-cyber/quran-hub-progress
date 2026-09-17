@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import type { Halaqa } from "@/lib/mock-data";
+import { collectHalaqaStaffRows } from "@/lib/halaqa-assistants";
 import {
   COMPLEX_STAFF_HALAQA_ID,
   COMPLEX_STAFF_HALAQA_NAME,
@@ -89,9 +90,8 @@ export function buildExpectedStaffRoster(
     rows.push({ userKey, role, name: trimmed, halaqaId, halaqaName });
   };
 
-  for (const h of halaqat) {
-    push("teacher", h.teacherName ?? "", h.id, h.name);
-    push("assistant", h.assistantName ?? "", h.id, h.name);
+  for (const row of collectHalaqaStaffRows(halaqat)) {
+    push(row.role, row.name, row.halaqaId, row.halaqaName);
   }
 
   for (const acc of roleAccounts) {

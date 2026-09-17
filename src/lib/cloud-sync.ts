@@ -17,6 +17,7 @@ import {
 } from "./mock-data";
 import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } from "./weekly-tests";
 import { saveStaffAttendanceSettings, saveStaffCheckIns } from "./staff-attendance";
+import { normalizeExtraAssistants } from "./halaqa-assistants";
 import { saveStudentPortalVisibility, type StudentPortalVisibility } from "./student-portal-settings";
 import { saveComplexFeatures, type ComplexFeatures } from "./complex-features";
 import {
@@ -97,6 +98,7 @@ interface CloudStudentRow {
   institute_level?: string | null;
   phase_number?: number | null;
   assigned_to: string | null;
+  assigned_assistant_code?: string | null;
   memorized: string | null;
 }
 
@@ -108,6 +110,7 @@ interface CloudHalaqaRow {
   teacher_code?: string;
   assistant_name: string;
   assistant_code?: string;
+  extra_assistants?: unknown;
 }
 
 function rowToStudent(r: CloudStudentRow): Student {
@@ -125,10 +128,12 @@ function rowToStudent(r: CloudStudentRow): Student {
     instituteLevel: r.institute_level ?? undefined,
     phaseNumber,
     assignedTo: (r.assigned_to as "teacher" | "assistant" | undefined) ?? undefined,
+    assignedAssistantCode: r.assigned_assistant_code ?? undefined,
     memorized: r.memorized ?? undefined,
   };
 }
 function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
+  const extras = normalizeExtraAssistants(r.extra_assistants);
   return {
     id: Number(r.id),
     name: r.name,
@@ -137,6 +142,7 @@ function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
     teacherCode: r.teacher_code ?? "",
     assistantName: r.assistant_name ?? "",
     assistantCode: r.assistant_code ?? "",
+    extraAssistants: extras.length > 0 ? extras : undefined,
   };
 }
 function studentToRow(s: Student): CloudStudentRow {
@@ -153,10 +159,12 @@ function studentToRow(s: Student): CloudStudentRow {
     institute_level: s.instituteLevel ?? null,
     phase_number: Number.isFinite(phase) && phase > 0 ? phase : null,
     assigned_to: s.assignedTo ?? null,
+    assigned_assistant_code: s.assignedAssistantCode ?? null,
     memorized: s.memorized ?? null,
   };
 }
 function halaqaToRow(h: Halaqa): CloudHalaqaRow {
+  const extras = normalizeExtraAssistants(h.extraAssistants);
   return {
     id: h.id,
     name: h.name,
@@ -165,6 +173,7 @@ function halaqaToRow(h: Halaqa): CloudHalaqaRow {
     teacher_code: h.teacherCode,
     assistant_name: h.assistantName,
     assistant_code: h.assistantCode,
+    extra_assistants: extras.length > 0 ? extras : null,
   };
 }
 
@@ -450,6 +459,7 @@ export async function patchStudent(id: string, patch: Partial<Student>) {
   if (patch.instituteLevel !== undefined) row.institute_level = patch.instituteLevel ?? null;
   if (patch.phaseNumber !== undefined) row.phase_number = patch.phaseNumber ?? null;
   if ("assignedTo" in patch) row.assigned_to = patch.assignedTo ?? null;
+  if ("assignedAssistantCode" in patch) row.assigned_assistant_code = patch.assignedAssistantCode ?? null;
   if ("memorized" in patch) row.memorized = patch.memorized ?? null;
   await securePatchStudent({ data: { token: tokenOrThrow(), id, patch: row } });
 }
