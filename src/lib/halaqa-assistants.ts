@@ -20,22 +20,28 @@ function isValidAssistantEntry(a: HalaqaAssistant): boolean {
   return !!(a.name.trim() && a.name.trim() !== "—") || !!a.code.trim();
 }
 
-export function normalizeExtraAssistants(raw: unknown): HalaqaAssistant[] {
+function parseExtraAssistants(raw: unknown): HalaqaAssistant[] {
   if (!Array.isArray(raw)) return [];
   return raw
     .map((item) => {
       if (!item || typeof item !== "object") return null;
       const row = item as Record<string, unknown>;
       return {
-        name: String(row.name ?? "").trim(),
-        code: String(row.code ?? "").trim(),
+        name: String(row.name ?? ""),
+        code: String(row.code ?? ""),
       };
     })
-    .filter((a): a is HalaqaAssistant => !!a && isValidAssistantEntry(a));
+    .filter((a): a is HalaqaAssistant => !!a);
 }
 
+/** Saved/cloud extras — skip empty draft rows. */
+export function normalizeExtraAssistants(raw: unknown): HalaqaAssistant[] {
+  return parseExtraAssistants(raw).filter(isValidAssistantEntry);
+}
+
+/** UI editing — keep empty rows while the manager is typing. */
 export function getExtraAssistants(halaqa: Halaqa): HalaqaAssistant[] {
-  return normalizeExtraAssistants(halaqa.extraAssistants);
+  return parseExtraAssistants(halaqa.extraAssistants);
 }
 
 export function getAllAssistants(halaqa: Halaqa): HalaqaAssistant[] {
@@ -45,7 +51,7 @@ export function getAllAssistants(halaqa: Halaqa): HalaqaAssistant[] {
   if ((name && name !== "—") || code) {
     primary.push({ name: name || "—", code });
   }
-  return [...primary, ...getExtraAssistants(halaqa)];
+  return [...primary, ...normalizeExtraAssistants(halaqa.extraAssistants)];
 }
 
 export function hasMultipleAssistants(halaqa: Halaqa): boolean {
