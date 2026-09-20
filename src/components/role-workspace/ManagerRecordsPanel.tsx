@@ -3,6 +3,7 @@ import { loadStudents, loadHalaqat, loadAttendanceArchive } from "@/lib/mock-dat
 import { TabBadge } from "@/components/role-workspace/RoleShell";
 import { Archive, BookOpen } from "lucide-react";
 import { useMemo } from "react";
+import { tenantPath } from "@/lib/tenant";
 
 export function ManagerRecordsPanel() {
   const students = loadStudents();
@@ -65,7 +66,7 @@ export function ManagerRecordsPanel() {
         </h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
           {halaqat.map((h) => (
-            <Link key={h.id} to="/teacher" search={{ h: h.id }}
+            <Link key={h.id} to={tenantPath("/teacher")} search={{ h: h.id }}
               className="p-3 rounded-lg bg-secondary/50 hover:bg-primary/10 border border-transparent hover:border-primary text-sm transition-colors">
               <div className="font-medium">{h.name}</div>
               <div className="text-xs text-muted-foreground mt-0.5">{h.teacherName}</div>

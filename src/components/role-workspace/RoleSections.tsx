@@ -30,6 +30,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MessageCircle, UserX, Clock, Search, CheckCircle2, AlertTriangle, Check, GraduationCap, Send } from "lucide-react";
 import { toast } from "sonner";
+import { tenantPath } from "@/lib/tenant";
 
 function matchesSearch(name: string, query: string): boolean {
   const q = query.trim();
@@ -398,7 +399,7 @@ export function SupervisorHalaqatPanel() {
       <h2 className="text-lg font-bold text-primary mb-3">الحلقات ({halaqat.length})</h2>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
         {halaqat.map((h) => (
-          <Link key={h.id} to="/teacher" search={{ h: h.id }}
+          <Link key={h.id} to={tenantPath("/teacher")} search={{ h: h.id }}
             className="p-3 rounded-lg bg-secondary/50 hover:bg-primary/10 border border-transparent hover:border-primary text-sm">
             {h.name}
           </Link>
