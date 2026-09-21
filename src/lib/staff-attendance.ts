@@ -55,6 +55,18 @@ export function isAfterScheduledStart(now: Date, schedule: DailySchedule): boole
   return now >= startAt;
 }
 
+/** Auto check-in prompt appears this many minutes before halaqa start. */
+export const STAFF_ATTENDANCE_PROMPT_LEAD_MINUTES = 15;
+
+export function getStaffAttendancePromptAt(schedule: DailySchedule): Date {
+  const startAt = parseLocalDateTime(schedule.date, schedule.scheduledStart);
+  return new Date(startAt.getTime() - STAFF_ATTENDANCE_PROMPT_LEAD_MINUTES * 60_000);
+}
+
+export function isAfterStaffAttendancePromptTime(now: Date, schedule: DailySchedule): boolean {
+  return now >= getStaffAttendancePromptAt(schedule);
+}
+
 const KEY_PROMPT_DISMISS_PREFIX = "qs_staff_attendance_prompt_dismissed:";
 
 export function staffAttendancePromptDismissKey(userKey: string, date: string): string {

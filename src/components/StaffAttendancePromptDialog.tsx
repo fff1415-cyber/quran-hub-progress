@@ -15,10 +15,10 @@ import {
   dismissStaffAttendancePrompt,
   findTodayCheckIn,
   getDailySchedule,
-  isAfterScheduledStart,
+  getStaffAttendancePromptAt,
+  isAfterStaffAttendancePromptTime,
   isStaffAttendancePromptDismissed,
   loadStaffAttendanceSettings,
-  parseLocalDateTime,
   registerStaffCheckIn,
   shouldPromptStaffAttendance,
   staffRoleLabel,
@@ -65,12 +65,12 @@ export function StaffAttendancePromptDialog({
     void getDailySchedule().then((schedule) => {
       if (cancelled || !schedule) return;
       const now = new Date();
-      if (isAfterScheduledStart(now, schedule)) {
+      if (isAfterStaffAttendancePromptTime(now, schedule)) {
         tryOpen();
         return;
       }
-      const startAt = parseLocalDateTime(schedule.date, schedule.scheduledStart);
-      const delayMs = startAt.getTime() - now.getTime();
+      const promptAt = getStaffAttendancePromptAt(schedule);
+      const delayMs = promptAt.getTime() - now.getTime();
       if (delayMs > 0 && delayMs <= 12 * 60 * 60 * 1000) {
         timeoutId = window.setTimeout(tryOpen, delayMs);
       }
