@@ -879,7 +879,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     col?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [isCurrentWeek, todayKey, weekNum, useMobileBoard]);
 
-  const submitTransfer = () => {
+  const submitTransfer = async () => {
     const student = students.find((s) => s.id === transferStudentId);
     if (!student) { toast.error("اختر الطالب"); return; }
     const reason = transferReason.trim();
@@ -896,18 +896,24 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         fromName: senderName,
       },
       transferStatus: "pending",
-    });
-    void dispatchPushEvent({
-      event: "teacher_transfer",
-      title: "طلب تحويل طالب",
-      body: `${senderName}: ${student.name} — ${reason}`,
-      url: tenantPath("/manager"),
-      targets: { roles: ["manager"] },
-    });
-    toast.success("تم إرسال الطالب للإدارة");
-    setTransferOpen(false);
-    setTransferStudentId("");
-    setTransferReason("");
+    }, { sync: false });
+    try {
+      const { pushMergedNotifications } = await import("@/lib/cloud-sync");
+      await pushMergedNotifications(loadNotifications());
+      void dispatchPushEvent({
+        event: "teacher_transfer",
+        title: "طلب تحويل طالب",
+        body: `${senderName}: ${student.name} — ${reason}`,
+        url: tenantPath("/manager"),
+        targets: { roles: ["manager"] },
+      });
+      toast.success("تم إرسال الطالب للإدارة");
+      setTransferOpen(false);
+      setTransferStudentId("");
+      setTransferReason("");
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "تعذّر إرسال التحويل — تحقق من الاتصال");
+    }
   };
 
   const handleTransferOpenChange = (open: boolean) => {

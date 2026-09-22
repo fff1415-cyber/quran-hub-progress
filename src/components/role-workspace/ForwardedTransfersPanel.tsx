@@ -1,4 +1,5 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
+import { useNotificationsSync } from "@/hooks/use-notifications-sync";
 import {
   loadStudents, loadHalaqat, loadGrades, loadNotifications,
   updateNotification, type Notification,
@@ -56,15 +57,15 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
     return () => { cancelled = true; };
   }, []);
 
-  const refresh = () => {
+  const refresh = useCallback(() => {
     setItems(
       loadNotifications().filter(
         (n) => n.type === "transfer" && n.targetRole === role && !n.read && n.transferStatus !== "closed",
       ),
     );
-  };
+  }, [role]);
 
-  useEffect(() => { refresh(); }, [role]);
+  useNotificationsSync(refresh);
 
   const submitAction = async (n: Notification, actionText: string) => {
     if (!n.transferData || busyId) return;

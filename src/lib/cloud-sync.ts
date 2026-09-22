@@ -12,7 +12,9 @@ import {
   loadStudents,
   loadHalaqat,
   loadGrades,
+  loadNotifications,
   mergeGradesStores,
+  mergeNotifications,
   ensureGradesSemester,
 } from "./mock-data";
 import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } from "./weekly-tests";
@@ -352,7 +354,10 @@ export async function syncFromCloud(options?: {
           const merged = mergeScientificGradesStores(cloud, loadScientificGradesStore());
           saveScientificGradesStore(merged);
         }
-        if (state.has("notifications")) saveNotifications(state.get("notifications") as Notification[]);
+        if (state.has("notifications")) {
+          const cloud = state.get("notifications") as Notification[];
+          saveNotifications(mergeNotifications(cloud, loadNotifications()), { sync: false });
+        }
         if (state.has(ABSENCE_ALERTS_APP_STATE_KEY)) {
           mergeAbsenceAlertRecordFromCloud(state.get(ABSENCE_ALERTS_APP_STATE_KEY));
         }
@@ -706,4 +711,55 @@ export async function pushMergedStaffCheckIns(
     () => local,
   );
   return next;
+}
+
+export async function fetchCloudNotifications(): Promise<Notification[]> {
+  const rows = await secureListAppState({ data: { token: tokenOrThrow(), key: "notifications" } });
+  const row = rows.find((r) => r.key === "notifications");
+  if (!row?.value || !Array.isArray(row.value)) return [];
+  return row.value as Notification[];
+}
+
+let notificationsPushQueue: Promise<Notification[]> = Promise.resolve([]);
+
+/** Upload local notifications after merging with the latest cloud copy. */
+export async function pushMergedNotifications(local: Notification[]): Promise<Notification[]> {
+  const run = async (): Promise<Notification[]> => {
+    let cloud: Notification[] = [];
+    try {
+      cloud = await fetchCloudNotifications();
+    } catch {
+      cloud = [];
+    }
+    const merged = mergeNotifications(cloud, local);
+    await secureSetAppState({ data: { token: tokenOrThrow(), key: "notifications", value: merged } });
+    const prev = sessionStorage.getItem("qs_syncing");
+    sessionStorage.setItem("qs_syncing", "1");
+    try {
+      saveNotifications(merged, { sync: false });
+    } finally {
+      if (prev) sessionStorage.setItem("qs_syncing", prev);
+      else sessionStorage.removeItem("qs_syncing");
+    }
+    return merged;
+  };
+  const next = notificationsPushQueue.then(run, run);
+  notificationsPushQueue = next.then(
+    (v) => v,
+    () => local,
+  );
+  return next;
+}
+
+/** Pull cloud notifications and merge into local (manager/secretary inbox refresh). */
+export async function pullMergedNotifications(): Promise<Notification[]> {
+  let cloud: Notification[] = [];
+  try {
+    cloud = await fetchCloudNotifications();
+  } catch {
+    cloud = [];
+  }
+  const merged = mergeNotifications(cloud, loadNotifications());
+  saveNotifications(merged, { sync: false });
+  return merged;
 }

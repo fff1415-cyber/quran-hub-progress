@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useNotificationsSync } from "@/hooks/use-notifications-sync";
 import {
   loadSardQueue, loadStudents, loadHalaqat, loadGrades, loadNotifications, updateNotification,
   pushNotification, loadTransfersForRole, type Notification,
@@ -48,9 +49,8 @@ export function ManagerTransfersPanel() {
   const [strugglingPromptId, setStrugglingPromptId] = useState<string | null>(null);
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
 
-  const reload = () => setNotifs(loadNotifications());
-
-  useEffect(() => { reload(); }, []);
+  const reload = useCallback(() => setNotifs(loadNotifications()), []);
+  useNotificationsSync(reload);
   useEffect(() => {
     let cancelled = false;
     fetchActiveCalendar(true)

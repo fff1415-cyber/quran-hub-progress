@@ -52,9 +52,14 @@ export function appendTransferAction(
 
 export async function syncNotificationsToCloud(): Promise<void> {
   try {
-    const { pushAppState } = await import("@/lib/cloud-sync");
-    await pushAppState("notifications", loadNotifications());
+    const { pushMergedNotifications } = await import("@/lib/cloud-sync");
+    await pushMergedNotifications(loadNotifications());
   } catch {
     /* caller shows toast */
   }
+}
+
+export async function pullNotificationsFromCloud(): Promise<Notification[]> {
+  const { pullMergedNotifications } = await import("@/lib/cloud-sync");
+  return pullMergedNotifications();
 }

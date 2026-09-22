@@ -534,20 +534,109 @@ export function loadTransfersForRole(role: TransferTargetRole): Notification[] {
 export function countTransfersForRole(role: TransferTargetRole): number {
   return loadTransfersForRole(role).length;
 }
+
+const TRANSFER_STATUS_RANK: Record<NonNullable<Notification["transferStatus"]>, number> = {
+  pending: 0,
+  to_secretary: 1,
+  to_supervisor: 1,
+  struggling: 2,
+  closed: 3,
+};
+
+function mergeTransferActions(
+  a: TransferActionRecord[] = [],
+  b: TransferActionRecord[] = [],
+): TransferActionRecord[] {
+  const seen = new Set<string>();
+  const out: TransferActionRecord[] = [];
+  for (const act of [...a, ...b]) {
+    const key = `${act.at}:${act.role}:${act.text}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(act);
+  }
+  return out.sort((x, y) => x.at.localeCompare(y.at));
+}
+
+function mergeNotificationPair(a: Notification, b: Notification): Notification {
+  const rankA = TRANSFER_STATUS_RANK[a.transferStatus ?? "pending"] ?? 0;
+  const rankB = TRANSFER_STATUS_RANK[b.transferStatus ?? "pending"] ?? 0;
+  const primary = rankA >= rankB ? a : b;
+  const secondary = rankA >= rankB ? b : a;
+  const tdP = primary.transferData;
+  const tdS = secondary.transferData;
+  return {
+    ...secondary,
+    ...primary,
+    read: a.read && b.read,
+    transferStatus: primary.transferStatus ?? secondary.transferStatus,
+    targetRole: primary.targetRole ?? secondary.targetRole,
+    transferData: tdP || tdS
+      ? {
+          ...(tdS ?? {}),
+          ...(tdP ?? {}),
+          actions: mergeTransferActions(tdS?.actions, tdP?.actions),
+        }
+      : undefined,
+  };
+}
+
+/** Merge cloud + local notification lists (teacher transfer → manager inbox). */
+export function mergeNotifications(cloud: Notification[], local: Notification[]): Notification[] {
+  const byId = new Map<string, Notification>();
+  for (const n of [...cloud, ...local]) {
+    if (!n?.id) continue;
+    const prev = byId.get(n.id);
+    byId.set(n.id, prev ? mergeNotificationPair(prev, n) : n);
+  }
+  return Array.from(byId.values())
+    .sort((x, y) => y.createdAt.localeCompare(x.createdAt))
+    .slice(0, 200);
+}
+
+export const NOTIFICATIONS_CHANGED_EVENT = "qshatawi:notifications-changed";
+
+function writeNotificationsLocal(list: Notification[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.slice(0, 200)));
+  window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
+}
+
+function scheduleNotificationsCloudSync(list: Notification[]) {
+  if (typeof window === "undefined" || !hasAuthToken()) return;
+  void import("./cloud-sync")
+    .then((m) => m.pushMergedNotifications(list))
+    .catch(() => undefined);
+}
+
 export function loadNotifications(): Notification[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY_NOTIFICATIONS);
   return raw ? JSON.parse(raw) : [];
 }
-export function pushNotification(n: Omit<Notification, "id" | "createdAt" | "read">) {
+
+export function pushNotification(
+  n: Omit<Notification, "id" | "createdAt" | "read">,
+  options?: { sync?: boolean },
+) {
   const list = loadNotifications();
-  list.unshift({ ...n, id: `n-${Date.now()}-${Math.random()}`, createdAt: new Date().toISOString(), read: false });
-  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.slice(0, 200)));
-  persistShared("notifications", list.slice(0, 200));
+  list.unshift({
+    ...n,
+    id: `n-${Date.now()}-${Math.random()}`,
+    createdAt: new Date().toISOString(),
+    read: false,
+  });
+  writeNotificationsLocal(list.slice(0, 200));
+  if (options?.sync !== false) {
+    scheduleNotificationsCloudSync(list.slice(0, 200));
+  }
 }
-export function saveNotifications(list: Notification[]) {
-  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.slice(0, 200)));
-  persistShared("notifications", list.slice(0, 200));
+
+export function saveNotifications(list: Notification[], options?: { sync?: boolean }) {
+  writeNotificationsLocal(list);
+  if (options?.sync !== false) {
+    scheduleNotificationsCloudSync(list.slice(0, 200));
+  }
 }
 export function dismissNotification(id: string) {
   const list = loadNotifications().map((n) => (n.id === id ? { ...n, read: true } : n));

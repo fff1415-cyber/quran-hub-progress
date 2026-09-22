@@ -1,5 +1,6 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { loadNotifications, loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
+import { useNotificationsSync } from "@/hooks/use-notifications-sync";
 import { ManagerTransfersPanel } from "@/components/role-workspace/ManagerTransfersPanel";
 import { ManagerNotificationsPanel } from "@/components/role-workspace/ManagerNotificationsPanel";
 import { ManagerSubTabs } from "@/components/role-workspace/ManagerSubTabs";
@@ -11,6 +12,9 @@ type Props = {
 };
 
 export function ManagerInboxPanel({ section, onSectionChange }: Props) {
+  const [, bumpSync] = useState(0);
+  useNotificationsSync(useCallback(() => bumpSync((n) => n + 1), []));
+
   const queue = loadSardQueue();
   const notifs = loadNotifications();
   const pendingTransfers = countTransfersForRole("manager");
