@@ -5,7 +5,7 @@ import {
   loadHalaqat, loadStudents, saveStudents, saveGrades, loadGrades, emptyWeek, emptyDayEntry, ensureWeekDays, dayEntryFor, DAYS,
   mergeDayEntryPatch,
   GRADES_CHANGED_EVENT,
-  weekPercentage, loadNotifications, dismissNotification, pushNotification,
+  weekPercentage, loadNotifications, pushNotification,
   ensureGradesSemester,
   sumWeekCompensationFaces, compensationRemainingForDay,
   type WeekRecord, type DayEntry, type Student, type GradesStore,
@@ -32,6 +32,8 @@ import {
 import { useLiveGrades } from "@/hooks/use-live-grades";
 import { dispatchPushEvent } from "@/lib/push-notifications";
 import { tenantPath } from "@/lib/tenant";
+import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
+import { InboxItemActions } from "@/components/role-workspace/InboxItemActions";
 import { AppHeader } from "@/components/AppHeader";
 import {
   Select, SelectContent, SelectItem, SelectTrigger, SelectValue,
@@ -879,7 +881,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     col?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [isCurrentWeek, todayKey, weekNum, useMobileBoard]);
 
-  const submitTransfer = async () => {
+  const submitTransfer = () => {
     const student = students.find((s) => s.id === transferStudentId);
     if (!student) { toast.error("اختر الطالب"); return; }
     const reason = transferReason.trim();
@@ -896,24 +898,18 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         fromName: senderName,
       },
       transferStatus: "pending",
-    }, { sync: false });
-    try {
-      const { pushMergedNotifications } = await import("@/lib/cloud-sync");
-      await pushMergedNotifications(loadNotifications());
-      void dispatchPushEvent({
-        event: "teacher_transfer",
-        title: "طلب تحويل طالب",
-        body: `${senderName}: ${student.name} — ${reason}`,
-        url: tenantPath("/manager"),
-        targets: { roles: ["manager"] },
-      });
-      toast.success("تم إرسال الطالب للإدارة");
-      setTransferOpen(false);
-      setTransferStudentId("");
-      setTransferReason("");
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "تعذّر إرسال التحويل — تحقق من الاتصال");
-    }
+    });
+    void dispatchPushEvent({
+      event: "teacher_transfer",
+      title: "طلب تحويل طالب",
+      body: `${senderName}: ${student.name} — ${reason}`,
+      url: tenantPath("/manager"),
+      targets: { roles: ["manager"] },
+    });
+    toast.success("تم إرسال الطالب للإدارة");
+    setTransferOpen(false);
+    setTransferStudentId("");
+    setTransferReason("");
   };
 
   const handleTransferOpenChange = (open: boolean) => {
@@ -1787,14 +1783,11 @@ function Cbx({ checked, onChange }: { checked: boolean; onChange: (v: boolean) =
 }
 
 function HalaqaNotifications({ halaqaId }: { halaqaId: number }) {
-  const [items, setItems] = useState(() =>
-    loadNotifications().filter((n) => !n.read && n.targetHalaqaId === halaqaId)
-  );
+  const refresh = () =>
+    loadNotifications().filter((n) => !n.read && n.targetHalaqaId === halaqaId);
+  const [items, setItems] = useState(refresh);
+  useInboxRefresh(() => setItems(refresh()));
   if (items.length === 0) return null;
-  const dismiss = (id: string) => {
-    dismissNotification(id);
-    setItems(loadNotifications().filter((n) => !n.read && n.targetHalaqaId === halaqaId));
-  };
   return (
     <div className="glass-card rounded-2xl p-4 mb-6 border border-warning/30">
       <div className="flex items-center gap-2 mb-3 text-warning font-bold">
@@ -1805,13 +1798,11 @@ function HalaqaNotifications({ halaqaId }: { halaqaId: number }) {
         {items.map((n) => (
           <div key={n.id} className="flex items-start gap-2 p-2 rounded-lg bg-warning/10">
             <div className="flex-1 text-sm">{n.message}</div>
-            <button
-              onClick={() => dismiss(n.id)}
-              aria-label="تم"
-              className="p-1.5 rounded-md bg-success/15 text-success border border-success/30"
-            >
-              <Check className="w-4 h-4" />
-            </button>
+            <InboxItemActions
+              id={n.id}
+              onDone={() => setItems(refresh())}
+              isLateEntry={n.type === "late"}
+            />
           </div>
         ))}
       </div>

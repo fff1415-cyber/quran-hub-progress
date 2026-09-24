@@ -94,7 +94,7 @@ function assert_complex_login_allowed(PDO $pdo, int $complexId): void
         error_response('المجمع غير موجود', 404);
     }
     if ((int) ($row['is_active'] ?? 1) !== 1) {
-        error_response('تم تعطيل هذا المجمع — تواصل مع إدارة المنصة', 403);
+        error_response('لم يُفعَّل هذا المجمع بعد — تواصل مع إدارة المنصة للموافقة', 403);
     }
 }
 

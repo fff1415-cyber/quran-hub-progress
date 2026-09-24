@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
-import { useNotificationsSync } from "@/hooks/use-notifications-sync";
+import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
+import { InboxItemActions } from "@/components/role-workspace/InboxItemActions";
 import {
   loadStudents, loadHalaqat, loadGrades, loadNotifications,
   updateNotification, type Notification,
@@ -8,11 +9,7 @@ import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-conte
 import { studentReportPercentages, formatOverallPercent } from "@/lib/semester-grading";
 import type { TransferTargetRole } from "@/lib/mock-data";
 import { getSessionName } from "@/lib/session-role";
-import {
-  appendTransferAction,
-  syncNotificationsToCloud,
-  transferActionRoleLabel,
-} from "@/lib/transfer-actions";
+import { appendTransferAction, transferActionRoleLabel } from "@/lib/transfer-actions";
 import { TransferActionForm } from "@/components/role-workspace/TransferActionForm";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
@@ -65,9 +62,9 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
     );
   }, [role]);
 
-  useNotificationsSync(refresh);
+  useInboxRefresh(refresh);
 
-  const submitAction = async (n: Notification, actionText: string) => {
+  const submitAction = (n: Notification, actionText: string) => {
     if (!n.transferData || busyId) return;
     setBusyId(n.id);
     const actorName = getSessionName(transferActionRoleLabel(role));
@@ -82,7 +79,6 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
       updateNotification(n.id, { read: true, transferStatus: "closed" });
       refresh();
       toast.success("تم تسجيل الإجراء وإغلاق الحالة");
-      await syncNotificationsToCloud();
     } catch (e) {
       refresh();
       toast.error(e instanceof Error ? e.message : "فشل التحديث");
@@ -127,12 +123,15 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
                         {td.forwardedBy ? ` · من المدير: ${td.forwardedBy}` : td.fromName ? ` · من: ${td.fromName}` : ""}
                       </div>
                     </div>
-                    <div className="text-[10px] text-muted-foreground">
-                      تاريخ المخالفة: {td.rootTransferId
-                        ? new Date(
-                            loadNotifications().find((x) => x.id === td.rootTransferId)?.createdAt ?? n.createdAt,
-                          ).toLocaleString("ar-SA")
-                        : new Date(n.createdAt).toLocaleString("ar-SA")}
+                    <div className="flex items-center gap-2">
+                      <div className="text-[10px] text-muted-foreground">
+                        تاريخ المخالفة: {td.rootTransferId
+                          ? new Date(
+                              loadNotifications().find((x) => x.id === td.rootTransferId)?.createdAt ?? n.createdAt,
+                            ).toLocaleString("ar-SA")
+                          : new Date(n.createdAt).toLocaleString("ar-SA")}
+                      </div>
+                      <InboxItemActions id={n.id} onDone={refresh} showDismiss={false} />
                     </div>
                   </div>
                   <div className="rounded-lg bg-background/40 border border-border p-2 mb-3 text-sm">

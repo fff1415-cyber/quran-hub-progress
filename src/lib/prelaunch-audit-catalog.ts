@@ -31,7 +31,10 @@ export const PRELAUNCH_AUDIT_CATALOG: PrelaunchAuditItem[] = [
   { id: "tenant-login", group: "المنصة", label: "بوابة دخول المجمع", href: "/m1", hint: "مثال: msht.io/m101" },
 
   // المدير — صندوق العمل
-  { id: "manager-inbox-transfers", group: "المدير", label: "صندوق العمل — التحويلات", href: manager("inbox", "transfers") },
+  { id: "manager-inbox-pending", group: "المدير", label: "صندوق العمل — بانتظار الإجراء", href: manager("inbox", "pending") },
+  { id: "manager-inbox-struggling", group: "المدير", label: "صندوق العمل — المتعثرون", href: manager("inbox", "struggling") },
+  { id: "manager-inbox-failed", group: "المدير", label: "صندوق العمل — راسبون نهائياً", href: manager("inbox", "failed") },
+  { id: "manager-inbox-history", group: "المدير", label: "صندوق العمل — السجل", href: manager("inbox", "history") },
   { id: "manager-inbox-notifications", group: "المدير", label: "صندوق العمل — الإشعارات", href: manager("inbox", "notifications") },
 
   // المدير — البيانات

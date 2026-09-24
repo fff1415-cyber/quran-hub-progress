@@ -11,6 +11,8 @@ export type TenantInfo = {
   primary_color: string;
   theme_key: BrandThemeKey;
   subdomain: string;
+  /** false when complex awaits platform approval or was deactivated */
+  is_active?: boolean;
 };
 
 /** Public SaaS landing brand (msht.io apex — not a specific complex). */
@@ -368,6 +370,7 @@ function parseTenantRow(row: TenantInfo, sub: string): TenantInfo {
     primary_color: row.primary_color || getBrandTheme(themeKey).primary,
     theme_key: themeKey,
     subdomain: row.subdomain || sub,
+    is_active: row.is_active !== false,
   };
 }
 
@@ -406,6 +409,8 @@ export type TenantResolveResult = {
   name: string;
   subdomain: string;
   url: string;
+  pending_approval?: boolean;
+  is_active?: boolean;
 };
 
 /** Find complex by subdomain slug or Arabic/English name (platform homepage). */
@@ -492,6 +497,8 @@ export async function registerNewComplex(input: ComplexRegisterInput): Promise<T
     name: row.name,
     subdomain: row.subdomain,
     url: tenantUrl(row.subdomain),
+    pending_approval: row.pending_approval === true,
+    is_active: row.is_active !== false,
   };
 }
 

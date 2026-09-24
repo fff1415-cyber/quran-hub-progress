@@ -76,6 +76,14 @@ function handle_tenant_info(): void
     }
 
     $themeKey = ($hasTheme && isset($row['theme_key'])) ? (string) $row['theme_key'] : 'navy';
+    $hasIsActive = table_column_exists($pdo, 'complexes', 'is_active');
+    $isActive = true;
+    if ($hasIsActive) {
+        $activeStmt = $pdo->prepare('SELECT is_active FROM complexes WHERE id = ? LIMIT 1');
+        $activeStmt->execute([(int) $row['id']]);
+        $activeRow = $activeStmt->fetch();
+        $isActive = (int) ($activeRow['is_active'] ?? 1) === 1;
+    }
 
     json_response([
         'id' => (int) $row['id'],
@@ -86,5 +94,6 @@ function handle_tenant_info(): void
         'primary_color' => (string) ($row['primary_color'] ?? '#1e3a5f'),
         'theme_key' => $themeKey,
         'subdomain' => $hasSubdomain ? (string) ($row['subdomain'] ?? TENANT_DEFAULT_SUBDOMAIN) : TENANT_DEFAULT_SUBDOMAIN,
+        'is_active' => $isActive,
     ]);
 }

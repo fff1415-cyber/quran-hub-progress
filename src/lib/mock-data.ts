@@ -218,7 +218,7 @@ const KEY_SARD_HISTORY = "qshatawi_sard_history_v2";
 const KEY_MESSAGE_TEMPLATES = "qshatawi_message_templates_v2";
 const KEY_LATE_PERMISSIONS = "qshatawi_late_permissions_v2";
 
-function persistShared(key: "grades" | "sard_queue" | "sard_history" | "notifications" | "message_templates" | "late_permissions", value: unknown) {
+function persistShared(key: "grades" | "sard_queue" | "sard_history" | "message_templates" | "late_permissions", value: unknown) {
   if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync").then((m) => m.pushAppState(key, value)).catch(() => undefined);
@@ -568,7 +568,7 @@ function mergeNotificationPair(a: Notification, b: Notification): Notification {
   return {
     ...secondary,
     ...primary,
-    read: a.read && b.read,
+    read: a.read || b.read,
     transferStatus: primary.transferStatus ?? secondary.transferStatus,
     targetRole: primary.targetRole ?? secondary.targetRole,
     transferData: tdP || tdS
@@ -602,23 +602,13 @@ function writeNotificationsLocal(list: Notification[]) {
   window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
 }
 
-function scheduleNotificationsCloudSync(list: Notification[]) {
-  if (typeof window === "undefined" || !hasAuthToken()) return;
-  void import("./cloud-sync")
-    .then((m) => m.pushMergedNotifications(list))
-    .catch(() => undefined);
-}
-
 export function loadNotifications(): Notification[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY_NOTIFICATIONS);
   return raw ? JSON.parse(raw) : [];
 }
 
-export function pushNotification(
-  n: Omit<Notification, "id" | "createdAt" | "read">,
-  options?: { sync?: boolean },
-) {
+export function pushNotification(n: Omit<Notification, "id" | "createdAt" | "read">) {
   const list = loadNotifications();
   list.unshift({
     ...n,
@@ -627,24 +617,40 @@ export function pushNotification(
     read: false,
   });
   writeNotificationsLocal(list.slice(0, 200));
-  if (options?.sync !== false) {
-    scheduleNotificationsCloudSync(list.slice(0, 200));
-  }
 }
 
-export function saveNotifications(list: Notification[], options?: { sync?: boolean }) {
+export function saveNotifications(list: Notification[]) {
   writeNotificationsLocal(list);
-  if (options?.sync !== false) {
-    scheduleNotificationsCloudSync(list.slice(0, 200));
-  }
 }
+
 export function dismissNotification(id: string) {
   const list = loadNotifications().map((n) => (n.id === id ? { ...n, read: true } : n));
   saveNotifications(list);
 }
+
+/** Remove notification(s) locally — includes forwards linked via rootTransferId. */
+export function deleteNotification(id: string) {
+  const list = loadNotifications();
+  const remove = new Set<string>([id]);
+  for (const n of list) {
+    if (n.transferData?.rootTransferId === id) remove.add(n.id);
+  }
+  saveNotifications(list.filter((n) => !remove.has(n.id)));
+}
+
 export function updateNotification(id: string, patch: Partial<Notification>) {
   const list = loadNotifications().map((n) => (n.id === id ? { ...n, ...patch } : n));
   saveNotifications(list);
+}
+
+/** Manager inbox alerts — excludes transfer workflow rows. */
+export function loadGeneralNotificationsForManager(): Notification[] {
+  return loadNotifications().filter(
+    (n) =>
+      n.type !== "transfer"
+      && !n.read
+      && (!n.targetRole || n.targetRole === "manager"),
+  );
 }
 
 // ---- WhatsApp message templates ----

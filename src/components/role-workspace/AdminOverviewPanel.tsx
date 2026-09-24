@@ -1,15 +1,17 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, loadGrades, loadNotifications, DAYS,
-  loadSardQueue, updateSardItem, pushNotification, dismissNotification,
+  loadSardQueue, updateSardItem, pushNotification,
   type WeekRecord,
 } from "@/lib/mock-data";
+import { InboxItemActions } from "@/components/role-workspace/InboxItemActions";
+import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { getCalendarDayKey } from "@/lib/operational-date";
 import { fetchActiveCalendar } from "@/lib/academic-context";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { LateSardList, ActiveSardList } from "@/components/SardLists";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
-import { Bell, MessageCircle, TrendingUp, UserX, Send, Zap, Clock, Check } from "lucide-react";
+import { Bell, MessageCircle, TrendingUp, UserX, Send, Zap, Clock } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 
@@ -17,22 +19,17 @@ export function AdminOverviewPanel() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
   const grades = loadGrades();
-  const [notifications, setNotifications] = useState(() => loadNotifications());
+  const [tick, setTick] = useState(0);
   const [queue, setQueue] = useState(() => loadSardQueue());
   const [tab, setTab] = useState<"today" | "cumulative" | "progress" | "sard" | "alerts">("today");
   const [currentWeek, setCurrentWeek] = useState(1);
-  const unread = notifications.filter((n) => !n.read);
+  const reloadNotifs = () => setTick((n) => n + 1);
+  useInboxRefresh(reloadNotifs);
+  const unread = loadNotifications().filter((n) => !n.read);
 
   useEffect(() => {
     fetchActiveCalendar().then((cal) => setCurrentWeek(cal.currentWeekNumber)).catch(() => {});
   }, []);
-
-  const resolveNotif = (id: string, targetTab?: string) => {
-    dismissNotification(id);
-    setNotifications(loadNotifications());
-    if (targetTab === "sard" || targetTab === "today") setTab(targetTab as "today" | "sard");
-    else if (targetTab === "late") setTab("today");
-  };
 
   const todayKey = getCalendarDayKey();
   const scheduled = queue.filter((q) => q.status === "scheduled");
@@ -221,10 +218,15 @@ export function AdminOverviewPanel() {
                     <div className="text-sm">{n.message}</div>
                     <div className="text-xs text-muted-foreground mt-1">{new Date(n.createdAt).toLocaleString("ar")}</div>
                   </div>
-                  <button onClick={() => { resolveNotif(n.id, n.actionTab); toast.success("تم"); }}
-                    className="p-2 rounded-lg bg-success/15 text-success border border-success/30 shrink-0">
-                    <Check className="w-4 h-4" />
-                  </button>
+                  <InboxItemActions
+                    id={n.id}
+                    onDone={() => {
+                      reloadNotifs();
+                      if (n.actionTab === "sard" || n.actionTab === "today") setTab(n.actionTab);
+                      else if (n.actionTab === "late") setTab("today");
+                    }}
+                    isLateEntry={n.type === "late"}
+                  />
                 </div>
               ))}
             </div>

@@ -130,6 +130,11 @@ export async function platformRevokeAccess(token: string, complexId: number): Pr
   return result.deleted_accounts;
 }
 
+/** Inactive complex that still has login accounts — awaiting platform approval. */
+export function isComplexPendingApproval(complex: PlatformComplex): boolean {
+  return !complex.is_active && complex.accounts_count > 0;
+}
+
 export const ROLE_LABELS: Record<string, string> = {
   manager: "مدير المجمع",
   secretary: "سكرتير",

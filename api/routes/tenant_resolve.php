@@ -227,33 +227,32 @@ function handle_complex_register(): void
 
     $hasContactPhone = table_column_exists($pdo, 'complexes', 'contact_phone');
     $hasTheme = table_column_exists($pdo, 'complexes', 'theme_key');
+    ensure_complexes_is_active_column($pdo);
+    $hasIsActive = table_column_exists($pdo, 'complexes', 'is_active');
     $defaultPrimary = '#1e3a5f';
 
     try {
         $pdo->beginTransaction();
 
-        if ($hasContactPhone && $hasTheme) {
-            $stmt = $pdo->prepare(
-                'INSERT INTO complexes (name, subdomain, primary_color, theme_key, contact_phone)
-                 VALUES (?, ?, ?, ?, ?)'
-            );
-            $stmt->execute([$name, $subdomain, $defaultPrimary, 'navy', $contactPhone]);
-        } elseif ($hasContactPhone) {
-            $stmt = $pdo->prepare(
-                'INSERT INTO complexes (name, subdomain, primary_color, contact_phone) VALUES (?, ?, ?, ?)'
-            );
-            $stmt->execute([$name, $subdomain, $defaultPrimary, $contactPhone]);
-        } elseif ($hasTheme) {
-            $stmt = $pdo->prepare(
-                'INSERT INTO complexes (name, subdomain, primary_color, theme_key) VALUES (?, ?, ?, ?)'
-            );
-            $stmt->execute([$name, $subdomain, $defaultPrimary, 'navy']);
-        } else {
-            $stmt = $pdo->prepare(
-                'INSERT INTO complexes (name, subdomain, primary_color) VALUES (?, ?, ?)'
-            );
-            $stmt->execute([$name, $subdomain, $defaultPrimary]);
+        $cols = ['name', 'subdomain', 'primary_color'];
+        $vals = [$name, $subdomain, $defaultPrimary];
+        if ($hasTheme) {
+            $cols[] = 'theme_key';
+            $vals[] = 'navy';
         }
+        if ($hasContactPhone) {
+            $cols[] = 'contact_phone';
+            $vals[] = $contactPhone;
+        }
+        if ($hasIsActive) {
+            $cols[] = 'is_active';
+            $vals[] = 0;
+        }
+        $placeholders = implode(', ', array_fill(0, count($cols), '?'));
+        $stmt = $pdo->prepare(
+            'INSERT INTO complexes (' . implode(', ', $cols) . ') VALUES (' . $placeholders . ')'
+        );
+        $stmt->execute($vals);
         $id = (int) $pdo->lastInsertId();
 
         if ($hasRoleAccounts) {
@@ -292,5 +291,7 @@ function handle_complex_register(): void
         'manager_name' => $managerName,
         'manager_code' => $managerCode,
         'contact_phone' => $contactPhone,
+        'pending_approval' => $hasIsActive,
+        'is_active' => !$hasIsActive,
     ], 201);
 }

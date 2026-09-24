@@ -49,17 +49,3 @@ export function appendTransferAction(
 
   saveNotifications(list);
 }
-
-export async function syncNotificationsToCloud(): Promise<void> {
-  try {
-    const { pushMergedNotifications } = await import("@/lib/cloud-sync");
-    await pushMergedNotifications(loadNotifications());
-  } catch {
-    /* caller shows toast */
-  }
-}
-
-export async function pullNotificationsFromCloud(): Promise<Notification[]> {
-  const { pullMergedNotifications } = await import("@/lib/cloud-sync");
-  return pullMergedNotifications();
-}

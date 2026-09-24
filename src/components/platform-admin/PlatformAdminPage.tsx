@@ -2,8 +2,10 @@ import { Link } from "@tanstack/react-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Building2,
+  CheckCircle2,
   ChevronDown,
   ChevronUp,
+  Clock,
   ExternalLink,
   Loader2,
   LogOut,
@@ -22,6 +24,7 @@ import {
   platformDeleteRoleAccount,
   platformListComplexes,
   platformListRoleAccounts,
+  isComplexPendingApproval,
   platformLogin,
   platformPatchComplex,
   platformRevokeAccess,
@@ -66,15 +69,27 @@ export function PlatformAdminPage() {
     }
   }, [token, loadComplexes]);
 
+  const pendingCount = useMemo(
+    () => complexes.filter(isComplexPendingApproval).length,
+    [complexes],
+  );
+
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return complexes;
-    return complexes.filter(
-      (c) =>
-        c.name.toLowerCase().includes(q) ||
-        c.subdomain.toLowerCase().includes(q) ||
-        (c.contact_phone ?? "").includes(q),
-    );
+    const rows = q
+      ? complexes.filter(
+          (c) =>
+            c.name.toLowerCase().includes(q) ||
+            c.subdomain.toLowerCase().includes(q) ||
+            (c.contact_phone ?? "").includes(q),
+        )
+      : complexes;
+    return [...rows].sort((a, b) => {
+      const aPending = isComplexPendingApproval(a) ? 0 : 1;
+      const bPending = isComplexPendingApproval(b) ? 0 : 1;
+      if (aPending !== bPending) return aPending - bPending;
+      return b.id - a.id;
+    });
   }, [complexes, query]);
 
   const login = async () => {
@@ -129,15 +144,24 @@ export function PlatformAdminPage() {
   const toggleActive = async (complex: PlatformComplex) => {
     if (!token) return;
     const next = !complex.is_active;
+    const pending = isComplexPendingApproval(complex);
     const msg = next
-      ? `تفعيل مجمع «${complex.name}»؟`
+      ? pending
+        ? `الموافقة على تفعيل مجمع «${complex.name}»؟\n\nسيستطيع المدير الدخول فوراً.`
+        : `تفعيل مجمع «${complex.name}»؟`
       : `تعطيل مجمع «${complex.name}»؟\n\nسيتم حذف جميع حسابات الدخول (role_accounts) تلقائياً.`;
     if (!confirm(msg)) return;
 
     setActionId(complex.id);
     try {
       await platformPatchComplex(token, complex.id, next);
-      toast.success(next ? "تم تفعيل المجمع" : "تم تعطيل المجمع وحذف حسابات الدخول");
+      toast.success(
+        next
+          ? pending
+            ? "تمت الموافقة — المجمع نشط الآن"
+            : "تم تفعيل المجمع"
+          : "تم تعطيل المجمع وحذف حسابات الدخول",
+      );
       await loadComplexes(token);
       if (expandedId === complex.id) {
         await loadAccounts(complex.id);
@@ -265,7 +289,9 @@ export function PlatformAdminPage() {
               <h1 className="display text-2xl font-bold">لوحة أدمن المنصة</h1>
             </div>
             <p className="text-sm text-muted-foreground">
-              {complexes.length} مجمع · إدارة الحسابات والتعاقدات
+              {complexes.length} مجمع
+              {pendingCount > 0 ? ` · ${pendingCount} بانتظار الموافقة` : ""}
+              {" · "}إدارة الحسابات والتعاقدات
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -288,6 +314,22 @@ export function PlatformAdminPage() {
             </button>
           </div>
         </div>
+
+        {pendingCount > 0 && (
+          <div className="glass-card rounded-2xl p-4 border border-amber-500/40 bg-amber-500/5">
+            <div className="flex flex-wrap items-center gap-3">
+              <Clock className="w-5 h-5 text-amber-600 shrink-0" />
+              <div className="min-w-0 flex-1">
+                <p className="font-bold text-amber-700 dark:text-amber-400">
+                  {pendingCount} طلب/طلبات تسجيل بانتظار الموافقة
+                </p>
+                <p className="text-xs text-muted-foreground mt-0.5">
+                  راجع الطلبات أدناه واضغط «موافقة» لتفعيل المجمع والسماح بالدخول.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="glass-card rounded-2xl p-4">
           <div className="relative">
@@ -314,11 +356,16 @@ export function PlatformAdminPage() {
             {filtered.map((complex) => {
               const expanded = expandedId === complex.id;
               const busy = actionId === complex.id;
+              const pending = isComplexPendingApproval(complex);
               return (
                 <div
                   key={complex.id}
                   className={`glass-card rounded-2xl overflow-hidden border ${
-                    complex.is_active ? "border-border" : "border-destructive/40 bg-destructive/5"
+                    complex.is_active
+                      ? "border-border"
+                      : pending
+                        ? "border-amber-500/40 bg-amber-500/5"
+                        : "border-destructive/40 bg-destructive/5"
                   }`}
                 >
                   <div className="p-4 md:p-5">
@@ -334,10 +381,12 @@ export function PlatformAdminPage() {
                               className={`text-xs px-2 py-0.5 rounded-full font-bold ${
                                 complex.is_active
                                   ? "bg-success/15 text-success"
-                                  : "bg-destructive/15 text-destructive"
+                                  : pending
+                                    ? "bg-amber-500/15 text-amber-700 dark:text-amber-400"
+                                    : "bg-destructive/15 text-destructive"
                               }`}
                             >
-                              {complex.is_active ? "نشط" : "معطّل"}
+                              {complex.is_active ? "نشط" : pending ? "بانتظار الموافقة" : "معطّل"}
                             </span>
                           </div>
                           <div className="text-sm text-muted-foreground mt-1 flex flex-wrap gap-x-3 gap-y-1">
@@ -367,14 +416,20 @@ export function PlatformAdminPage() {
                           type="button"
                           onClick={() => void toggleActive(complex)}
                           disabled={busy}
-                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg border border-border text-sm hover:bg-secondary/50 disabled:opacity-50"
+                          className={`inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm disabled:opacity-50 ${
+                            !complex.is_active && pending
+                              ? "gold-gradient text-primary-foreground font-bold"
+                              : "border border-border hover:bg-secondary/50"
+                          }`}
                         >
                           {busy ? (
                             <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : !complex.is_active && pending ? (
+                            <CheckCircle2 className="w-4 h-4" />
                           ) : (
                             <UserX className="w-4 h-4" />
                           )}
-                          {complex.is_active ? "تعطيل" : "تفعيل"}
+                          {complex.is_active ? "تعطيل" : pending ? "موافقة" : "تفعيل"}
                         </button>
                         <button
                           type="button"

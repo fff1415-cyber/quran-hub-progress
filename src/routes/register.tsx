@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
-import { ArrowRight, CheckCircle2, Copy, ExternalLink, Loader2, RefreshCw } from "lucide-react";
+import { ArrowRight, Clock, Copy, Loader2, RefreshCw } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import {
   apexDomain,
@@ -117,8 +117,14 @@ function RegisterComplexPage() {
         manager_code: code,
       });
       setCreated(result);
-      toast.success(`تم تسجيل «${result.name}» بنجاح`);
-      void copyComplexLink(result.url);
+      toast.success(
+        result.pending_approval
+          ? `تم استلام طلب «${result.name}» — بانتظار موافقة الإدارة`
+          : `تم تسجيل «${result.name}» بنجاح`,
+      );
+      if (!result.pending_approval) {
+        void copyComplexLink(result.url);
+      }
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "تعذّر التسجيل");
     } finally {
@@ -139,16 +145,26 @@ function RegisterComplexPage() {
 
         {created ? (
           <div className="text-center space-y-5">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-success/15 text-success mx-auto">
-              <CheckCircle2 className="w-9 h-9" />
+            <div className="inline-flex items-center justify-center w-16 h-16 rounded-full bg-amber-500/15 text-amber-600 mx-auto">
+              <Clock className="w-9 h-9" />
             </div>
             <div>
-              <h2 className="display text-xl font-bold mb-1">تم إنشاء المجمع</h2>
+              <h2 className="display text-xl font-bold mb-1">تم استلام طلب التسجيل</h2>
               <p className="text-muted-foreground text-sm">{created.name}</p>
             </div>
 
-            <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-right">
-              <p className="text-sm font-bold text-primary mb-2">انسخ رابط مجمعك الخاص</p>
+            <div className="rounded-xl border border-amber-500/30 bg-amber-500/5 p-4 text-right space-y-2">
+              <p className="text-sm font-bold text-amber-700 dark:text-amber-400">
+                بانتظار موافقة إدارة المنصة
+              </p>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                سيُراجع طلبك ثم يُفعَّل المجمع. بعد الموافقة يمكنك الدخول برابط مجمعك ورقم عضوية المدير
+                ({managerCode}).
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-border bg-secondary/30 p-4 text-right">
+              <p className="text-sm font-bold mb-2">رابط مجمعك (بعد التفعيل)</p>
               <div className="flex items-center gap-2" dir="ltr">
                 <input
                   readOnly
@@ -167,17 +183,17 @@ function RegisterComplexPage() {
                 </button>
               </div>
               <p className="text-xs text-muted-foreground mt-2">
-                تم نسخ الرابط تلقائياً — بوابة دخول مجمعك · عضوية المدير: {managerCode}
+                احفظ الرابط — لن يعمل الدخول قبل موافقة الإدارة
               </p>
             </div>
 
-            <a
-              href={created.url}
-              className="w-full inline-flex items-center justify-center gap-2 py-4 rounded-xl gold-gradient text-primary-foreground font-bold"
+            <Link
+              to="/"
+              className="w-full inline-flex items-center justify-center gap-2 py-4 rounded-xl border border-border font-bold hover:bg-secondary/50"
             >
-              <ExternalLink className="w-4 h-4" />
-              الذهاب إلى بوابة المجمع
-            </a>
+              <ArrowRight className="w-4 h-4" />
+              العودة للرئيسية
+            </Link>
           </div>
         ) : (
           <>
@@ -260,13 +276,17 @@ function RegisterComplexPage() {
             </p>
           </div>
 
+          <p className="text-xs text-muted-foreground text-center leading-relaxed">
+            يُراجع طلبك من إدارة المنصة قبل تفعيل المجمع والسماح بالدخول.
+          </p>
+
           <button
             type="button"
             onClick={() => void submit()}
             disabled={busy || subdomainLoading}
             className="w-full py-4 rounded-xl gold-gradient text-primary-foreground font-bold disabled:opacity-60"
           >
-            {busy ? "جاري التسجيل..." : "إنشاء المجمع والمتابعة"}
+            {busy ? "جاري إرسال الطلب..." : "إرسال طلب التسجيل"}
           </button>
         </div>
           </>

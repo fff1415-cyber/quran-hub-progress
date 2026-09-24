@@ -159,7 +159,8 @@ function handle_platform_patch_complex(): void
     }
 
     $pdo = db();
-    assert_complex_exists($pdo, $complexId);
+    $existing = assert_complex_exists($pdo, $complexId);
+    $wasActive = (int) ($existing['is_active'] ?? 1) === 1;
 
     ensure_complexes_is_active_column($pdo);
 
@@ -175,7 +176,7 @@ function handle_platform_patch_complex(): void
     $pdo->prepare('UPDATE complexes SET is_active = ? WHERE id = ? LIMIT 1')
         ->execute([$isActive ? 1 : 0, $complexId]);
 
-    if (!$isActive && in_array('role_accounts', $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN), true)) {
+    if (!$isActive && $wasActive && in_array('role_accounts', $pdo->query('SHOW TABLES')->fetchAll(PDO::FETCH_COLUMN), true)) {
         $pdo->prepare('DELETE FROM role_accounts WHERE complex_id = ?')->execute([$complexId]);
     }
 

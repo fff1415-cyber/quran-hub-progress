@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useMemo } from "react";
 import {
-  loadSardQueue, loadNotifications, countTransfersForRole,
+  loadSardQueue, loadNotifications, countTransfersForRole, loadGeneralNotificationsForManager,
 } from "@/lib/mock-data";
 import { getSessionName } from "@/lib/session-role";
 import { AppHeader } from "@/components/AppHeader";
@@ -21,7 +21,7 @@ const MAIN_TABS = ["inbox", "data", "finances", "staff", "grades", "settings"] a
 type MainTab = (typeof MAIN_TABS)[number];
 
 const DEFAULT_SECTION: Record<MainTab, string> = {
-  inbox: "transfers",
+  inbox: "pending",
   data: "import",
   finances: "ledger",
   staff: "monitor",
@@ -30,7 +30,7 @@ const DEFAULT_SECTION: Record<MainTab, string> = {
 };
 
 const VALID_SECTIONS: Record<MainTab, string[]> = {
-  inbox: ["transfers", "notifications"],
+  inbox: ["pending", "struggling", "failed", "history", "notifications", "transfers"],
   data: ["import", "halaqat", "students", "codes"],
   finances: ["ledger"],
   staff: ["monitor", "report"],
@@ -45,6 +45,7 @@ function resolveMainTab(raw?: string): MainTab {
 
 function resolveSection(main: MainTab, raw?: string): string {
   const allowed = VALID_SECTIONS[main];
+  if (main === "inbox" && raw === "transfers") return "pending";
   if (raw && allowed.includes(raw)) return raw;
   return DEFAULT_SECTION[main];
 }
@@ -71,12 +72,13 @@ export function ManagerPage() {
 
   const inboxBadge = useMemo(() => {
     const queue = loadSardQueue();
-    const notifs = loadNotifications();
     const pendingTransfers = countTransfersForRole("manager");
-    const struggling = notifs.filter((n) => n.type === "transfer" && n.transferStatus === "struggling");
+    const struggling = loadNotifications().filter(
+      (n) => n.type === "transfer" && n.transferStatus === "struggling",
+    );
     const failedFinal = queue.filter((q) => q.status === "final_failed");
-    const unread = notifs.filter((n) => !n.read);
-    return pendingTransfers + struggling.length + failedFinal.length + unread.length;
+    const generalUnread = loadGeneralNotificationsForManager().length;
+    return pendingTransfers + struggling.length + failedFinal.length + generalUnread;
   }, []);
 
   const setMainTab = (tab: string) => {

@@ -7,7 +7,7 @@ import { clearAuthSession, getToken, isTokenExpired, removeAuthItem, setAuthItem
 import { navigateBySessionRole } from "@/lib/auth-redirect";
 import { initPushAfterLogin } from "@/lib/push-notifications";
 import { getSessionRole } from "@/lib/session-role";
-import { Loader2 } from "lucide-react";
+import { Clock, Loader2 } from "lucide-react";
 import { toast, Toaster } from "sonner";
 import { useTenant } from "@/contexts/TenantContext";
 import { apexDomain, tenantPath } from "@/lib/tenant";
@@ -91,9 +91,14 @@ export function TenantLoginPage() {
     return null;
   }
 
+  const loginBlocked = tenant.is_active === false;
   const looksLikeNationalId = value.trim().length >= 9;
 
   const submit = async () => {
+    if (loginBlocked) {
+      toast.error("المجمع بانتظار موافقة إدارة المنصة — لا يمكن الدخول بعد");
+      return;
+    }
     const v = value.trim();
     if (!v) {
       toast.error("أدخل رقم العضوية أو رقم الهوية");
@@ -178,6 +183,19 @@ export function TenantLoginPage() {
           <p className="text-muted-foreground text-sm">لتحفيظ القرآن الكريم</p>
         </div>
 
+        {loginBlocked && (
+          <div className="mb-6 rounded-xl border border-amber-500/40 bg-amber-500/10 p-4 text-center space-y-2">
+            <Clock className="w-8 h-8 text-amber-600 mx-auto" />
+            <p className="text-sm font-bold text-amber-700 dark:text-amber-400">
+              المجمع بانتظار موافقة إدارة المنصة
+            </p>
+            <p className="text-xs text-muted-foreground leading-relaxed">
+              تم استلام طلب التسجيل وسيُفعَّل المجمع بعد المراجعة. تواصل مع إدارة المنصة إن استغرق
+              الأمر وقتاً.
+            </p>
+          </div>
+        )}
+
         <div className="mb-6">
           <label className="block text-sm text-muted-foreground mb-2">
             رقم العضوية أو رقم الهوية
@@ -186,11 +204,12 @@ export function TenantLoginPage() {
             type={looksLikeNationalId ? "text" : "password"}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && !busy && void submit()}
+            onKeyDown={(e) => e.key === "Enter" && !busy && !loginBlocked && void submit()}
             placeholder={looksLikeNationalId ? "رقم الهوية" : "••••"}
             maxLength={10}
             inputMode="numeric"
-            className="w-full px-4 py-3 rounded-xl bg-input border border-border focus:border-primary focus:outline-none text-center text-2xl tracking-[0.3em] font-bold text-primary"
+            disabled={loginBlocked}
+            className="w-full px-4 py-3 rounded-xl bg-input border border-border focus:border-primary focus:outline-none text-center text-2xl tracking-[0.3em] font-bold text-primary disabled:opacity-50"
           />
           <p className="text-xs text-muted-foreground text-center mt-2">
             الكادر: رقم العضوية · الطالب وولي الأمر: رقم الهوية
@@ -200,10 +219,10 @@ export function TenantLoginPage() {
         <button
           type="button"
           onClick={() => void submit()}
-          disabled={busy}
+          disabled={busy || loginBlocked}
           className="w-full py-4 rounded-xl gold-gradient text-primary-foreground font-bold text-lg hover:scale-[1.02] transition-transform gold-glow disabled:opacity-60"
         >
-          {busy ? "..." : "دخول"}
+          {busy ? "..." : loginBlocked ? "بانتظار الموافقة" : "دخول"}
         </button>
       </div>
     </div>
