@@ -6,7 +6,7 @@ import {
 } from "@/lib/mock-data";
 
 /** Cloud fallback poll while the tab is active (BroadcastChannel handles same-device tabs). */
-const POLL_MS_VISIBLE = 12_000;
+const POLL_MS_VISIBLE = 3_000;
 /** Slower poll when the tab is in the background — keeps cross-device sync without hammering the server. */
 const POLL_MS_HIDDEN = 45_000;
 const GRADES_BROADCAST = "qs-grades-v2";
