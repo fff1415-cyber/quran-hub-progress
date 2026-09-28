@@ -4,12 +4,15 @@ import { z } from "zod";
 import {
   loadHalaqat, loadStudents, saveStudents, saveGrades, loadGrades, emptyWeek, emptyDayEntry, ensureWeekDays, dayEntryFor, DAYS,
   mergeDayEntryPatch,
+  mutateStudentWeek,
+  flushGradesToCloudSoon,
   GRADES_CHANGED_EVENT,
   weekPercentage, loadNotifications, pushNotification,
   ensureGradesSemester,
   sumWeekCompensationFaces, compensationRemainingForDay,
   type WeekRecord, type DayEntry, type Student, type GradesStore,
 } from "@/lib/mock-data";
+import { applyPlanInputWithRetry, enqueuePlanApply } from "@/lib/plan-apply-queue";
 import {
   fetchActiveCalendar,
   getSelectableWeeks,
@@ -996,39 +999,47 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     const day = dayEntryFor(w, dayKey, workingKeysList);
 
     if (!checked) {
+      // Keep UI immediate; plan undo is serialized so it cannot race a pending apply.
       updateDay(s.id, dayKey, { hifz: "", hifzPlanSegments: [] });
       if (!planStudentIds.has(s.id)) return;
-      try {
-        let toRemove = day.hifzPlanSegments ?? [];
-        if (toRemove.length === 0) {
-          toRemove = await lastCompletedHifzSegments(s.id, Math.max(1, segmentsForTap(s.levelType, tap)));
+      void enqueuePlanApply(s.id, async () => {
+        try {
+          let toRemove = day.hifzPlanSegments ?? [];
+          if (toRemove.length === 0) {
+            toRemove = await lastCompletedHifzSegments(s.id, Math.max(1, segmentsForTap(s.levelType, tap)));
+          }
+          await removePlanHifzCompletions(s.id, toRemove);
+          toast.success("أُلغي الحفظ من الجدول وورقة الخطة");
+          if (planSheetStudent?.id === s.id) {
+            setPlanSheetData(await fetchStudentPlanSheet(s.id));
+          }
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "فشل إلغاء الحفظ من الخطة");
         }
-        await removePlanHifzCompletions(s.id, toRemove);
-        toast.success("أُلغي الحفظ من الجدول وورقة الخطة");
-        if (planSheetStudent?.id === s.id) {
-          setPlanSheetData(await fetchStudentPlanSheet(s.id));
-        }
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "فشل إلغاء الحفظ من الخطة");
-      }
+      });
       return;
     }
 
     const gradeVal = hifzCheckedValue(s.levelType);
     updateDay(s.id, dayKey, { hifz: gradeVal });
-    try {
-      const segs = await applyPlanInput(s.id, "hifz", tap, senderName);
-      updateDay(s.id, dayKey, { hifz: gradeVal, hifzPlanSegments: segs });
-      toast.success(`تم تسجيل ${segs.length} مقطع — حفظ`);
-      if (planSheetStudent?.id === s.id) {
-        setPlanSheetData(await fetchStudentPlanSheet(s.id));
+    void enqueuePlanApply(s.id, async () => {
+      try {
+        const segs = await applyPlanInputWithRetry(() =>
+          applyPlanInput(s.id, "hifz", tap, senderName),
+        );
+        updateDay(s.id, dayKey, { hifz: gradeVal, hifzPlanSegments: segs });
+        toast.success(`تم تسجيل ${segs.length} مقطع — حفظ`);
+        if (planSheetStudent?.id === s.id) {
+          setPlanSheetData(await fetchStudentPlanSheet(s.id));
+        }
+        if (await checkAndHandlePlanCompletion(s, weekNum)) {
+          toast.info(`${s.name} أنهى الخطة — بانتظار تحويل المشرف للسرد`);
+        }
+      } catch (e) {
+        // Grade checkbox stays; only the plan sheet failed.
+        toast.error(e instanceof Error ? e.message : "فشل تحديث الخطة");
       }
-      if (await checkAndHandlePlanCompletion(s, weekNum)) {
-        toast.info(`${s.name} أنهى الخطة — بانتظار تحويل المشرف للسرد`);
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "فشل تحديث الخطة");
-    }
+    });
   };
 
   const handlePlanPassFail = async (
@@ -1037,34 +1048,37 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     task: "rabt" | "muraja",
     value: "pass" | "fail" | "",
   ) => {
+    // Immediate grade cell for teacher + co-viewer; plan follows in order.
     updateDay(s.id, dayKey, { [task]: value });
     if (value !== "pass") return;
     const tap: TapValue = s.levelType === "gold" ? "one" : "half";
-    try {
-      const segs = await applyPlanInput(s.id, task, tap, senderName);
-      toast.success(`تم تسجيل ${segs.length} مقطع — ${task === "rabt" ? "ربط" : "مراجعة"}`);
-      if (planSheetStudent?.id === s.id) {
-        setPlanSheetData(await fetchStudentPlanSheet(s.id));
+    void enqueuePlanApply(s.id, async () => {
+      try {
+        const segs = await applyPlanInputWithRetry(() =>
+          applyPlanInput(s.id, task, tap, senderName),
+        );
+        toast.success(`تم تسجيل ${segs.length} مقطع — ${task === "rabt" ? "ربط" : "مراجعة"}`);
+        if (planSheetStudent?.id === s.id) {
+          setPlanSheetData(await fetchStudentPlanSheet(s.id));
+        }
+        if (await checkAndHandlePlanCompletion(s, weekNum)) {
+          toast.info(`${s.name} أنهى الخطة — بانتظار تحويل المشرف للسرد`);
+        }
+      } catch (e) {
+        toast.error(e instanceof Error ? e.message : "فشل تحديث الخطة");
       }
-      if (await checkAndHandlePlanCompletion(s, weekNum)) {
-        toast.info(`${s.name} أنهى الخطة — بانتظار تحويل المشرف للسرد`);
-      }
-    } catch (e) {
-      toast.error(e instanceof Error ? e.message : "فشل تحديث الخطة");
-    }
+    });
   };
 
   const update = (studentId: string, fn: (w: WeekRecord) => WeekRecord, sync?: boolean | "immediate") => {
-    const g = loadGrades();
-    const next: GradesStore = { ...g };
-    if (!next[studentId]) next[studentId] = {};
-    if (!next[studentId][weekNum]) next[studentId][weekNum] = emptyWeek(workingKeysList);
-    next[studentId] = {
-      ...next[studentId],
-      [weekNum]: fn(next[studentId][weekNum]!),
-    };
+    const next = mutateStudentWeek(
+      studentId,
+      weekNum,
+      (w) => fn(ensureWeekDays(w, workingKeysList)),
+      sync === undefined ? undefined : { sync },
+    );
     setGrades(next);
-    saveGrades(next, sync === undefined ? undefined : { sync });
+    if (sync !== false) flushGradesToCloudSoon();
   };
 
   const handleDayCompensationChange = async (s: Student, dayKey: string, faces: number) => {

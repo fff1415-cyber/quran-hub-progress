@@ -53,8 +53,12 @@ export function PlanAwareTaskCell({
         value={passFailValue as "pass" | "fail" | ""}
         disabled={disabled}
         onChange={(v) => {
+          // Single immediate grade write; plan handler also stamps the cell then queues apply.
+          if (v === "pass" && onPlanPassFailChange) {
+            onPlanPassFailChange(v);
+            return;
+          }
           onPassFailChange(v);
-          if (v === "pass") onPlanPassFailChange?.(v);
         }}
       />
     );

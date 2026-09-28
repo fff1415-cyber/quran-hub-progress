@@ -1,0 +1,198 @@
+# Deploys the selected branch to m1.msht.io ONLY — never touches production msht.io.
+# Triggered by push to the race-fix branch or manual workflow_dispatch (pick any branch).
+name: Deploy staging (m1)
+
+on:
+  push:
+    branches:
+      - cursor/fix-fields-race-56e8
+  workflow_dispatch:
+
+env:
+  SSH_PORT: "65002"
+
+jobs:
+  deploy-staging:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Get latest code
+        uses: actions/checkout@v4
+
+      - name: Validate secrets
+        run: |
+          set -euo pipefail
+          missing=0
+          check() {
+            if [ -z "$1" ]; then
+              echo "::error::Secret $2 is missing"
+              missing=1
+            fi
+          }
+          check "${{ secrets.FTP_SERVER }}" "FTP_SERVER"
+          check "${{ secrets.FTP_USERNAME }}" "FTP_USERNAME"
+          check "${{ secrets.FTP_PASSWORD }}" "FTP_PASSWORD"
+          if [ "$missing" -ne 0 ]; then exit 1; fi
+          host="${{ secrets.FTP_SERVER }}"
+          if ! echo "$host" | grep -qE '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::FTP_SERVER must be an IPv4 address"
+            exit 1
+          fi
+
+      - name: Resolve staging paths (m1 only)
+        id: paths
+        run: |
+          set -euo pipefail
+          user="${{ secrets.FTP_USERNAME }}"
+          user="${user%%@*}"
+          echo "ssh_user=$user" >> "$GITHUB_OUTPUT"
+          echo "frontend=/home/${user}/domains/m1.msht.io/public_html/" >> "$GITHUB_OUTPUT"
+          echo "api=/home/${user}/domains/m1.msht.io/public_html/api/" >> "$GITHUB_OUTPUT"
+          echo "Staging frontend: /home/${user}/domains/m1.msht.io/public_html/"
+          echo "Production msht.io will NOT be modified."
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v1
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build project
+        run: bun run build:hostinger
+
+      - name: Write deploy marker
+        run: |
+          echo "${{ github.sha }}" > dist/client/deploy-sha.txt
+          echo "staging" > dist/client/deploy-channel.txt
+
+      # m1 subdomain folder is often missing when hPanel uses a unified docroot.
+      # Create the separate tree so staging never writes into production public_html.
+      - name: Ensure m1 staging directories exist (SSH)
+        id: mkdir_m1
+        env:
+          SSHPASS: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y sshpass openssh-client >/dev/null
+          USER="${{ steps.paths.outputs.ssh_user }}"
+          HOST="${{ secrets.FTP_SERVER }}"
+          FRONT="${{ steps.paths.outputs.frontend }}"
+          API="${{ steps.paths.outputs.api }}"
+          sshpass -e ssh -p "${{ env.SSH_PORT }}" \
+            -o StrictHostKeyChecking=no -o ConnectTimeout=90 \
+            "${USER}@${HOST}" \
+            "mkdir -p '${FRONT}' '${API}' && ls -ld '${FRONT}' '${API}'"
+
+      - name: Sync staging frontend (SFTP)
+        id: sftp_frontend
+        continue-on-error: true
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
+        with:
+          username: ${{ steps.paths.outputs.ssh_user }}
+          server: ${{ secrets.FTP_SERVER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ env.SSH_PORT }}
+          local_path: ./dist/client/
+          remote_path: ${{ steps.paths.outputs.frontend }}
+          sftp_only: true
+          sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
+          rsyncArgs: "--delete"
+
+      - name: Sync staging frontend (rsync fallback)
+        id: rsync_frontend
+        if: steps.sftp_frontend.outcome == 'failure'
+        continue-on-error: true
+        env:
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          sudo apt-get install -y sshpass rsync openssh-client >/dev/null
+          bash scripts/deploy-hostinger-ci.sh \
+            "${{ steps.paths.outputs.ssh_user }}" \
+            "${{ secrets.FTP_SERVER }}" \
+            "./dist/client/" \
+            "${{ steps.paths.outputs.frontend }}"
+
+      - name: Ensure staging frontend deployed
+        if: always()
+        run: |
+          ok=0
+          [ "${{ steps.sftp_frontend.outcome }}" = "success" ] && ok=1
+          [ "${{ steps.rsync_frontend.outcome }}" = "success" ] && ok=1
+          if [ "$ok" -eq 1 ]; then
+            echo "Staging frontend deploy succeeded"
+            exit 0
+          fi
+          echo "::error::Staging frontend deploy to m1.msht.io failed"
+          exit 1
+
+      - name: Sync staging API (SFTP)
+        id: sftp_api
+        continue-on-error: true
+        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
+        with:
+          username: ${{ steps.paths.outputs.ssh_user }}
+          server: ${{ secrets.FTP_SERVER }}
+          password: ${{ secrets.FTP_PASSWORD }}
+          port: ${{ env.SSH_PORT }}
+          local_path: ./api/
+          remote_path: ${{ steps.paths.outputs.api }}
+          sftp_only: true
+          sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
+          rsyncArgs: "--exclude=config.php"
+
+      - name: Sync staging API (rsync fallback)
+        id: rsync_api
+        if: steps.sftp_api.outcome == 'failure'
+        continue-on-error: true
+        env:
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          sudo apt-get install -y sshpass rsync openssh-client >/dev/null
+          bash scripts/deploy-hostinger-api-ci.sh \
+            "${{ steps.paths.outputs.ssh_user }}" \
+            "${{ secrets.FTP_SERVER }}" \
+            "${{ steps.paths.outputs.api }}/"
+
+      - name: Ensure staging API deployed
+        if: always()
+        run: |
+          ok=0
+          [ "${{ steps.sftp_api.outcome }}" = "success" ] && ok=1
+          [ "${{ steps.rsync_api.outcome }}" = "success" ] && ok=1
+          if [ "$ok" -eq 1 ]; then
+            echo "Staging API deploy succeeded"
+            exit 0
+          fi
+          echo "::error::Staging API deploy to m1.msht.io failed"
+          exit 1
+
+      - name: Remove default.php on m1 (SSH)
+        continue-on-error: true
+        env:
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          HOSTINGER_SUBDOMAINS: m1
+        run: |
+          sudo apt-get install -y sshpass >/dev/null
+          bash scripts/post-deploy-hostinger-subdomains.sh \
+            "${{ steps.paths.outputs.ssh_user }}" \
+            "${{ secrets.FTP_SERVER }}"
+
+      - name: Verify staging deploy
+        continue-on-error: true
+        run: |
+          set +e
+          EXPECTED="${{ github.sha }}"
+          SERVER_IP="${{ secrets.FTP_SERVER }}"
+          for i in 1 2 3 4 5 6; do
+            sha=$(curl -fsS --resolve "m1.msht.io:443:${SERVER_IP}" "https://m1.msht.io/deploy-sha.txt" 2>/dev/null)
+            if [ "$sha" = "$EXPECTED" ]; then
+              echo "Staging verified on m1.msht.io (commit ${EXPECTED:0:7})"
+              exit 0
+            fi
+            echo "Attempt $i: staging not ready yet (got '${sha:-empty}')…"
+            sleep 15
+          done
+          echo "::warning::Could not confirm m1.msht.io/deploy-sha.txt — check hPanel docroot for m1"
+          exit 0
