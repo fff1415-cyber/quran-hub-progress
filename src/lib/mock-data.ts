@@ -397,32 +397,6 @@ export function mergeGradesStores(base: GradesStore, overlay: GradesStore): Grad
   return out;
 }
 
-/**
- * Apply a week mutation without clobbering concurrent field edits.
- * Time O(d) in day/field count for the week merge; space O(1) extra beyond the store copy.
- */
-export function mutateStudentWeek(
-  studentId: string,
-  weekNum: number,
-  fn: (w: WeekRecord) => WeekRecord,
-  options?: { sync?: boolean | "immediate" },
-): GradesStore {
-  const base = loadGrades();
-  const prevWeek = base[studentId]?.[weekNum] ?? emptyWeek();
-  const patched = fn(prevWeek);
-  // Re-read and merge per-field so a parallel tap on another cell is kept (cumulative).
-  const latest = loadGrades();
-  const mergedWeek = mergeWeekRecords(latest[studentId]?.[weekNum], patched);
-  const next: GradesStore = { ...latest };
-  if (!next[studentId]) next[studentId] = {};
-  next[studentId] = {
-    ...next[studentId],
-    [weekNum]: mergedWeek,
-  };
-  saveGrades(next, options?.sync === undefined ? undefined : { sync: options.sync });
-  return next;
-}
-
 function scheduleGradesCloudPush(g: GradesStore): void {
   pendingGradesCloud = g;
   if (gradesCloudTimer) clearTimeout(gradesCloudTimer);
@@ -439,10 +413,6 @@ function scheduleGradesCloudPush(g: GradesStore): void {
 
 /** Flush debounced grade upload immediately (e.g. before logout). */
 export function flushGradesToCloud(): void {
-  if (gradesSoonTimer) {
-    clearTimeout(gradesSoonTimer);
-    gradesSoonTimer = null;
-  }
   if (gradesCloudTimer) {
     clearTimeout(gradesCloudTimer);
     gradesCloudTimer = null;
@@ -451,18 +421,6 @@ export function flushGradesToCloud(): void {
   pendingGradesCloud = null;
   if (typeof window === "undefined" || !hasAuthToken()) return;
   void import("./cloud-sync").then((m) => m.pushMergedGrades(payload)).catch(() => undefined);
-}
-
-const GRADES_CLOUD_SOON_MS = 50;
-let gradesSoonTimer: ReturnType<typeof setTimeout> | null = null;
-
-/** Coalesce rapid multi-field taps into one near-immediate cloud push for co-viewers. */
-export function flushGradesToCloudSoon(): void {
-  if (gradesSoonTimer) clearTimeout(gradesSoonTimer);
-  gradesSoonTimer = setTimeout(() => {
-    gradesSoonTimer = null;
-    flushGradesToCloud();
-  }, GRADES_CLOUD_SOON_MS);
 }
 
 export function loadStudents(): Student[] {
