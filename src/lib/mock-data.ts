@@ -269,7 +269,8 @@ function fieldEditTime(entry: DayEntry, key: DayGradeFieldKey): number {
 
 /** Apply a partial day patch and stamp only the fields that changed. */
 export function mergeDayEntryPatch(base: DayEntry, patch: Partial<DayEntry>): DayEntry {
-  const now = Date.now();
+  // A second tap can land in the same millisecond; its field timestamp must still win.
+  const now = Math.max(Date.now(), (base.touchedAt ?? 0) + 1);
   const fieldTouchedAt = { ...base.fieldTouchedAt };
   for (const key of DAY_GRADE_FIELDS) {
     if (Object.prototype.hasOwnProperty.call(patch, key)) {
@@ -397,6 +398,28 @@ export function mergeGradesStores(base: GradesStore, overlay: GradesStore): Grad
   return out;
 }
 
+/**
+ * Apply a week mutation to the latest local copy so separate field taps accumulate.
+ */
+export function mutateStudentWeek(
+  studentId: string,
+  weekNum: number,
+  fn: (w: WeekRecord) => WeekRecord,
+  options?: { sync?: boolean | "immediate" },
+): GradesStore {
+  // Read at the moment of the tap, so each field patch starts with all prior taps.
+  const latest = loadGrades();
+  const mergedWeek = fn(latest[studentId]?.[weekNum] ?? emptyWeek());
+  const next: GradesStore = { ...latest };
+  if (!next[studentId]) next[studentId] = {};
+  next[studentId] = {
+    ...next[studentId],
+    [weekNum]: mergedWeek,
+  };
+  saveGrades(next, options?.sync === undefined ? undefined : { sync: options.sync });
+  return next;
+}
+
 function scheduleGradesCloudPush(g: GradesStore): void {
   pendingGradesCloud = g;
   if (gradesCloudTimer) clearTimeout(gradesCloudTimer);
@@ -413,6 +436,10 @@ function scheduleGradesCloudPush(g: GradesStore): void {
 
 /** Flush debounced grade upload immediately (e.g. before logout). */
 export function flushGradesToCloud(): void {
+  if (gradesSoonTimer) {
+    clearTimeout(gradesSoonTimer);
+    gradesSoonTimer = null;
+  }
   if (gradesCloudTimer) {
     clearTimeout(gradesCloudTimer);
     gradesCloudTimer = null;
@@ -421,6 +448,18 @@ export function flushGradesToCloud(): void {
   pendingGradesCloud = null;
   if (typeof window === "undefined" || !hasAuthToken()) return;
   void import("./cloud-sync").then((m) => m.pushMergedGrades(payload)).catch(() => undefined);
+}
+
+const GRADES_CLOUD_SOON_MS = 50;
+let gradesSoonTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Coalesce rapid multi-field taps into one near-immediate cloud push for co-viewers. */
+export function flushGradesToCloudSoon(): void {
+  if (gradesSoonTimer) clearTimeout(gradesSoonTimer);
+  gradesSoonTimer = setTimeout(() => {
+    gradesSoonTimer = null;
+    flushGradesToCloud();
+  }, GRADES_CLOUD_SOON_MS);
 }
 
 export function loadStudents(): Student[] {
