@@ -1,0 +1,13 @@
+# Deploy Preview: frontend from this PR, PHP API proxied to production Hostinger.
+# Does not require m1 subdomain / hPanel changes. Does not overwrite msht.io files.
+
+[[redirects]]
+  from = "/api/*"
+  to = "https://msht.io/api/:splat"
+  status = 200
+  force = true
+
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
