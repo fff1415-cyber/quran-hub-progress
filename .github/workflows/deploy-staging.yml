@@ -67,6 +67,24 @@ jobs:
           echo "${{ github.sha }}" > dist/client/deploy-sha.txt
           echo "staging" > dist/client/deploy-channel.txt
 
+      # m1 subdomain folder is often missing when hPanel uses a unified docroot.
+      # Create the separate tree so staging never writes into production public_html.
+      - name: Ensure m1 staging directories exist (SSH)
+        id: mkdir_m1
+        env:
+          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          set -euo pipefail
+          sudo apt-get install -y sshpass openssh-client >/dev/null
+          USER="${{ steps.paths.outputs.ssh_user }}"
+          HOST="${{ secrets.FTP_SERVER }}"
+          FRONT="${{ steps.paths.outputs.frontend }}"
+          API="${{ steps.paths.outputs.api }}"
+          sshpass -e ssh -p "${{ env.SSH_PORT }}" \
+            -o StrictHostKeyChecking=no -o ConnectTimeout=90 \
+            "${USER}@${HOST}" \
+            "mkdir -p '${FRONT}' '${API}' && ls -ld '${FRONT}' '${API}'"
+
       - name: Sync staging frontend (SFTP)
         id: sftp_frontend
         continue-on-error: true
@@ -154,6 +172,7 @@ jobs:
         continue-on-error: true
         env:
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          HOSTINGER_SUBDOMAINS: m1
         run: |
           sudo apt-get install -y sshpass >/dev/null
           bash scripts/post-deploy-hostinger-subdomains.sh \
