@@ -17,9 +17,18 @@ require_once __DIR__ . '/complex_branding.php';
 require_once __DIR__ . '/kiosk.php';
 require_once __DIR__ . '/platform_admin.php';
 require_once __DIR__ . '/push.php';
+require_once __DIR__ . '/student_followups.php';
 
 function route_request(string $method, string $path): void
 {
+    if ($path === '/student-followups' && $method === 'GET') {
+        handle_list_student_followups();
+        return;
+    }
+    if ($path === '/student-followups' && $method === 'POST') {
+        handle_change_student_followup();
+        return;
+    }
     if ($path === '/health' && $method === 'GET') {
         handle_health_check();
         return;

@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
+import { listStudentFollowups, STUDENT_FOLLOWUPS_CHANGED } from "@/lib/student-followups";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { StaffAttendancePromptDialog } from "@/components/StaffAttendancePromptDialog";
 import {
@@ -30,7 +31,7 @@ const DEFAULT_SECTION: Record<MainTab, string> = {
 const VALID_SECTIONS: Record<MainTab, string[]> = {
   sard: ["sard", "approvals", "force-retry", "passed"],
   plans: ["plans", "plan-completed"],
-  oversight: ["halaqat", "halaqa-results", "hifz-tracking", "weekly-tests", "transfers"],
+  oversight: ["halaqat", "student-followups", "halaqa-results", "hifz-tracking", "weekly-tests", "transfers"],
 };
 
 const LEGACY_TAB: Record<string, { main: MainTab; section: string }> = {
@@ -41,6 +42,7 @@ const LEGACY_TAB: Record<string, { main: MainTab; section: string }> = {
   plans: { main: "plans", section: "plans" },
   "plan-completed": { main: "plans", section: "plan-completed" },
   halaqat: { main: "oversight", section: "halaqat" },
+  "student-followups": { main: "oversight", section: "student-followups" },
   "halaqa-results": { main: "oversight", section: "halaqa-results" },
   "hifz-tracking": { main: "oversight", section: "hifz-tracking" },
   "weekly-tests": { main: "oversight", section: "weekly-tests" },
@@ -78,6 +80,7 @@ export function SupervisorPage() {
   const name = getSessionName("المشرف التعليمي");
   const [role, setRole] = useState<string | null>(null);
   const [queue, setQueue] = useState(() => loadSardQueue());
+  const [dueFollowups, setDueFollowups] = useState(0);
 
   useEffect(() => {
     setRole(getSessionRole());
@@ -86,6 +89,20 @@ export function SupervisorPage() {
   useEffect(() => {
     const id = setInterval(() => setQueue(loadSardQueue()), 5000);
     return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const data = await listStudentFollowups();
+        if (active) setDueFollowups(data.items.filter((item) => item.dueDate <= data.today && item.status === "active").length);
+      } catch { /* Keep the last count while offline. */ }
+    };
+    void refresh();
+    window.addEventListener(STUDENT_FOLLOWUPS_CHANGED, refresh);
+    const timer = setInterval(() => void refresh(), 60_000);
+    return () => { active = false; clearInterval(timer); window.removeEventListener(STUDENT_FOLLOWUPS_CHANGED, refresh); };
   }, []);
 
   const mainTab = resolveMainTab(search.tab);
@@ -155,7 +172,7 @@ export function SupervisorPage() {
       label: "المتابعة والإشراف",
       icon: BookOpen,
       perm: "view_attendance",
-      badge: forwardedTransfers,
+      badge: forwardedTransfers + dueFollowups,
       content: (
         <SupervisorOversightPanel
           section={section}

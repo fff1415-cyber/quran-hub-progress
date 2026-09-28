@@ -1,4 +1,5 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { listStudentFollowups, STUDENT_FOLLOWUPS_CHANGED } from "@/lib/student-followups";
 import {
   loadNotifications, loadSardQueue, countTransfersForRole, loadGeneralNotificationsForManager,
 } from "@/lib/mock-data";
@@ -20,8 +21,22 @@ type Props = {
 
 export function ManagerInboxPanel({ section, onSectionChange }: Props) {
   const [tick, setTick] = useState(0);
+  const [followupTransferCount, setFollowupTransferCount] = useState(0);
   const reload = useCallback(() => setTick((n) => n + 1), []);
   useInboxRefresh(reload);
+  useEffect(() => {
+    let active = true;
+    const refreshFollowups = async () => {
+      try {
+        const data = await listStudentFollowups();
+        if (active) setFollowupTransferCount(data.items.filter((item) => item.status === "escalated").length);
+      } catch { /* Keep the last count. */ }
+    };
+    void refreshFollowups();
+    window.addEventListener(STUDENT_FOLLOWUPS_CHANGED, refreshFollowups);
+    const interval = setInterval(() => void refreshFollowups(), 60_000);
+    return () => { active = false; clearInterval(interval); window.removeEventListener(STUDENT_FOLLOWUPS_CHANGED, refreshFollowups); };
+  }, []);
 
   const pendingTransfers = countTransfersForRole("manager");
   const struggling = loadNotifications().filter(
@@ -39,7 +54,7 @@ export function ManagerInboxPanel({ section, onSectionChange }: Props) {
         id: "pending",
         label: "بانتظار الإجراء",
         icon: Send,
-        badge: pendingTransfers || undefined,
+        badge: pendingTransfers + followupTransferCount || undefined,
         content: <ManagerPendingTransfersPanel />,
       },
       {
@@ -71,7 +86,7 @@ export function ManagerInboxPanel({ section, onSectionChange }: Props) {
         content: <ManagerNotificationsPanel />,
       },
     ],
-    [pendingTransfers, struggling.length, failedFinal.length, historyCount, generalUnread.length, tick],
+    [pendingTransfers, followupTransferCount, struggling.length, failedFinal.length, historyCount, generalUnread.length, tick],
   );
 
   const activeSection = section === "transfers" ? "pending" : section;

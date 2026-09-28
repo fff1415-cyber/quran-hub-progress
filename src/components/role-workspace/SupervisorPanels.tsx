@@ -15,9 +15,10 @@ import { SupervisorPlansPanel } from "@/components/plans/SupervisorPlansPanel";
 import { WeeklyTestsOverviewPanel } from "@/components/WeeklyTestsOverviewPanel";
 import { SupervisorHalaqaResultsPanel } from "@/components/role-workspace/SupervisorHalaqaResultsPanel";
 import { SupervisorHifzTrackingPanel } from "@/components/role-workspace/SupervisorHifzTrackingPanel";
+import { SupervisorStudentFollowupsPanel } from "@/components/role-workspace/SupervisorStudentFollowupsPanel";
 import {
   Mic, CheckCircle2, RotateCcw, Award,
-  GraduationCap, BookOpen, ClipboardCheck, Send, BarChart3, ScrollText,
+  GraduationCap, BookOpen, ClipboardCheck, Send, BarChart3, ScrollText, Users,
 } from "lucide-react";
 import type { PermissionKey } from "@/lib/permissions";
 
@@ -138,6 +139,13 @@ export function SupervisorOversightPanel({
           icon: BookOpen,
           perm: "view_attendance",
           content: <SupervisorHalaqatPanel />,
+        },
+        {
+          id: "student-followups",
+          label: "متابعة الطلاب",
+          icon: Users,
+          perm: "view_attendance",
+          content: <SupervisorStudentFollowupsPanel />,
         },
         {
           id: "halaqa-results",
