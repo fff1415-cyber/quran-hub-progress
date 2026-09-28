@@ -73,6 +73,7 @@ export const PRELAUNCH_AUDIT_CATALOG: PrelaunchAuditItem[] = [
   { id: "supervisor-plans", group: "المشرف التعليمي", label: "الخطط — إدارة الخطط", href: supervisor("plans", "plans") },
   { id: "supervisor-plan-completed", group: "المشرف التعليمي", label: "الخطط — اكتمال الخطة", href: supervisor("plans", "plan-completed") },
   { id: "supervisor-halaqat", group: "المشرف التعليمي", label: "الإشراف — الحلقات", href: supervisor("oversight", "halaqat") },
+  { id: "supervisor-student-followups", group: "المشرف التعليمي", label: "الإشراف — متابعة الطلاب", href: supervisor("oversight", "student-followups") },
   { id: "supervisor-halaqa-results", group: "المشرف التعليمي", label: "الإشراف — نتائج الحلقات", href: supervisor("oversight", "halaqa-results") },
   { id: "supervisor-weekly-tests", group: "المشرف التعليمي", label: "الإشراف — الاختبارات الأسبوعية", href: supervisor("oversight", "weekly-tests") },
   { id: "supervisor-transfers", group: "المشرف التعليمي", label: "الإشراف — التحويلات", href: supervisor("oversight", "transfers") },

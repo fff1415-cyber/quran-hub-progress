@@ -14,6 +14,7 @@ import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { Send, UserCheck, UserCog, CheckCircle2, Loader2 } from "lucide-react";
 import { toast } from "sonner";
+import { ManagerFollowupTransfers } from "@/components/role-workspace/manager-inbox/ManagerFollowupTransfers";
 
 type TransferAction = "to_secretary" | "to_supervisor";
 
@@ -28,6 +29,7 @@ export function ManagerPendingTransfersPanel() {
   const grades = loadGrades();
   const [tick, setTick] = useState(0);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [followupCount, setFollowupCount] = useState(0);
   const [strugglingPromptId, setStrugglingPromptId] = useState<string | null>(null);
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
 
@@ -107,13 +109,14 @@ export function ManagerPendingTransfersPanel() {
 
   return (
     <section className="glass-card rounded-2xl p-6">
+      <ManagerFollowupTransfers onCountChange={setFollowupCount} />
       <h2 className="text-lg font-bold text-warning mb-3 flex items-center gap-2">
         <Send className="w-5 h-5" /> بانتظار الإجراء
       </h2>
       <p className="text-xs text-muted-foreground mb-4">
         تحويلات المعلمين الجديدة — تاريخ المخالفة يُسجَّل تلقائياً عند الإرسال.
       </p>
-      {pendingTransfers.length === 0 ? (
+      {pendingTransfers.length === 0 && followupCount === 0 ? (
         <p className="text-muted-foreground text-center py-8 text-sm">لا توجد تحويلات معلّقة</p>
       ) : (
         <div className="space-y-3">

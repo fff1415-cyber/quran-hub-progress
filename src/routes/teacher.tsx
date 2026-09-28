@@ -54,6 +54,7 @@ import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
 import { AttSelect, CompensationSelect } from "@/components/plans/TeacherGradeInputs";
+import { TeacherStudentFollowupAlerts } from "@/components/teacher/TeacherStudentFollowupAlerts";
 import { hifzCheckedValue } from "@/lib/mock-data";
 import { segmentsForTap } from "@/lib/plan-translator";
 import {
@@ -313,6 +314,7 @@ export function TeacherPage() {
         </div>
 
         <HalaqaNotifications halaqaId={halaqa.id} />
+        <TeacherStudentFollowupAlerts halaqaId={halaqa.id} />
 
         {loadingCal || !calendar || selectedWeek === null ? (
           <div className="glass-card rounded-2xl p-12 flex flex-col items-center gap-3 text-muted-foreground">

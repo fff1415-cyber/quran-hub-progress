@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { listStudentFollowups, STUDENT_FOLLOWUPS_CHANGED } from "@/lib/student-followups";
 import {
   loadSardQueue, loadNotifications, countTransfersForRole, loadGeneralNotificationsForManager,
 } from "@/lib/mock-data";
@@ -66,6 +67,21 @@ export function ManagerPage() {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as ReturnType<typeof managerValidateSearch>;
   const name = getSessionName("المدير");
+  const [followupTransferCount, setFollowupTransferCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try {
+        const data = await listStudentFollowups();
+        if (active) setFollowupTransferCount(data.items.filter((item) => item.status === "escalated").length);
+      } catch { /* Retain last count when offline. */ }
+    };
+    void refresh();
+    window.addEventListener(STUDENT_FOLLOWUPS_CHANGED, refresh);
+    const timer = setInterval(() => void refresh(), 60_000);
+    return () => { active = false; clearInterval(timer); window.removeEventListener(STUDENT_FOLLOWUPS_CHANGED, refresh); };
+  }, []);
 
   const mainTab = resolveMainTab(search.tab);
   const section = resolveSection(mainTab, search.section);
@@ -78,8 +94,8 @@ export function ManagerPage() {
     );
     const failedFinal = queue.filter((q) => q.status === "final_failed");
     const generalUnread = loadGeneralNotificationsForManager().length;
-    return pendingTransfers + struggling.length + failedFinal.length + generalUnread;
-  }, []);
+    return pendingTransfers + followupTransferCount + struggling.length + failedFinal.length + generalUnread;
+  }, [followupTransferCount]);
 
   const setMainTab = (tab: string) => {
     const next = resolveMainTab(tab);
