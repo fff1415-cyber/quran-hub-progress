@@ -542,7 +542,9 @@ export async function pushMergedGrades(local: GradesStore): Promise<GradesStore>
     }
     const merged = mergeGradesStores(cloud, local);
     await secureSetAppState({ data: { token: tokenOrThrow(), key: "grades", value: merged } });
-    saveGrades(merged, { sync: false });
+    // A teacher can tap another field while this request is in flight.
+    // Keep those local edits when the earlier upload finishes.
+    saveGrades(mergeGradesStores(merged, loadGrades()), { sync: false });
     lastPulledCloudHash = gradesPayloadHash(merged);
     return merged;
   };
@@ -705,4 +707,3 @@ export async function pushMergedStaffCheckIns(
   );
   return next;
 }
-
