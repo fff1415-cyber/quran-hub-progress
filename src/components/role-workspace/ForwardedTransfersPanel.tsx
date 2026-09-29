@@ -3,7 +3,7 @@ import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { InboxItemActions } from "@/components/role-workspace/InboxItemActions";
 import {
   loadStudents, loadHalaqat, loadGrades, loadNotifications,
-  updateNotification, type Notification,
+  loadTransfersForRole, updateNotification, type Notification,
 } from "@/lib/mock-data";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { studentReportPercentages, formatOverallPercent } from "@/lib/semester-grading";
@@ -42,7 +42,7 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
   const students = loadStudents();
   const halaqat = loadHalaqat();
   const grades = loadGrades();
-  const [items, setItems] = useState<Notification[]>([]);
+  const [items, setItems] = useState<Notification[]>(() => loadTransfersForRole(role));
   const [busyId, setBusyId] = useState<string | null>(null);
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
 
@@ -55,13 +55,10 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
   }, []);
 
   const refresh = useCallback(() => {
-    setItems(
-      loadNotifications().filter(
-        (n) => n.type === "transfer" && n.targetRole === role && !n.read && n.transferStatus !== "closed",
-      ),
-    );
+    setItems(loadTransfersForRole(role));
   }, [role]);
 
+  useEffect(refresh, [refresh]);
   useInboxRefresh(refresh);
 
   const submitAction = (n: Notification, actionText: string) => {
