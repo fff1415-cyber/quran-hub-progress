@@ -56,6 +56,7 @@ export async function loginByCode({ data }: { data: { code: string } }) {
     role: string;
     name: string;
     halaqaId: number | null;
+    accountId?: string;
     complexId?: number | null;
   }>("/login/code", {
     method: "POST",
@@ -173,6 +174,14 @@ export async function secureSetAppState({ data }: { data: { token: string; key: 
     method: "POST",
     auth: data.token,
     body: JSON.stringify({ key: data.key, value: data.value }),
+  });
+}
+
+export async function securePatchWeeklyTest({ data }: { data: { token: string; studentId: string; week: number; kind: "muraja" | "rabt"; index: number; result: "" | "pass" | "fail" } }) {
+  return apiFetch<{ ok: boolean }>("/weekly-tests/result", {
+    method: "POST",
+    auth: data.token,
+    body: JSON.stringify({ studentId: data.studentId, week: data.week, kind: data.kind, index: data.index, result: data.result }),
   });
 }
 

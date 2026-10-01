@@ -16,6 +16,7 @@ export const STAFF_CHECKIN_ROLES = [
   "secretary",
   "supervisor",
   "program_supervisor",
+  "test_chair",
 ] as const;
 
 export type StaffCheckInRole = (typeof STAFF_CHECKIN_ROLES)[number];
@@ -27,6 +28,7 @@ export const STAFF_ROLE_LABEL: Record<string, string> = {
   secretary: "سكرتير",
   supervisor: "مشرف",
   program_supervisor: "مشرف برامج",
+  test_chair: "رئيس لجنة الاختبارات",
   manager: "مدير",
 };
 
@@ -44,6 +46,7 @@ export const STAFF_ATTENDANCE_PROMPT_ROLES = [
   "assistant",
   "supervisor",
   "program_supervisor",
+  "test_chair",
 ] as const;
 
 export function shouldPromptStaffAttendance(role: string | null | undefined): boolean {

@@ -18,9 +18,14 @@ require_once __DIR__ . '/kiosk.php';
 require_once __DIR__ . '/platform_admin.php';
 require_once __DIR__ . '/push.php';
 require_once __DIR__ . '/student_followups.php';
+require_once __DIR__ . '/weekly_tests.php';
 
 function route_request(string $method, string $path): void
 {
+    if ($path === '/weekly-tests/result' && $method === 'POST') {
+        handle_patch_weekly_test();
+        return;
+    }
     if ($path === '/student-followups' && $method === 'GET') {
         handle_list_student_followups();
         return;
@@ -115,6 +120,10 @@ function route_request(string $method, string $path): void
     }
     if ($path === '/role-accounts' && $method === 'GET') {
         handle_list_role_accounts();
+        return;
+    }
+    if ($path === '/test-committee/members' && $method === 'GET') {
+        handle_list_test_committee_members();
         return;
     }
     if ($path === '/role-accounts' && $method === 'POST') {

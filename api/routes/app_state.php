@@ -44,10 +44,26 @@ function app_state_upsert(PDO $pdo, string $key, mixed $value, ?int $complexId =
 function handle_list_app_state(): void
 {
     $auth = require_auth();
+    $role = (string) ($auth['role'] ?? '');
     $cid = require_complex_id($auth);
     $pdo = db();
     $tenants = app_state_tenant_enabled($pdo);
     $keyFilter = (string) ($_GET['key'] ?? '');
+
+    if (in_array($role, ['test_member', 'test_chair'], true)) {
+        $allowed = ['weekly_tests', 'weekly_tests_settings'];
+        if ($role === 'test_chair') $allowed = array_merge($allowed, ['staff_attendance', 'staff_attendance_settings']);
+        if ($keyFilter !== '' && !in_array($keyFilter, $allowed, true)) error_response('غير مصرح بعرض هذه البيانات', 403);
+        $placeholders = implode(',', array_fill(0, count($allowed), '?'));
+        $sql = $tenants
+            ? "SELECT `key`, value FROM app_state WHERE complex_id = ? AND `key` IN ($placeholders)"
+            : "SELECT `key`, value FROM app_state WHERE `key` IN ($placeholders)";
+        $stmt = $pdo->prepare($sql);
+        $stmt->execute($tenants ? array_merge([$cid], $allowed) : $allowed);
+        $rows = $stmt->fetchAll();
+        foreach ($rows as &$row) $row['value'] = json_decode($row['value'] ?? '{}', true);
+        json_response($keyFilter === '' ? $rows : array_values(array_filter($rows, fn($row) => $row['key'] === $keyFilter)));
+    }
 
     if ($tenants) {
         if ($keyFilter !== '') {
@@ -78,6 +94,12 @@ function handle_set_app_state(): void
     $cid = require_complex_id($auth);
     $input = json_input();
     $key = (string) ($input['key'] ?? '');
+    $role = (string) ($auth['role'] ?? '');
+    if (in_array($role, ['test_member', 'test_chair'], true)) {
+        $allowed = $role === 'test_chair' ? ['weekly_tests', 'staff_attendance'] : ['weekly_tests'];
+        if (!in_array($key, $allowed, true)) error_response('غير مصرح بتعديل هذه البيانات', 403);
+        if ($key === 'weekly_tests' && ($input['value'] ?? null) !== []) error_response('سجّل الاختبارات من الواجهة المخصصة', 403);
+    }
     if ($key === '') {
         error_response('Missing key');
     }

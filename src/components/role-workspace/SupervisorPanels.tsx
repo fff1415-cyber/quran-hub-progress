@@ -12,7 +12,7 @@ import {
 } from "@/components/role-workspace/RoleSections";
 import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTransfersPanel";
 import { SupervisorPlansPanel } from "@/components/plans/SupervisorPlansPanel";
-import { WeeklyTestsOverviewPanel } from "@/components/WeeklyTestsOverviewPanel";
+import { CommitteeTestsReport } from "@/components/CommitteeTestsReport";
 import { SupervisorHalaqaResultsPanel } from "@/components/role-workspace/SupervisorHalaqaResultsPanel";
 import { SupervisorHifzTrackingPanel } from "@/components/role-workspace/SupervisorHifzTrackingPanel";
 import { SupervisorStudentFollowupsPanel } from "@/components/role-workspace/SupervisorStudentFollowupsPanel";
@@ -166,7 +166,7 @@ export function SupervisorOversightPanel({
           label: "الاختبارات الأسبوعية",
           icon: ClipboardCheck,
           perm: "view_attendance",
-          content: <WeeklyTestsOverviewPanel />,
+          content: <CommitteeTestsReport />,
         },
         {
           id: "transfers",

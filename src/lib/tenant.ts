@@ -73,6 +73,7 @@ export const RESERVED_APEX_PATH_SEGMENTS = new Set([
   "kiosk",
   "staff-attendance",
   "program-supervisor",
+  "test-committee",
   "api",
   "assets",
 ]);
@@ -88,6 +89,7 @@ export const TENANT_APP_ROOT_SEGMENTS = new Set([
   "kiosk",
   "staff-attendance",
   "program-supervisor",
+  "test-committee",
   "admin",
   "dashboard",
   "daily-operations",

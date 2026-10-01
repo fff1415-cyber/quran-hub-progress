@@ -140,5 +140,7 @@ export const ROLE_LABELS: Record<string, string> = {
   secretary: "سكرتير",
   supervisor: "مشرف",
   program_supervisor: "مشرف البرامج",
+  test_member: "عضو لجنة الاختبارات",
+  test_chair: "رئيس لجنة الاختبارات",
   musammi: "مسمّع",
 };

@@ -26,6 +26,7 @@ import { Route as StaffAttendanceRouteImport } from './routes/staff-attendance'
 import { Route as StudentRouteImport } from './routes/student'
 import { Route as SupervisorRouteImport } from './routes/supervisor'
 import { Route as TeacherRouteImport } from './routes/teacher'
+import { Route as TestCommitteeRouteImport } from './routes/test-committee'
 import { Route as TenantSlugIndexRouteImport } from './routes/$tenantSlug/index'
 import { Route as TenantSlugKioskRouteImport } from './routes/$tenantSlug/kiosk'
 import { Route as TenantSlugManagerRouteImport } from './routes/$tenantSlug/manager'
@@ -36,6 +37,7 @@ import { Route as TenantSlugStaffAttendanceRouteImport } from './routes/$tenantS
 import { Route as TenantSlugStudentRouteImport } from './routes/$tenantSlug/student'
 import { Route as TenantSlugSupervisorRouteImport } from './routes/$tenantSlug/supervisor'
 import { Route as TenantSlugTeacherRouteImport } from './routes/$tenantSlug/teacher'
+import { Route as TenantSlugTestCommitteeRouteImport } from './routes/$tenantSlug/test-committee'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -122,6 +124,11 @@ const TeacherRoute = TeacherRouteImport.update({
   path: '/teacher',
   getParentRoute: () => rootRouteImport,
 } as any)
+const TestCommitteeRoute = TestCommitteeRouteImport.update({
+  id: '/test-committee',
+  path: '/test-committee',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TenantSlugIndexRoute = TenantSlugIndexRouteImport.update({
   id: '/',
   path: '/',
@@ -174,6 +181,11 @@ const TenantSlugTeacherRoute = TenantSlugTeacherRouteImport.update({
   path: '/teacher',
   getParentRoute: () => TenantSlugRouteRoute,
 } as any)
+const TenantSlugTestCommitteeRoute = TenantSlugTestCommitteeRouteImport.update({
+  id: '/test-committee',
+  path: '/test-committee',
+  getParentRoute: () => TenantSlugRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -193,6 +205,7 @@ export interface FileRoutesByFullPath {
   '/student': typeof StudentRoute
   '/supervisor': typeof SupervisorRoute
   '/teacher': typeof TeacherRoute
+  '/test-committee': typeof TestCommitteeRoute
   '/$tenantSlug/kiosk': typeof TenantSlugKioskRoute
   '/$tenantSlug/manager': typeof TenantSlugManagerRoute
   '/$tenantSlug/musammi': typeof TenantSlugMusammiRoute
@@ -202,6 +215,7 @@ export interface FileRoutesByFullPath {
   '/$tenantSlug/student': typeof TenantSlugStudentRoute
   '/$tenantSlug/supervisor': typeof TenantSlugSupervisorRoute
   '/$tenantSlug/teacher': typeof TenantSlugTeacherRoute
+  '/$tenantSlug/test-committee': typeof TenantSlugTestCommitteeRoute
   '/$tenantSlug/': typeof TenantSlugIndexRoute
 }
 export interface FileRoutesByTo {
@@ -221,6 +235,7 @@ export interface FileRoutesByTo {
   '/student': typeof StudentRoute
   '/supervisor': typeof SupervisorRoute
   '/teacher': typeof TeacherRoute
+  '/test-committee': typeof TestCommitteeRoute
   '/$tenantSlug/kiosk': typeof TenantSlugKioskRoute
   '/$tenantSlug/manager': typeof TenantSlugManagerRoute
   '/$tenantSlug/musammi': typeof TenantSlugMusammiRoute
@@ -230,6 +245,7 @@ export interface FileRoutesByTo {
   '/$tenantSlug/student': typeof TenantSlugStudentRoute
   '/$tenantSlug/supervisor': typeof TenantSlugSupervisorRoute
   '/$tenantSlug/teacher': typeof TenantSlugTeacherRoute
+  '/$tenantSlug/test-committee': typeof TenantSlugTestCommitteeRoute
   '/$tenantSlug': typeof TenantSlugIndexRoute
 }
 export interface FileRoutesById {
@@ -251,6 +267,7 @@ export interface FileRoutesById {
   '/student': typeof StudentRoute
   '/supervisor': typeof SupervisorRoute
   '/teacher': typeof TeacherRoute
+  '/test-committee': typeof TestCommitteeRoute
   '/$tenantSlug/kiosk': typeof TenantSlugKioskRoute
   '/$tenantSlug/manager': typeof TenantSlugManagerRoute
   '/$tenantSlug/musammi': typeof TenantSlugMusammiRoute
@@ -260,6 +277,7 @@ export interface FileRoutesById {
   '/$tenantSlug/student': typeof TenantSlugStudentRoute
   '/$tenantSlug/supervisor': typeof TenantSlugSupervisorRoute
   '/$tenantSlug/teacher': typeof TenantSlugTeacherRoute
+  '/$tenantSlug/test-committee': typeof TenantSlugTestCommitteeRoute
   '/$tenantSlug/': typeof TenantSlugIndexRoute
 }
 export interface FileRouteTypes {
@@ -282,6 +300,7 @@ export interface FileRouteTypes {
     | '/student'
     | '/supervisor'
     | '/teacher'
+    | '/test-committee'
     | '/$tenantSlug/kiosk'
     | '/$tenantSlug/manager'
     | '/$tenantSlug/musammi'
@@ -291,6 +310,7 @@ export interface FileRouteTypes {
     | '/$tenantSlug/student'
     | '/$tenantSlug/supervisor'
     | '/$tenantSlug/teacher'
+    | '/$tenantSlug/test-committee'
     | '/$tenantSlug/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -310,6 +330,7 @@ export interface FileRouteTypes {
     | '/student'
     | '/supervisor'
     | '/teacher'
+    | '/test-committee'
     | '/$tenantSlug/kiosk'
     | '/$tenantSlug/manager'
     | '/$tenantSlug/musammi'
@@ -319,6 +340,7 @@ export interface FileRouteTypes {
     | '/$tenantSlug/student'
     | '/$tenantSlug/supervisor'
     | '/$tenantSlug/teacher'
+    | '/$tenantSlug/test-committee'
     | '/$tenantSlug'
   id:
     | '__root__'
@@ -339,6 +361,7 @@ export interface FileRouteTypes {
     | '/student'
     | '/supervisor'
     | '/teacher'
+    | '/test-committee'
     | '/$tenantSlug/kiosk'
     | '/$tenantSlug/manager'
     | '/$tenantSlug/musammi'
@@ -348,6 +371,7 @@ export interface FileRouteTypes {
     | '/$tenantSlug/student'
     | '/$tenantSlug/supervisor'
     | '/$tenantSlug/teacher'
+    | '/$tenantSlug/test-committee'
     | '/$tenantSlug/'
   fileRoutesById: FileRoutesById
 }
@@ -369,6 +393,7 @@ export interface RootRouteChildren {
   StudentRoute: typeof StudentRoute
   SupervisorRoute: typeof SupervisorRoute
   TeacherRoute: typeof TeacherRoute
+  TestCommitteeRoute: typeof TestCommitteeRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -492,6 +517,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TeacherRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/test-committee': {
+      id: '/test-committee'
+      path: '/test-committee'
+      fullPath: '/test-committee'
+      preLoaderRoute: typeof TestCommitteeRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/$tenantSlug/': {
       id: '/$tenantSlug/'
       path: '/'
@@ -562,6 +594,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TenantSlugTeacherRouteImport
       parentRoute: typeof TenantSlugRouteRoute
     }
+    '/$tenantSlug/test-committee': {
+      id: '/$tenantSlug/test-committee'
+      path: '/test-committee'
+      fullPath: '/$tenantSlug/test-committee'
+      preLoaderRoute: typeof TenantSlugTestCommitteeRouteImport
+      parentRoute: typeof TenantSlugRouteRoute
+    }
   }
 }
 
@@ -575,6 +614,7 @@ interface TenantSlugRouteRouteChildren {
   TenantSlugStudentRoute: typeof TenantSlugStudentRoute
   TenantSlugSupervisorRoute: typeof TenantSlugSupervisorRoute
   TenantSlugTeacherRoute: typeof TenantSlugTeacherRoute
+  TenantSlugTestCommitteeRoute: typeof TenantSlugTestCommitteeRoute
   TenantSlugIndexRoute: typeof TenantSlugIndexRoute
 }
 
@@ -588,6 +628,7 @@ const TenantSlugRouteRouteChildren: TenantSlugRouteRouteChildren = {
   TenantSlugStudentRoute: TenantSlugStudentRoute,
   TenantSlugSupervisorRoute: TenantSlugSupervisorRoute,
   TenantSlugTeacherRoute: TenantSlugTeacherRoute,
+  TenantSlugTestCommitteeRoute: TenantSlugTestCommitteeRoute,
   TenantSlugIndexRoute: TenantSlugIndexRoute,
 }
 
@@ -613,6 +654,7 @@ const rootRouteChildren: RootRouteChildren = {
   StudentRoute: StudentRoute,
   SupervisorRoute: SupervisorRoute,
   TeacherRoute: TeacherRoute,
+  TestCommitteeRoute: TestCommitteeRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
