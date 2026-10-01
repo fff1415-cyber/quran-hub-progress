@@ -1,7 +1,7 @@
 // Mock data + localStorage store for مجمع حلقات الشتيوي
 import { hasAuthToken } from "@/lib/auth-session";
 
-export type Role = "manager" | "secretary" | "supervisor" | "program_supervisor" | "teacher" | "assistant" | "musammi" | "student" | "parent";
+export type Role = "manager" | "secretary" | "supervisor" | "program_supervisor" | "test_member" | "test_chair" | "teacher" | "assistant" | "musammi" | "student" | "parent";
 
 export type HalaqaAssistant = { name: string; code: string };
 

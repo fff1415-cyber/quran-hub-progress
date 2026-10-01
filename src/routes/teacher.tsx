@@ -49,7 +49,7 @@ import { Toaster, toast } from "sonner";
 import { applyPlanInput, fetchHalaqaPlanStatuses, fetchStudentPlanSheet, lastCompletedHifzSegments, removePlanHifzCompletions, syncCompensationToPlan } from "@/lib/plans-service";
 import { checkAndHandlePlanCompletion } from "@/lib/plan-completion";
 import { processAbsenceThresholdAlerts } from "@/lib/semester-absence";
-import { loadComplexFeatures } from "@/lib/complex-features";
+import { loadComplexFeatures, visibleTeacherTabs, TEACHER_TABS, type TeacherTab } from "@/lib/complex-features";
 import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
@@ -140,7 +140,6 @@ export const Route = createFileRoute("/teacher")({
 
 export function TeacherPage() {
   const { h, w, view: viewParam } = useSearch({ strict: false }) as z.infer<typeof teacherSearchSchema>;
-  const view = viewParam ?? "grades";
   const navigate = useNavigate();
   const access = useTeacherHalaqaAccess(h);
   const [role, setRole] = useState<string | null>(null);
@@ -148,6 +147,10 @@ export function TeacherPage() {
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
   const [loadingCal, setLoadingCal] = useState(true);
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
+  const visibleTabs = role === "teacher" || role === "assistant"
+    ? visibleTeacherTabs(loadComplexFeatures(), access.phase === "ready" ? access.halaqa.id : (h ?? 0))
+    : [...TEACHER_TABS];
+  const view: TeacherTab = viewParam && visibleTabs.includes(viewParam) ? viewParam : visibleTabs[0];
 
   useEffect(() => {
     setRole(getSessionRole());
@@ -252,7 +255,7 @@ export function TeacherPage() {
     }
   };
 
-  const setView = (next: "grades" | "tests" | "programs" | "tarbawi") => {
+  const setView = (next: TeacherTab) => {
     if (halaqa) {
       navigate({ to: tenantPath("/teacher"), search: { h: halaqa.id, w: selectedWeek ?? undefined, view: next } });
     }
@@ -322,24 +325,32 @@ export function TeacherPage() {
             <p className="text-sm">جاري تحميل التقويم الدراسي...</p>
           </div>
         ) : (
-          <Tabs value={view} onValueChange={(v) => setView(v as "grades" | "tests" | "programs" | "tarbawi")} dir="rtl">
+          <Tabs value={view} onValueChange={(v) => setView(v as TeacherTab)} dir="rtl">
             <TabsList className="w-full h-auto flex gap-1 p-1 mb-4 bg-secondary/50 border border-border rounded-xl overflow-x-auto scrollbar-none">
+              {visibleTabs.includes("grades") && (
               <TabsTrigger value="grades" className="gap-1.5 shrink-0 flex-1 sm:flex-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2.5 sm:px-3">
                 <ClipboardList className="w-4 h-4" />
                 <span className="truncate">التحضير</span>
               </TabsTrigger>
+              )}
+              {visibleTabs.includes("programs") && (
               <TabsTrigger value="programs" className="gap-1.5 shrink-0 flex-1 sm:flex-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2.5 sm:px-3">
                 <BookOpen className="w-4 h-4" />
                 <span className="truncate">البرامج</span>
               </TabsTrigger>
+              )}
+              {visibleTabs.includes("tarbawi") && (
               <TabsTrigger value="tarbawi" className="gap-1.5 shrink-0 flex-1 sm:flex-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2.5 sm:px-3">
                 <Sparkles className="w-4 h-4" />
                 <span className="truncate">التربوي</span>
               </TabsTrigger>
+              )}
+              {visibleTabs.includes("tests") && (
               <TabsTrigger value="tests" className="gap-1.5 shrink-0 flex-1 sm:flex-none data-[state=active]:bg-primary data-[state=active]:text-primary-foreground text-xs sm:text-sm px-2.5 sm:px-3">
                 <ClipboardCheck className="w-4 h-4" />
                 <span className="truncate">الاختبارات</span>
               </TabsTrigger>
+              )}
             </TabsList>
             <TabsContent value="grades" className="mt-0 space-y-4">
               {view === "grades" && (

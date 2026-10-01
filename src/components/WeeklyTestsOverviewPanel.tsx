@@ -11,15 +11,17 @@ import {
   formatWeeklyTestPercent,
   weekTestsCompletion,
   WEEKLY_TEST_RESULT_LABEL,
+  WEEKLY_TESTS_CHANGED,
   type WeeklyTestsStore,
 } from "@/lib/weekly-tests";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { Loader2, Trophy, ChevronDown, ChevronUp, ClipboardCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export function WeeklyTestsOverviewPanel({ readOnly = true }: { readOnly?: boolean }) {
+export function WeeklyTestsOverviewPanel({ readOnly = true, storeOverride }: { readOnly?: boolean; storeOverride?: WeeklyTestsStore }) {
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
   const [store, setStore] = useState<WeeklyTestsStore>(() => loadWeeklyTests());
+  const visibleStore = storeOverride ?? store;
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const settings = useMemo(() => loadWeeklyTestsSettings(), []);
   const halaqat = loadHalaqat();
@@ -32,16 +34,18 @@ export function WeeklyTestsOverviewPanel({ readOnly = true }: { readOnly?: boole
     }).catch(() => {});
     const refresh = () => setStore(loadWeeklyTests());
     window.addEventListener("storage", refresh);
+    window.addEventListener(WEEKLY_TESTS_CHANGED, refresh);
     return () => {
       cancelled = true;
       window.removeEventListener("storage", refresh);
+      window.removeEventListener(WEEKLY_TESTS_CHANGED, refresh);
     };
   }, []);
 
   const rankings = useMemo(() => {
     if (!calendar) return [];
-    return rankHalaqatByWeeklyTests(halaqat, students, store, calendar, settings);
-  }, [halaqat, students, store, calendar, settings]);
+    return rankHalaqatByWeeklyTests(halaqat, students, visibleStore, calendar, settings);
+  }, [halaqat, students, visibleStore, calendar, settings]);
 
   if (!settings.enabled) {
     return (
@@ -132,9 +136,9 @@ export function WeeklyTestsOverviewPanel({ readOnly = true }: { readOnly?: boole
                         </thead>
                         <tbody>
                           {hStudents.map((s) => {
-                            const tests = getStudentWeeklyTests(store, s.id, weekNum, settings);
+                            const tests = getStudentWeeklyTests(visibleStore, s.id, weekNum, settings);
                             const ws = scoreWeeklyTests(tests, settings);
-                            const cum = cumulativeWeeklyTestsPercent(store, s.id, weekNum, settings);
+                            const cum = cumulativeWeeklyTestsPercent(visibleStore, s.id, weekNum, settings);
                             const c = weekTestsCompletion(tests, settings);
                             const incomplete = c.murajaDone < c.murajaTotal || c.rabtDone < c.rabtTotal;
                             return (

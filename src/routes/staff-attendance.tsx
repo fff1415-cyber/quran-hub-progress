@@ -53,6 +53,8 @@ function roleHomePath(role: string, halaqaId?: number): string {
       return tenantPath("/supervisor");
     case "program_supervisor":
       return tenantPath("/program-supervisor");
+    case "test_chair":
+      return tenantPath("/test-committee");
     case "musammi":
       return tenantPath("/musammi");
     default:

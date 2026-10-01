@@ -305,7 +305,7 @@ function RoleAccountsSection() {
   useEffect(() => { void reload(); }, []);
 
   const roleLabel = (r: string) => ({
-    manager: "المدير", secretary: "السكرتير", supervisor: "الإشراف التعليمي", program_supervisor: "مشرف البرامج", musammi: "المسمّع",
+    manager: "المدير", secretary: "السكرتير", supervisor: "الإشراف التعليمي", program_supervisor: "مشرف البرامج", test_member: "عضو لجنة الاختبارات", test_chair: "رئيس لجنة الاختبارات", musammi: "المسمّع",
   } as Record<string, string>)[r] || r;
 
   const update = (id: string, patch: Partial<CloudRoleAccount>) => {
@@ -357,6 +357,8 @@ function RoleAccountsSection() {
           <option value="secretary">سكرتير</option>
           <option value="supervisor">مشرف تعليمي</option>
           <option value="program_supervisor">مشرف البرامج</option>
+          <option value="test_member">عضو لجنة الاختبارات</option>
+          <option value="test_chair">رئيس لجنة الاختبارات</option>
           <option value="musammi">مسمّع</option>
         </select>
         <input className="px-3 py-2 rounded-lg bg-input border border-border" placeholder="الاسم" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -399,6 +401,8 @@ function RoleAccountsSection() {
                       <option value="secretary">سكرتير</option>
                       <option value="supervisor">مشرف تعليمي</option>
                       <option value="program_supervisor">مشرف البرامج</option>
+                      <option value="test_member">عضو لجنة الاختبارات</option>
+                      <option value="test_chair">رئيس لجنة الاختبارات</option>
                       <option value="musammi">مسمّع</option>
                     </select>
                     <div className="text-[10px] text-muted-foreground mt-1">{roleLabel(r.role)}</div>

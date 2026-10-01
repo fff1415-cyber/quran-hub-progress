@@ -67,19 +67,19 @@ function handle_login_by_code(): void
     try {
         if ($tenantsRole) {
             $stmt = $pdo->prepare(
-                'SELECT role, name, code, complex_id FROM role_accounts
+                'SELECT id, role, name, code, complex_id FROM role_accounts
                  WHERE complex_id = ? AND code = ? LIMIT 1'
             );
             $stmt->execute([$requestedComplexId, $code]);
         } else {
-            $stmt = $pdo->prepare('SELECT role, name, code FROM role_accounts WHERE code = ? LIMIT 1');
+            $stmt = $pdo->prepare('SELECT id, role, name, code FROM role_accounts WHERE code = ? LIMIT 1');
             $stmt->execute([$code]);
         }
         $ra = $stmt->fetch();
         if ($ra) {
             $complexId = $tenantsRole ? (int) $ra['complex_id'] : $requestedComplexId;
             $tokenPayload = login_token_payload(
-                ['role' => $ra['role'], 'name' => $ra['name']],
+                ['role' => $ra['role'], 'name' => $ra['name'], 'accountId' => $ra['id']],
                 $complexId,
                 $tenantsRole,
             );
@@ -87,6 +87,7 @@ function handle_login_by_code(): void
                 'token' => generate_token($tokenPayload),
                 'role' => $ra['role'],
                 'name' => $ra['name'],
+                'accountId' => $ra['id'],
                 'halaqaId' => null,
                 'complexId' => $tenantsRole ? $complexId : null,
             ]);

@@ -7,9 +7,28 @@ function role_accounts_tenant_enabled(PDO $pdo): bool
     return table_column_exists($pdo, 'role_accounts', 'complex_id');
 }
 
+/** Committee roster for the chair's reports; never expose membership codes. */
+function handle_list_test_committee_members(): void
+{
+    $auth = require_auth();
+    if (($auth['role'] ?? '') !== 'test_chair') {
+        error_response('غير مصرح بعرض أعضاء اللجنة', 403);
+    }
+    $cid = require_complex_id($auth);
+    $pdo = db();
+    if (role_accounts_tenant_enabled($pdo)) {
+        $stmt = $pdo->prepare("SELECT id, name FROM role_accounts WHERE complex_id = ? AND role IN ('test_member', 'test_chair') ORDER BY name");
+        $stmt->execute([$cid]);
+    } else {
+        $stmt = $pdo->query("SELECT id, name FROM role_accounts WHERE role IN ('test_member', 'test_chair') ORDER BY name");
+    }
+    json_response($stmt->fetchAll());
+}
+
 function handle_list_role_accounts(): void
 {
     $auth = require_auth();
+    if (in_array((string) ($auth['role'] ?? ''), ['test_member', 'test_chair'], true)) error_response('غير مصرح بعرض الحسابات', 403);
     $cid = require_complex_id($auth);
     $pdo = db();
     $tenants = role_accounts_tenant_enabled($pdo);
@@ -35,6 +54,7 @@ function handle_list_role_accounts(): void
 function handle_upsert_role_account(): void
 {
     $auth = require_auth();
+    if (in_array((string) ($auth['role'] ?? ''), ['test_member', 'test_chair'], true)) error_response('غير مصرح بتعديل الحسابات', 403);
     $cid = require_complex_id($auth);
     $input = json_input();
     $acc = $input['account'] ?? [];
@@ -49,7 +69,7 @@ function handle_upsert_role_account(): void
         error_response('الاسم والرمز والدور مطلوبة');
     }
 
-    $allowedRoles = ['manager', 'secretary', 'supervisor', 'program_supervisor', 'musammi'];
+    $allowedRoles = ['manager', 'secretary', 'supervisor', 'program_supervisor', 'musammi', 'test_member', 'test_chair'];
     if (!in_array($role, $allowedRoles, true)) {
         error_response('دور غير صالح');
     }
@@ -117,6 +137,7 @@ function handle_upsert_role_account(): void
 function handle_delete_role_account(): void
 {
     $auth = require_auth();
+    if (in_array((string) ($auth['role'] ?? ''), ['test_member', 'test_chair'], true)) error_response('غير مصرح بحذف الحسابات', 403);
     $cid = require_complex_id($auth);
     $input = json_input();
     $id = (string) ($input['id'] ?? '');

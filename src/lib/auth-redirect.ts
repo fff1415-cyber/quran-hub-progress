@@ -34,6 +34,10 @@ export function navigateBySessionRole(navigate: NavigateFn): boolean {
     case "program_supervisor":
       navigate({ to: tenantPath("/program-supervisor") });
       break;
+    case "test_member":
+    case "test_chair":
+      navigate({ to: tenantPath("/test-committee") });
+      break;
     case "musammi":
       navigate({ to: tenantPath("/musammi") });
       break;

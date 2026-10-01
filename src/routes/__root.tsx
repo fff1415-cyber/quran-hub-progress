@@ -7,7 +7,8 @@ import {
   HeadContent,
   Scripts,
 } from "@tanstack/react-router";
-import { isApexBareTenantAppPath, PLATFORM_BRAND, apexDomain } from "@/lib/tenant";
+import { isApexBareTenantAppPath, isReservedApexPathSegment, PLATFORM_BRAND, apexDomain, tenantPath } from "@/lib/tenant";
+import { getAuthItem } from "@/lib/auth-session";
 import { EvaluationSettingsProvider } from "@/contexts/EvaluationSettingsContext";
 import { GradeInputSettingsProvider } from "@/contexts/GradeInputSettingsContext";
 import { TenantProvider } from "@/contexts/TenantContext";
@@ -34,6 +35,13 @@ export const Route = createRootRouteWithContext<{ queryClient: QueryClient }>()(
   beforeLoad: () => {
     if (typeof window !== "undefined" && isApexBareTenantAppPath(window.location.pathname)) {
       throw redirect({ to: "/" });
+    }
+    if (typeof window !== "undefined" && ["test_member", "test_chair"].includes(getAuthItem("qs_role") ?? "")) {
+      const path = window.location.pathname.replace(/\/$/, "");
+      const isLogin = path === "" || (/^\/[a-z0-9-]+$/i.test(path) && !isReservedApexPathSegment(path.slice(1)));
+      if (!isLogin && !path.endsWith("/test-committee") && !path.endsWith("/staff-attendance")) {
+        throw redirect({ to: tenantPath("/test-committee") });
+      }
     }
   },
   head: () => ({

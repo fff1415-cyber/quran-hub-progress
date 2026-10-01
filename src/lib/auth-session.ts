@@ -4,6 +4,7 @@ const AUTH_KEYS = [
   "qs_token",
   "qs_role",
   "qs_name",
+  "qs_account",
   "qs_halaqa",
   "qs_student",
   "qs_complex",
@@ -72,6 +73,7 @@ export function clearAuthSession(): void {
 export function decodeAuthTokenPayload(token: string | null = getToken()): {
   role?: string;
   name?: string;
+  accountId?: string;
   halaqaId?: number;
   complexId?: number;
   studentId?: string;
@@ -90,6 +92,7 @@ export function decodeAuthTokenPayload(token: string | null = getToken()): {
     return {
       role: typeof payload.role === "string" ? payload.role : undefined,
       name: typeof payload.name === "string" ? payload.name : undefined,
+      accountId: typeof payload.accountId === "string" ? payload.accountId : undefined,
       halaqaId: num(payload.halaqaId),
       complexId: num(payload.complexId ?? payload.complex_id),
       studentId: typeof payload.studentId === "string" ? payload.studentId : undefined,
@@ -105,6 +108,7 @@ export function ensureSessionFromToken(): void {
   if (!payload) return;
   if (payload.role && !getAuthItem("qs_role")) setAuthItem("qs_role", payload.role);
   if (payload.name && !getAuthItem("qs_name")) setAuthItem("qs_name", payload.name);
+  if (payload.accountId && !getAuthItem("qs_account")) setAuthItem("qs_account", payload.accountId);
   if (payload.halaqaId && !getAuthItem("qs_halaqa")) setAuthItem("qs_halaqa", String(payload.halaqaId));
   if (payload.complexId && !getAuthItem("qs_complex")) setAuthItem("qs_complex", String(payload.complexId));
   if (payload.studentId && !getAuthItem("qs_student")) setAuthItem("qs_student", payload.studentId);

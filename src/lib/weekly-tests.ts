@@ -9,10 +9,19 @@ import type { Student } from "@/lib/mock-data";
 
 export type WeeklyTestResult = "" | "pass" | "fail";
 
+export interface WeeklyTestAttribution {
+  result: Exclude<WeeklyTestResult, "">;
+  byName: string;
+  byId?: string;
+  at: string;
+}
+
 export interface StudentWeeklyTests {
   muraja: WeeklyTestResult[];
   /** Legacy rows may store a single string; normalized to array on read. */
   rabt: WeeklyTestResult | WeeklyTestResult[];
+  /** One attribution per test slot; older results have no attribution. */
+  attribution?: { muraja?: (WeeklyTestAttribution | null)[]; rabt?: (WeeklyTestAttribution | null)[] };
 }
 
 export type WeeklyTestsStore = Record<string, Record<number, StudentWeeklyTests>>;
@@ -40,6 +49,7 @@ export const DEFAULT_WEEKLY_TESTS_SETTINGS: WeeklyTestsSettings = {
 const KEY_STORE = "qshatawi_weekly_tests_v1";
 const KEY_SETTINGS = "qshatawi_weekly_tests_settings_v1";
 const KEY_SEMESTER = "qshatawi_weekly_tests_semester_v1";
+export const WEEKLY_TESTS_CHANGED = "qshatawi:weekly-tests-changed";
 
 function clampSlots(n: number, min: number, max: number): number {
   const v = Math.round(Number(n));
@@ -110,9 +120,10 @@ export function loadWeeklyTests(): WeeklyTestsStore {
   return raw ? JSON.parse(raw) : {};
 }
 
-export function saveWeeklyTests(store: WeeklyTestsStore) {
+export function saveWeeklyTests(store: WeeklyTestsStore, options?: { sync?: boolean }) {
   localStorage.setItem(KEY_STORE, JSON.stringify(store));
-  persistStore(store);
+  window.dispatchEvent(new Event(WEEKLY_TESTS_CHANGED));
+  if (options?.sync !== false) persistStore(store);
 }
 
 export function loadWeeklyTestsSettings(): WeeklyTestsSettings {
@@ -171,6 +182,7 @@ export function getStudentWeeklyTests(
   return {
     muraja: normalizeMuraja(row.muraja, s.muraja_slots),
     rabt: normalizeRabt(row.rabt, s.rabt_slots),
+    attribution: row.attribution,
   };
 }
 

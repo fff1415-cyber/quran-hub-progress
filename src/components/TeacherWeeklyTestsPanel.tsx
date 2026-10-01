@@ -1,5 +1,9 @@
 import { useMemo, useState } from "react";
 import type { Student } from "@/lib/mock-data";
+import { getAuthItem, getToken } from "@/lib/auth-session";
+import { getSessionName } from "@/lib/session-role";
+import { secureListAppState, securePatchWeeklyTest } from "@/lib/secure-data.functions";
+import { toast } from "sonner";
 import { useGradeViewerStudents } from "@/hooks/use-grade-viewer-students";
 import {
   getSelectableWeeks,
@@ -52,7 +56,7 @@ interface TeacherWeeklyTestsPanelProps {
   calendar: AcademicCalendar;
   weekNum: number;
   onWeekChange: (n: number) => void;
-  viewerRole: "teacher" | "assistant";
+  viewerRole: "teacher" | "assistant" | "manager";
 }
 
 function TestSelect({
@@ -130,23 +134,44 @@ export function TeacherWeeklyTestsPanel({
     const updated = typeof patch === "function" ? patch(cur) : { ...cur, ...patch };
     next[studentId] = { ...next[studentId], [weekNum]: updated };
     setStore(next);
-    saveWeeklyTests(next);
+    saveWeeklyTests(next, { sync: false });
+  };
+
+  const persistTest = (studentId: string, kind: "muraja" | "rabt", index: number, result: WeeklyTestResult) => {
+    const token = getToken();
+    if (!token) { toast.error("انتهت جلسة الدخول"); return; }
+    void securePatchWeeklyTest({ data: { token, studentId, week: weekNum, kind, index, result } }).catch(async (error) => {
+      toast.error(error instanceof Error ? error.message : "تعذّر حفظ الاختبار");
+      try {
+        const remote = (await secureListAppState({ data: { token, key: "weekly_tests" } })).find((row) => row.key === "weekly_tests")?.value;
+        if (remote && typeof remote === "object" && !Array.isArray(remote)) {
+          setStore(remote as WeeklyTestsStore);
+          saveWeeklyTests(remote as WeeklyTestsStore, { sync: false });
+        }
+      } catch { /* Keep the visible draft until connectivity returns. */ }
+    });
   };
 
   const setMuraja = (studentId: string, index: number, value: WeeklyTestResult) => {
     updateTest(studentId, (row) => {
       const muraja = [...row.muraja];
       muraja[index] = value;
-      return { ...row, muraja };
+      const attribution = { ...row.attribution, muraja: [...(row.attribution?.muraja ?? [])] };
+      attribution.muraja[index] = value ? { result: value, byName: getSessionName(), byId: getAuthItem("qs_account") ?? undefined, at: new Date().toISOString() } : null;
+      return { ...row, muraja, attribution };
     });
+    persistTest(studentId, "muraja", index, value);
   };
 
   const setRabt = (studentId: string, index: number, value: WeeklyTestResult) => {
     updateTest(studentId, (row) => {
       const rabt = Array.isArray(row.rabt) ? [...row.rabt] : normalizeRabtArray(row.rabt, settings.rabt_slots);
       rabt[index] = value;
-      return { ...row, rabt };
+      const attribution = { ...row.attribution, rabt: [...(row.attribution?.rabt ?? [])] };
+      attribution.rabt[index] = value ? { result: value, byName: getSessionName(), byId: getAuthItem("qs_account") ?? undefined, at: new Date().toISOString() } : null;
+      return { ...row, rabt, attribution };
     });
+    persistTest(studentId, "rabt", index, value);
   };
 
   const murajaHeaders = useMemo(

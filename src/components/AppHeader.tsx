@@ -32,6 +32,7 @@ const NAV: NavItem[] = [
   { to: "/secretary", label: "السكرتارية", icon: Users, roles: ["secretary"] },
   { to: "/supervisor", label: "الإشراف التعليمي", icon: Eye, roles: ["supervisor"] },
   { to: "/program-supervisor", label: "البرنامج التربوي", icon: Sparkles, roles: ["program_supervisor"] },
+  { to: "/test-committee", label: "لجنة الاختبارات", icon: ClipboardList, roles: ["test_member", "test_chair"] },
   { to: "/musammi", label: "المسمّع", icon: Mic, roles: ["musammi"] },
   { to: "/teacher", label: "حلقتي", icon: BookOpen, roles: ["teacher", "assistant"] },
   { to: "/student", label: "لوحة أداء المجمع", icon: GraduationCap, roles: ["student", "teacher", "assistant", "supervisor", "musammi", "secretary", "manager", "program_supervisor"] },

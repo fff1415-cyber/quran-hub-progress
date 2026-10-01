@@ -1,34 +1,50 @@
 import { useEffect, useState } from "react";
+import { loadHalaqat } from "@/lib/mock-data";
 import {
   DEFAULT_COMPLEX_FEATURES,
+  COMPLEX_FEATURES_APP_STATE_KEY,
+  TEACHER_TABS,
+  visibleTeacherTabs,
   loadComplexFeatures,
   saveComplexFeatures,
   type ComplexFeatures,
 } from "@/lib/complex-features";
 import { Loader2, Send } from "lucide-react";
+import { pushAppState } from "@/lib/cloud-sync";
 import { toast } from "sonner";
 
 export function ManagerTeacherFeaturesPanel() {
+  const halaqat = loadHalaqat();
   const [settings, setSettings] = useState<ComplexFeatures>(() => loadComplexFeatures());
+  const [selectedHalaqaId, setSelectedHalaqaId] = useState<number>(() => loadHalaqat()[0]?.id ?? 0);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     setSettings(loadComplexFeatures());
   }, []);
 
-  const save = () => {
+  const save = async () => {
     setSaving(true);
     try {
-      saveComplexFeatures(settings);
+      await pushAppState(COMPLEX_FEATURES_APP_STATE_KEY, settings);
+      saveComplexFeatures(settings, { sync: false });
       toast.success("تم حفظ إعدادات المعلم");
-    } catch {
-      toast.error("تعذّر الحفظ");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "تعذّر الحفظ");
     } finally {
       setSaving(false);
     }
   };
 
   const reset = () => setSettings({ ...DEFAULT_COMPLEX_FEATURES });
+  const selectedTabs = visibleTeacherTabs(settings, selectedHalaqaId);
+  const tabLabels = { grades: "التحضير", programs: "البرامج", tarbawi: "التربوي", tests: "الاختبارات" };
+
+  const toggleTab = (tab: (typeof TEACHER_TABS)[number]) => {
+    const next = selectedTabs.includes(tab) ? selectedTabs.filter((item) => item !== tab) : TEACHER_TABS.filter((item) => item === tab || selectedTabs.includes(item));
+    if (next.length === 0) { toast.error("يجب إبقاء تبويب واحد على الأقل"); return; }
+    setSettings((current) => ({ ...current, teacherTabsByHalaqa: { ...current.teacherTabsByHalaqa, [selectedHalaqaId]: next } }));
+  };
 
   return (
     <div className="glass-card rounded-2xl p-6 space-y-5">
@@ -59,10 +75,26 @@ export function ManagerTeacherFeaturesPanel() {
         />
       </label>
 
+      <div className="rounded-xl border border-border p-4 space-y-3">
+        <h4 className="font-bold text-sm">التبويبات الظاهرة لمعلم الحلقة</h4>
+        <select value={selectedHalaqaId} onChange={(e) => setSelectedHalaqaId(Number(e.target.value))} className="w-full max-w-sm p-2 rounded-lg bg-input border border-border" aria-label="اختر الحلقة">
+          {halaqat.map((halaqa) => <option key={halaqa.id} value={halaqa.id}>{halaqa.name}</option>)}
+        </select>
+        <div className="grid sm:grid-cols-2 gap-2">
+          {TEACHER_TABS.map((tab) => (
+            <label key={tab} className="flex items-center gap-2 p-2 rounded-lg bg-secondary/30 cursor-pointer">
+              <input type="checkbox" checked={selectedTabs.includes(tab)} onChange={() => toggleTab(tab)} className="accent-primary" />
+              {tabLabels[tab]}
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-muted-foreground">الإعداد يخص معلم ومساعد الحلقة المحددة. احفظ بعد التعديل.</p>
+      </div>
+
       <div className="flex flex-wrap gap-2">
         <button
           type="button"
-          onClick={save}
+          onClick={() => void save()}
           disabled={saving}
           className="px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold flex items-center gap-2 text-sm"
         >

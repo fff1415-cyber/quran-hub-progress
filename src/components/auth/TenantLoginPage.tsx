@@ -112,6 +112,7 @@ export function TenantLoginPage() {
         setAuthItem("qs_role", "student");
         setAuthItem("qs_student", student.studentId);
         setAuthItem("qs_name", student.name);
+        removeAuthItem("qs_account");
         if (student.complexId != null) setAuthItem("qs_complex", String(student.complexId));
         else setAuthItem("qs_complex", String(tenant.id));
         setAuthItem("qs_tenant_subdomain", tenant.subdomain);
@@ -131,6 +132,8 @@ export function TenantLoginPage() {
       setToken(auth.token);
       setAuthItem("qs_role", auth.role);
       setAuthItem("qs_name", auth.name);
+      if (auth.accountId) setAuthItem("qs_account", auth.accountId);
+      else removeAuthItem("qs_account");
       if (auth.complexId != null) setAuthItem("qs_complex", String(auth.complexId));
       else setAuthItem("qs_complex", String(tenant.id));
       setAuthItem("qs_tenant_subdomain", tenant.subdomain);
@@ -148,6 +151,8 @@ export function TenantLoginPage() {
         case "secretary": navigate({ to: tenantPath("/secretary"), search: { tab: "daily", section: "attendance" } }); break;
         case "supervisor": navigate({ to: tenantPath("/supervisor"), search: { tab: "sard", section: "sard" } }); break;
         case "program_supervisor": navigate({ to: tenantPath("/program-supervisor") }); break;
+        case "test_member":
+        case "test_chair": navigate({ to: tenantPath("/test-committee") }); break;
         case "musammi": navigate({ to: tenantPath("/musammi") }); break;
         case "teacher":
         case "assistant":
