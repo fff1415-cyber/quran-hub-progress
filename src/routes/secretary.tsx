@@ -30,7 +30,7 @@ const VALID_SECTIONS: Record<MainTab, string[]> = {
   daily: ["attendance", "transfers", "late-permit"],
   students: ["profiles", "students", "import", "export"],
   finances: ["ledger"],
-  reports: ["plans", "weekly-tests", "sard"],
+  reports: ["weekly-reports", "plans", "weekly-tests", "sard"],
 };
 
 /** Legacy flat tab ids → new main + section (bookmarks / daily-operations redirect). */
@@ -42,6 +42,7 @@ const LEGACY_TAB: Record<string, { main: MainTab; section: string }> = {
   students: { main: "students", section: "students" },
   import: { main: "students", section: "import" },
   plans: { main: "reports", section: "plans" },
+  "weekly-reports": { main: "reports", section: "weekly-reports" },
   "weekly-tests": { main: "reports", section: "weekly-tests" },
   sard: { main: "reports", section: "sard" },
 };
