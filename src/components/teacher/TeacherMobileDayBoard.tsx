@@ -25,7 +25,7 @@ import {
   type ScientificGradesDataStore,
 } from "@/lib/scientific-grades";
 import type { Halaqa } from "@/lib/mock-data";
-import { assignmentLabel, gradeViewerSection, gradeViewerSectionLabel, hasMultipleAssistants, resolveAssistantCode } from "@/lib/halaqa-assistants";
+import { assignmentLabel, gradeViewerSectionLabel, resolveAssistantCode, shouldShowGradeViewerDivider } from "@/lib/halaqa-assistants";
 import { getSessionName } from "@/lib/session-role";
 import {
   Select,
@@ -349,9 +349,7 @@ export function TeacherMobileDayBoard({
         <div className={cn("space-y-1.5 pb-4", isWeekDayClosed(calendar, weekNum, activeDayKey) && "pointer-events-none opacity-80")}>
           {students.map((s, index) => {
             const assistantCode = halaqa && viewerRole === "assistant" ? resolveAssistantCode(halaqa, getSessionName()) : undefined;
-            const section = gradeViewerSection(s, viewerRole, halaqa, assistantCode);
-            const previous = students[index - 1];
-            const startsSection = !previous || section !== gradeViewerSection(previous, viewerRole, halaqa, assistantCode);
+            const startsSection = shouldShowGradeViewerDivider(s, students[index - 1], viewerRole, halaqa, assistantCode);
             const week = ensureWeekDays(
               grades[s.id]?.[weekNum] ?? emptyWeek(workingKeysList),
               workingKeysList,
@@ -366,7 +364,7 @@ export function TeacherMobileDayBoard({
             return (
               <div key={s.id}>
               {startsSection && <h3 className="mt-4 mb-2 rounded-lg border border-primary/25 bg-primary/10 px-3 py-2 text-xs font-bold text-primary">
-                {gradeViewerSectionLabel(section, viewerRole, !!halaqa && hasMultipleAssistants(halaqa))}
+                {gradeViewerSectionLabel(viewerRole)}
               </h3>}
               <article
                 className="rounded-xl border border-border/70 bg-card/90 overflow-hidden"
