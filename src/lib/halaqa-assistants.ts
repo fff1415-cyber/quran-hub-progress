@@ -124,14 +124,37 @@ export function filterStudentsForGradeViewer(
   halaqa: Halaqa,
   assistantCode?: string,
 ): Student[] {
-  if (viewerRole === "manager") return students;
-  if (viewerRole === "teacher") {
-    return students.filter((s) => studentVisibleToTeacher(s));
-  }
-  if (!assistantCode?.trim()) {
-    return students.filter((s) => s.assignedTo !== "teacher");
-  }
-  return students.filter((s) => studentVisibleToAssistant(s, halaqa, assistantCode.trim()));
+  const own = (s: Student) => gradeViewerOwnStudent(s, viewerRole, halaqa, assistantCode);
+  return [...students.filter(own), ...students.filter((s) => !own(s))];
+}
+
+/** Shared students appear in each viewer's first section; no assignment hides a student. */
+export function gradeViewerOwnStudent(
+  student: Student,
+  viewerRole: "teacher" | "assistant" | "manager",
+  halaqa: Halaqa,
+  assistantCode?: string,
+): boolean {
+  if (viewerRole !== "assistant") return studentVisibleToTeacher(student);
+  if (student.assignedTo !== "assistant") return student.assignedTo !== "teacher";
+  return !assistantCode?.trim() || isStudentAssignedToAssistant(student, halaqa, assistantCode);
+}
+
+export function gradeViewerSection(
+  student: Student,
+  viewerRole: "teacher" | "assistant" | "manager",
+  halaqa?: Halaqa,
+  assistantCode?: string,
+): "own" | "other" {
+  if (!halaqa) return "own";
+  return gradeViewerOwnStudent(student, viewerRole, halaqa, assistantCode) ? "own" : "other";
+}
+
+export function gradeViewerSectionLabel(section: "own" | "other", viewerRole: "teacher" | "assistant" | "manager", multipleAssistants = false): string {
+  if (section === "own") return viewerRole === "assistant" ? "طلابي والطلاب المشتركون" : "طلاب المعلم والطلاب المشتركون";
+  return viewerRole === "assistant"
+    ? multipleAssistants ? "طلاب المعلم والمساعدين الآخرين" : "طلاب المعلم"
+    : "طلاب المساعد";
 }
 
 export function collectHalaqaStaffRows(

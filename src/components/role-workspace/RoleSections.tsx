@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   loadHalaqat, loadStudents, loadGrades, loadSardQueue,
-  loadLatePermissions, saveLatePermissions, loadMessageTemplates, formatMessage,
+  loadLatePermissions, loadMessageTemplates, formatMessage,
   pushNotification, updateSardItem, forwardPlanToSard, DAYS,
   type WeekRecord, type Student, type GradesStore,
 } from "@/lib/mock-data";
@@ -14,7 +14,6 @@ import {
 import { weekLabel } from "@/lib/arabic-numbers";
 import { getCalendarDayKey, getCalendarIsoDate } from "@/lib/operational-date";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
-import { getSessionName } from "@/lib/session-role";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
 import { daysSinceLabel, notifyTeacherHalaqa } from "@/lib/teacher-notifications";
 import { formatPlanDate, formatPlanDateTime } from "@/lib/plan-dates";
@@ -31,6 +30,7 @@ import { Badge } from "@/components/ui/badge";
 import { MessageCircle, UserX, Clock, Search, CheckCircle2, AlertTriangle, Check, GraduationCap, Send } from "lucide-react";
 import { toast } from "sonner";
 import { tenantPath } from "@/lib/tenant";
+import { grantSharedLatePermission, listSharedLatePermissions } from "@/lib/late-permissions-service";
 
 function matchesSearch(name: string, query: string): boolean {
   const q = query.trim();
@@ -202,7 +202,14 @@ export function SecretaryLatePermitPanel() {
   const [latePermissions, setLatePermissions] = useState(() => loadLatePermissions());
   const [search, setSearch] = useState("");
   const todayISO = getCalendarIsoDate();
-  const me = getSessionName("السكرتير");
+
+  useEffect(() => {
+    let active = true;
+    void listSharedLatePermissions().then((items) => {
+      if (active) setLatePermissions(items);
+    }).catch(() => {});
+    return () => { active = false; };
+  }, []);
 
   const filtered = useMemo(() => {
     const q = search.trim();
@@ -210,31 +217,16 @@ export function SecretaryLatePermitPanel() {
     return students.filter((s) => matchesSearch(s.name, q));
   }, [students, search]);
 
-  const grantLate = (studentId: string) => {
+  const grantLate = async (studentId: string) => {
     const s = students.find((x) => x.id === studentId);
     if (!s) return;
-    const h = halaqat.find((x) => x.id === s.halaqaId);
-    if (latePermissions.some((p) => p.studentId === studentId && p.date === todayISO)) {
-      toast.info("مُمنَح إذن الدخول اليوم مسبقاً");
-      return;
+    try {
+      const result = await grantSharedLatePermission(s.id);
+      setLatePermissions((current) => [result.item, ...current.filter((p) => p.id !== result.item.id)]);
+      toast[result.alreadyGranted ? "info" : "success"](result.alreadyGranted ? "مُمنَح إذن الدخول اليوم مسبقاً" : "تم تسجيل إذن الدخول وإشعار معلم الحلقة");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "تعذّر منح الإذن");
     }
-    const next = [{
-      id: `late-${Date.now()}`,
-      studentId: s.id,
-      halaqaId: s.halaqaId,
-      grantedBy: me,
-      grantedAt: new Date().toISOString(),
-      date: todayISO,
-    }, ...latePermissions];
-    setLatePermissions(next);
-    saveLatePermissions(next);
-    pushNotification({
-      message: `تم منح ${s.name} إذن الدخول — ${h?.name || "الحلقة"}`,
-      type: "late",
-      targetHalaqaId: s.halaqaId,
-      actionTab: "late",
-    });
-    toast.success("تم تسجيل إذن الدخول");
   };
 
   return (
@@ -274,7 +266,7 @@ export function SecretaryLatePermitPanel() {
                         <CheckCircle2 className="w-4 h-4" /> مُمنَح اليوم
                       </div>
                     ) : (
-                      <Button type="button" onClick={() => grantLate(s.id)} variant="outline"
+                      <Button type="button" onClick={() => void grantLate(s.id)} variant="outline"
                         className="w-full bg-warning/20 text-warning border-warning/30">
                         <Check className="w-4 h-4" /> منح إذن الدخول
                       </Button>

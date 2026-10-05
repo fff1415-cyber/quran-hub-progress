@@ -20,6 +20,8 @@ type Props = {
   /** إذن الدخول — يُؤكَّد الحذف مع تنبيه إضافي */
   isLateEntry?: boolean;
   showDismiss?: boolean;
+  onDismiss?: () => Promise<void>;
+  onRemove?: () => Promise<void>;
 };
 
 export function InboxItemActions({
@@ -27,20 +29,35 @@ export function InboxItemActions({
   onDone,
   isLateEntry = false,
   showDismiss = true,
+  onDismiss,
+  onRemove,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
 
-  const dismiss = () => {
-    dismissNotification(id);
-    onDone();
-    toast.success("تم");
+  const dismiss = async () => {
+    setBusy(true);
+    try {
+      if (onDismiss) await onDismiss();
+      else dismissNotification(id);
+      onDone();
+      toast.success("تم");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "تعذّر تحديث الإشعار");
+    } finally { setBusy(false); }
   };
 
-  const remove = () => {
-    deleteNotification(id);
-    setOpen(false);
-    onDone();
-    toast.success("تم الحذف");
+  const remove = async () => {
+    setBusy(true);
+    try {
+      if (onRemove) await onRemove();
+      else deleteNotification(id);
+      setOpen(false);
+      onDone();
+      toast.success("تم الحذف");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "تعذّر حذف الإشعار");
+    } finally { setBusy(false); }
   };
 
   return (
@@ -49,6 +66,7 @@ export function InboxItemActions({
         <button
           type="button"
           onClick={dismiss}
+          disabled={busy}
           className="p-2 rounded-lg bg-success/15 text-success border border-success/30"
           aria-label="تم"
           title="تم — إخفاء"
@@ -62,6 +80,7 @@ export function InboxItemActions({
             type="button"
             className="p-2 rounded-lg bg-destructive/10 text-destructive border border-destructive/30"
             aria-label="حذف"
+            disabled={busy}
             title="حذف نهائي"
           >
             <Trash2 className="w-4 h-4" />
@@ -80,7 +99,8 @@ export function InboxItemActions({
             <AlertDialogCancel>إلغاء</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={remove}
+              onClick={() => void remove()}
+              disabled={busy}
             >
               حذف
             </AlertDialogAction>

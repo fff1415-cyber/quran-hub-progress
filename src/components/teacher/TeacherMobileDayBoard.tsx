@@ -25,7 +25,8 @@ import {
   type ScientificGradesDataStore,
 } from "@/lib/scientific-grades";
 import type { Halaqa } from "@/lib/mock-data";
-import { assignmentLabel } from "@/lib/halaqa-assistants";
+import { assignmentLabel, gradeViewerSection, gradeViewerSectionLabel, hasMultipleAssistants, resolveAssistantCode } from "@/lib/halaqa-assistants";
+import { getSessionName } from "@/lib/session-role";
 import {
   Select,
   SelectContent,
@@ -342,11 +343,15 @@ export function TeacherMobileDayBoard({
 
       {students.length === 0 ? (
         <div className="rounded-xl border border-border p-6 text-center text-sm text-muted-foreground">
-          {viewerRole === "assistant" ? "لم يُعيّن لك أي طالب بعد" : "لا يوجد طلاب"}
+          لا يوجد طلاب في الحلقة
         </div>
       ) : (
         <div className={cn("space-y-1.5 pb-4", isWeekDayClosed(calendar, weekNum, activeDayKey) && "pointer-events-none opacity-80")}>
-          {students.map((s) => {
+          {students.map((s, index) => {
+            const assistantCode = halaqa && viewerRole === "assistant" ? resolveAssistantCode(halaqa, getSessionName()) : undefined;
+            const section = gradeViewerSection(s, viewerRole, halaqa, assistantCode);
+            const previous = students[index - 1];
+            const startsSection = !previous || section !== gradeViewerSection(previous, viewerRole, halaqa, assistantCode);
             const week = ensureWeekDays(
               grades[s.id]?.[weekNum] ?? emptyWeek(workingKeysList),
               workingKeysList,
@@ -359,8 +364,11 @@ export function TeacherMobileDayBoard({
             const weekPoolRemaining = WEEKLY_COMPENSATION_CAP - sumWeekCompensationFaces(week, workingKeysList);
 
             return (
+              <div key={s.id}>
+              {startsSection && <h3 className="mt-4 mb-2 rounded-lg border border-primary/25 bg-primary/10 px-3 py-2 text-xs font-bold text-primary">
+                {gradeViewerSectionLabel(section, viewerRole, !!halaqa && hasMultipleAssistants(halaqa))}
+              </h3>}
               <article
-                key={s.id}
                 className="rounded-xl border border-border/70 bg-card/90 overflow-hidden"
               >
                 {/* Row 1: name · plan · percentages */}
@@ -519,6 +527,7 @@ export function TeacherMobileDayBoard({
                   )}
                 </div>
               </article>
+              </div>
             );
           })}
         </div>

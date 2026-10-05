@@ -218,7 +218,7 @@ const KEY_SARD_HISTORY = "qshatawi_sard_history_v2";
 const KEY_MESSAGE_TEMPLATES = "qshatawi_message_templates_v2";
 const KEY_LATE_PERMISSIONS = "qshatawi_late_permissions_v2";
 
-function persistShared(key: "grades" | "sard_queue" | "sard_history" | "message_templates" | "late_permissions", value: unknown) {
+function persistShared(key: "grades" | "sard_queue" | "sard_history" | "message_templates", value: unknown) {
   if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
   void import("./cloud-sync").then((m) => m.pushAppState(key, value)).catch(() => undefined);
@@ -229,6 +229,7 @@ let gradesCloudTimer: ReturnType<typeof setTimeout> | null = null;
 let pendingGradesCloud: GradesStore | null = null;
 
 export const GRADES_CHANGED_EVENT = "qs-grades-changed";
+export const STUDENTS_CHANGED_EVENT = "qshatawi:students-changed";
 const GRADES_BROADCAST = "qs-grades-v2";
 
 function gradesBroadcast(): BroadcastChannel | null {
@@ -467,7 +468,10 @@ export function loadStudents(): Student[] {
   const raw = localStorage.getItem(KEY_STUDENTS);
   return raw ? JSON.parse(raw) : [];
 }
-export function saveStudents(s: Student[]) { localStorage.setItem(KEY_STUDENTS, JSON.stringify(s)); }
+export function saveStudents(s: Student[]) {
+  localStorage.setItem(KEY_STUDENTS, JSON.stringify(s));
+  window.dispatchEvent(new Event(STUDENTS_CHANGED_EVENT));
+}
 
 export function loadHalaqat(): Halaqa[] {
   if (typeof window === "undefined") return [];
@@ -721,6 +725,9 @@ export interface LatePermission {
   grantedBy: string;
   grantedAt: string;
   date: string;
+  studentName?: string;
+  acknowledgedAt?: string;
+  removedAt?: string;
 }
 export function loadLatePermissions(): LatePermission[] {
   if (typeof window === "undefined") return [];
@@ -729,7 +736,6 @@ export function loadLatePermissions(): LatePermission[] {
 }
 export function saveLatePermissions(list: LatePermission[]) {
   localStorage.setItem(KEY_LATE_PERMISSIONS, JSON.stringify(list.slice(0, 1000)));
-  persistShared("late_permissions", list.slice(0, 1000));
 }
 
 // ---- Acknowledged attendance archive (after secretary presses ✓ on today's row) ----
