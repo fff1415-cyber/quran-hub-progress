@@ -14,9 +14,10 @@ import { ForwardedTransfersPanel } from "@/components/role-workspace/ForwardedTr
 import { PlanStudentLookup } from "@/components/plans/SupervisorPlansPanel";
 import { StudentImportPanel, StudentsManagementPanel } from "@/components/admin/StudentsAdminPanel";
 import { WeeklyTestsOverviewPanel } from "@/components/WeeklyTestsOverviewPanel";
+import { SecretaryWeeklyReportsPanel } from "@/components/role-workspace/SecretaryWeeklyReportsPanel";
 import {
   UserX, Send, Clock, Users, FileSpreadsheet, Download,
-  GraduationCap, ClipboardCheck, Mic,
+  GraduationCap, ClipboardCheck, Mic, CalendarRange,
 } from "lucide-react";
 import type { PermissionKey } from "@/lib/permissions";
 
@@ -123,6 +124,13 @@ export function SecretaryReportsPanel({
   const tabs = useMemo(
     () =>
       filterSubTabs([
+        {
+          id: "weekly-reports",
+          label: "التقارير الأسبوعية",
+          icon: CalendarRange,
+          perm: "view_attendance",
+          content: <SecretaryWeeklyReportsPanel />,
+        },
         {
           id: "plans",
           label: "الخطط التراكمية",

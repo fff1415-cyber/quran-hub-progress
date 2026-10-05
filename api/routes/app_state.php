@@ -94,6 +94,7 @@ function handle_set_app_state(): void
     $cid = require_complex_id($auth);
     $input = json_input();
     $key = (string) ($input['key'] ?? '');
+    if ($key === 'late_permissions') error_response('سجّل إذن الدخول من الواجهة المخصصة', 403);
     $role = (string) ($auth['role'] ?? '');
     if (in_array($role, ['test_member', 'test_chair'], true)) {
         $allowed = $role === 'test_chair' ? ['weekly_tests', 'staff_attendance'] : ['weekly_tests'];

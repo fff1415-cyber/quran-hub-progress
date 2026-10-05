@@ -18,10 +18,19 @@ require_once __DIR__ . '/kiosk.php';
 require_once __DIR__ . '/platform_admin.php';
 require_once __DIR__ . '/push.php';
 require_once __DIR__ . '/student_followups.php';
+require_once __DIR__ . '/late_permissions.php';
 require_once __DIR__ . '/weekly_tests.php';
 
 function route_request(string $method, string $path): void
 {
+    if ($path === '/late-permissions' && $method === 'GET') {
+        handle_list_late_permissions();
+        return;
+    }
+    if ($path === '/late-permissions' && $method === 'POST') {
+        handle_change_late_permission();
+        return;
+    }
     if ($path === '/weekly-tests/result' && $method === 'POST') {
         handle_patch_weekly_test();
         return;

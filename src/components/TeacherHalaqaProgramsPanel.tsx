@@ -1,5 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { loadGrades, loadStudents, GRADES_CHANGED_EVENT } from "@/lib/mock-data";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
+import { loadGrades, loadStudents, loadHalaqat, GRADES_CHANGED_EVENT } from "@/lib/mock-data";
+import { gradeViewerSection, gradeViewerSectionLabel, hasMultipleAssistants, resolveAssistantCode } from "@/lib/halaqa-assistants";
+import { getSessionName } from "@/lib/session-role";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import {
   formatWeekOptionLabel,
@@ -103,7 +105,7 @@ export function TeacherHalaqaProgramsPanel({
   );
   const students = useGradeViewerStudents(
     halaqaId,
-    viewerRole === "manager" ? "teacher" : viewerRole,
+    viewerRole,
   );
 
   const selectableWeeks = useMemo(() => getSelectableWeeks(calendar), [calendar]);
@@ -360,6 +362,7 @@ export function TeacherHalaqaProgramsPanel({
           halaqaId={halaqaId}
           programs={programs}
           students={students}
+          viewerRole={viewerRole}
           allStudentIds={allStudents.map((s) => s.id)}
           weekNum={weekNum}
           calendar={calendar}
@@ -620,6 +623,7 @@ function ProgramFillSection({
   halaqaId,
   programs,
   students,
+  viewerRole,
   allStudentIds,
   weekNum,
   calendar,
@@ -633,6 +637,7 @@ function ProgramFillSection({
   halaqaId: number;
   programs: HalaqaProgram[];
   students: ReturnType<typeof loadStudents>;
+  viewerRole: "teacher" | "assistant" | "manager";
   allStudentIds: string[];
   weekNum: number;
   calendar: AcademicCalendar;
@@ -684,6 +689,11 @@ function ProgramFillSection({
   const formatTotal = (n: number) => (Number.isFinite(n) && n !== 0 ? String(n) : n === 0 ? "0" : "—");
 
   const showScientific = isScientificProgramEnabled(sciConfig) && sciFields.length > 0;
+  const halaqa = loadHalaqat().find((h) => h.id === halaqaId);
+  const assistantCode = halaqa && viewerRole === "assistant" ? resolveAssistantCode(halaqa, getSessionName()) : undefined;
+  const groupFor = (student: (typeof students)[number]) => gradeViewerSection(student, viewerRole, halaqa, assistantCode);
+  const columnCount = 1 + standardPrograms.reduce((sum, p) => sum + programSlots(p).length, 0) +
+    (showScientific ? sciFields.length + 2 : 0) + 4;
   const sciWeeklyColSpan = showScientific ? sciFields.length + 1 : 0;
   const sciCumulativeColSpan = showScientific ? 1 : 0;
 
@@ -784,7 +794,9 @@ function ProgramFillSection({
             </tr>
           </thead>
           <tbody>
-            {students.map((s) => {
+            {students.map((s, index) => {
+              const section = groupFor(s);
+              const startsSection = index === 0 || section !== groupFor(students[index - 1]);
               const weekly = buildCombinedProgramTotals(
                 standardPrograms,
                 grades,
@@ -806,7 +818,11 @@ function ProgramFillSection({
                 sciConfig,
               );
               return (
-                <tr key={s.id} className="border-b border-border/50 hover:bg-accent/20">
+                <Fragment key={s.id}>
+                {startsSection && <tr><th colSpan={columnCount} className="p-3 text-right text-xs font-bold bg-primary/10 border-y border-primary/25">
+                  {gradeViewerSectionLabel(section, viewerRole, !!halaqa && hasMultipleAssistants(halaqa))}
+                </th></tr>}
+                <tr className="border-b border-border/50 hover:bg-accent/20">
                   <td className="p-2 sticky right-0 bg-card font-medium">{s.name}</td>
                   {standardPrograms.flatMap((p) => {
                     const slots = programSlots(p);
@@ -877,6 +893,7 @@ function ProgramFillSection({
                     />
                   </td>
                 </tr>
+                </Fragment>
               );
             })}
           </tbody>
