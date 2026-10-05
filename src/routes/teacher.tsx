@@ -50,6 +50,10 @@ import { applyPlanInput, fetchHalaqaPlanStatuses, fetchStudentPlanSheet, lastCom
 import { checkAndHandlePlanCompletion } from "@/lib/plan-completion";
 import { processAbsenceThresholdAlerts } from "@/lib/semester-absence";
 import { loadComplexFeatures, visibleTeacherTabs, TEACHER_TABS, type TeacherTab } from "@/lib/complex-features";
+import { getToken } from "@/lib/auth-session";
+import { secureListAppState } from "@/lib/secure-data.functions";
+import { COMPLEX_FEATURES_APP_STATE_KEY, saveComplexFeatures, type ComplexFeatures } from "@/lib/complex-features";
+import { changeSharedLatePermission, listSharedLatePermissions, LATE_PERMISSIONS_CHANGED, type SharedLatePermission } from "@/lib/late-permissions-service";
 import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
@@ -142,19 +146,41 @@ export function TeacherPage() {
   const { h, w, view: viewParam } = useSearch({ strict: false }) as z.infer<typeof teacherSearchSchema>;
   const navigate = useNavigate();
   const access = useTeacherHalaqaAccess(h);
-  const [role, setRole] = useState<string | null>(null);
+  const [role, setRole] = useState<string | null>(() => getSessionRole());
   const [name, setName] = useState<string | null>(null);
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
   const [loadingCal, setLoadingCal] = useState(true);
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
+  const [features, setFeatures] = useState<ComplexFeatures>(() => loadComplexFeatures());
+  const [featuresReady, setFeaturesReady] = useState(false);
   const visibleTabs = role === "teacher" || role === "assistant"
-    ? visibleTeacherTabs(loadComplexFeatures(), access.phase === "ready" ? access.halaqa.id : (h ?? 0))
+    ? visibleTeacherTabs(features, access.phase === "ready" ? access.halaqa.id : (h ?? 0))
     : [...TEACHER_TABS];
   const view: TeacherTab = viewParam && visibleTabs.includes(viewParam) ? viewParam : visibleTabs[0];
 
   useEffect(() => {
     setRole(getSessionRole());
     setName(getSessionName());
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      const token = getToken();
+      if (!token) { if (active) setFeaturesReady(true); return; }
+      try {
+        const rows = await secureListAppState({ data: { token, key: COMPLEX_FEATURES_APP_STATE_KEY } });
+        if (!active) return;
+        const value = rows.find((row) => row.key === COMPLEX_FEATURES_APP_STATE_KEY)?.value;
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          setFeatures(saveComplexFeatures(value as ComplexFeatures, { sync: false }));
+        }
+      } catch { /* Keep the last known setting while offline. */ }
+      finally { if (active) setFeaturesReady(true); }
+    };
+    void refresh();
+    window.addEventListener("focus", refresh);
+    return () => { active = false; window.removeEventListener("focus", refresh); };
   }, []);
 
   useEffect(() => {
@@ -319,7 +345,7 @@ export function TeacherPage() {
         <HalaqaNotifications halaqaId={halaqa.id} />
         <TeacherStudentFollowupAlerts halaqaId={halaqa.id} />
 
-        {loadingCal || !calendar || selectedWeek === null ? (
+        {loadingCal || !calendar || selectedWeek === null || ((role === "teacher" || role === "assistant") && !featuresReady) ? (
           <div className="glass-card rounded-2xl p-12 flex flex-col items-center gap-3 text-muted-foreground">
             <Loader2 className="w-8 h-8 animate-spin text-primary" />
             <p className="text-sm">جاري تحميل التقويم الدراسي...</p>
@@ -1826,17 +1852,44 @@ function Cbx({ checked, onChange }: { checked: boolean; onChange: (v: boolean) =
 
 function HalaqaNotifications({ halaqaId }: { halaqaId: number }) {
   const refresh = () =>
-    loadNotifications().filter((n) => !n.read && n.targetHalaqaId === halaqaId);
+    loadNotifications().filter((n) => n.type !== "late" && !n.read && n.targetHalaqaId === halaqaId);
   const [items, setItems] = useState(refresh);
+  const [lateItems, setLateItems] = useState<SharedLatePermission[]>([]);
   useInboxRefresh(() => setItems(refresh()));
-  if (items.length === 0) return null;
+  useEffect(() => {
+    let active = true;
+    const update = async () => {
+      try {
+        const rows = await listSharedLatePermissions();
+        if (active) setLateItems(rows.filter((row) => row.halaqaId === halaqaId && !row.acknowledgedAt && !row.removedAt));
+      } catch { /* Retain the last known alerts until connection resumes. */ }
+    };
+    void update();
+    const timer = window.setInterval(() => void update(), 20_000);
+    window.addEventListener("focus", update);
+    window.addEventListener(LATE_PERMISSIONS_CHANGED, update);
+    return () => { active = false; clearInterval(timer); window.removeEventListener("focus", update); window.removeEventListener(LATE_PERMISSIONS_CHANGED, update); };
+  }, [halaqaId]);
+  if (items.length + lateItems.length === 0) return null;
   return (
     <div className="glass-card rounded-2xl p-4 mb-6 border border-warning/30">
       <div className="flex items-center gap-2 mb-3 text-warning font-bold">
         <Bell className="w-4 h-4" />
-        إشعارات الحلقة ({items.length})
+        إشعارات الحلقة ({items.length + lateItems.length})
       </div>
       <div className="space-y-2">
+        {lateItems.map((item) => (
+          <div key={item.id} className="flex items-start gap-2 p-2 rounded-lg bg-warning/10">
+            <div className="flex-1 text-sm">تم منح {item.studentName ?? item.studentId} إذن الدخول — {item.date}</div>
+            <InboxItemActions
+              id={item.id}
+              isLateEntry
+              onDismiss={() => changeSharedLatePermission(item.id, "acknowledge")}
+              onRemove={() => changeSharedLatePermission(item.id, "remove")}
+              onDone={() => setLateItems((current) => current.filter((row) => row.id !== item.id))}
+            />
+          </div>
+        ))}
         {items.map((n) => (
           <div key={n.id} className="flex items-start gap-2 p-2 rounded-lg bg-warning/10">
             <div className="flex-1 text-sm">{n.message}</div>

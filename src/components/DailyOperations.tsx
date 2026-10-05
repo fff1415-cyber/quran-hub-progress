@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import {
   loadHalaqat, loadStudents, loadGrades, loadSardQueue, updateSardItem, pushNotification,
-  loadLatePermissions, saveLatePermissions, loadMessageTemplates, formatMessage,
+  loadLatePermissions, loadMessageTemplates, formatMessage,
   loadAttendanceArchive, acknowledgeAttendance,
   type WeekRecord, type Student, type SardQueueItem,
 } from "@/lib/mock-data";
@@ -22,6 +22,7 @@ import {
   AlertTriangle, CheckCircle2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { grantSharedLatePermission, listSharedLatePermissions } from "@/lib/late-permissions-service";
 
 type OpsTab = "absence" | "late" | "sard";
 
@@ -68,6 +69,11 @@ export function DailyOperations() {
   const [search, setSearch] = useState("");
   const [queue, setQueue] = useState(() => loadSardQueue());
   const [latePermissions, setLatePermissions] = useState(() => loadLatePermissions());
+  useEffect(() => {
+    let active = true;
+    void listSharedLatePermissions().then((items) => { if (active) setLatePermissions(items); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   const [archive, setArchive] = useState(() => loadAttendanceArchive());
   const [openLateId, setOpenLateId] = useState<string | null>(null);
 
@@ -151,28 +157,17 @@ export function DailyOperations() {
     toast.success(type === "absent" ? "نُقل إلى سجل الغياب" : type === "late" ? "نُقل إلى سجل التأخر" : "تم");
   };
 
-  const grantLate = (studentId: string) => {
+  const grantLate = async (studentId: string) => {
     const s = students.find((x) => x.id === studentId);
     if (!s) return;
-    const h = halaqat.find((x) => x.id === s.halaqaId);
-    const next = [{
-      id: `late-${Date.now()}`,
-      studentId: s.id,
-      halaqaId: s.halaqaId,
-      grantedBy: me,
-      grantedAt: new Date().toISOString(),
-      date: todayISO,
-    }, ...latePermissions];
-    setLatePermissions(next);
-    saveLatePermissions(next);
-    pushNotification({
-      message: `تم منح الطالب ${s.name} إذن الدخول إلى ${h?.name || "الحلقة"} من قِبل ${me}`,
-      type: "late",
-      targetHalaqaId: s.halaqaId,
-      actionTab: "late",
-    });
-    toast.success("تم تسجيل إذن الدخول وإشعار معلم الحلقة");
-    setOpenLateId(null);
+    try {
+      const result = await grantSharedLatePermission(s.id);
+      setLatePermissions((current) => [result.item, ...current.filter((p) => p.id !== result.item.id)]);
+      toast[result.alreadyGranted ? "info" : "success"](result.alreadyGranted ? "مُمنَح إذن الدخول اليوم مسبقاً" : "تم تسجيل إذن الدخول وإشعار معلم الحلقة");
+      setOpenLateId(null);
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "تعذّر منح الإذن");
+    }
   };
 
   const forceImmediate = (item: SardQueueItem, name: string) => {
