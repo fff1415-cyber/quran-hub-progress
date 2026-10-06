@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { loadGrades, loadStudents, loadHalaqat, GRADES_CHANGED_EVENT } from "@/lib/mock-data";
-import { gradeViewerSection, gradeViewerSectionLabel, hasMultipleAssistants, resolveAssistantCode } from "@/lib/halaqa-assistants";
+import { gradeViewerSectionLabel, resolveAssistantCode, shouldShowGradeViewerDivider } from "@/lib/halaqa-assistants";
 import { getSessionName } from "@/lib/session-role";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import {
@@ -691,7 +691,6 @@ function ProgramFillSection({
   const showScientific = isScientificProgramEnabled(sciConfig) && sciFields.length > 0;
   const halaqa = loadHalaqat().find((h) => h.id === halaqaId);
   const assistantCode = halaqa && viewerRole === "assistant" ? resolveAssistantCode(halaqa, getSessionName()) : undefined;
-  const groupFor = (student: (typeof students)[number]) => gradeViewerSection(student, viewerRole, halaqa, assistantCode);
   const columnCount = 1 + standardPrograms.reduce((sum, p) => sum + programSlots(p).length, 0) +
     (showScientific ? sciFields.length + 2 : 0) + 4;
   const sciWeeklyColSpan = showScientific ? sciFields.length + 1 : 0;
@@ -795,8 +794,7 @@ function ProgramFillSection({
           </thead>
           <tbody>
             {students.map((s, index) => {
-              const section = groupFor(s);
-              const startsSection = index === 0 || section !== groupFor(students[index - 1]);
+              const startsSection = shouldShowGradeViewerDivider(s, students[index - 1], viewerRole, halaqa, assistantCode);
               const weekly = buildCombinedProgramTotals(
                 standardPrograms,
                 grades,
@@ -820,7 +818,7 @@ function ProgramFillSection({
               return (
                 <Fragment key={s.id}>
                 {startsSection && <tr><th colSpan={columnCount} className="p-3 text-right text-xs font-bold bg-primary/10 border-y border-primary/25">
-                  {gradeViewerSectionLabel(section, viewerRole, !!halaqa && hasMultipleAssistants(halaqa))}
+                  {gradeViewerSectionLabel(viewerRole)}
                 </th></tr>}
                 <tr className="border-b border-border/50 hover:bg-accent/20">
                   <td className="p-2 sticky right-0 bg-card font-medium">{s.name}</td>

@@ -30,10 +30,9 @@ import { useGradeViewerStudents } from "@/hooks/use-grade-viewer-students";
 import {
   assistantDisplayLabel,
   assignmentLabel,
-  gradeViewerSection,
   gradeViewerSectionLabel,
+  shouldShowGradeViewerDivider,
   getAllAssistants,
-  hasMultipleAssistants,
   resolveAssistantCode,
 } from "@/lib/halaqa-assistants";
 import { useLiveGrades } from "@/hooks/use-live-grades";
@@ -754,7 +753,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const [planSheetLoading, setPlanSheetLoading] = useState(false);
   const senderName = getSessionName("المعلم");
   const assistantCode = halaqa && viewerRole === "assistant" ? resolveAssistantCode(halaqa, senderName) : undefined;
-  const groupFor = (student: Student) => gradeViewerSection(student, viewerRole, halaqa, assistantCode);
   const showTransferButton = loadComplexFeatures().showTeacherTransferButton;
 
   const halaqaSemesterPct = useMemo(
@@ -1639,13 +1637,12 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           {students.map((s, studentIndex) => {
             const w = ensureWeekDays(grades[s.id]?.[weekNum] ?? emptyWeek(workingKeysList), workingKeysList);
             const weekPct = weekPercentage(w, isTalqeen, s.levelType);
-            const section = groupFor(s);
-            const startsSection = studentIndex === 0 || section !== groupFor(students[studentIndex - 1]);
+            const startsSection = shouldShowGradeViewerDivider(s, students[studentIndex - 1], viewerRole, halaqa, assistantCode);
             return (
               <React.Fragment key={s.id}>
               {startsSection && <tr><th colSpan={1 + visibleDays.length * dayColSpan + (!isTalqeen && !compensationPerDay ? 1 : 0) + 2}
                 className="p-3 text-right text-xs font-bold bg-primary/10 border-y border-primary/25 sticky right-0">
-                {gradeViewerSectionLabel(section, viewerRole, !!halaqa && hasMultipleAssistants(halaqa))}
+                {gradeViewerSectionLabel(viewerRole)}
               </th></tr>}
               <tr className="group border-b border-border/50 hover:bg-accent/30">
                 <StudentNameCell index={studentIndex} name={s.name}>

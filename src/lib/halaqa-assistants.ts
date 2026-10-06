@@ -150,11 +150,20 @@ export function gradeViewerSection(
   return gradeViewerOwnStudent(student, viewerRole, halaqa, assistantCode) ? "own" : "other";
 }
 
-export function gradeViewerSectionLabel(section: "own" | "other", viewerRole: "teacher" | "assistant" | "manager", multipleAssistants = false): string {
-  if (section === "own") return viewerRole === "assistant" ? "طلابي والطلاب المشتركون" : "طلاب المعلم والطلاب المشتركون";
-  return viewerRole === "assistant"
-    ? multipleAssistants ? "طلاب المعلم والمساعدين الآخرين" : "طلاب المعلم"
-    : "طلاب المساعد";
+export function gradeViewerSectionLabel(viewerRole: "teacher" | "assistant" | "manager"): string {
+  return viewerRole === "assistant" ? "طلاب المعلم" : "طلاب المساعد";
+}
+
+/** Only a transition from the viewer's students to the other group needs a divider. */
+export function shouldShowGradeViewerDivider(
+  student: Student,
+  previous: Student | undefined,
+  viewerRole: "teacher" | "assistant" | "manager",
+  halaqa?: Halaqa,
+  assistantCode?: string,
+): boolean {
+  return !!previous && gradeViewerSection(previous, viewerRole, halaqa, assistantCode) === "own"
+    && gradeViewerSection(student, viewerRole, halaqa, assistantCode) === "other";
 }
 
 export function collectHalaqaStaffRows(

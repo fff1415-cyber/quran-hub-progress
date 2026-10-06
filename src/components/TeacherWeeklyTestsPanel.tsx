@@ -1,6 +1,6 @@
 import { Fragment, useMemo, useState } from "react";
 import { loadHalaqat, type Student } from "@/lib/mock-data";
-import { gradeViewerSection, gradeViewerSectionLabel, hasMultipleAssistants, resolveAssistantCode } from "@/lib/halaqa-assistants";
+import { gradeViewerSectionLabel, resolveAssistantCode, shouldShowGradeViewerDivider } from "@/lib/halaqa-assistants";
 import { getAuthItem, getToken } from "@/lib/auth-session";
 import { getSessionName } from "@/lib/session-role";
 import { secureListAppState, securePatchWeeklyTest } from "@/lib/secure-data.functions";
@@ -100,7 +100,6 @@ export function TeacherWeeklyTestsPanel({
   const students = useGradeViewerStudents(halaqaId, viewerRole);
   const halaqa = loadHalaqat().find((h) => h.id === halaqaId);
   const assistantCode = halaqa && viewerRole === "assistant" ? resolveAssistantCode(halaqa, getSessionName()) : undefined;
-  const groupFor = (student: Student) => gradeViewerSection(student, viewerRole, halaqa, assistantCode);
 
   const [store, setStore] = useState<WeeklyTestsStore>(() => loadWeeklyTests());
   const selectableWeeks = useMemo(() => getSelectableWeeks(calendar), [calendar]);
@@ -253,10 +252,10 @@ export function TeacherWeeklyTestsPanel({
             <tbody>
               {students.map((s, index) => (
                 <Fragment key={s.id}>
-                {(index === 0 || groupFor(s) !== groupFor(students[index - 1])) && <tr><th
+                {shouldShowGradeViewerDivider(s, students[index - 1], viewerRole, halaqa, assistantCode) && <tr><th
                   colSpan={1 + settings.muraja_slots + settings.rabt_slots + 2}
                   className="p-3 text-right text-xs font-bold bg-primary/10 border-y border-primary/25">
-                  {gradeViewerSectionLabel(groupFor(s), viewerRole, !!halaqa && hasMultipleAssistants(halaqa))}
+                  {gradeViewerSectionLabel(viewerRole)}
                 </th></tr>}
                 <StudentWeeklyTestsRow
                   student={s}
