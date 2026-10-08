@@ -36,6 +36,7 @@ function login_find_extra_assistant(PDO $pdo, bool $tenantsHalaqa, int $complexI
                 'complex_id' => $row['complex_id'] ?? null,
                 'id' => (int) $row['id'],
                 'assistant_name' => trim((string) ($assistant['name'] ?? '')) ?: 'مساعد',
+                'task_actor_id' => tasks_assistant_id((int) $row['id'], $code),
             ];
         }
     }
@@ -134,7 +135,8 @@ function handle_login_by_code(): void
         }
         if ($h['assistant_code'] === $code) {
             $tokenPayload = login_token_payload(
-                ['role' => 'assistant', 'name' => $h['assistant_name'], 'halaqaId' => (int) $h['id']],
+                ['role' => 'assistant', 'name' => $h['assistant_name'], 'halaqaId' => (int) $h['id'],
+                    'taskActorId' => tasks_assistant_id((int) $h['id'], '', true)],
                 $complexId,
                 $tenantsHalaqa,
             );
@@ -152,7 +154,8 @@ function handle_login_by_code(): void
     if ($extra) {
         $complexId = $tenantsHalaqa ? (int) $extra['complex_id'] : $requestedComplexId;
         $tokenPayload = login_token_payload(
-            ['role' => 'assistant', 'name' => $extra['assistant_name'], 'halaqaId' => (int) $extra['id']],
+            ['role' => 'assistant', 'name' => $extra['assistant_name'], 'halaqaId' => (int) $extra['id'],
+                'taskActorId' => $extra['task_actor_id']],
             $complexId,
             $tenantsHalaqa,
         );

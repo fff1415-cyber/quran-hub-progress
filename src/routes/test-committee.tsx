@@ -8,6 +8,8 @@ import { ensureWeeklyTestsSemester } from "@/lib/weekly-tests";
 import { AppHeader } from "@/components/AppHeader";
 import { TeacherWeeklyTestsPanel } from "@/components/TeacherWeeklyTestsPanel";
 import { CommitteeTestsReport } from "@/components/CommitteeTestsReport";
+import { StaffTasksPanel } from "@/components/StaffTasksPanel";
+import { useStaffTaskCount } from "@/hooks/use-staff-task-count";
 import { StaffAttendancePromptDialog } from "@/components/StaffAttendancePromptDialog";
 import { COMPLEX_STAFF_HALAQA_ID, COMPLEX_STAFF_HALAQA_NAME } from "@/lib/staff-attendance";
 import { ClipboardCheck, Loader2 } from "lucide-react";
@@ -16,6 +18,7 @@ import { Toaster } from "sonner";
 export const Route = createFileRoute("/test-committee")({ component: TestCommitteePage });
 
 export function TestCommitteePage() {
+  const taskCount = useStaffTaskCount();
   const role = getSessionRole();
   const name = getSessionName();
   const chair = role === "test_chair";
@@ -23,7 +26,7 @@ export function TestCommitteePage() {
   const [halaqat, setHalaqat] = useState(() => loadHalaqat());
   const [halaqaId, setHalaqaId] = useState(0);
   const [weekNum, setWeekNum] = useState(0);
-  const [view, setView] = useState<"tests" | "reports">("tests");
+  const [view, setView] = useState<"tests" | "reports" | "tasks">("tests");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -73,15 +76,15 @@ export function TestCommitteePage() {
             </p>
           </div>
         </header>
-        {chair && (
-          <div className="flex gap-2">
-            <button
-              type="button"
-              className={`px-4 py-2 rounded-lg ${view === "tests" ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
-              onClick={() => setView("tests")}
-            >
-              الاختبارات
-            </button>
+        <div className="flex gap-2">
+          <button
+            type="button"
+            className={`px-4 py-2 rounded-lg ${view === "tests" ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
+            onClick={() => setView("tests")}
+          >
+            الاختبارات
+          </button>
+          {chair && (
             <button
               type="button"
               className={`px-4 py-2 rounded-lg ${view === "reports" ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
@@ -89,8 +92,15 @@ export function TestCommitteePage() {
             >
               النتائج والتقارير
             </button>
-          </div>
-        )}
+          )}
+          <button
+            type="button"
+            className={`px-4 py-2 rounded-lg ${view === "tasks" ? "bg-primary text-primary-foreground" : "bg-secondary"}`}
+            onClick={() => setView("tasks")}
+          >
+            المهام {taskCount > 0 ? `(${taskCount})` : ""}
+          </button>
+        </div>
         {error && <p className="text-destructive">{error}</p>}
         {!calendar && !error && (
           <div className="flex items-center gap-2 text-muted-foreground">
@@ -130,6 +140,7 @@ export function TestCommitteePage() {
           </>
         )}
         {calendar && chair && view === "reports" && <CommitteeTestsReport chair />}
+        {view === "tasks" && <StaffTasksPanel canCreate={chair} />}
       </main>
     </div>
   );

@@ -1,15 +1,17 @@
 import * as XLSX from "xlsx";
+import { createElement } from "react";
+import { renderToStaticMarkup } from "react-dom/server";
+import { FormalAcademicReport } from "@/components/role-workspace/FormalAcademicReport";
 import type { AcademicReport, PeriodTotals, ReportFocus } from "@/lib/academic-reports";
-import { attendancePct, completenessPct, hifzPct, resultPct } from "@/lib/academic-reports";
+import {
+  attendancePct,
+  completenessPct,
+  hifzPct,
+  resultPct,
+  reportTitle,
+} from "@/lib/academic-reports";
 
 const pct = (n: number | null) => (n === null ? "لم يُرصد" : `${n}%`);
-const safe = (s: string) =>
-  s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
 const included = (focus: ReportFocus, key: string) => focus === "all" || focus === key;
 
 export function reportCards(t: PeriodTotals, focus: ReportFocus, isTalqeen: boolean) {
@@ -70,86 +72,23 @@ export function reportCards(t: PeriodTotals, focus: ReportFocus, isTalqeen: bool
   ];
 }
 
-export function reportTitle(r: AcademicReport): string {
-  return r.options.scope === "student"
-    ? `تقرير الطالب: ${r.halaqat[0]?.students[0]?.name ?? ""}`
-    : r.options.scope === "halaqa"
-      ? `تقرير الحلقة: ${r.halaqat[0]?.name ?? ""}`
-      : r.options.halaqaId
-        ? `تقرير الحلقة للداعم: ${r.halaqat[0]?.name ?? ""}`
-        : "تقرير المجمع";
-}
-
 export function reportHtml(
-  r: AcademicReport,
+  report: AcademicReport,
   brandName: string,
+  logoUrl: string | null,
   approval: { by: string; at: string },
 ): string {
-  const focus = r.options.focus;
-  const oneTalqeen = r.halaqat.every((h) => h.isTalqeen);
-  const cards = reportCards(r.totals, focus, oneTalqeen)
-    .map(
-      (card) =>
-        `<div class="card"><small>${safe(card.label)}</small><b>${safe(card.value)}</b><span>${safe(card.detail)}</span></div>`,
-    )
-    .join("");
-  const focusedValue = (t: PeriodTotals) =>
-    focus === "attendance"
-      ? pct(attendancePct(t))
-      : focus === "hifz"
-        ? `${t.hifzFaces} / ${t.hifzTarget}`
-        : focus === "rabt"
-          ? pct(resultPct(t, "rabt"))
-          : pct(resultPct(t, "muraja"));
-  const scopeDetails =
-    r.options.scope === "student"
-      ? `<section><h2>خلاصة الطالب</h2>${r.halaqat
-          .flatMap((h) => h.students)
-          .map(
-            (s) =>
-              `<p>الحضور ${s.period.present}، التأخر ${s.period.late}، الاستئذان ${s.period.excused}، الغياب ${s.period.absent}.</p>${s.recommendation ? `<p><strong>توصية المعلم:</strong> ${safe(s.recommendation)}</p>` : ""}`,
-          )
-          .join("")}</section>`
-      : focus !== "all" && !r.options.named
-        ? `<section><h2>تفصيل الحلقات</h2><table><thead><tr><th>الحلقة</th><th>الطلاب</th><th>${safe({ attendance: "الحضور", hifz: "الحفظ / المستهدف", rabt: "نجاح الربط", muraja: "نجاح المراجعة" }[focus])}</th></tr></thead><tbody>${r.halaqat.map((h) => `<tr><td>${safe(h.name)}</td><td>${h.students.length}</td><td>${h.isTalqeen && focus !== "attendance" ? "تلقين" : focusedValue(h.period)}</td></tr>`).join("")}</tbody></table></section>`
-        : `<section><h2>تفصيل الحلقات</h2><table><thead><tr><th>الحلقة</th><th>الطلاب</th><th>الحضور</th><th>أوجه الحفظ</th><th>الربط</th><th>المراجعة</th></tr></thead><tbody>${r.halaqat.map((h) => `<tr><td>${safe(h.name)}</td><td>${h.students.length}</td><td>${pct(attendancePct(h.period))}</td><td>${h.isTalqeen ? "تلقين" : h.period.hifzFaces}</td><td>${h.isTalqeen ? "—" : pct(resultPct(h.period, "rabt"))}</td><td>${h.isTalqeen ? "—" : pct(resultPct(h.period, "muraja"))}</td></tr>`).join("")}</tbody></table></section>`;
-  const details =
-    r.options.named && r.options.scope !== "student"
-      ? `<section><h2>تفاصيل الطلاب</h2><table><thead><tr><th>الطالب</th><th>الحلقة</th><th>حضور/مرصود</th><th>حفظ/مستهدف</th><th>ربط ✓/✗</th><th>مراجعة ✓/✗</th></tr></thead><tbody>${r.halaqat
-          .flatMap((h) => h.students)
-          .map(
-            (s) =>
-              `<tr><td>${safe(s.name)}</td><td>${safe(s.halaqaName)}</td><td>${s.period.present + s.period.late}/${s.period.recorded}</td><td>${s.isTalqeen ? "—" : `${s.period.hifzFaces}/${s.period.hifzTarget}`}</td><td>${s.isTalqeen ? "—" : `${s.period.rabtPass}/${s.period.rabtFail}`}</td><td>${s.isTalqeen ? "—" : `${s.period.murajaPass}/${s.period.murajaFail}`}</td></tr>`,
-          )
-          .join("")}</tbody></table></section>`
-      : "";
-  const comparisonParts = [
-    ...(included(focus, "attendance")
-      ? [`الحضور ${pct(attendancePct(r.prior!))} ← ${pct(attendancePct(r.totals))}`]
-      : []),
-    ...(included(focus, "hifz") ? [`الحفظ ${r.prior?.hifzFaces} ← ${r.totals.hifzFaces} وجه`] : []),
-    ...(included(focus, "rabt")
-      ? [`نجاح الربط ${pct(resultPct(r.prior!, "rabt"))} ← ${pct(resultPct(r.totals, "rabt"))}`]
-      : []),
-    ...(included(focus, "muraja")
-      ? [
-          `نجاح المراجعة ${pct(resultPct(r.prior!, "muraja"))} ← ${pct(resultPct(r.totals, "muraja"))}`,
-        ]
-      : []),
-  ];
-  const compare = r.prior
-    ? `<p>مقارنة بالفترة ${r.priorFrom} – ${r.priorTo}: ${comparisonParts.join("، ")}${included(focus, "hifz") && r.improved !== null ? `، تحسّن ${r.improved} من الطلاب في تحقيق هدف الحفظ` : ""}.</p>`
-    : "<p>لا تتوفر فترة سابقة كاملة للمقارنة.</p>";
-  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${safe(reportTitle(r))}</title><style>
-    @page{size:A4;margin:15mm}*{box-sizing:border-box}body{font-family:Tahoma,Arial,sans-serif;color:#183447;line-height:1.6}header{border-bottom:3px solid #c6a86a;padding-bottom:14px}h1{margin:5px 0;color:#174463;font-size:25px}h2{color:#174463;font-size:18px}small,footer{color:#607586}.meta{font-size:12px}.cards{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin:18px 0}.card{padding:13px;border:1px solid #d5dfdf;border-radius:10px;break-inside:avoid}.card b{font-size:23px;color:#174463;display:block}.card span{font-size:11px;display:block}section{margin:20px 0;break-inside:avoid}table{width:100%;border-collapse:collapse;font-size:11px}th,td{border-bottom:1px solid #d8e2e4;padding:6px;text-align:right}thead{background:#eef4f5}footer{border-top:1px solid #ddd;margin-top:20px;padding-top:10px;font-size:11px}@media print{body{print-color-adjust:exact}}
-    </style></head><body><header><small>${safe(brandName)}</small><h1>${safe(reportTitle(r))}</h1><div class="meta">${r.options.donorName ? `مقدم إلى ${safe(r.options.donorName)} · ` : ""}${safe(r.semesterName)} · من ${r.options.from} إلى ${r.options.to} · تاريخ الاعتماد ${safe(approval.at)}</div></header>
-    <section><h2>الملخص</h2><p>${r.people} طالب، ${r.halaqat.length} حلقة. حالات الحضور: ${r.totals.present} حاضر، ${r.totals.late} متأخر، ${r.totals.excused} مستأذن، ${r.totals.absent} غائب.</p><div class="cards">${cards}</div></section>
-    <section><h2>مقارنة الفترة</h2>${compare}</section>${scopeDetails}${details}<footer>نسبة الحضور = (حاضر + متأخر) ÷ الحالات المرصودة. الاستئذان والغياب عدم حضور. الحقول غير المرصودة: ${r.missingFields}. اعتمد التقرير: ${safe(approval.by)}.</footer></body></html>`;
+  const markup = renderToStaticMarkup(
+    createElement(FormalAcademicReport, { report, brandName, logoUrl, approval }),
+  );
+  const title = reportTitle(report).replace(/&/g, "&amp;").replace(/</g, "&lt;");
+  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><title>${title}</title></head><body>${markup}</body></html>`;
 }
 
 export function printApprovedReport(
-  r: AcademicReport,
+  report: AcademicReport,
   brandName: string,
+  logoUrl: string | null,
   approval: { by: string; at: string },
 ) {
   const frame = document.createElement("iframe");
@@ -161,13 +100,24 @@ export function printApprovedReport(
     throw new Error("تعذّر فتح نافذة الطباعة");
   }
   doc.open();
-  doc.write(reportHtml(r, brandName, approval));
+  doc.write(reportHtml(report, brandName, logoUrl, approval));
   doc.close();
-  setTimeout(() => {
+  const images = Array.from(doc.images);
+  void Promise.all(
+    images.map((img) =>
+      img.complete
+        ? Promise.resolve()
+        : new Promise<void>((resolve) => {
+            img.onload = () => resolve();
+            img.onerror = () => resolve();
+            setTimeout(resolve, 5000);
+          }),
+    ),
+  ).then(() => {
     frame.contentWindow?.focus();
     frame.contentWindow?.print();
-    setTimeout(() => frame.remove(), 1500);
-  }, 350);
+    setTimeout(() => frame.remove(), 60_000);
+  });
 }
 
 export function exportApprovedExcel(r: AcademicReport, approval: { by: string; at: string }) {

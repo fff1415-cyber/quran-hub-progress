@@ -8,8 +8,6 @@ import { syncFromCloud } from "@/lib/cloud-sync";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import {
   buildAcademicReport,
-  attendancePct,
-  resultPct,
   type AcademicReport,
   type ReportFocus,
   type ReportScope,
@@ -23,18 +21,12 @@ import {
   type ArchivedAcademicReport,
   type ReportApproval,
 } from "@/lib/academic-report-api";
-import {
-  exportApprovedExcel,
-  printApprovedReport,
-  reportCards,
-  reportTitle,
-} from "@/lib/academic-report-export";
+import { exportApprovedExcel, printApprovedReport } from "@/lib/academic-report-export";
 import { useTenant } from "@/contexts/TenantContext";
-
-const fmt = (value: number | null) => (value === null ? "لم يُرصد" : `${value}%`);
+import { FormalAcademicReport } from "@/components/role-workspace/FormalAcademicReport";
 
 export function ManagerAcademicReportsPanel() {
-  const { brandName } = useTenant();
+  const { brandName, logoUrl } = useTenant();
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
   const [ready, setReady] = useState(false);
   const [version, setVersion] = useState(0);
@@ -348,91 +340,15 @@ export function ManagerAcademicReportsPanel() {
       )}
       {report && (
         <>
-          <div className="bg-white text-slate-900 rounded-2xl border shadow-sm">
-            <div ref={preview} className="bg-white text-slate-900 p-6 space-y-5 rounded-2xl">
-              <div className="border-b border-amber-300 pb-4">
-                <p className="text-sm text-slate-600">
-                  {brandName}
-                  {donorName && ` · مقدم إلى ${donorName}`}
-                </p>
-                <h2 className="text-2xl font-bold text-sky-900">{reportTitle(report)}</h2>
-                <p className="text-sm">
-                  {report.semesterName} · من {from} إلى {to}
-                </p>
-                <p className="text-sm">
-                  {report.people} طالب · {report.halaqat.length} حلقة
-                </p>
-              </div>
-              <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                {reportCards(
-                  report.totals,
-                  focus,
-                  report.halaqat.every((h) => h.isTalqeen),
-                ).map((c) => (
-                  <div key={c.label} className="border rounded-xl p-3">
-                    <p className="text-sm">{c.label}</p>
-                    <strong className="text-xl text-sky-900">{c.value}</strong>
-                    <p className="text-xs text-slate-600">{c.detail}</p>
-                  </div>
-                ))}
-              </div>
-              <div className="text-sm">
-                <p>
-                  حاضر {report.totals.present} · متأخر {report.totals.late} · مستأذن{" "}
-                  {report.totals.excused} · غائب {report.totals.absent}
-                </p>
-                <p>
-                  مقارنة بالفترة السابقة{" "}
-                  {report.prior
-                    ? `${report.priorFrom} – ${report.priorTo}: ${[
-                        ...(focus === "all" || focus === "attendance"
-                          ? [
-                              `الحضور ${fmt(attendancePct(report.prior))} ← ${fmt(attendancePct(report.totals))}`,
-                            ]
-                          : []),
-                        ...(focus === "all" || focus === "hifz"
-                          ? [`أوجه الحفظ ${report.prior.hifzFaces} ← ${report.totals.hifzFaces}`]
-                          : []),
-                        ...(focus === "all" || focus === "rabt"
-                          ? [
-                              `الربط ${fmt(resultPct(report.prior, "rabt"))} ← ${fmt(resultPct(report.totals, "rabt"))}`,
-                            ]
-                          : []),
-                        ...(focus === "all" || focus === "muraja"
-                          ? [
-                              `المراجعة ${fmt(resultPct(report.prior, "muraja"))} ← ${fmt(resultPct(report.totals, "muraja"))}`,
-                            ]
-                          : []),
-                      ].join("، ")}`
-                    : "غير متاحة للفترة المختارة"}
-                </p>
-                {report.improved !== null && (focus === "all" || focus === "hifz") && (
-                  <p>تحسن {report.improved} من الطلاب في تحقيق هدف الحفظ.</p>
-                )}
-              </div>
-              <p className="text-xs text-slate-600">
-                {approved ? `اعتماد المدير: ${approval!.by} · ${approval!.at}` : "مسودة غير معتمدة"}
-              </p>
+          <div className="overflow-x-auto rounded-2xl border shadow-sm">
+            <div ref={preview}>
+              <FormalAcademicReport
+                report={report}
+                brandName={brandName}
+                logoUrl={logoUrl}
+                approval={approved ? approval : null}
+              />
             </div>
-            {scope === "student" && report.halaqat[0]?.students[0]?.recommendation && (
-              <p className="text-sm px-6 pb-3">
-                <strong>توصية المعلم:</strong> {report.halaqat[0].students[0].recommendation}
-              </p>
-            )}
-            {scope !== "student" && (
-              <div className="space-y-1 text-sm px-6 pb-3">
-                <h3 className="font-bold">الحلقات</h3>
-                {report.halaqat.map((h) => (
-                  <p key={h.id}>
-                    {h.name}: {h.students.length} طالب · حضور {fmt(attendancePct(h.period))} · حفظ{" "}
-                    {h.isTalqeen ? "تلقين" : `${h.period.hifzFaces} وجه`}
-                  </p>
-                ))}
-              </div>
-            )}
-            <p className="text-xs text-slate-600 px-6 pb-5">
-              الرصد غير المكتمل: {report.missingFields} خانة.
-            </p>
           </div>
           <div className="glass-card rounded-xl p-4 space-y-3">
             {report.missingFields > 0 && (
@@ -456,7 +372,9 @@ export function ManagerAcademicReportsPanel() {
               <Button
                 variant="outline"
                 disabled={!approved}
-                onClick={() => approved && printApprovedReport(report, brandName, approval!)}
+                onClick={() =>
+                  approved && printApprovedReport(report, brandName, logoUrl, approval!)
+                }
               >
                 PDF / طباعة
               </Button>
@@ -474,12 +392,20 @@ export function ManagerAcademicReportsPanel() {
           </div>
         </>
       )}
-      <ApprovedReportArchive version={archiveVersion} brandName={brandName} />
+      <ApprovedReportArchive version={archiveVersion} brandName={brandName} logoUrl={logoUrl} />
     </div>
   );
 }
 
-function ApprovedReportArchive({ version, brandName }: { version: number; brandName: string }) {
+function ApprovedReportArchive({
+  version,
+  brandName,
+  logoUrl,
+}: {
+  version: number;
+  brandName: string;
+  logoUrl: string | null;
+}) {
   const [rows, setRows] = useState<ArchivedAcademicReport[]>([]);
   const [selected, setSelected] = useState("");
   const [approval, setApproval] = useState<ReportApproval>(null);
@@ -539,33 +465,20 @@ function ApprovedReportArchive({ version, brandName }: { version: number; brandN
       )}
       {report && approval && (
         <>
-          <div ref={imageRef} className="bg-white text-slate-900 rounded-xl border p-4 space-y-2">
-            <h3 className="text-xl font-bold text-sky-900">
-              {brandName} · {reportTitle(report)}
-            </h3>
-            <p>
-              {report.options.from} – {report.options.to} · {report.people} طالب ·{" "}
-              {report.halaqat.length} حلقة
-            </p>
-            <div className="grid grid-cols-2 gap-2">
-              {reportCards(
-                report.totals,
-                report.options.focus,
-                report.halaqat.every((h) => h.isTalqeen),
-              ).map((card) => (
-                <p key={card.label} className="rounded border p-2">
-                  {card.label}: <strong>{card.value}</strong>
-                </p>
-              ))}
+          <div className="overflow-x-auto rounded-xl border">
+            <div ref={imageRef}>
+              <FormalAcademicReport
+                report={report}
+                brandName={brandName}
+                logoUrl={logoUrl}
+                approval={approval}
+              />
             </div>
-            <p className="text-xs">
-              اعتماد المدير: {approval.by} · {approval.at}
-            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <Button
               variant="outline"
-              onClick={() => printApprovedReport(report, brandName, approval)}
+              onClick={() => printApprovedReport(report, brandName, logoUrl, approval)}
             >
               PDF / طباعة
             </Button>

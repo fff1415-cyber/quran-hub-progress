@@ -14,6 +14,7 @@ import {
   changeStaffTask,
   listStaffTasks,
   STAFF_TASKS_CHANGED,
+  staffTaskRoleLabels,
   type StaffTask,
   type StaffTaskAction,
   type StaffTasksList,
@@ -154,12 +155,15 @@ export function StaffTasksPanel({
           <div className="flex flex-wrap gap-2">
             <Select value={assigneeId} onValueChange={setAssigneeId} required>
               <SelectTrigger className="min-w-52 flex-1">
-                <SelectValue placeholder="اختر المشرف أو المعلم" />
+                <SelectValue placeholder="اختر المكلف بالمهمة" />
               </SelectTrigger>
               <SelectContent>
                 {data?.roster.map((person) => (
                   <SelectItem key={person.id} value={person.id}>
-                    {person.role === "supervisor" ? "مشرف" : "معلم"} · {person.name}
+                    {staffTaskRoleLabels[person.role] ?? person.role} · {person.name}
+                    {person.role === "assistant" && person.halaqaName
+                      ? ` — ${person.halaqaName}`
+                      : ""}
                   </SelectItem>
                 ))}
               </SelectContent>

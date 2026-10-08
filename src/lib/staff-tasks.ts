@@ -22,7 +22,18 @@ export type StaffTasksList = {
   items: StaffTask[];
   today: string;
   actorId: string;
-  roster: { id: string; name: string; role: "supervisor" | "teacher" }[];
+  roster: { id: string; name: string; role: string; halaqaName?: string }[];
+};
+export const staffTaskRoleLabels: Record<string, string> = {
+  manager: "مدير",
+  supervisor: "مشرف تعليمي",
+  secretary: "سكرتير",
+  test_chair: "مشرف اختبارات",
+  program_supervisor: "مشرف تربوي",
+  test_member: "عضو لجنة اختبارات",
+  musammi: "مسمّع",
+  teacher: "معلم",
+  assistant: "مساعد",
 };
 export const STAFF_TASKS_CHANGED = "staff-tasks-changed";
 

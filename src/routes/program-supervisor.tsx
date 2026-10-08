@@ -8,6 +8,8 @@ import { ProgramSupervisorApprovalsPanel } from "@/components/tarbawi/ProgramSup
 import { ProgramSupervisorMonitorPanel } from "@/components/tarbawi/ProgramSupervisorMonitorPanel";
 import { RoleShell, RolePageHeader, type RoleTab } from "@/components/role-workspace/RoleShell";
 import { AppHeader } from "@/components/AppHeader";
+import { StaffTasksPanel } from "@/components/StaffTasksPanel";
+import { useStaffTaskCount } from "@/hooks/use-staff-task-count";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { StaffAttendancePromptDialog } from "@/components/StaffAttendancePromptDialog";
 import {
@@ -16,7 +18,7 @@ import {
   shouldPromptStaffAttendance,
 } from "@/lib/staff-attendance";
 import { listSubmittedTarbawiPlans } from "@/lib/tarbawi-program";
-import { ClipboardList, Eye, Settings2, Loader2 } from "lucide-react";
+import { ClipboardList, Eye, Settings2, Loader2, ListTodo } from "lucide-react";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { Toaster } from "sonner";
 
@@ -32,6 +34,7 @@ export const Route = createFileRoute("/program-supervisor")({
 });
 
 export function ProgramSupervisorPage() {
+  const taskCount = useStaffTaskCount();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as ReturnType<typeof programSupervisorValidateSearch>;
   const name = getSessionName("مشرف البرامج");
@@ -52,8 +55,12 @@ export function ProgramSupervisorPage() {
         ensureTarbawiSemester(cal.semester?.id ?? null);
         setCalendar(cal);
       })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const pendingCount = useMemo(() => {
@@ -65,16 +72,20 @@ export function ProgramSupervisorPage() {
 
   const tabs: RoleTab[] = [
     {
+      id: "tasks",
+      label: "المهام",
+      icon: ListTodo,
+      roles: ["program_supervisor"],
+      badge: taskCount,
+      content: <StaffTasksPanel canCreate />,
+    },
+    {
       id: "monitor",
       label: "متابعة الحلقات",
       icon: Eye,
       roles: ["program_supervisor", "manager"],
       badge: undefined,
-      content: calendar ? (
-        <ProgramSupervisorMonitorPanel calendar={calendar} />
-      ) : (
-        <LoadingBlock />
-      ),
+      content: calendar ? <ProgramSupervisorMonitorPanel calendar={calendar} /> : <LoadingBlock />,
     },
     {
       id: "approvals",

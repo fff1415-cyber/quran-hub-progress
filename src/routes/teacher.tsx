@@ -162,7 +162,7 @@ export function TeacherPage() {
   const [taskCount, setTaskCount] = useState(0);
 
   useEffect(() => {
-    if (role !== "teacher") return;
+    if (role !== "teacher" && role !== "assistant") return;
     let active = true;
     const refresh = async () => {
       try { const data = await listStaffTasks(); if (active) { setTaskCount(data.items.filter((task) => task.assigneeId === data.actorId && task.status !== "completed").length); taskReminders(data).forEach((message) => toast.info(message)); } }
@@ -364,7 +364,7 @@ export function TeacherPage() {
 
         <HalaqaNotifications halaqaId={halaqa.id} />
         <TeacherStudentFollowupAlerts halaqaId={halaqa.id} />
-        {role === "teacher" && <details className="glass-card rounded-xl p-4 mb-4">
+        {(role === "teacher" || role === "assistant") && <details className="glass-card rounded-xl p-4 mb-4">
           <summary className="cursor-pointer font-bold">مهامي {taskCount > 0 && <span className="rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-xs">{taskCount}</span>}</summary>
           <div className="mt-4"><StaffTasksPanel /></div>
         </details>}

@@ -1,10 +1,5 @@
 import type { AcademicCalendar } from "@/lib/academic-context";
-import {
-  generateAcademicWeeks,
-  parseISODate,
-  addDays,
-  formatISODate,
-} from "@/lib/calendar-generator";
+import { generateAcademicWeeks, parseISODate } from "@/lib/calendar-generator";
 import { holidayDateStrings } from "@/lib/semester-holidays";
 import type { GradesStore, Halaqa, Student } from "@/lib/mock-data";
 import { resolveFaceQuotas, hifzFacesFromTap } from "@/lib/plan-daily-faces";
@@ -47,7 +42,6 @@ export type ReportStudent = {
   halaqaName: string;
   isTalqeen: boolean;
   period: PeriodTotals;
-  previous: PeriodTotals | null;
   recommendation?: string;
 };
 export type ReportHalaqa = {
@@ -56,22 +50,27 @@ export type ReportHalaqa = {
   isTalqeen: boolean;
   students: ReportStudent[];
   period: PeriodTotals;
-  previous: PeriodTotals | null;
 };
 export type AcademicReport = {
   options: ReportOptions;
   semesterId: string;
   semesterName: string;
   generatedAt: string;
-  priorFrom: string | null;
-  priorTo: string | null;
   people: number;
   halaqat: ReportHalaqa[];
   totals: PeriodTotals;
-  prior: PeriodTotals | null;
-  improved: number | null;
   missingFields: number;
 };
+
+export function reportTitle(r: AcademicReport): string {
+  return r.options.scope === "student"
+    ? `تقرير الطالب: ${r.halaqat[0]?.students[0]?.name ?? ""}`
+    : r.options.scope === "halaqa"
+      ? `تقرير الحلقة: ${r.halaqat[0]?.name ?? ""}`
+      : r.options.halaqaId
+        ? `تقرير الحلقة للداعم: ${r.halaqat[0]?.name ?? ""}`
+        : "تقرير المجمع";
+}
 
 export const emptyTotals = (): PeriodTotals => ({
   expected: 0,
@@ -220,21 +219,7 @@ export function buildAcademicReport(
     throw new Error("تبدأ الفترة قبل بداية الفصل النشط");
   const days = periodDays(calendar, options.from, options.to);
   if (!days.length) throw new Error("لا توجد أيام دراسة في الفترة المحددة");
-  const length =
-    Math.round(
-      (Date.parse(`${options.to}T00:00:00Z`) - Date.parse(`${options.from}T00:00:00Z`)) /
-        86_400_000,
-    ) + 1;
-  const priorToCandidate = formatISODate(addDays(parseISODate(options.from), -1));
-  const priorFromCandidate = formatISODate(addDays(parseISODate(options.from), -length));
-  const priorCandidateDays =
-    priorFromCandidate >= calendar.semester.start_date
-      ? periodDays(calendar, priorFromCandidate, priorToCandidate)
-      : [];
-  const hasPrior = priorCandidateDays.length > 0;
-  const priorDays = hasPrior ? priorCandidateDays : [];
   const fullWeeks = completeWeeks(calendar, days);
-  const priorFullWeeks = hasPrior ? completeWeeks(calendar, priorDays) : new Set<number>();
   const byId = new Map(halaqat.map((h) => [h.id, h]));
   const selected = students.filter(
     (s) =>
@@ -256,11 +241,9 @@ export function buildAcademicReport(
         isTalqeen: h.isTalqeen,
         students: [],
         period: emptyTotals(),
-        previous: hasPrior ? emptyTotals() : null,
       });
     const group = groups.get(h.id)!;
     const period = studentTotals(student, h, grades, days, fullWeeks);
-    const previous = hasPrior ? studentTotals(student, h, grades, priorDays, priorFullWeeks) : null;
     group.students.push({
       id: student.id,
       name: student.name,
@@ -268,28 +251,12 @@ export function buildAcademicReport(
       halaqaName: h.name,
       isTalqeen: h.isTalqeen,
       period,
-      previous,
       recommendation: notes[student.id],
     });
     addTotals(group.period, period);
-    if (previous && group.previous) addTotals(group.previous, previous);
   }
   const rows = [...groups.values()].sort((a, b) => a.name.localeCompare(b.name, "ar"));
   const totals = rows.reduce((acc, row) => addTotals(acc, row.period), emptyTotals());
-  const prior = hasPrior
-    ? rows.reduce((acc, row) => addTotals(acc, row.previous!), emptyTotals())
-    : null;
-  const improved = hasPrior
-    ? rows
-        .flatMap((h) => h.students)
-        .filter(
-          (s) =>
-            s.previous &&
-            hifzPct(s.previous) !== null &&
-            hifzPct(s.period) !== null &&
-            hifzPct(s.period)! > hifzPct(s.previous)!,
-        ).length
-    : null;
   const missingFields = rows
     .flatMap((h) => h.students)
     .reduce(
@@ -308,13 +275,9 @@ export function buildAcademicReport(
     semesterId: calendar.semester.id,
     semesterName: calendar.semester.name,
     generatedAt: new Date().toISOString(),
-    priorFrom: hasPrior ? priorFromCandidate : null,
-    priorTo: hasPrior ? priorToCandidate : null,
     people: selected.length,
     halaqat: rows,
     totals,
-    prior,
-    improved,
     missingFields,
   };
 }
