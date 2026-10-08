@@ -18,11 +18,22 @@ require_once __DIR__ . '/kiosk.php';
 require_once __DIR__ . '/platform_admin.php';
 require_once __DIR__ . '/push.php';
 require_once __DIR__ . '/student_followups.php';
+require_once __DIR__ . '/staff_tasks.php';
+require_once __DIR__ . '/student_entries.php';
+require_once __DIR__ . '/academic_reports.php';
 require_once __DIR__ . '/late_permissions.php';
 require_once __DIR__ . '/weekly_tests.php';
 
 function route_request(string $method, string $path): void
 {
+    if ($path === '/staff-tasks' && $method === 'GET') { handle_list_staff_tasks(); return; }
+    if ($path === '/staff-tasks' && $method === 'POST') { handle_change_staff_task(); return; }
+    if ($path === '/student-entries' && $method === 'POST') { handle_record_student_entry(); return; }
+    if ($path === '/student-entries' && $method === 'GET') { handle_list_student_entries(); return; }
+    if ($path === '/academic-reports/notes' && $method === 'GET') { handle_list_academic_report_notes(); return; }
+    if ($path === '/academic-reports/notes' && $method === 'POST') { handle_save_academic_report_note(); return; }
+    if ($path === '/academic-reports/approval' && in_array($method, ['GET', 'POST'], true)) { handle_academic_report_approval(); return; }
+    if ($path === '/academic-reports/archive' && $method === 'GET') { handle_list_academic_report_archive(); return; }
     if ($path === '/late-permissions' && $method === 'GET') {
         handle_list_late_permissions();
         return;

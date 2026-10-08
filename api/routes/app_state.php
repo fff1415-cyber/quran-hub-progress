@@ -49,6 +49,7 @@ function handle_list_app_state(): void
     $pdo = db();
     $tenants = app_state_tenant_enabled($pdo);
     $keyFilter = (string) ($_GET['key'] ?? '');
+    if ($keyFilter === 'staff_tasks_v1') error_response('اعرض المهام من الواجهة المخصصة', 403);
 
     if (in_array($role, ['test_member', 'test_chair'], true)) {
         $allowed = ['weekly_tests', 'weekly_tests_settings'];
@@ -82,6 +83,7 @@ function handle_list_app_state(): void
     } else {
         $rows = $pdo->query('SELECT `key`, value FROM app_state')->fetchAll();
     }
+    $rows = array_values(array_filter($rows, static fn (array $row): bool => ($row['key'] ?? '') !== 'staff_tasks_v1'));
     foreach ($rows as &$row) {
         $row['value'] = json_decode($row['value'] ?? '{}', true);
     }
@@ -95,6 +97,7 @@ function handle_set_app_state(): void
     $input = json_input();
     $key = (string) ($input['key'] ?? '');
     if ($key === 'late_permissions') error_response('سجّل إذن الدخول من الواجهة المخصصة', 403);
+    if ($key === 'staff_tasks_v1') error_response('حدّث المهام من الواجهة المخصصة', 403);
     $role = (string) ($auth['role'] ?? '');
     if (in_array($role, ['test_member', 'test_chair'], true)) {
         $allowed = $role === 'test_chair' ? ['weekly_tests', 'staff_attendance'] : ['weekly_tests'];

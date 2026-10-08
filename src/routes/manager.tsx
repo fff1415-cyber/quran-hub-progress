@@ -1,6 +1,7 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { listStudentFollowups, STUDENT_FOLLOWUPS_CHANGED } from "@/lib/student-followups";
+import { StaffTasksPanel } from "@/components/StaffTasksPanel";
 import {
   loadSardQueue, loadNotifications, countTransfersForRole, loadGeneralNotificationsForManager,
 } from "@/lib/mock-data";
@@ -13,16 +14,19 @@ import { ManagerGradesEvaluationPanel } from "@/components/role-workspace/Manage
 import { ManagerGeneralSettingsPanel } from "@/components/role-workspace/ManagerGeneralSettingsPanel";
 import { ManagerStaffPanel } from "@/components/role-workspace/ManagerStaffPanel";
 import { FinancialLedgerPanel } from "@/components/role-workspace/FinancialLedgerPanel";
+import { ManagerAcademicReportsPanel } from "@/components/role-workspace/ManagerAcademicReportsPanel";
 import {
-  Crown, Inbox, Database, UserCheck, GraduationCap, Settings, Wallet,
+  Crown, Inbox, Database, UserCheck, GraduationCap, Settings, Wallet, ListTodo, FileBarChart,
 } from "lucide-react";
 import { Toaster } from "sonner";
 
-const MAIN_TABS = ["inbox", "data", "finances", "staff", "grades", "settings"] as const;
+const MAIN_TABS = ["inbox", "tasks", "reports", "data", "finances", "staff", "grades", "settings"] as const;
 type MainTab = (typeof MAIN_TABS)[number];
 
 const DEFAULT_SECTION: Record<MainTab, string> = {
   inbox: "pending",
+  tasks: "tasks",
+  reports: "reports",
   data: "import",
   finances: "ledger",
   staff: "monitor",
@@ -32,7 +36,9 @@ const DEFAULT_SECTION: Record<MainTab, string> = {
 
 const VALID_SECTIONS: Record<MainTab, string[]> = {
   inbox: ["pending", "struggling", "failed", "history", "notifications", "transfers"],
-  data: ["import", "halaqat", "students", "codes"],
+  tasks: ["tasks"],
+  data: ["import", "halaqat", "students", "codes", "student-entries"],
+  reports: ["reports"],
   finances: ["ledger"],
   staff: ["monitor", "report"],
   grades: ["sard", "items", "weekly", "staff-settings"],
@@ -119,6 +125,8 @@ export function ManagerPage() {
   };
 
   const tabs: RoleTab[] = [
+    { id: "tasks", label: "المهام", icon: ListTodo, roles: ["manager"], content: <StaffTasksPanel canCreate manager /> },
+    { id: "reports", label: "التقارير", icon: FileBarChart, roles: ["manager"], content: <ManagerAcademicReportsPanel /> },
     {
       id: "inbox",
       label: "صندوق العمل",

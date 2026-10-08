@@ -123,3 +123,37 @@ CREATE TABLE IF NOT EXISTS `academic_weeks` (
   CONSTRAINT `fk_academic_weeks_semester`
     FOREIGN KEY (`semester_id`) REFERENCES `semesters` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `student_portal_entries` (
+  `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  `complex_id` INT UNSIGNED NOT NULL,
+  `student_id` VARCHAR(50) NOT NULL,
+  `visit_key` CHAR(36) NOT NULL,
+  `visit_date` DATE NOT NULL,
+  `visited_at` DATETIME NOT NULL,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `uk_student_portal_entry` (`complex_id`, `visit_key`),
+  KEY `idx_student_portal_date` (`complex_id`, `visit_date`, `student_id`),
+  KEY `idx_student_portal_student` (`complex_id`, `student_id`, `visit_date`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `academic_report_notes` (
+  `complex_id` INT UNSIGNED NOT NULL,
+  `student_id` VARCHAR(50) NOT NULL,
+  `note` TEXT NOT NULL,
+  `updated_by` VARCHAR(255) NOT NULL,
+  `updated_at` DATETIME NOT NULL,
+  PRIMARY KEY (`complex_id`, `student_id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS `academic_report_approvals` (
+  `complex_id` INT UNSIGNED NOT NULL,
+  `fingerprint` CHAR(64) NOT NULL,
+  `scope` VARCHAR(20) NOT NULL,
+  `period_from` DATE NOT NULL,
+  `period_to` DATE NOT NULL,
+  `approved_by` VARCHAR(255) NOT NULL,
+  `approved_at` DATETIME NOT NULL,
+  `snapshot_json` LONGTEXT NOT NULL,
+  PRIMARY KEY (`complex_id`, `fingerprint`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

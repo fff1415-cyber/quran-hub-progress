@@ -2,6 +2,8 @@ import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router"
 import { useEffect, useMemo, useState } from "react";
 import { loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
 import { listStudentFollowups, STUDENT_FOLLOWUPS_CHANGED } from "@/lib/student-followups";
+import { listStaffTasks, STAFF_TASKS_CHANGED, taskReminders } from "@/lib/staff-tasks";
+import { StaffTasksPanel } from "@/components/StaffTasksPanel";
 import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { StaffAttendancePromptDialog } from "@/components/StaffAttendancePromptDialog";
 import {
@@ -16,22 +18,24 @@ import {
   SupervisorPlansPanelGroup,
   SupervisorOversightPanel,
 } from "@/components/role-workspace/SupervisorPanels";
-import { Eye, Mic, GraduationCap, BookOpen } from "lucide-react";
-import { Toaster } from "sonner";
+import { Eye, Mic, GraduationCap, BookOpen, ListTodo } from "lucide-react";
+import { Toaster, toast } from "sonner";
 
-const MAIN_TABS = ["sard", "plans", "oversight"] as const;
+const MAIN_TABS = ["sard", "plans", "oversight", "tasks"] as const;
 type MainTab = (typeof MAIN_TABS)[number];
 
 const DEFAULT_SECTION: Record<MainTab, string> = {
   sard: "sard",
   plans: "plans",
   oversight: "halaqat",
+  tasks: "tasks",
 };
 
 const VALID_SECTIONS: Record<MainTab, string[]> = {
   sard: ["sard", "approvals", "force-retry", "passed"],
   plans: ["plans", "plan-completed"],
   oversight: ["halaqat", "student-followups", "halaqa-results", "hifz-tracking", "weekly-tests", "transfers"],
+  tasks: ["tasks"],
 };
 
 const LEGACY_TAB: Record<string, { main: MainTab; section: string }> = {
@@ -47,6 +51,7 @@ const LEGACY_TAB: Record<string, { main: MainTab; section: string }> = {
   "hifz-tracking": { main: "oversight", section: "hifz-tracking" },
   "weekly-tests": { main: "oversight", section: "weekly-tests" },
   transfers: { main: "oversight", section: "transfers" },
+  tasks: { main: "tasks", section: "tasks" },
 };
 
 function resolveMainTab(raw?: string): MainTab {
@@ -81,6 +86,20 @@ export function SupervisorPage() {
   const [role, setRole] = useState<string | null>(null);
   const [queue, setQueue] = useState(() => loadSardQueue());
   const [dueFollowups, setDueFollowups] = useState(0);
+  const [taskCount, setTaskCount] = useState(0);
+
+  useEffect(() => {
+    let active = true;
+    const refresh = async () => {
+      try { const data = await listStaffTasks(); if (active) { setTaskCount(data.items.filter((t) =>
+        (t.assigneeId === data.actorId && t.status !== "completed") || (t.createdById === data.actorId && t.status === "review")).length); taskReminders(data).forEach((message) => toast.info(message)); } }
+      catch { /* Keep last badge while offline. */ }
+    };
+    void refresh();
+    const timer = setInterval(() => void refresh(), 60_000);
+    window.addEventListener(STAFF_TASKS_CHANGED, refresh);
+    return () => { active = false; clearInterval(timer); window.removeEventListener(STAFF_TASKS_CHANGED, refresh); };
+  }, []);
 
   useEffect(() => {
     setRole(getSessionRole());
@@ -136,6 +155,7 @@ export function SupervisorPage() {
   };
 
   const tabs: RoleTab[] = [
+    { id: "tasks", label: "المهام", icon: ListTodo, roles: ["supervisor"], badge: taskCount, content: <StaffTasksPanel canCreate /> },
     {
       id: "sard",
       label: "السرد",
