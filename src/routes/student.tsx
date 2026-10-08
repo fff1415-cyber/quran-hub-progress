@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { loadHalaqat, loadStudents, loadGrades, type GradesStore } from "@/lib/mock-data";
 import { fetchActiveCalendar, getTodaySemesterDay, type AcademicCalendar } from "@/lib/academic-context";
 import { syncFromCloud } from "@/lib/cloud-sync";
@@ -30,6 +30,15 @@ import { getSessionName, getSessionRole } from "@/lib/session-role";
 import { Trophy, Loader2, LogOut } from "lucide-react";
 import { Toaster } from "sonner";
 import { tenantPath } from "@/lib/tenant";
+import { recordStudentEntry } from "@/lib/student-entry-tracking";
+
+function riyadhDate(): string {
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "Asia/Riyadh", year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const value = (part: string) => parts.find((item) => item.type === part)?.value ?? "";
+  return `${value("year")}-${value("month")}-${value("day")}`;
+}
 
 export function studentValidateSearch(s: Record<string, unknown>) {
   return {
@@ -58,6 +67,34 @@ export function StudentPage() {
   const [planLoading, setPlanLoading] = useState(false);
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
   const visibility = loadStudentPortalVisibility();
+  const visitKey = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (authMode !== "student" || !studentId) return;
+    // One entry per actual page opening. Replays reuse the same key and cannot double count.
+    if (!visitKey.current) visitKey.current = crypto.randomUUID();
+    let logged = false;
+    let lastEntryDay = riyadhDate();
+    let hiddenAt: number | null = null;
+    const send = () => {
+      const key = visitKey.current!;
+      void recordStudentEntry(key).then(() => { if (visitKey.current === key) logged = true; }).catch(() => { /* Retry on return to the tab. */ });
+    };
+    send();
+    const onVisibility = () => {
+      if (document.hidden) { hiddenAt = Date.now(); return; }
+      const today = riyadhDate();
+      if ((hiddenAt !== null && Date.now() - hiddenAt >= 30 * 60_000) || today !== lastEntryDay) {
+        visitKey.current = crypto.randomUUID();
+        lastEntryDay = today;
+        logged = false;
+        send();
+      } else if (!logged) send();
+      hiddenAt = null;
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => document.removeEventListener("visibilitychange", onVisibility);
+  }, [authMode, studentId]);
 
   useEffect(() => {
     if (resolveStudentPortalAuth() === "login") {

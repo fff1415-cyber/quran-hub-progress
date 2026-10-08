@@ -62,6 +62,9 @@ import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
 import { AttSelect, CompensationSelect } from "@/components/plans/TeacherGradeInputs";
 import { TeacherStudentFollowupAlerts } from "@/components/teacher/TeacherStudentFollowupAlerts";
+import { StaffTasksPanel } from "@/components/StaffTasksPanel";
+import { listStaffTasks, STAFF_TASKS_CHANGED, taskReminders } from "@/lib/staff-tasks";
+import { TeacherReportRecommendations } from "@/components/teacher/TeacherReportRecommendations";
 import { hifzCheckedValue } from "@/lib/mock-data";
 import { segmentsForTap } from "@/lib/plan-translator";
 import {
@@ -156,6 +159,20 @@ export function TeacherPage() {
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
   const [features, setFeatures] = useState<ComplexFeatures>(() => loadComplexFeatures());
   const [featuresReady, setFeaturesReady] = useState(false);
+  const [taskCount, setTaskCount] = useState(0);
+
+  useEffect(() => {
+    if (role !== "teacher") return;
+    let active = true;
+    const refresh = async () => {
+      try { const data = await listStaffTasks(); if (active) { setTaskCount(data.items.filter((task) => task.assigneeId === data.actorId && task.status !== "completed").length); taskReminders(data).forEach((message) => toast.info(message)); } }
+      catch { /* Keep last badge while offline. */ }
+    };
+    void refresh();
+    const timer = setInterval(() => void refresh(), 60_000);
+    window.addEventListener(STAFF_TASKS_CHANGED, refresh);
+    return () => { active = false; clearInterval(timer); window.removeEventListener(STAFF_TASKS_CHANGED, refresh); };
+  }, [role]);
   const visibleTabs = role === "teacher" || role === "assistant"
     ? visibleTeacherTabs(features, access.phase === "ready" ? access.halaqa.id : (h ?? 0))
     : [...TEACHER_TABS];
@@ -347,6 +364,11 @@ export function TeacherPage() {
 
         <HalaqaNotifications halaqaId={halaqa.id} />
         <TeacherStudentFollowupAlerts halaqaId={halaqa.id} />
+        {role === "teacher" && <details className="glass-card rounded-xl p-4 mb-4">
+          <summary className="cursor-pointer font-bold">مهامي {taskCount > 0 && <span className="rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-xs">{taskCount}</span>}</summary>
+          <div className="mt-4"><StaffTasksPanel /></div>
+        </details>}
+        {role === "teacher" && <TeacherReportRecommendations halaqaId={halaqa.id} />}
 
         {loadingCal || !calendar || selectedWeek === null || ((role === "teacher" || role === "assistant") && !featuresReady) ? (
           <div className="glass-card rounded-2xl p-12 flex flex-col items-center gap-3 text-muted-foreground">
