@@ -2,6 +2,7 @@ import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router"
 import { useEffect, useMemo, useState } from "react";
 import { listStudentFollowups, STUDENT_FOLLOWUPS_CHANGED } from "@/lib/student-followups";
 import { StaffTasksPanel } from "@/components/StaffTasksPanel";
+import { useStaffTaskCount } from "@/hooks/use-staff-task-count";
 import {
   loadSardQueue, loadNotifications, countTransfersForRole, loadGeneralNotificationsForManager,
 } from "@/lib/mock-data";
@@ -70,6 +71,7 @@ export const Route = createFileRoute("/manager")({
 });
 
 export function ManagerPage() {
+  const taskCount = useStaffTaskCount();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as ReturnType<typeof managerValidateSearch>;
   const name = getSessionName("المدير");
@@ -125,7 +127,7 @@ export function ManagerPage() {
   };
 
   const tabs: RoleTab[] = [
-    { id: "tasks", label: "المهام", icon: ListTodo, roles: ["manager"], content: <StaffTasksPanel canCreate manager /> },
+    { id: "tasks", label: "المهام", icon: ListTodo, roles: ["manager"], badge: taskCount, content: <StaffTasksPanel canCreate manager /> },
     { id: "reports", label: "التقارير", icon: FileBarChart, roles: ["manager"], content: <ManagerAcademicReportsPanel /> },
     {
       id: "inbox",

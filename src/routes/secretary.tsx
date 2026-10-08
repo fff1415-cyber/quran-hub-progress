@@ -12,15 +12,18 @@ import {
   SecretaryReportsPanel,
 } from "@/components/role-workspace/SecretaryPanels";
 import { FinancialLedgerPanel } from "@/components/role-workspace/FinancialLedgerPanel";
-import { Clipboard, CalendarDays, Users, BarChart3, Wallet } from "lucide-react";
+import { StaffTasksPanel } from "@/components/StaffTasksPanel";
+import { useStaffTaskCount } from "@/hooks/use-staff-task-count";
+import { Clipboard, CalendarDays, Users, BarChart3, Wallet, ListTodo } from "lucide-react";
 import { Toaster } from "sonner";
 import type { WeekRecord } from "@/lib/mock-data";
 
-const MAIN_TABS = ["daily", "students", "finances", "reports"] as const;
+const MAIN_TABS = ["daily", "tasks", "students", "finances", "reports"] as const;
 type MainTab = (typeof MAIN_TABS)[number];
 
 const DEFAULT_SECTION: Record<MainTab, string> = {
   daily: "attendance",
+  tasks: "tasks",
   students: "profiles",
   finances: "ledger",
   reports: "plans",
@@ -28,6 +31,7 @@ const DEFAULT_SECTION: Record<MainTab, string> = {
 
 const VALID_SECTIONS: Record<MainTab, string[]> = {
   daily: ["attendance", "transfers", "late-permit"],
+  tasks: ["tasks"],
   students: ["profiles", "students", "import", "export"],
   finances: ["ledger"],
   reports: ["weekly-reports", "plans", "weekly-tests", "sard"],
@@ -36,6 +40,7 @@ const VALID_SECTIONS: Record<MainTab, string[]> = {
 /** Legacy flat tab ids → new main + section (bookmarks / daily-operations redirect). */
 const LEGACY_TAB: Record<string, { main: MainTab; section: string }> = {
   attendance: { main: "daily", section: "attendance" },
+  tasks: { main: "tasks", section: "tasks" },
   transfers: { main: "daily", section: "transfers" },
   "late-permit": { main: "daily", section: "late-permit" },
   profiles: { main: "students", section: "profiles" },
@@ -73,6 +78,7 @@ export const Route = createFileRoute("/secretary")({
 });
 
 export function SecretaryPage() {
+  const taskCount = useStaffTaskCount();
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as ReturnType<typeof secretaryValidateSearch>;
   const name = getSessionName("السكرتير");
@@ -83,7 +89,9 @@ export function SecretaryPage() {
   const [queue] = useState(() => loadSardQueue());
 
   useEffect(() => {
-    fetchActiveCalendar().then((cal) => setCurrentWeek(cal.currentWeekNumber)).catch(() => {});
+    fetchActiveCalendar()
+      .then((cal) => setCurrentWeek(cal.currentWeekNumber))
+      .catch(() => {});
   }, []);
 
   const mainTab = resolveMainTab(search.tab);
@@ -124,6 +132,14 @@ export function SecretaryPage() {
   };
 
   const tabs: RoleTab[] = [
+    {
+      id: "tasks",
+      label: "المهام",
+      icon: ListTodo,
+      roles: ["secretary"],
+      badge: taskCount,
+      content: <StaffTasksPanel canCreate />,
+    },
     {
       id: "daily",
       label: "المتابعة اليومية",

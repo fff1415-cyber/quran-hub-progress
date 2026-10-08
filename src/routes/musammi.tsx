@@ -30,6 +30,8 @@ import type { PlanAdvanceResult } from "@/lib/plan-progression";
 import { promoteStudentPhase } from "@/lib/student-phase-promote";
 import { notifyTeacherHalaqa } from "@/lib/teacher-notifications";
 import { AppHeader } from "@/components/AppHeader";
+import { StaffTasksPanel } from "@/components/StaffTasksPanel";
+import { useStaffTaskCount } from "@/hooks/use-staff-task-count";
 import { Mic, Minus, Plus, ArrowRight, Award, CheckCircle2, XCircle, Clock, Lock } from "lucide-react";
 import { Toaster, toast } from "sonner";
 
@@ -80,6 +82,7 @@ function notifyTeacherTransfer(
 }
 
 export function MusammiPage() {
+  const taskCount = useStaffTaskCount();
   const [queue, setQueue] = useState<SardQueueItem[]>(() => loadSardQueue());
   const [activeId, setActiveId] = useState<string | null>(null);
   const halaqat = loadHalaqat();
@@ -124,6 +127,10 @@ export function MusammiPage() {
       <Toaster position="top-center" richColors />
       <AppHeader title="صفحة المسمّع" subtitle="تقييم السرد" />
       <main className="max-w-5xl mx-auto px-4 py-8">
+        <details className="glass-card rounded-xl p-4 mb-5">
+          <summary className="cursor-pointer font-bold">مهامي {taskCount > 0 ? `(${taskCount})` : ""}</summary>
+          <div className="mt-4"><StaffTasksPanel /></div>
+        </details>
         <div className="glass-card rounded-2xl p-6 mb-6 flex items-center gap-4">
           <div className="w-14 h-14 rounded-2xl gold-gradient flex items-center justify-center">
             <Mic className="w-7 h-7 text-primary-foreground" />
