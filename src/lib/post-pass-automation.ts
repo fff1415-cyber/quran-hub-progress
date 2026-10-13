@@ -7,6 +7,9 @@ import { notifyTeacherHalaqa } from "@/lib/teacher-notifications";
 
 export interface SardPassPayload {
   studentId: string;
+  assignmentId?: string;
+  queueItemId?: string;
+  phase?: "full" | "review_only";
   halaqaId: number;
   week: number;
   attempt: number;
@@ -26,7 +29,7 @@ export async function runPostPassAutomation(payload: SardPassPayload): Promise<P
   const sheet = await fetchStudentPlanSheet(payload.studentId);
 
   const record: AcademicPhaseRecord = {
-    id: `ar-${Date.now()}`,
+    id: payload.assignmentId ? `ar-assignment-${payload.assignmentId}` : `ar-${Date.now()}`,
     studentId: payload.studentId,
     halaqaId: payload.halaqaId,
     week: payload.week,
@@ -42,26 +45,20 @@ export async function runPostPassAutomation(payload: SardPassPayload): Promise<P
     track: sheet.plan?.track ?? payload.track,
   };
 
+  const advance = await completePlanAndAdvance(payload.studentId, assignedBy, payload.track, {
+    planStartDate: record.testDate.slice(0, 10),
+    expectedAssignmentId: payload.assignmentId,
+    sardResult: payload.queueItemId ? { id: payload.queueItemId, percent: payload.percent, phase: payload.phase ?? "full" } : undefined,
+  });
   pushAcademicRecord(record);
-
-  let advance: PlanAdvanceResult = {};
-  try {
-    advance = await completePlanAndAdvance(payload.studentId, assignedBy, payload.track, {
-      planStartDate: record.testDate.slice(0, 10),
-    });
-    if (advance.newGlobalPhase) {
-      await syncStudentToGlobalPhase(payload.studentId, advance.newGlobalPhase);
-    }
-    if (advance.newPlanTitle) {
-      notifyTeacherHalaqa(
-        payload.halaqaId,
-        `بعد اجتياز السرد — انتقل الطالب إلى ${advance.newPlanTitle}`,
-        "info",
-      );
-    }
-  } catch {
-    /* plan API may be unavailable — academic record still saved */
-  }
+  if (advance.newGlobalPhase)
+    await syncStudentToGlobalPhase(payload.studentId, advance.newGlobalPhase);
+  if (advance.newPlanTitle)
+    notifyTeacherHalaqa(
+      payload.halaqaId,
+      `بعد اجتياز السرد — انتقل الطالب إلى ${advance.newPlanTitle}`,
+      "info",
+    );
 
   return { ...advance, record };
 }

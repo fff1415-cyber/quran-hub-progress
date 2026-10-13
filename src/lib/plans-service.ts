@@ -24,10 +24,7 @@ import {
   localRemoveHifzCompletions,
 } from "@/lib/plans-store";
 import { syncStudentPhaseFromPlan } from "@/lib/student-phase-promote";
-import {
-  compensationHifzSegmentTarget,
-  compensationHifzTap,
-} from "@/lib/plan-translator";
+import { compensationHifzSegmentTarget, compensationHifzTap } from "@/lib/plan-translator";
 import type { Student } from "@/lib/mock-data";
 
 function apiUrl(path: string): string {
@@ -99,7 +96,9 @@ export async function fetchPlans(track?: "gold" | "silver"): Promise<EducationPl
 
 export async function fetchStudentPlanSheet(studentId: string): Promise<StudentPlanSheetData> {
   try {
-    return await planFetch<StudentPlanSheetData>(`/plans/student-sheet?student_id=${encodeURIComponent(studentId)}`);
+    return await planFetch<StudentPlanSheetData>(
+      `/plans/student-sheet?student_id=${encodeURIComponent(studentId)}`,
+    );
   } catch (e) {
     if (isPlansDbUnavailableError(e)) {
       return localGetStudentSheet(studentId);
@@ -109,7 +108,9 @@ export async function fetchStudentPlanSheet(studentId: string): Promise<StudentP
 }
 
 /** One request for all plan link statuses in a halaqa (replaces per-student sheet prefetch). */
-async function fetchHalaqaPlanStatusesLegacy(studentIds: string[]): Promise<HalaqaPlanStatusEntry[]> {
+async function fetchHalaqaPlanStatusesLegacy(
+  studentIds: string[],
+): Promise<HalaqaPlanStatusEntry[]> {
   const out: HalaqaPlanStatusEntry[] = [];
   const batchSize = 5;
   for (let i = 0; i < studentIds.length; i += batchSize) {
@@ -158,7 +159,10 @@ export async function importPlans(plans: ImportPlanPayload[]): Promise<{
   stored_locally?: boolean;
 }> {
   try {
-    const result = await planFetch("/plans/import", { method: "POST", body: JSON.stringify({ plans }) });
+    const result = await planFetch("/plans/import", {
+      method: "POST",
+      body: JSON.stringify({ plans }),
+    });
     localClearPlansCatalogCache();
     return result;
   } catch (e) {
@@ -179,13 +183,17 @@ export async function assignStudentPlan(
     plan_start_date?: string;
     start_muraja_segment?: number | null;
     face_quotas?: Partial<DailyFaceQuotas>;
+    expected_assignment_id?: string;
+    sard_result?: { id: string; percent: number; phase: string };
   },
 ): Promise<void> {
   try {
-    await planFetch("/plans/assign", {
+    const result = await planFetch<{ sard_queue?: unknown[] }>("/plans/assign", {
       method: "POST",
       body: JSON.stringify({
         student_id: studentId,
+        expected_assignment_id: options?.expected_assignment_id,
+        sard_result: options?.sard_result,
         plan_id: planId,
         start_segment_index: startSegment,
         plan_start_date: options?.plan_start_date,
@@ -193,6 +201,7 @@ export async function assignStudentPlan(
         ...options?.face_quotas,
       }),
     });
+    if (result.sard_queue) localStorage.setItem("qshatawi_sard_queue_v2", JSON.stringify(result.sard_queue));
     const sheet = await fetchStudentPlanSheet(studentId);
     assertPlanLinkConfirmed(sheet);
     if (sheet.plan) {
@@ -293,7 +302,10 @@ export async function removePlanHifzCompletions(
   localRemoveHifzCompletions(studentId, segmentIndexes);
 }
 
-export async function lastCompletedHifzSegments(studentId: string, count: number): Promise<number[]> {
+export async function lastCompletedHifzSegments(
+  studentId: string,
+  count: number,
+): Promise<number[]> {
   if (count <= 0) return [];
   const sheet = await fetchStudentPlanSheet(studentId);
   const done = sheet.completions
@@ -320,7 +332,7 @@ export async function syncCompensationToPlan(
   if (tracked.length === 0 && previousFaces != null) {
     const prevTarget = compensationHifzSegmentTarget(previousFaces, student.levelType);
     if (prevTarget > target) {
-      tracked.push(...await lastCompletedHifzSegments(student.id, prevTarget - target));
+      tracked.push(...(await lastCompletedHifzSegments(student.id, prevTarget - target)));
     }
   }
 
@@ -358,9 +370,10 @@ export async function deletePlan(planId: string): Promise<{ assignments_removed:
 
 export async function fetchPlanDetail(planId: string) {
   try {
-    return await planFetch<{ plan: EducationPlan; segments: import("@/lib/plan-types").PlanSegment[] }>(
-      `/plans/detail?plan_id=${encodeURIComponent(planId)}`,
-    );
+    return await planFetch<{
+      plan: EducationPlan;
+      segments: import("@/lib/plan-types").PlanSegment[];
+    }>(`/plans/detail?plan_id=${encodeURIComponent(planId)}`);
   } catch (e) {
     if (isPlansDbUnavailableError(e)) {
       const { plan, segments } = localPlanDetail(planId);

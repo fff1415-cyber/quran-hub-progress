@@ -6,7 +6,7 @@ import {
   murajaStartSegment,
 } from "@/lib/plan-level-ranges";
 import { normalizeTaskQuotas } from "@/lib/plan-daily-faces";
-import { fetchPlans, assignStudentPlan, fetchStudentPlanSheet, patchStudentAssignment } from "@/lib/plans-service";
+import { fetchPlans, assignStudentPlan, fetchStudentPlanSheet } from "@/lib/plans-service";
 
 export interface PlanAdvanceResult {
   closedPlanTitle?: string;
@@ -21,43 +21,38 @@ export async function completePlanAndAdvance(
   studentId: string,
   assignedBy: string,
   track: PlanTrack,
-  options?: { planStartDate?: string },
+  options?: { planStartDate?: string; expectedAssignmentId?: string; sardResult?: { id: string; percent: number; phase: string } },
 ): Promise<PlanAdvanceResult> {
   const sheet = await fetchStudentPlanSheet(studentId);
+  if (options?.expectedAssignmentId && sheet.assignment?.id !== options.expectedAssignmentId) {
+    throw new Error("تغيّرت خطة الطالب — حدّث الصفحة قبل إعادة الاعتماد");
+  }
   const result: PlanAdvanceResult = {};
 
   if (sheet.plan) {
     result.closedPlanTitle = sheet.plan.title;
   }
 
-  if (sheet.assignment?.status === "active") {
-    await patchStudentAssignment(studentId, "transferred");
-  }
-
-  if (!sheet.plan) {
-    return result;
-  }
+  if (!sheet.plan || !sheet.assignment) throw new Error("لا توجد خطة حالية مؤكدة للطالب");
 
   const currentGlobal = globalPhaseFromPlanLevel(track, sheet.plan.level_number);
-  if (currentGlobal === null) {
-    return result;
-  }
+  if (currentGlobal === null) throw new Error("مرحلة الخطة الحالية غير صالحة");
 
   const nextPhase = nextGlobalPhase(track, currentGlobal);
   if (nextPhase === null) {
-    return result;
+    return result; // Keep the final plan visible for the supervisor.
   }
 
   const plans = await fetchPlans(track);
   const next = findPlanByGlobalPhase(plans, track, nextPhase);
-  if (!next) {
-    return result;
-  }
+  if (!next) throw new Error("الخطة التالية غير موجودة — لم تُغلق الخطة الحالية");
 
   const prevQuotas = sheet.assignment ? normalizeTaskQuotas(sheet.assignment) : undefined;
   const startDate = options?.planStartDate ?? new Date().toISOString().slice(0, 10);
 
   await assignStudentPlan(studentId, next.id, 1, assignedBy, {
+    expected_assignment_id: sheet.assignment?.id,
+    sard_result: options?.sardResult,
     plan_start_date: startDate,
     start_muraja_segment: murajaStartSegment(nextPhase),
     face_quotas: prevQuotas,
