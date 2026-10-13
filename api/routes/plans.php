@@ -289,7 +289,7 @@ function handle_list_plans(): void
 {
     $auth = require_auth();
     $cid = require_complex_id($auth);
-    plans_require_roles($auth, ['supervisor', 'secretary', 'teacher', 'assistant']);
+    plans_require_roles($auth, ['supervisor', 'secretary', 'teacher', 'assistant', 'musammi']);
     $pdo = db();
     try {
         plans_assert_import_schema($pdo);
@@ -593,7 +593,7 @@ function handle_assign_plan(): void
 {
     $auth = require_auth();
     $cid = require_complex_id($auth);
-    plans_require_roles($auth, ['supervisor']);
+    plans_require_roles($auth, ['supervisor', 'musammi']);
     $input = json_input();
     $studentId = trim((string) ($input['student_id'] ?? ''));
     $planId = trim((string) ($input['plan_id'] ?? ''));
@@ -617,14 +617,14 @@ function handle_assign_plan(): void
 
         if ($tenants) {
             $planStmt = $pdo->prepare(
-                'SELECT track, level_number, daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                'SELECT title, track, level_number, daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
                         faces_per_half, faces_per_one, faces_per_two
                  FROM education_plans WHERE id = ? AND complex_id = ?'
             );
             $planStmt->execute([$planId, $cid]);
         } else {
             $planStmt = $pdo->prepare(
-                'SELECT track, level_number, daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
+                'SELECT title, track, level_number, daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
                         faces_per_half, faces_per_one, faces_per_two
                  FROM education_plans WHERE id = ?'
             );
@@ -640,6 +640,40 @@ function handle_assign_plan(): void
 
         $track = ($planRow['track'] ?? '') === 'silver' ? 'silver' : 'gold';
         $faces = plans_track_face_quotas($track);
+
+        $pdo->beginTransaction();
+        // Lock the student, including when no active assignment exists.
+        $pdo->prepare('SELECT id FROM students WHERE id = ? FOR UPDATE')->execute([$studentId]);
+        $currentStmt = $pdo->prepare("SELECT a.id, a.plan_id, a.start_segment_index, p.track, p.title, p.level_number FROM student_plan_assignments a JOIN education_plans p ON p.id = a.plan_id WHERE a.student_id = ? AND a.status = 'active' FOR UPDATE");
+        $currentStmt->execute([$studentId]);
+        $current = $currentStmt->fetch();
+        $expected = (string) ($input['expected_assignment_id'] ?? '');
+        if ($expected !== '' && (!$current || $current['id'] !== $expected)) {
+            throw new RuntimeException('تغيّرت خطة الطالب — حدّث الصفحة قبل الاعتماد');
+        }
+        if (($auth['role'] ?? '') === 'musammi') {
+            if ($expected === '' || !$current || $current['track'] !== $planRow['track']) {
+                throw new RuntimeException('المسمّع مخوّل بترحيل الخطة الحالية فقط');
+            }
+            $complete = $pdo->prepare("SELECT COUNT(*) AS total, SUM(EXISTS(SELECT 1 FROM segment_completions c WHERE c.student_id = ? AND c.plan_id = s.plan_id AND c.segment_index = s.segment_index AND c.task_type = 'hifz')) AS done FROM plan_segments s WHERE s.plan_id = ? AND s.segment_index >= ?");
+            $complete->execute([$studentId, $current['plan_id'], $current['start_segment_index']]);
+            $counts = $complete->fetch();
+            if ((int) $counts['total'] === 0 || (int) $counts['total'] !== (int) $counts['done']) {
+                throw new RuntimeException('لم يكتمل حفظ الخطة الحالية');
+            }
+            $ranges = $track === 'gold' ? [4, 6, 6, 6, 8] : [8, 12, 12, 12, 16];
+            $globalPhase = static function (int $level) use ($track, $ranges): int {
+                if ($track === 'gold' && $level > 0 && $level < 1000) return $level;
+                $slot = intdiv($level, 1000);
+                $phase = $level % 1000;
+                if ($slot < 1 || $slot > count($ranges) || $phase < 1 || $phase > $ranges[$slot - 1]) return 0;
+                return array_sum(array_slice($ranges, 0, $slot - 1)) + $phase;
+            };
+            $currentPhase = $globalPhase((int) $current['level_number']);
+            if ($currentPhase < 1 || $globalPhase((int) $planRow['level_number']) !== $currentPhase + 1) {
+                throw new RuntimeException('لا يمكن تجاوز الخطة التالية');
+            }
+        }
 
         $pdo->prepare(
             "UPDATE student_plan_assignments SET status = 'transferred', transferred_at = NOW() WHERE student_id = ? AND status = 'active'"
@@ -663,10 +697,41 @@ function handle_assign_plan(): void
             $name,
         ]);
 
-        json_response(['ok' => true, 'assignment_id' => $id]);
+        $sardQueue = null;
+        if (isset($input['sard_result'])) {
+            $sard = $input['sard_result'];
+            $stateTenants = app_state_tenant_enabled($pdo);
+            $stateStmt = $pdo->prepare($stateTenants ? "SELECT value FROM app_state WHERE complex_id = ? AND `key` = 'sard_queue' FOR UPDATE" : "SELECT value FROM app_state WHERE `key` = 'sard_queue' FOR UPDATE");
+            $stateStmt->execute($stateTenants ? [$cid] : []);
+            $sardQueue = json_decode((string) $stateStmt->fetchColumn(), true) ?: [];
+            $found = false;
+            foreach ($sardQueue as &$entry) {
+                if ($entry['id'] !== ($sard['id'] ?? '')) continue;
+                if ($entry['studentId'] !== $studentId || (isset($entry['assignmentId']) && $entry['assignmentId'] !== $expected) || ($entry['status'] ?? '') === 'passed') {
+                    throw new RuntimeException('تغيّر طلب السرد — حدّث الصفحة');
+                }
+                $entry['status'] = 'passed';
+                $entry['finalPercent'] = (float) ($sard['percent'] ?? 0);
+                $entry['phase'] = ($sard['phase'] ?? '') === 'review_only' ? 'review_only' : 'full';
+                $entry['passedAt'] = gmdate('c');
+                $entry['closedPlanTitle'] = $current['title'] ?? null;
+                $entry['newPlanTitle'] = $planRow['title'];
+                $entry['newPlanStartDate'] = $dateVal;
+                $found = true;
+            }
+            unset($entry);
+            if (!$found) throw new RuntimeException('طلب السرد غير محفوظ — حدّث الصفحة');
+            app_state_upsert($pdo, 'sard_queue', $sardQueue, $stateTenants ? $cid : null);
+        } elseif (($auth['role'] ?? '') === 'musammi') {
+            throw new RuntimeException('طلب الاجتياز مطلوب لترحيل الخطة');
+        }
+        $pdo->commit();
+        json_response(['ok' => true, 'assignment_id' => $id, 'sard_queue' => $sardQueue]);
     } catch (PDOException $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
         plans_abort_with_sql_error($pdo, $e, 'ربط الطالب بالخطة');
     } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
         error_response('فشل ربط الطالب: ' . $e->getMessage(), 500);
     }
 }
@@ -789,7 +854,7 @@ function handle_student_plan_sheet(): void
         plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
     } elseif ($role === 'teacher' || $role === 'assistant') {
         plans_assert_teacher_student_access($pdo, $auth, $studentId, $tenants);
-    } elseif (!in_array($role, ['supervisor', 'secretary', 'manager'], true)) {
+    } elseif (!in_array($role, ['supervisor', 'secretary', 'manager', 'musammi'], true)) {
         error_response('Forbidden', 403);
     } else {
         plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
@@ -862,7 +927,7 @@ function handle_halaqa_plan_status(): void
         if ($authHalaqa !== $halaqaId) {
             error_response('لا يمكنك عرض خطط حلقة أخرى', 403);
         }
-    } elseif (!in_array($role, ['supervisor', 'secretary', 'manager'], true)) {
+    } elseif (!in_array($role, ['supervisor', 'secretary', 'manager', 'musammi'], true)) {
         error_response('Forbidden', 403);
     }
 

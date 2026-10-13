@@ -106,12 +106,24 @@ export function decodeAuthTokenPayload(token: string | null = getToken()): {
 export function ensureSessionFromToken(): void {
   const payload = decodeAuthTokenPayload();
   if (!payload) return;
-  if (payload.role && !getAuthItem("qs_role")) setAuthItem("qs_role", payload.role);
-  if (payload.name && !getAuthItem("qs_name")) setAuthItem("qs_name", payload.name);
-  if (payload.accountId && !getAuthItem("qs_account")) setAuthItem("qs_account", payload.accountId);
-  if (payload.halaqaId && !getAuthItem("qs_halaqa")) setAuthItem("qs_halaqa", String(payload.halaqaId));
-  if (payload.complexId && !getAuthItem("qs_complex")) setAuthItem("qs_complex", String(payload.complexId));
-  if (payload.studentId && !getAuthItem("qs_student")) setAuthItem("qs_student", payload.studentId);
+  const accountRoles = ["manager", "secretary", "supervisor", "program_supervisor", "musammi", "test_member", "test_chair"];
+  if ((payload.role && accountRoles.includes(payload.role) && !payload.accountId) ||
+      ((payload.role === "teacher" || payload.role === "assistant") && !payload.halaqaId)) {
+    clearAuthSession();
+    return;
+  }
+  const keys: [string, string | number | undefined][] = [
+    ["qs_role", payload.role],
+    ["qs_name", payload.name],
+    ["qs_account", payload.accountId],
+    ["qs_halaqa", payload.halaqaId],
+    ["qs_complex", payload.complexId],
+    ["qs_student", payload.studentId],
+  ];
+  for (const [key, value] of keys) {
+    if (value !== undefined) setAuthItem(key, String(value));
+    else removeAuthItem(key);
+  }
 }
 
 export function isTokenExpired(token: string | null = getToken()): boolean {

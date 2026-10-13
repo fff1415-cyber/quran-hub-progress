@@ -1,0 +1,39 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const ts = require('typescript');
+function load(path, deps) {
+  const exports = {};
+  const code = ts.transpileModule(fs.readFileSync(path, 'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
+  new Function('require','exports',code)(name => { if (!(name in deps)) throw Error(name); return deps[name]; }, exports);
+  return exports;
+}
+const storage = () => {const map=new Map();return {getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)}};
+global.window={};global.localStorage=storage();global.sessionStorage=storage();
+const auth=load('src/lib/auth-session.ts',{});
+const token=Buffer.from(JSON.stringify({role:'supervisor',accountId:'new',complexId:2})).toString('base64url')+'.signature';
+auth.setToken(token);auth.setAuthItem('qs_role','teacher');auth.setAuthItem('qs_halaqa','9');auth.ensureSessionFromToken();
+assert.equal(auth.getAuthItem('qs_role'),'supervisor');assert.equal(auth.getAuthItem('qs_account'),'new');assert.equal(auth.getAuthItem('qs_halaqa'),null);
+(async()=>{
+ let plans=[];let calls=[];
+ const sheet={assignment:{id:'old',status:'active'},plan:{title:'old plan',level_number:1},segments:[],completions:[]};
+ const service={fetchStudentPlanSheet:async()=>sheet,fetchPlans:async()=>plans,assignStudentPlan:async(...args)=>calls.push(args),patchStudentAssignment:async()=>{throw Error('must not close before assigning')}};
+ const progression=load('src/lib/plan-progression.ts',{'@/lib/plans-service':service,'@/lib/plan-level-ranges':{globalPhaseFromPlanLevel:()=>1,nextGlobalPhase:()=>2,findPlanByGlobalPhase:()=>plans[0],murajaStartSegment:()=>1},'@/lib/plan-daily-faces':{normalizeTaskQuotas:()=>({})}});
+ await assert.rejects(progression.completePlanAndAdvance('student','supervisor','gold'),/الخطة التالية/);assert.equal(calls.length,0);
+ plans=[{id:'next',title:'next plan'}];await progression.completePlanAndAdvance('student','supervisor','gold',{expectedAssignmentId:'old'});assert.equal(calls[0][4].expected_assignment_id,'old');
+ await assert.rejects(progression.completePlanAndAdvance('student','supervisor','gold',{expectedAssignmentId:'stale'}),/تغيّرت/);assert.equal(calls.length,1);
+ console.log('PASS: token identity reconciliation, missing next plan preservation, expected assignment guard and atomic assignment request');
+})().catch(e=>{console.error(e);process.exitCode=1});
+const mock = load('src/lib/mock-data.ts', {'@/lib/auth-session':{hasAuthToken:()=>false}});
+localStorage.clear=()=>{};
+localStorage.removeItem('qshatawi_sard_queue_v2');
+const first=mock.enqueuePlanCompleted('student',1,2,'plan','assignment-1');
+mock.updateSardItem(first.id,{status:'passed'});
+assert.equal(mock.enqueuePlanCompleted('student',1,2,'plan','assignment-1').id,first.id);
+assert.equal(mock.loadSardQueue().length,1);
+localStorage.removeItem('qshatawi_sard_queue_v2');
+assert.equal(mock.enqueuePlanCompleted('student',1,2,'plan','assignment-1').id,first.id);
+assert.notEqual(mock.enqueuePlanCompleted('other',1,2,'plan','assignment-2').id,first.id);
+console.log('PASS: passed assignment cannot enqueue again; independent devices produce the same queue key');
+auth.setToken(Buffer.from(JSON.stringify({role:'supervisor'})).toString('base64url')+'.signature');
+auth.ensureSessionFromToken();assert.equal(auth.getToken(),null);
+console.log('PASS: incomplete legacy staff token requires fresh login');

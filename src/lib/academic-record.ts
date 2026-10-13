@@ -41,6 +41,8 @@ export function saveAcademicRecords(list: AcademicPhaseRecord[]) {
 
 export function pushAcademicRecord(record: AcademicPhaseRecord) {
   const list = loadAcademicRecords();
+  const existing = list.findIndex(item => item.id === record.id);
+  if (existing !== -1) list.splice(existing, 1);
   list.unshift(record);
   saveAcademicRecords(list);
 }

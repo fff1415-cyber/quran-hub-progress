@@ -90,6 +90,41 @@ function handle_list_app_state(): void
     json_response($rows);
 }
 
+/** Compare only modified items under a row lock; stale devices cannot erase other items. */
+function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
+{
+    if (!is_array($value) || !isset($value['changes']) || !is_array($value['changes'])) {
+        error_response('نسخة الصفحة قديمة — حدّث الصفحة قبل تعديل السرد', 409);
+    }
+    $tenants = app_state_tenant_enabled($pdo);
+    $scope = $tenants ? 'complex_id = ? AND `key` = ?' : '`key` = ?';
+    $params = $tenants ? [$cid, 'sard_queue'] : ['sard_queue'];
+    $pdo->beginTransaction();
+    try {
+        $sql = $tenants ? 'INSERT IGNORE INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)' : 'INSERT IGNORE INTO app_state (`key`, value) VALUES (?, ?)';
+        $pdo->prepare($sql)->execute(array_merge($params, ['[]']));
+        $stmt = $pdo->prepare('SELECT value FROM app_state WHERE ' . $scope . ' FOR UPDATE');
+        $stmt->execute($params);
+        $queue = json_decode((string) $stmt->fetchColumn(), true) ?: [];
+        foreach ($value['changes'] as $change) {
+            $item = $change['item'] ?? null;
+            if (!is_array($item) || empty($item['id']) || empty($item['studentId'])) throw new RuntimeException('عنصر سرد غير صالح');
+            $index = null;
+            foreach ($queue as $i => $existing) if ($existing['id'] === $item['id']) { $index = $i; break; }
+            $current = $index === null ? null : $queue[$index];
+            if ($current == $item) continue; // Idempotent retry.
+            if ($current != ($change['base'] ?? null)) throw new RuntimeException('تغيّر السرد من جهاز آخر — حدّث الصفحة');
+            if ($index === null) $queue[] = $item;
+            else $queue[$index] = $item;
+        }
+        app_state_upsert($pdo, 'sard_queue', $queue, $tenants ? $cid : null);
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_response($e->getMessage(), 409);
+    }
+}
+
 function handle_set_app_state(): void
 {
     $auth = require_auth();
@@ -109,6 +144,11 @@ function handle_set_app_state(): void
     }
 
     $pdo = db();
+    if ($key === 'sard_queue') {
+        app_state_patch_sard($pdo, $cid, $input['value'] ?? null);
+        json_response(['ok' => true]);
+        return;
+    }
     try {
         if (app_state_tenant_enabled($pdo)) {
             app_state_upsert($pdo, $key, $input['value'] ?? null, $cid);

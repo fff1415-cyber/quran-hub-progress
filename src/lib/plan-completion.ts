@@ -1,12 +1,10 @@
-import {
-  enqueuePlanCompleted,
-  loadSardQueue,
-  type Student,
-} from "@/lib/mock-data";
+import { enqueuePlanCompleted, loadSardQueue, type Student } from "@/lib/mock-data";
 import { fetchStudentPlanSheet } from "@/lib/plans-service";
 import { notifyTeacherHalaqa } from "@/lib/teacher-notifications";
 
-export function isPlanHifzComplete(sheet: Awaited<ReturnType<typeof fetchStudentPlanSheet>>): boolean {
+export function isPlanHifzComplete(
+  sheet: Awaited<ReturnType<typeof fetchStudentPlanSheet>>,
+): boolean {
   if (!sheet.assignment || !sheet.plan || sheet.segments.length === 0) return false;
   const start = sheet.assignment.start_segment_index;
   const visible = sheet.segments.filter((s) => s.segment_index >= start);
@@ -39,9 +37,10 @@ export async function checkAndHandlePlanCompletion(
 
   const sheet = await fetchStudentPlanSheet(student.id);
   if (!isPlanHifzComplete(sheet)) return false;
+  if (loadSardQueue().some((q) => q.assignmentId === sheet.assignment?.id)) return false;
 
   const planTitle = sheet.plan?.title ?? "الخطة التعليمية";
-  enqueuePlanCompleted(student.id, student.halaqaId, weekNum, planTitle);
+  enqueuePlanCompleted(student.id, student.halaqaId, weekNum, planTitle, sheet.assignment?.id);
 
   notifyTeacherHalaqa(
     student.halaqaId,

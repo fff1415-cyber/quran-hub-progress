@@ -7,6 +7,7 @@ import {
   saveMessageTemplates,
   saveSardHistory,
   saveSardQueue,
+  loadSardQueue,
   saveStudents,
   loadStudents,
   loadHalaqat,
@@ -309,6 +310,7 @@ export async function syncFromCloud(options?: {
         const weeklyTestsReset = ensureWeeklyTestsSemester(calendar.semester?.id ?? null);
         const tarbawiReset = ensureTarbawiSemester(calendar.semester?.id ?? null);
 
+        const sardBeforePull = JSON.stringify(loadSardQueue());
         const stateRows = await secureListAppState({ data: { token } });
         const state = new Map(stateRows.map((row) => [row.key, row.value]));
         sessionStorage.setItem("qs_syncing", "1");
@@ -329,7 +331,7 @@ export async function syncFromCloud(options?: {
           const merged = mergeStaffCheckIns(cloud, loadStaffCheckIns());
           saveStaffCheckIns(merged, { sync: false });
         }
-        if (state.has("sard_queue")) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
+        if (state.has("sard_queue") && JSON.stringify(loadSardQueue()) === sardBeforePull) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
         if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
         if (state.has("academic_records")) saveAcademicRecords(state.get("academic_records") as AcademicPhaseRecord[]);
         if (state.has("halaqa_programs")) {

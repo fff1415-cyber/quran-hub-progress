@@ -31,6 +31,9 @@ function tasks_actor(array $auth, PDO $pdo, int $cid): string
         if (count($matches) === 1) return $matches[0]['id'];
         error_response('أعد تسجيل الدخول لتفعيل مهام المساعد', 403);
     }
+    if (in_array($role, STAFF_TASK_ACCOUNTS, true) || $role === 'teacher') {
+        error_response('بيانات جلسة الدخول ناقصة — سجّل الخروج ثم أعد الدخول لتفعيل المهام', 403);
+    }
     error_response('غير مصرح بعرض المهام', 403);
 }
 

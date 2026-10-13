@@ -785,6 +785,7 @@ export type SardStatus =
 export type SardPhase = "full" | "review_only";
 
 export interface SardQueueItem {
+  assignmentId?: string;
   id: string;
   studentId: string;
   halaqaId: number;
@@ -823,9 +824,32 @@ export function loadSardQueue(): SardQueueItem[] {
   const raw = localStorage.getItem(KEY_SARD_QUEUE);
   return raw ? JSON.parse(raw) : [];
 }
+let sardWrites: Promise<void> = Promise.resolve();
+let pendingSardWrites = 0;
+export function hasPendingSardWrites(): boolean { return pendingSardWrites > 0; }
+export function flushSardQueue(): Promise<void> { return sardWrites; }
 export function saveSardQueue(q: SardQueueItem[]) {
+  const previous = loadSardQueue();
+  const syncing = sessionStorage.getItem("qs_syncing") === "1";
+  if (syncing && hasPendingSardWrites()) return;
   localStorage.setItem(KEY_SARD_QUEUE, JSON.stringify(q));
-  persistShared("sard_queue", q);
+  if (syncing || !hasAuthToken()) return;
+  const changes = q.filter(item => JSON.stringify(item) !== JSON.stringify(previous.find(p => p.id === item.id)))
+    .map(item => ({ item, base: previous.find(p => p.id === item.id) ?? null }));
+  if (!changes.length) return;
+  pendingSardWrites++;
+  const write = sardWrites.catch(() => undefined).then(async () => {
+    const { pushAppState } = await import("./cloud-sync");
+    await pushAppState("sard_queue", { changes });
+  });
+  sardWrites = write;
+  void write.catch(async () => {
+    if (JSON.stringify(loadSardQueue()) === JSON.stringify(q)) {
+      localStorage.setItem(KEY_SARD_QUEUE, JSON.stringify(previous));
+    }
+    const { toast } = await import("sonner");
+    toast.error("تعذّر حفظ تحديث السرد أو تغيّر من جهاز آخر — حدّث الصفحة قبل المحاولة");
+  }).finally(() => { pendingSardWrites--; });
 }
 
 const ACTIVE_SARD_STATUSES: SardStatus[] = [
@@ -849,14 +873,16 @@ export function enqueuePlanCompleted(
   halaqaId: number,
   week: number,
   planTitle?: string,
+  assignmentId?: string,
 ): SardQueueItem {
   const queue = loadSardQueue();
-  const existing = activeSardForStudent(queue, studentId);
+  const existing = queue.find(q => assignmentId && q.assignmentId === assignmentId) ?? activeSardForStudent(queue, studentId);
   if (existing) return existing;
 
   const now = new Date().toISOString();
   const item: SardQueueItem = {
-    id: `sq-${Date.now()}-${Math.random()}`,
+    id: assignmentId ? `sq-assignment-${assignmentId}` : `sq-${Date.now()}-${Math.random()}`,
+    assignmentId,
     studentId,
     halaqaId,
     week,
@@ -978,7 +1004,7 @@ export function loadSardHistory(): SardHistoryItem[] {
   return raw ? JSON.parse(raw) : [];
 }
 export function pushSardHistory(h: SardHistoryItem) {
-  const list = loadSardHistory();
+  const list = loadSardHistory().filter(item => item.id !== h.id);
   list.unshift(h);
   localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list.slice(0, 500)));
   persistShared("sard_history", list.slice(0, 500));
