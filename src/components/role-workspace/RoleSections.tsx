@@ -407,6 +407,11 @@ export function SupervisorPlanCompletedPanel() {
   const halaqat = loadHalaqat();
   const refresh = () => setQueue(loadSardQueue());
 
+  useEffect(() => {
+    const timer = setInterval(() => setQueue(loadSardQueue()), 5000);
+    return () => clearInterval(timer);
+  }, []);
+
   const completed = queue.filter((q) => q.status === "plan_completed");
 
   const forward = (id: string, studentName: string, halaqaId: number, planTitle?: string) => {

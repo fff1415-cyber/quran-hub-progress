@@ -772,6 +772,7 @@ export function isAttendanceAcked(studentId: string, date: string, type: "absent
 
 // ---- Sard Queue & History ----
 export type SardStatus =
+  | "archived"           // obsolete request; retained for history
   | "plan_completed"     // finished educational plan — supervisor forwards to sard
   | "pending"            // full sard — waiting for musammi
   | "scheduled"          // full sard retry after hifz fail (+2 days)
@@ -786,6 +787,7 @@ export type SardPhase = "full" | "review_only";
 
 export interface SardQueueItem {
   assignmentId?: string;
+  archiveReason?: string;
   id: string;
   studentId: string;
   halaqaId: number;
@@ -836,11 +838,13 @@ export function saveSardQueue(q: SardQueueItem[]) {
   if (syncing || !hasAuthToken()) return;
   const changes = q.filter(item => JSON.stringify(item) !== JSON.stringify(previous.find(p => p.id === item.id)))
     .map(item => ({ item, base: previous.find(p => p.id === item.id) ?? null }));
-  if (!changes.length) return;
+  const removals = previous.filter(item => !q.some(next => next.id === item.id))
+    .map(item => ({ id: item.id, base: item }));
+  if (!changes.length && !removals.length) return;
   pendingSardWrites++;
   const write = sardWrites.catch(() => undefined).then(async () => {
     const { pushAppState } = await import("./cloud-sync");
-    await pushAppState("sard_queue", { changes });
+    await pushAppState("sard_queue", { changes, removals });
   });
   sardWrites = write;
   void write.catch(async () => {

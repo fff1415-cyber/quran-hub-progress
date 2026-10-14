@@ -47,7 +47,7 @@ export async function runPostPassAutomation(payload: SardPassPayload): Promise<P
 
   const advance = await completePlanAndAdvance(payload.studentId, assignedBy, payload.track, {
     planStartDate: record.testDate.slice(0, 10),
-    expectedAssignmentId: payload.assignmentId,
+    expectedAssignmentId: payload.assignmentId ?? sheet.assignment?.id,
     sardResult: payload.queueItemId ? { id: payload.queueItemId, percent: payload.percent, phase: payload.phase ?? "full" } : undefined,
   });
   pushAcademicRecord(record);

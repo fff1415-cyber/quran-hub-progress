@@ -50,6 +50,7 @@ CREATE TABLE IF NOT EXISTS `student_plan_assignments` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS `segment_completions` (
+  `assignment_id` CHAR(36) NULL DEFAULT NULL,
   `id` CHAR(36) NOT NULL,
   `student_id` VARCHAR(50) NOT NULL,
   `plan_id` CHAR(36) NOT NULL,

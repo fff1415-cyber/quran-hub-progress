@@ -198,6 +198,14 @@ function plans_ensure_daily_faces_columns(PDO $pdo): void
     }
 }
 
+/** Completion rows must belong to the current assignment, not a previous use of the plan. */
+function plans_ensure_completion_assignment_column(PDO $pdo): void
+{
+    if (!plans_column_exists($pdo, 'segment_completions', 'assignment_id')) {
+        $pdo->exec('ALTER TABLE segment_completions ADD COLUMN assignment_id CHAR(36) NULL DEFAULT NULL');
+    }
+}
+
 function plans_track_face_quotas(string $track): array
 {
     if ($track === 'gold') {
@@ -641,10 +649,11 @@ function handle_assign_plan(): void
         $track = ($planRow['track'] ?? '') === 'silver' ? 'silver' : 'gold';
         $faces = plans_track_face_quotas($track);
 
+        plans_ensure_completion_assignment_column($pdo);
         $pdo->beginTransaction();
         // Lock the student, including when no active assignment exists.
         $pdo->prepare('SELECT id FROM students WHERE id = ? FOR UPDATE')->execute([$studentId]);
-        $currentStmt = $pdo->prepare("SELECT a.id, a.plan_id, a.start_segment_index, p.track, p.title, p.level_number FROM student_plan_assignments a JOIN education_plans p ON p.id = a.plan_id WHERE a.student_id = ? AND a.status = 'active' FOR UPDATE");
+        $currentStmt = $pdo->prepare("SELECT a.id, a.assigned_at, a.plan_id, a.start_segment_index, p.track, p.title, p.level_number FROM student_plan_assignments a JOIN education_plans p ON p.id = a.plan_id WHERE a.student_id = ? AND a.status = 'active' FOR UPDATE");
         $currentStmt->execute([$studentId]);
         $current = $currentStmt->fetch();
         $expected = (string) ($input['expected_assignment_id'] ?? '');
@@ -655,8 +664,8 @@ function handle_assign_plan(): void
             if ($expected === '' || !$current || $current['track'] !== $planRow['track']) {
                 throw new RuntimeException('المسمّع مخوّل بترحيل الخطة الحالية فقط');
             }
-            $complete = $pdo->prepare("SELECT COUNT(*) AS total, SUM(EXISTS(SELECT 1 FROM segment_completions c WHERE c.student_id = ? AND c.plan_id = s.plan_id AND c.segment_index = s.segment_index AND c.task_type = 'hifz')) AS done FROM plan_segments s WHERE s.plan_id = ? AND s.segment_index >= ?");
-            $complete->execute([$studentId, $current['plan_id'], $current['start_segment_index']]);
+            $complete = $pdo->prepare("SELECT COUNT(*) AS total, SUM(EXISTS(SELECT 1 FROM segment_completions c WHERE c.student_id = ? AND c.plan_id = s.plan_id AND c.segment_index = s.segment_index AND c.task_type = 'hifz' AND (c.assignment_id = ? OR (c.assignment_id IS NULL AND c.created_at >= ?)))) AS done FROM plan_segments s WHERE s.plan_id = ? AND s.segment_index >= ?");
+            $complete->execute([$studentId, $current['id'], $current['assigned_at'], $current['plan_id'], $current['start_segment_index']]);
             $counts = $complete->fetch();
             if ((int) $counts['total'] === 0 || (int) $counts['total'] !== (int) $counts['done']) {
                 throw new RuntimeException('لم يكتمل حفظ الخطة الحالية');
@@ -711,6 +720,7 @@ function handle_assign_plan(): void
                     throw new RuntimeException('تغيّر طلب السرد — حدّث الصفحة');
                 }
                 $entry['status'] = 'passed';
+                $entry['assignmentId'] = $expected;
                 $entry['finalPercent'] = (float) ($sard['percent'] ?? 0);
                 $entry['phase'] = ($sard['phase'] ?? '') === 'review_only' ? 'review_only' : 'full';
                 $entry['passedAt'] = gmdate('c');
@@ -721,6 +731,7 @@ function handle_assign_plan(): void
             }
             unset($entry);
             if (!$found) throw new RuntimeException('طلب السرد غير محفوظ — حدّث الصفحة');
+            $sardQueue = sard_reconcile_queue($sardQueue, sard_current_assignments($pdo, $cid));
             app_state_upsert($pdo, 'sard_queue', $sardQueue, $stateTenants ? $cid : null);
         } elseif (($auth['role'] ?? '') === 'musammi') {
             throw new RuntimeException('طلب الاجتياز مطلوب لترحيل الخطة');
@@ -867,6 +878,7 @@ function handle_student_plan_sheet(): void
     try {
         plans_ensure_assignment_v2_columns($pdo);
         plans_ensure_daily_faces_columns($pdo);
+        plans_ensure_completion_assignment_column($pdo);
 
         $assignStmt = $pdo->prepare(
             'SELECT id, student_id, plan_id, start_segment_index, plan_start_date, start_muraja_segment,
@@ -895,9 +907,10 @@ function handle_student_plan_sheet(): void
 
         $compStmt = $pdo->prepare(
             'SELECT segment_index, task_type, completed_at, recorded_by
-             FROM segment_completions WHERE student_id = ? AND plan_id = ?'
+             FROM segment_completions WHERE student_id = ? AND plan_id = ?
+               AND (assignment_id = ? OR (assignment_id IS NULL AND created_at >= ?))'
         );
-        $compStmt->execute([$studentId, $planId]);
+        $compStmt->execute([$studentId, $planId, $assignment['id'], $assignment['assigned_at']]);
 
         json_response([
             'assignment' => assignment_row($assignment),
@@ -1021,12 +1034,13 @@ function handle_apply_plan_input(): void
 
     try {
         plans_ensure_assignment_v2_columns($pdo);
+        plans_ensure_completion_assignment_column($pdo);
     } catch (Throwable $e) {
         error_response('جداول الربط تحتاج تحديثاً: ' . $e->getMessage(), 500);
     }
 
     $assignStmt = $pdo->prepare(
-        'SELECT spa.plan_id, spa.start_segment_index, spa.start_muraja_segment, ep.track, ep.level_number
+        'SELECT spa.id, spa.assigned_at, spa.plan_id, spa.start_segment_index, spa.start_muraja_segment, ep.track, ep.level_number
          FROM student_plan_assignments spa
          JOIN education_plans ep ON ep.id = spa.plan_id
          WHERE spa.student_id = ? AND spa.status = \'active\'
@@ -1036,6 +1050,10 @@ function handle_apply_plan_input(): void
     $assignment = $assignStmt->fetch();
     if (!$assignment) {
         error_response('الطالب غير مربوط بخطة نشطة');
+    }
+
+    if (!empty($input['expected_assignment_id']) && $input['expected_assignment_id'] !== $assignment['id']) {
+        error_response('تغيّرت خطة الطالب — أعد تحميل الصفحة قبل التسجيل', 409);
     }
 
     $track = (string) $assignment['track'];
@@ -1052,9 +1070,10 @@ function handle_apply_plan_input(): void
     $allSegs = array_map('intval', array_column($segStmt->fetchAll(), 'segment_index'));
 
     $compStmt = $pdo->prepare(
-        'SELECT segment_index, task_type FROM segment_completions WHERE student_id = ? AND plan_id = ?'
+        'SELECT segment_index, task_type FROM segment_completions WHERE student_id = ? AND plan_id = ?
+               AND (assignment_id = ? OR (assignment_id IS NULL AND created_at >= ?))'
     );
-    $compStmt->execute([$studentId, $planId]);
+    $compStmt->execute([$studentId, $planId, $assignment['id'], $assignment['assigned_at']]);
     $allComps = $compStmt->fetchAll();
     $hifzDone = array_map('intval', array_column(
         array_filter($allComps, static fn ($c) => $c['task_type'] === 'hifz'),
@@ -1093,14 +1112,14 @@ function handle_apply_plan_input(): void
 
     $recorder = (string) ($auth['name'] ?? 'المعلم');
     $ins = $pdo->prepare(
-        'INSERT INTO segment_completions (id, student_id, plan_id, segment_index, task_type, completed_at, recorded_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE completed_at = VALUES(completed_at), recorded_by = VALUES(recorded_by)'
+        'INSERT INTO segment_completions (id, student_id, plan_id, segment_index, task_type, completed_at, recorded_by, assignment_id)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE completed_at = VALUES(completed_at), recorded_by = VALUES(recorded_by), assignment_id = VALUES(assignment_id)'
     );
     $applied = [];
     foreach ($nextSegs as $seg) {
         $compDate = $taskType === 'hifz' ? $completedDate : date('Y-m-d');
-        $ins->execute([new_uuid(), $studentId, $planId, $seg, $taskType, $compDate, $recorder]);
+        $ins->execute([new_uuid(), $studentId, $planId, $seg, $taskType, $compDate, $recorder, $assignment['id']]);
         $applied[] = $seg;
     }
 

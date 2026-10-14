@@ -22,7 +22,8 @@ const KEY_SEGMENTS = "qshatawi_plan_segments_v1";
 const KEY_ASSIGNMENTS = "qshatawi_plan_assignments_v1";
 const KEY_COMPLETIONS = "qshatawi_plan_completions_v1";
 
-type StoredCompletion = SegmentCompletion & { student_id: string; plan_id: string };
+type StoredCompletion = SegmentCompletion & {
+  assignment_id?: string; student_id: string; plan_id: string };
 
 function uid(): string {
   return `p-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
@@ -194,7 +195,8 @@ export function localGetStudentSheet(studentId: string): StudentPlanSheetData {
 
   const allComp = read<StoredCompletion[]>(KEY_COMPLETIONS, []);
   const completions = allComp
-    .filter((c) => c.student_id === studentId && c.plan_id === assignment.plan_id)
+    .filter((c) => c.student_id === studentId && c.plan_id === assignment.plan_id &&
+      (c.assignment_id === assignment.id || (!c.assignment_id && c.completed_at >= (assignment.plan_start_date ?? assignment.assigned_at?.slice(0, 10) ?? ""))))
     .map(({ segment_index, task_type, completed_at, recorded_by }) => ({
       segment_index,
       task_type,
@@ -282,6 +284,7 @@ export function localApplyInput(
     const row: StoredCompletion = {
       student_id: studentId,
       plan_id: sheet.plan!.id,
+      assignment_id: sheet.assignment!.id,
       segment_index: seg,
       task_type: taskType,
       completed_at: compDate,

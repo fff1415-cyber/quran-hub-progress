@@ -43,6 +43,7 @@ function passedSardPatch(
 ): Partial<SardQueueItem> {
   return {
     status: "passed",
+    assignmentId: advance.completedAssignmentId,
     finalPercent,
     phase,
     passedAt: new Date().toISOString(),
