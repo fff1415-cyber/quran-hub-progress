@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useState } from "react";
-import { loadSardQueue, loadStudents, loadHalaqat, saveSardQueue } from "@/lib/mock-data";
+import { loadSardQueue, loadStudents, loadHalaqat, saveSardQueue, flushSardQueue } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { AlertTriangle, Trash2 } from "lucide-react";
 import {
@@ -26,10 +26,16 @@ export function ManagerFailedFinalPanel() {
     [tick],
   );
 
-  const removeEntry = (id: string) => {
+  const removeEntry = async (id: string) => {
     saveSardQueue(loadSardQueue().filter((q) => q.id !== id));
-    reload();
-    toast.success("تم الحذف");
+    try {
+      await flushSardQueue();
+      reload();
+      toast.success("تمت إزالة الطلب من قائمة العمل");
+    } catch {
+      reload();
+      toast.error("لم تُحفظ إزالة الطلب — حدّث الصفحة");
+    }
   };
 
   return (

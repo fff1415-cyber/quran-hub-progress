@@ -260,10 +260,12 @@ export async function applyPlanInput(
   completedAt?: string,
 ): Promise<number[]> {
   try {
+    const currentSheet = await fetchStudentPlanSheet(studentId);
     const res = await planFetch<{ applied_segments: number[] }>("/plans/apply-input", {
       method: "POST",
       body: JSON.stringify({
         student_id: studentId,
+        expected_assignment_id: currentSheet.assignment?.id,
         task_type: taskType,
         tap,
         completed_at: completedAt,

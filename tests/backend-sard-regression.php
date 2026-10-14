@@ -19,7 +19,13 @@ class TestDatabase extends PDO {
         return parent::prepare($query, $options);
     }
 }
-function table_column_exists(PDO $pdo, string $table, string $column): bool {return true;}
+function table_column_exists(PDO $pdo, string $table, string $column): bool {
+    if ($table === 'segment_completions' && $column === 'assignment_id') {
+        foreach ($pdo->query('PRAGMA table_info(segment_completions)')->fetchAll() as $field) if ($field['name'] === $column) return true;
+        return false;
+    }
+    return true;
+}
 function require_auth(): array {return $GLOBALS['auth'];}
 function require_complex_id(array $auth): int {return (int)$auth['complexId'];}
 function json_input(): array {return $GLOBALS['input'];}
@@ -43,8 +49,8 @@ function seed(): TestDatabase {
     $pdo->exec('CREATE TABLE students(id TEXT PRIMARY KEY, complex_id INTEGER); INSERT INTO students VALUES ("student-1",1)');
     $faces='daily_hifz_faces INTEGER DEFAULT 1, daily_rabt_faces INTEGER DEFAULT 1, daily_muraja_faces INTEGER DEFAULT 1, faces_per_half INTEGER DEFAULT 1, faces_per_one INTEGER DEFAULT 1, faces_per_two INTEGER DEFAULT 2';
     $pdo->exec('CREATE TABLE education_plans(id TEXT PRIMARY KEY, complex_id INTEGER, title TEXT, track TEXT, level_number INTEGER, '.$faces.'); INSERT INTO education_plans(id,complex_id,title,track,level_number) VALUES ("current",1,"current plan","gold",1001),("next",1,"next plan","gold",1002)');
-    $pdo->exec('CREATE TABLE student_plan_assignments(id TEXT PRIMARY KEY, student_id TEXT, plan_id TEXT, start_segment_index INTEGER, plan_start_date TEXT, start_muraja_segment INTEGER, status TEXT, assigned_by TEXT, transferred_at TEXT, '.$faces.'); INSERT INTO student_plan_assignments(id,student_id,plan_id,start_segment_index,status) VALUES ("old","student-1","current",1,"active")');
-    $pdo->exec('CREATE TABLE plan_segments(plan_id TEXT, segment_index INTEGER); INSERT INTO plan_segments VALUES("current",1),("current",2); CREATE TABLE segment_completions(student_id TEXT,plan_id TEXT,segment_index INTEGER,task_type TEXT); INSERT INTO segment_completions VALUES("student-1","current",1,"hifz"),("student-1","current",2,"hifz")');
+    $pdo->exec('CREATE TABLE student_plan_assignments(id TEXT PRIMARY KEY, student_id TEXT, plan_id TEXT, start_segment_index INTEGER, plan_start_date TEXT, start_muraja_segment INTEGER, status TEXT, assigned_by TEXT, assigned_at TEXT DEFAULT "2026-10-01 00:00:00", transferred_at TEXT, '.$faces.'); INSERT INTO student_plan_assignments(id,student_id,plan_id,start_segment_index,status) VALUES ("old","student-1","current",1,"active")');
+    $pdo->exec('CREATE TABLE plan_segments(plan_id TEXT, segment_index INTEGER); INSERT INTO plan_segments VALUES("current",1),("current",2); CREATE TABLE segment_completions(student_id TEXT,plan_id TEXT,segment_index INTEGER,task_type TEXT, assignment_id TEXT, created_at TEXT DEFAULT "2026-10-02 00:00:00"); INSERT INTO segment_completions(student_id,plan_id,segment_index,task_type,assignment_id) VALUES("student-1","current",1,"hifz","old"),("student-1","current",2,"hifz","old")');
     $pdo->exec('CREATE TABLE app_state(complex_id INTEGER, `key` TEXT, value TEXT, UNIQUE(complex_id, `key`))');
     app_state_upsert($pdo,'sard_queue',[['id'=>'sq-1','studentId'=>'student-1','assignmentId'=>'old','status'=>'scheduled','attempt'=>2]],1);
     return $pdo;
@@ -61,10 +67,24 @@ $pdo=seed();$pdo->exec('UPDATE education_plans SET complex_id=2 WHERE id="next"'
 $pdo=seed();$GLOBALS['auth']['role']='teacher';expectFailure(fn()=>handle_assign_plan(),'Forbidden');
 $pdo=seed();$pdo->exec('UPDATE education_plans SET level_number=1 WHERE id="current"');handle_assign_plan();check(activePlan($pdo)==='next','legacy gold numbering can advance to encoded numbering');
 $pdo=seed();$GLOBALS['input']['sard_result']['id']='missing';expectFailure(fn()=>handle_assign_plan(),'طلب السرد غير محفوظ');check(activePlan($pdo)==='current','missing queue item rolls back advancement');
-$pdo=seed();$initial=queue($pdo)[0];$deviceA=array_merge($initial,['status'=>'pending']);$deviceB=['id'=>'sq-2','studentId'=>'student-2','assignmentId'=>'other','status'=>'plan_completed'];
+$pdo=seed();$initial=queue($pdo)[0];$deviceA=array_merge($initial,['status'=>'pending']);$pdo->exec('INSERT INTO students VALUES ("student-2",1); INSERT INTO student_plan_assignments(id,student_id,plan_id,start_segment_index,status) VALUES ("other","student-2","current",1,"active"); INSERT INTO segment_completions(student_id,plan_id,segment_index,task_type,assignment_id) VALUES("student-2","current",1,"hifz","other"),("student-2","current",2,"hifz","other")');$deviceB=['id'=>'sq-2','studentId'=>'student-2','assignmentId'=>'other','status'=>'plan_completed'];
 app_state_patch_sard($pdo,1,['changes'=>[['item'=>$deviceA,'base'=>$initial]]]);app_state_patch_sard($pdo,1,['changes'=>[['item'=>$deviceB,'base'=>null]]]);check(count(queue($pdo))===2 && queue($pdo)[0]['status']==='pending','different device updates preserve unrelated queue items');
 expectFailure(fn()=>app_state_patch_sard($pdo,1,['changes'=>[['item'=>array_merge($initial,['status'=>'passed']),'base'=>$initial]]]),'تغيّر السرد');check(queue($pdo)[0]['status']==='pending','stale same-item write cannot undo newer status');
 app_state_patch_sard($pdo,1,['changes'=>[['item'=>$deviceA,'base'=>$initial]]]);check(count(queue($pdo))===2,'identical write retry is idempotent');
 expectFailure(fn()=>app_state_patch_sard($pdo,1,[]),'نسخة الصفحة قديمة');
 $pdo=seed();check(tasks_actor($GLOBALS['auth'],$pdo,1)==='musammi:staff-1','valid staff token resolves task actor');unset($GLOBALS['auth']['accountId']);expectFailure(fn()=>tasks_actor($GLOBALS['auth'],$pdo,1),'جلسة الدخول ناقصة');
 echo "Backend handler tests complete (SQLite adapter; no live MySQL writes).\n";
+
+$assignments=['student-1'=>['id'=>'new','assigned_at'=>'2026-10-13 12:00:00','title'=>'new plan']];
+$records=[['id'=>'old-1','studentId'=>'student-1','assignmentId'=>'old','status'=>'plan_completed'],['id'=>'pass','studentId'=>'student-1','assignmentId'=>'old','status'=>'passed'],['id'=>'legacy','studentId'=>'student-1','planTitle'=>'old plan','createdAt'=>'2026-10-10T10:00:00Z','status'=>'pending']];
+$clean=sard_reconcile_queue($records,$assignments);check($clean[0]['status']==='archived' && $clean[1]['status']==='passed' && $clean[2]['status']==='archived','old and legacy requests disappear while pass history survives');
+check(sard_reconcile_queue($clean,$assignments)===$clean,'repeated reconciliation cannot revive archived requests');
+$records=[['id'=>'pending','studentId'=>'student-1','assignmentId'=>'new','status'=>'pending'],['id'=>'passed','studentId'=>'student-1','assignmentId'=>'new','status'=>'passed']];$clean=sard_reconcile_queue($records,$assignments);check($clean[0]['archiveReason']==='already_passed','another request cannot requeue a passed assignment');
+$records=[['id'=>'a','studentId'=>'student-1','assignmentId'=>'new','status'=>'plan_completed'],['id'=>'b','studentId'=>'student-1','assignmentId'=>'new','status'=>'pending','supervisorForwardedAt'=>'2026-10-13T13:00:00Z']];$clean=sard_reconcile_queue($records,$assignments);check($clean[0]['status']==='archived' && $clean[1]['status']==='pending','forwarded request wins over duplicate completion request');
+$records=[['id'=>'fresh','studentId'=>'student-1','planTitle'=>'new plan','planCompletedAt'=>'2026-10-13T13:00:00Z','status'=>'plan_completed']];$clean=sard_reconcile_queue($records,$assignments);check($clean[0]['status']==='plan_completed' && $clean[0]['assignmentId']==='new','verified current legacy request remains actionable');
+$pdo=seed();$old=queue($pdo)[0];app_state_patch_sard($pdo,1,['changes'=>[], 'removals'=>[['id'=>'sq-1','base'=>$old]]]);check(queue($pdo)[0]['status']==='archived','manager removal archives request on server');expectFailure(fn()=>app_state_patch_sard($pdo,1,['changes'=>[['item'=>$old,'base'=>queue($pdo)[0]]]]),'الطلب منتهٍ');
+$pdo=seed();$pdo->exec('UPDATE student_plan_assignments SET id="reassigned" WHERE id="old"');$GLOBALS['input']['expected_assignment_id']='reassigned';expectFailure(fn()=>handle_assign_plan(),'لم يكتمل حفظ');check(activePlan($pdo)==='current','previous assignment completions do not finish a reassigned plan');
+
+$pdo=seed();$pdo->exec('ALTER TABLE segment_completions DROP COLUMN assignment_id');plans_ensure_completion_assignment_column($pdo);plans_ensure_completion_assignment_column($pdo);check(table_column_exists($pdo,'segment_completions','assignment_id'),'legacy completion schema upgrades idempotently before transaction');
+
+$records=[['id'=>'legacy-pass','studentId'=>'student-1','closedPlanTitle'=>'new plan','passedAt'=>'2026-10-13T13:00:00Z','status'=>'passed'],['id'=>'duplicate','studentId'=>'student-1','assignmentId'=>'new','status'=>'plan_completed']];$clean=sard_reconcile_queue($records,$assignments);check($clean[0]['assignmentId']==='new' && $clean[1]['status']==='archived','legacy pass on final current plan suppresses duplicate completion request');

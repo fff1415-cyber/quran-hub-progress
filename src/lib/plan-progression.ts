@@ -9,6 +9,7 @@ import { normalizeTaskQuotas } from "@/lib/plan-daily-faces";
 import { fetchPlans, assignStudentPlan, fetchStudentPlanSheet } from "@/lib/plans-service";
 
 export interface PlanAdvanceResult {
+  completedAssignmentId?: string;
   closedPlanTitle?: string;
   newPlanTitle?: string;
   newPlanId?: string;
@@ -27,7 +28,7 @@ export async function completePlanAndAdvance(
   if (options?.expectedAssignmentId && sheet.assignment?.id !== options.expectedAssignmentId) {
     throw new Error("تغيّرت خطة الطالب — حدّث الصفحة قبل إعادة الاعتماد");
   }
-  const result: PlanAdvanceResult = {};
+  const result: PlanAdvanceResult = { completedAssignmentId: sheet.assignment?.id };
 
   if (sheet.plan) {
     result.closedPlanTitle = sheet.plan.title;

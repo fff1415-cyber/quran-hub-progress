@@ -37,3 +37,8 @@ console.log('PASS: passed assignment cannot enqueue again; independent devices p
 auth.setToken(Buffer.from(JSON.stringify({role:'supervisor'})).toString('base64url')+'.signature');
 auth.ensureSessionFromToken();assert.equal(auth.getToken(),null);
 console.log('PASS: incomplete legacy staff token requires fresh login');
+
+const arabicName = "فيصل بن فوزان الفوزان";
+auth.setToken(Buffer.from(JSON.stringify({role:'supervisor',name:arabicName,accountId:'arabic',complexId:1}),'utf8').toString('base64url')+'.signature');
+auth.ensureSessionFromToken();assert.equal(auth.getAuthItem('qs_name'),arabicName);
+console.log('PASS: Arabic session names remain Unicode after restore');

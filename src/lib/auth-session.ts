@@ -83,7 +83,8 @@ export function decodeAuthTokenPayload(token: string | null = getToken()): {
     const body = token.split(".")[0]!;
     const pad = body.length % 4;
     const padded = pad > 0 ? body + "=".repeat(4 - pad) : body;
-    const json = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+    const bytes = Uint8Array.from(atob(padded.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+    const json = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     const payload = JSON.parse(json) as Record<string, unknown>;
     const num = (v: unknown): number | undefined => {
       const n = Number(v);
@@ -132,7 +133,8 @@ export function isTokenExpired(token: string | null = getToken()): boolean {
     const body = token.split(".")[0]!;
     const pad = body.length % 4;
     const padded = pad > 0 ? body + "=".repeat(4 - pad) : body;
-    const json = atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+    const bytes = Uint8Array.from(atob(padded.replace(/-/g, "+").replace(/_/g, "/")), c => c.charCodeAt(0));
+    const json = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
     const payload = JSON.parse(json) as { exp?: number };
     if (!payload.exp) return false;
     return Date.now() > payload.exp;
