@@ -44,11 +44,24 @@ export function forceRetryKind(item: SardQueueItem): "full" | "review" {
 export function buildForceImmediatePatch(item: SardQueueItem): Partial<SardQueueItem> {
   const now = new Date().toISOString();
   if (forceRetryKind(item) === "review") {
-    const segCount = item.reviewSegmentCount ?? item.reviewErrors.length;
+    const segCount = Number.isInteger(item.reviewSegmentCount) && (item.reviewSegmentCount ?? 0) > 0
+      ? item.reviewSegmentCount
+      : (item.reviewErrors?.length || item.reviewWarnings?.length || null);
+    if (!segCount) {
+      // The evaluator derives the correct segment count from the student's level and settings.
+      return {
+        status: "awaiting_review",
+        scheduledAt: now,
+        reviewSegmentCount: undefined,
+        reviewErrors: undefined,
+        reviewWarnings: undefined,
+      };
+    }
     const segs = emptyReviewSegments(segCount);
     return {
       status: "awaiting_review",
       scheduledAt: now,
+      reviewSegmentCount: segCount,
       reviewErrors: segs.map((s) => s.errors),
       reviewWarnings: segs.map((s) => s.warnings),
     };

@@ -65,6 +65,7 @@ import { TeacherStudentFollowupAlerts } from "@/components/teacher/TeacherStuden
 import { StaffTasksPanel } from "@/components/StaffTasksPanel";
 import { listStaffTasks, STAFF_TASKS_CHANGED, taskReminders } from "@/lib/staff-tasks";
 import { TeacherReportRecommendations } from "@/components/teacher/TeacherReportRecommendations";
+import { sendParentRecommendation } from "@/lib/parent-recommendations";
 import { hifzCheckedValue } from "@/lib/mock-data";
 import { segmentsForTap } from "@/lib/plan-translator";
 import {
@@ -765,6 +766,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferStudentId, setTransferStudentId] = useState("");
   const [transferReason, setTransferReason] = useState("");
+  const [sendRecipient, setSendRecipient] = useState<"administration" | "parent">("administration");
+  const [sendBusy, setSendBusy] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [planStudentIds, setPlanStudentIds] = useState<Set<string>>(new Set());
   const [frozenPlanStudentIds, setFrozenPlanStudentIds] = useState<Set<string>>(new Set());
@@ -776,6 +779,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const senderName = getSessionName("المعلم");
   const assistantCode = halaqa && viewerRole === "assistant" ? resolveAssistantCode(halaqa, senderName) : undefined;
   const showTransferButton = loadComplexFeatures().showTeacherTransferButton;
+  const canSendToAdministration = showTransferButton && !isTalqeen;
+  const canSendParentRecommendation = getSessionRole() === "teacher";
+  const showSendButton = canSendToAdministration || canSendParentRecommendation;
 
   const halaqaSemesterPct = useMemo(
     () => halaqaSemesterAverage(students, isTalqeen, grades, calendar),
@@ -980,11 +986,39 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     setTransferReason("");
   };
 
+  const submitSend = async () => {
+    if (sendRecipient === "administration") {
+      if (canSendToAdministration) submitTransfer();
+      return;
+    }
+    if (!canSendParentRecommendation || sendBusy) return;
+    const student = students.find((s) => s.id === transferStudentId);
+    if (!student) { toast.error("اختر الطالب"); return; }
+    const recommendation = transferReason.trim();
+    if (!recommendation || recommendation.length > 1000) {
+      toast.error("اكتب توصية لا تتجاوز 1000 حرف");
+      return;
+    }
+    setSendBusy(true);
+    try {
+      await sendParentRecommendation(student.id, recommendation);
+      toast.success("تم إرسال التوصية لولي الأمر في صفحة الطالب");
+      setTransferOpen(false);
+      setTransferStudentId("");
+      setTransferReason("");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "تعذّر إرسال التوصية");
+    } finally {
+      setSendBusy(false);
+    }
+  };
+
   const handleTransferOpenChange = (open: boolean) => {
     setTransferOpen(open);
     if (open) {
       setTransferStudentId(students[0]?.id ?? "");
       setTransferReason("");
+      setSendRecipient(canSendToAdministration ? "administration" : "parent");
     }
   };
 
@@ -1390,14 +1424,19 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           halaqaId={halaqaId}
           halaqa={halaqa}
           halaqaSemesterPct={halaqaSemesterPct}
-          showTransferButton={showTransferButton}
+          showTransferButton={showSendButton}
+          canSendToAdministration={canSendToAdministration}
+          canSendParentRecommendation={canSendParentRecommendation}
+          sendRecipient={sendRecipient}
+          onSendRecipientChange={(next) => { setSendRecipient(next); setTransferReason(""); }}
+          sendBusy={sendBusy}
           transferOpen={transferOpen}
           onTransferOpenChange={handleTransferOpenChange}
           transferStudentId={transferStudentId}
           onTransferStudentIdChange={setTransferStudentId}
           transferReason={transferReason}
           onTransferReasonChange={setTransferReason}
-          onSubmitTransfer={submitTransfer}
+          onSubmitTransfer={() => void submitSend()}
           planStudentIds={planStudentIds}
           frozenPlanStudentIds={frozenPlanStudentIds}
           planLinkedIds={planLinkedIds}
@@ -1434,7 +1473,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           )}
         </div>
 
-        {!isTalqeen && students.length > 0 && showTransferButton ? (
+        {students.length > 0 && showSendButton ? (
           <Popover open={transferOpen} onOpenChange={handleTransferOpenChange}>
             <PopoverTrigger asChild>
               <button
@@ -1442,7 +1481,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-warning/15 text-warning border border-warning/40 text-sm font-bold hover:bg-warning/25 shadow-sm sm:justify-self-center w-full sm:w-auto"
               >
                 <Send className="w-4 h-4 shrink-0" />
-                إرسال المتعثرين للإدارة
+                إرسال بخصوص طالب
               </button>
             </PopoverTrigger>
             <PopoverContent
@@ -1455,7 +1494,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
               <div className="flex items-center justify-between gap-2 px-3 py-2.5 border-b border-border bg-warning/10">
                 <h3 className="text-sm font-bold text-warning flex items-center gap-1.5">
                   <Send className="w-4 h-4 shrink-0" />
-                  إرسال متعثر للإدارة
+                  إرسال بخصوص طالب
                 </h3>
                 <button
                   type="button"
@@ -1467,8 +1506,21 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                 </button>
               </div>
               <div className="p-3 space-y-3">
+                <div>
+                  <label className="text-xs text-muted-foreground mb-1 block">الوجهة</label>
+                  <select
+                    value={sendRecipient}
+                    onChange={(e) => { setSendRecipient(e.target.value as "administration" | "parent"); setTransferReason(""); }}
+                    className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm"
+                  >
+                    {canSendToAdministration && <option value="administration">إرسال للإدارة</option>}
+                    {canSendParentRecommendation && <option value="parent">إرسال لولي الأمر</option>}
+                  </select>
+                </div>
                 <p className="text-[11px] text-muted-foreground leading-relaxed">
-                  اختر الطالب واكتب سبب التحويل. يُرفق تقرير أدائه تلقائياً.
+                  {sendRecipient === "parent"
+                    ? "اختر الطالب واكتب التوصية. ستظهر في صفحة الطالب لولي الأمر للقراءة فقط."
+                    : "اختر الطالب واكتب سبب التحويل. يُرفق تقرير أدائه تلقائياً."}
                 </p>
                 <div>
                   <label className="text-xs text-muted-foreground mb-1 block">الطالب</label>
@@ -1484,22 +1536,24 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                   </select>
                 </div>
                 <div>
-                  <label className="text-xs text-muted-foreground mb-1 block">السبب</label>
+                  <label className="text-xs text-muted-foreground mb-1 block">{sendRecipient === "parent" ? "التوصية" : "السبب"}</label>
                   <textarea
                     value={transferReason}
                     onChange={(e) => setTransferReason(e.target.value)}
                     rows={3}
-                    placeholder="اكتب سبب التحويل..."
+                    maxLength={sendRecipient === "parent" ? 1000 : undefined}
+                    placeholder={sendRecipient === "parent" ? "اكتب التوصية لولي الأمر..." : "اكتب سبب التحويل..."}
                     className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm resize-none"
                   />
                 </div>
                 <div className="flex gap-2 pt-1">
                   <button
                     type="button"
-                    onClick={submitTransfer}
-                    className="flex-1 px-3 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm"
+                    onClick={() => void submitSend()}
+                    disabled={sendBusy}
+                    className="flex-1 px-3 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm disabled:opacity-60"
                   >
-                    إرسال
+                    {sendBusy ? "جاري الإرسال..." : "إرسال"}
                   </button>
                   <button
                     type="button"

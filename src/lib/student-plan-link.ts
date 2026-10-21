@@ -33,7 +33,7 @@ export async function linkStudentToPlan(opts: LinkStudentPlanOptions): Promise<{
   }
 
   const plans = opts.plansCache ?? (await fetchPlans(opts.track));
-  const plan = findPlanByGlobalPhase(plans, opts.track, opts.globalPhase);
+  const plan = findPlanByGlobalPhase(plans, opts.track, opts.globalPhase, opts.instituteLevel);
   if (!plan) {
     const msg = `لا توجد خطة للمسار ${opts.track === "gold" ? "ذهبي" : "فضي"} — مرحلة ${opts.globalPhase}`;
     if (opts.optional) return { ok: false, message: msg };

@@ -185,9 +185,14 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
             foreach ($queue as $i => $existing) if ($existing['id'] === $item['id']) { $index = $i; break; }
             $current = $index === null ? null : $queue[$index];
             if ($current == $item) continue; // Idempotent retry.
-            if ($current && in_array($current['status'] ?? '', ['archived', 'passed'], true) && ($item['status'] ?? '') !== $current['status']) throw new RuntimeException('هذا الطلب منتهٍ — لا يمكن إعادته لقائمة العمل');
+            $restoreSupervisorHifz = $current
+                && ($current['status'] ?? '') === 'archived'
+                && ($current['archiveReason'] ?? '') === 'supervisor_hifz_removed'
+                && ($item['status'] ?? '') === 'plan_completed'
+                && ($item['assignmentId'] ?? '') === ($current['assignmentId'] ?? null);
+            if ($current && in_array($current['status'] ?? '', ['archived', 'passed'], true) && ($item['status'] ?? '') !== $current['status'] && !$restoreSupervisorHifz) throw new RuntimeException('هذا الطلب منتهٍ — لا يمكن إعادته لقائمة العمل');
             if ($current != ($change['base'] ?? null)) throw new RuntimeException('تغيّر السرد من جهاز آخر — حدّث الصفحة');
-            if ($index === null && ($item['status'] ?? '') === 'plan_completed') {
+            if (($index === null || $restoreSupervisorHifz) && ($item['status'] ?? '') === 'plan_completed') {
                 $a = $assignments[$item['studentId']] ?? null;
                 if (!$a || empty($item['assignmentId']) || $item['assignmentId'] !== $a['id']) throw new RuntimeException('لا توجد خطة حالية مؤكدة للطلب');
                 $done = $pdo->prepare("SELECT COUNT(*) AS total, SUM(EXISTS(SELECT 1 FROM segment_completions c WHERE c.student_id = ? AND c.plan_id = s.plan_id AND c.segment_index = s.segment_index AND c.task_type = 'hifz' AND (c.assignment_id = ? OR (c.assignment_id IS NULL AND c.created_at >= ?)))) AS done FROM plan_segments s WHERE s.plan_id = ? AND s.segment_index >= ?");

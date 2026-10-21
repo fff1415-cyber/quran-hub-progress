@@ -63,6 +63,11 @@ type Props = {
   halaqa?: Halaqa;
   halaqaSemesterPct: number;
   showTransferButton: boolean;
+  canSendToAdministration: boolean;
+  canSendParentRecommendation: boolean;
+  sendRecipient: "administration" | "parent";
+  onSendRecipientChange: (recipient: "administration" | "parent") => void;
+  sendBusy: boolean;
   transferOpen: boolean;
   onTransferOpenChange: (open: boolean) => void;
   transferStudentId: string;
@@ -165,6 +170,11 @@ export function TeacherMobileDayBoard({
   halaqaId,
   halaqa,
   showTransferButton,
+  canSendToAdministration,
+  canSendParentRecommendation,
+  sendRecipient,
+  onSendRecipientChange,
+  sendBusy,
   transferOpen,
   onTransferOpenChange,
   transferStudentId,
@@ -272,7 +282,7 @@ export function TeacherMobileDayBoard({
                 تقسيم
               </button>
             )}
-            {!isTalqeen && students.length > 0 && showTransferButton && (
+            {students.length > 0 && showTransferButton && (
               <Popover open={transferOpen} onOpenChange={onTransferOpenChange}>
                 <PopoverTrigger asChild>
                   <button
@@ -280,7 +290,7 @@ export function TeacherMobileDayBoard({
                     className="h-8 px-2 rounded-lg bg-warning/15 text-warning border border-warning/40 text-[10px] font-bold"
                   >
                     <Send className="w-3 h-3 inline ml-0.5" />
-                    تحويل
+                    إرسال
                   </button>
                 </PopoverTrigger>
                 <PopoverContent
@@ -291,12 +301,22 @@ export function TeacherMobileDayBoard({
                   onOpenAutoFocus={(e) => e.preventDefault()}
                 >
                   <div className="flex items-center justify-between gap-2 px-3 py-2 border-b border-border bg-warning/10">
-                    <h3 className="text-sm font-bold text-warning">إرسال متعثر للإدارة</h3>
+                    <h3 className="text-sm font-bold text-warning">إرسال بخصوص طالب</h3>
                     <button type="button" onClick={() => onTransferOpenChange(false)} aria-label="إغلاق">
                       <X className="w-4 h-4" />
                     </button>
                   </div>
                   <div className="p-3 space-y-3">
+                    <label className="text-xs text-muted-foreground block" htmlFor="send-recipient-mobile">الوجهة</label>
+                    <select
+                      id="send-recipient-mobile"
+                      value={sendRecipient}
+                      onChange={(e) => onSendRecipientChange(e.target.value as "administration" | "parent")}
+                      className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm"
+                    >
+                      {canSendToAdministration && <option value="administration">إرسال للإدارة</option>}
+                      {canSendParentRecommendation && <option value="parent">إرسال لولي الأمر</option>}
+                    </select>
                     <select
                       value={transferStudentId}
                       onChange={(e) => onTransferStudentIdChange(e.target.value)}
@@ -311,15 +331,18 @@ export function TeacherMobileDayBoard({
                       value={transferReason}
                       onChange={(e) => onTransferReasonChange(e.target.value)}
                       rows={3}
-                      placeholder="سبب التحويل..."
+                      maxLength={sendRecipient === "parent" ? 1000 : undefined}
+                      placeholder={sendRecipient === "parent" ? "اكتب التوصية لولي الأمر..." : "سبب التحويل..."}
+                      aria-label={sendRecipient === "parent" ? "التوصية" : "سبب التحويل"}
                       className="w-full px-3 py-2 rounded-lg bg-input border border-border text-sm resize-none"
                     />
                     <button
                       type="button"
                       onClick={onSubmitTransfer}
-                      className="w-full py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm"
+                      disabled={sendBusy}
+                      className="w-full py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm disabled:opacity-60"
                     >
-                      إرسال
+                      {sendBusy ? "جاري الإرسال..." : "إرسال"}
                     </button>
                   </div>
                 </PopoverContent>

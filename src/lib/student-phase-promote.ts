@@ -1,7 +1,8 @@
-import type { PlanTrack } from "@/lib/plan-types";
+import type { EducationPlan, PlanTrack } from "@/lib/plan-types";
 import type { Student } from "@/lib/mock-data";
 import {
   globalPhaseFromPlanLevel,
+  instituteLevelFromPlanLevel,
   instituteLevelFromGlobalPhase,
   nextGlobalPhase,
 } from "@/lib/plan-level-ranges";
@@ -59,19 +60,20 @@ export async function syncStudentPhaseFromPlan(
   studentId: string,
   track: PlanTrack,
   planLevelNumber: number,
+  catalog?: EducationPlan[],
 ): Promise<void> {
-  const globalPhase = globalPhaseFromPlanLevel(track, planLevelNumber);
+  const globalPhase = globalPhaseFromPlanLevel(track, planLevelNumber, catalog);
   if (globalPhase === null) return;
-  await syncStudentToGlobalPhase(studentId, globalPhase);
+  await syncStudentToGlobalPhase(studentId, globalPhase, instituteLevelFromPlanLevel(planLevelNumber) ?? undefined);
 }
 
-export async function syncStudentToGlobalPhase(studentId: string, globalPhase: number): Promise<void> {
+export async function syncStudentToGlobalPhase(studentId: string, globalPhase: number, planLevel?: string): Promise<void> {
   const { loadStudents, saveStudents } = await import("@/lib/mock-data");
   const all = loadStudents();
   const idx = all.findIndex((s) => s.id === studentId);
   if (idx < 0) return;
   const track = all[idx].levelType as PlanTrack;
-  const instituteLevel = instituteLevelFromGlobalPhase(track, globalPhase);
+  const instituteLevel = planLevel ?? instituteLevelFromGlobalPhase(track, globalPhase);
   if (!instituteLevel) return;
   all[idx] = {
     ...all[idx],

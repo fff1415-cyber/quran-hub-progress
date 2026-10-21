@@ -881,7 +881,19 @@ export function enqueuePlanCompleted(
 ): SardQueueItem {
   const queue = loadSardQueue();
   const existing = queue.find(q => assignmentId && q.assignmentId === assignmentId) ?? activeSardForStudent(queue, studentId);
-  if (existing) return existing;
+  if (existing) {
+    if (existing.status === "archived" && existing.archiveReason === "supervisor_hifz_removed") {
+      const now = new Date().toISOString();
+      const revived: SardQueueItem = {
+        ...existing, status: "plan_completed", archiveReason: undefined,
+        planCompletedAt: now, createdAt: now, week, planTitle,
+      };
+      queue[queue.indexOf(existing)] = revived;
+      saveSardQueue(queue);
+      return revived;
+    }
+    return existing;
+  }
 
   const now = new Date().toISOString();
   const item: SardQueueItem = {

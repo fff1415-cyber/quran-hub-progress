@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadStudents, type Student } from "@/lib/mock-data";
 import { syncFromCloud } from "@/lib/cloud-sync";
-import { fetchPlans, fetchStudentPlanSheet, importPlans, assignStudentPlan, patchStudentAssignment, deletePlan } from "@/lib/plans-service";
+import { fetchPlans, fetchStudentPlanSheet, importPlans, assignStudentPlan, patchStudentAssignment, deletePlan, unconfirmedLocalPlanLink, updateSupervisorPlanHifz } from "@/lib/plans-service";
 import type { EducationPlan, PlanTrack, StudentPlanSheetData } from "@/lib/plan-types";
 import { faceQuotasFromPlan } from "@/lib/plan-daily-faces";
 import { FaceQuotasFields } from "@/components/plans/FaceQuotasFields";
@@ -10,7 +10,8 @@ import { parsePlansExcel } from "@/lib/plan-excel-import";
 import { trackLabel } from "@/lib/plan-translator";
 import { globalPhaseFromPlanLevel, murajaStartSegment } from "@/lib/plan-level-ranges";
 import { getCalendarIsoDate } from "@/lib/operational-date";
-import { getSessionName } from "@/lib/session-role";
+import { getSessionName, getSessionRole } from "@/lib/session-role";
+import { fetchActiveCalendar } from "@/lib/academic-context";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -23,6 +24,12 @@ export function PlanStudentLookup({ readOnly = false, refreshKey = 0 }: { readOn
   const [sheet, setSheet] = useState<StudentPlanSheetData | null>(null);
   const [selected, setSelected] = useState<Student | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [localLink, setLocalLink] = useState<ReturnType<typeof unconfirmedLocalPlanLink>>(null);
+  const [hifzDate, setHifzDate] = useState(getCalendarIsoDate());
+  const [editingSegment, setEditingSegment] = useState<number | null>(null);
+  const lookupVersion = useRef(0);
+  const canEditHifz = !readOnly && getSessionRole() === "supervisor";
 
   const students = loadStudents();
   const results = q.trim().length >= 2
@@ -30,17 +37,54 @@ export function PlanStudentLookup({ readOnly = false, refreshKey = 0 }: { readOn
     : [];
 
   const openStudent = useCallback(async (s: Student) => {
+    const version = ++lookupVersion.current;
     setSelected(s);
     setLoading(true);
+    setSheet(null);
+    setLoadError(null);
+    setLocalLink(null);
     try {
       const data = await fetchStudentPlanSheet(s.id);
+      if (version !== lookupVersion.current) return;
       setSheet(data);
+      setLocalLink(unconfirmedLocalPlanLink(s.id, data));
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "فشل التحميل");
+      if (version !== lookupVersion.current) return;
+      const message = e instanceof Error ? e.message : "فشل التحميل";
+      setLoadError(message);
+      toast.error(message);
     } finally {
-      setLoading(false);
+      if (version === lookupVersion.current) setLoading(false);
     }
   }, []);
+
+  const changeHifz = async (segmentIndex: number, isComplete: boolean) => {
+    if (!canEditHifz || !selected || !sheet?.assignment || editingSegment !== null) return;
+    if (!isComplete && !/^\d{4}-\d{2}-\d{2}$/.test(hifzDate)) {
+      toast.error("اختر تاريخ الحفظ");
+      return;
+    }
+    setEditingSegment(segmentIndex);
+    const version = lookupVersion.current;
+    try {
+      const calendar = await fetchActiveCalendar();
+      const next = await updateSupervisorPlanHifz(
+        selected.id, sheet.assignment.id, segmentIndex,
+        isComplete ? "remove" : "complete", hifzDate, calendar.currentWeekNumber,
+      );
+      if (version === lookupVersion.current) {
+        setSheet(next);
+        toast.success(isComplete ? "أزيل حفظ اليوم من الاستمارة" : "أضيف حفظ اليوم إلى الاستمارة");
+      }
+    } catch (e) {
+      if (version === lookupVersion.current) {
+        toast.error(e instanceof Error ? e.message : "تعذّر تعديل الحفظ");
+        void openStudent(selected);
+      }
+    } finally {
+      setEditingSegment(null);
+    }
+  };
 
   useEffect(() => {
     if (refreshKey > 0 && selected) {
@@ -78,12 +122,29 @@ export function PlanStudentLookup({ readOnly = false, refreshKey = 0 }: { readOn
           </div>
         )}
         {selected && (
-          <StudentPlanSheet
-            data={sheet ?? { assignment: null, plan: null, segments: [], completions: [] }}
-            studentName={selected.name}
-            readOnly={readOnly}
-            loading={loading}
-          />
+          <>
+            {localLink && (
+              <p className="rounded-lg border border-warning/40 bg-warning/10 p-3 text-sm text-warning">
+                يوجد ربط قديم محفوظ على هذا الجهاز فقط{localLink.plan ? ` (${localLink.plan.title})` : ""}.
+                لا يظهر لدى الخادم؛ راجعه واربط الطالب بالخطة من جديد بعد التأكد من توفر الخدمة.
+              </p>
+            )}
+            {canEditHifz && sheet?.assignment?.status === "active" && (
+              <label className="flex items-center gap-2 text-sm">
+                تاريخ الحفظ المضاف
+                <Input type="date" className="w-44" value={hifzDate} onChange={(e) => setHifzDate(e.target.value)} />
+              </label>
+            )}
+            <StudentPlanSheet
+              data={sheet ?? { assignment: null, plan: null, segments: [], completions: [] }}
+              studentName={selected.name}
+              readOnly={!canEditHifz}
+              loading={loading}
+              error={loadError}
+              onHifzChange={canEditHifz ? (segmentIndex, isComplete) => void changeHifz(segmentIndex, isComplete) : undefined}
+              editingSegment={editingSegment}
+            />
+          </>
         )}
       </CardContent>
     </Card>
@@ -136,14 +197,7 @@ export function SupervisorPlansPanel() {
         return;
       }
       const res = await importPlans(parsed);
-      if (res.stored_locally) {
-        toast.warning(
-          `تم استيراد ${res.plans_imported} خطة في المتصفح فقط — نفّذ migrate-education-plans.sql في phpMyAdmin ثم أعد الاستيراد`,
-          { duration: 8000 },
-        );
-      } else {
-        toast.success(`تم استيراد ${res.plans_imported} خطة (${res.segments_imported} مقطع)`);
-      }
+      toast.success(`تم استيراد ${res.plans_imported} خطة (${res.segments_imported} مقطع)`);
       await refresh();
     } catch (e) {
       const msg = e instanceof Error ? e.message : "فشل الاستيراد";
@@ -179,7 +233,7 @@ export function SupervisorPlansPanel() {
       );
       return;
     }
-    const globalPhase = globalPhaseFromPlanLevel(selectedPlan.track, selectedPlan.level_number);
+    const globalPhase = globalPhaseFromPlanLevel(selectedPlan.track, selectedPlan.level_number, plans);
     setAssigning(true);
     try {
       await assignStudentPlan(
@@ -452,7 +506,7 @@ export function SupervisorPlansPanel() {
 
       <StudentFaceReportPanel />
 
-      <PlanStudentLookup readOnly refreshKey={lookupRefresh} />
+      <PlanStudentLookup refreshKey={lookupRefresh} />
     </div>
   );
 }

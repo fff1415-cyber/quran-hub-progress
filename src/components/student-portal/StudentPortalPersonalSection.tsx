@@ -18,6 +18,7 @@ import {
   formatPortalDate,
 } from "@/lib/student-portal-data";
 import { StudentWeeklyPercentSummary } from "@/components/student-portal/StudentWeeklyPercentSummary";
+import { ParentRecommendationsSection } from "@/components/student-portal/ParentRecommendationsSection";
 import { StudentAcademicResultsSection } from "@/components/student-profile/StudentAcademicResults";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { weekLabel } from "@/lib/arabic-numbers";
@@ -76,6 +77,7 @@ export function StudentPortalPersonalSection({
 
   const showAny =
     visibility.studentHeader ||
+    visibility.parentRecommendations ||
     visibility.todayAttendance ||
     visibility.weeklyPercentages ||
     visibility.faceCounts ||
@@ -97,6 +99,8 @@ export function StudentPortalPersonalSection({
           <p className="text-sm text-muted-foreground">{halaqa.name} · مستوى {student.level}</p>
         </div>
       )}
+
+      {visibility.parentRecommendations && <ParentRecommendationsSection studentId={student.id} />}
 
       {visibility.todayAttendance && <TodayBadge status={todayStatus} />}
 
