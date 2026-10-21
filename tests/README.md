@@ -4,6 +4,8 @@ Run from the repository root after `npm ci`:
 
 ```sh
 node tests/plan-sard-regression.cjs
+node tests/plan-numbering-regression.cjs
+node tests/sard-force-review-regression.cjs
 node tests/sard-client-sync-regression.cjs
 php tests/backend-sard-regression.php
 npm run build:hostinger

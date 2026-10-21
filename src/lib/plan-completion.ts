@@ -37,7 +37,8 @@ export async function checkAndHandlePlanCompletion(
 
   const sheet = await fetchStudentPlanSheet(student.id);
   if (!isPlanHifzComplete(sheet)) return false;
-  if (loadSardQueue().some((q) => q.assignmentId === sheet.assignment?.id)) return false;
+  if (loadSardQueue().some((q) => q.assignmentId === sheet.assignment?.id
+    && !(q.status === "archived" && q.archiveReason === "supervisor_hifz_removed"))) return false;
 
   const planTitle = sheet.plan?.title ?? "الخطة التعليمية";
   enqueuePlanCompleted(student.id, student.halaqaId, weekNum, planTitle, sheet.assignment?.id);

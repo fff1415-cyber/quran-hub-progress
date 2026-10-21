@@ -9,6 +9,7 @@ export interface StudentPortalVisibility {
   complexFaceCounts: boolean;
   honorBoard: boolean;
   studentHeader: boolean;
+  parentRecommendations: boolean;
   todayAttendance: boolean;
   weeklyPercentages: boolean;
   faceCounts: boolean;
@@ -23,6 +24,7 @@ export const DEFAULT_STUDENT_PORTAL_VISIBILITY: StudentPortalVisibility = {
   complexFaceCounts: true,
   honorBoard: true,
   studentHeader: true,
+  parentRecommendations: true,
   todayAttendance: true,
   weeklyPercentages: true,
   faceCounts: true,
@@ -37,6 +39,7 @@ export const STUDENT_PORTAL_SECTION_LABELS: Record<keyof StudentPortalVisibility
   complexFaceCounts: "عدد أوجه المجمع — حفظ + ربط/مراجعة (من بداية الفصل)",
   honorBoard: "لوحة الشرف — أوائل الأسبوع",
   studentHeader: "معلومات الطالب (الاسم والحلقة)",
+  parentRecommendations: "توصيات المعلم لولي الأمر",
   todayAttendance: "حالة الحضور اليوم",
   weeklyPercentages: "النسب الفصلية للطالب",
   faceCounts: "عدد الأوجه المحفوظة والربط/مراجعة (من بداية الفصل)",

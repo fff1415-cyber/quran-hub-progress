@@ -17,6 +17,7 @@ export interface SardPassPayload {
   hifzScore: number;
   reviewScore: number;
   track: PlanTrack;
+  studentPhase?: number;
   assignedBy?: string;
 }
 
@@ -48,11 +49,12 @@ export async function runPostPassAutomation(payload: SardPassPayload): Promise<P
   const advance = await completePlanAndAdvance(payload.studentId, assignedBy, payload.track, {
     planStartDate: record.testDate.slice(0, 10),
     expectedAssignmentId: payload.assignmentId ?? sheet.assignment?.id,
+    studentPhase: payload.studentPhase,
     sardResult: payload.queueItemId ? { id: payload.queueItemId, percent: payload.percent, phase: payload.phase ?? "full" } : undefined,
   });
   pushAcademicRecord(record);
   if (advance.newGlobalPhase)
-    await syncStudentToGlobalPhase(payload.studentId, advance.newGlobalPhase);
+    await syncStudentToGlobalPhase(payload.studentId, advance.newGlobalPhase, advance.newInstituteLevel);
   if (advance.newPlanTitle)
     notifyTeacherHalaqa(
       payload.halaqaId,

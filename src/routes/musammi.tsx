@@ -423,6 +423,7 @@ function SardEvaluatorFull({
             hifzScore: merged.hifzScore,
             reviewScore: merged.reviewScore,
             track: levelType,
+            studentPhase: Number.parseInt(level, 10),
             assignedBy: "المسمّع",
           });
           const newLevel = advance.newGlobalPhase ?? level;
@@ -578,6 +579,7 @@ function SardEvaluatorReviewOnly({
             hifzScore: merged.hifzScore,
             reviewScore: merged.reviewScore,
             track: levelType,
+            studentPhase: Number.parseInt(level, 10),
             assignedBy: "المسمّع",
           });
           const newLevel = advance.newGlobalPhase ?? level;

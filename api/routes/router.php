@@ -21,6 +21,7 @@ require_once __DIR__ . '/student_followups.php';
 require_once __DIR__ . '/staff_tasks.php';
 require_once __DIR__ . '/student_entries.php';
 require_once __DIR__ . '/academic_reports.php';
+require_once __DIR__ . '/parent_recommendations.php';
 require_once __DIR__ . '/late_permissions.php';
 require_once __DIR__ . '/weekly_tests.php';
 
@@ -32,6 +33,8 @@ function route_request(string $method, string $path): void
     if ($path === '/student-entries' && $method === 'GET') { handle_list_student_entries(); return; }
     if ($path === '/academic-reports/notes' && $method === 'GET') { handle_list_academic_report_notes(); return; }
     if ($path === '/academic-reports/notes' && $method === 'POST') { handle_save_academic_report_note(); return; }
+    if ($path === '/parent-recommendations' && $method === 'GET') { handle_list_parent_recommendations(); return; }
+    if ($path === '/parent-recommendations' && $method === 'POST') { handle_send_parent_recommendation(); return; }
     if ($path === '/academic-reports/approval' && in_array($method, ['GET', 'POST'], true)) { handle_academic_report_approval(); return; }
     if ($path === '/academic-reports/archive' && $method === 'GET') { handle_list_academic_report_archive(); return; }
     if ($path === '/late-permissions' && $method === 'GET') {
@@ -200,6 +203,10 @@ function route_request(string $method, string $path): void
     }
     if ($path === '/plans/assign' && $method === 'POST') {
         handle_assign_plan();
+        return;
+    }
+    if ($path === '/plans/supervisor-hifz' && $method === 'POST') {
+        handle_supervisor_plan_hifz();
         return;
     }
     if ($path === '/plans/assignment' && $method === 'PATCH') {

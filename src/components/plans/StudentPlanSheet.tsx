@@ -20,6 +20,8 @@ interface StudentPlanSheetProps {
   loading?: boolean;
   error?: string | null;
   className?: string;
+  onHifzChange?: (segmentIndex: number, isComplete: boolean) => void;
+  editingSegment?: number | null;
 }
 
 export function StudentPlanSheet({
@@ -29,6 +31,8 @@ export function StudentPlanSheet({
   loading,
   error,
   className,
+  onHifzChange,
+  editingSegment,
 }: StudentPlanSheetProps) {
   const { assignment, plan, segments, completions } = data;
 
@@ -127,7 +131,7 @@ export function StudentPlanSheet({
               <th className="p-2 text-center w-16">اليوم</th>
               <th className="p-2 text-center w-24">التاريخ</th>
               <th className="p-2 text-right">الخطة (حفظ)</th>
-              <th className="p-2 text-center w-12">✅</th>
+              <th className="p-2 text-center w-24">الحفظ</th>
               <th className="p-2 text-right">الربط</th>
               <th className="p-2 text-center w-12">✅</th>
               <th className="p-2 text-right">المراجعة</th>
@@ -156,7 +160,17 @@ export function StudentPlanSheet({
                     {seg.hifz_plan || "—"}
                   </td>
                   <td className="p-2 text-center">
-                    {hifzDate ? (
+                    {onHifzChange && assignment.status === "active" && !readOnly ? (
+                      <button
+                        type="button"
+                        className={cn("rounded border px-2 py-1 text-xs whitespace-nowrap", hifzDate ? "border-success/40 text-success" : "border-primary/40 text-primary")}
+                        disabled={editingSegment != null}
+                        onClick={() => onHifzChange(seg.segment_index, Boolean(hifzDate))}
+                        aria-label={`${hifzDate ? "إزالة" : "إضافة"} حفظ المقطع ${seg.segment_index}`}
+                      >
+                        {editingSegment === seg.segment_index ? <Loader2 className="w-4 h-4 animate-spin inline" /> : hifzDate ? "✓ إزالة" : "+ إضافة"}
+                      </button>
+                    ) : hifzDate ? (
                       <Check className="w-4 h-4 text-success inline" aria-label="تم الحفظ" />
                     ) : (
                       <span className="text-muted-foreground/30">—</span>
