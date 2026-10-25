@@ -11,6 +11,7 @@ export interface StudentPortalVisibility {
   studentHeader: boolean;
   parentRecommendations: boolean;
   todayAttendance: boolean;
+  studentWeeklyGrade: boolean;
   weeklyPercentages: boolean;
   faceCounts: boolean;
   absenceRecord: boolean;
@@ -26,6 +27,7 @@ export const DEFAULT_STUDENT_PORTAL_VISIBILITY: StudentPortalVisibility = {
   studentHeader: true,
   parentRecommendations: true,
   todayAttendance: true,
+  studentWeeklyGrade: true,
   weeklyPercentages: true,
   faceCounts: true,
   absenceRecord: true,
@@ -41,6 +43,7 @@ export const STUDENT_PORTAL_SECTION_LABELS: Record<keyof StudentPortalVisibility
   studentHeader: "معلومات الطالب (الاسم والحلقة)",
   parentRecommendations: "توصيات المعلم لولي الأمر",
   todayAttendance: "حالة الحضور اليوم",
+  studentWeeklyGrade: "نسبة الطالب للأسبوع الحالي",
   weeklyPercentages: "النسب الفصلية للطالب",
   faceCounts: "عدد الأوجه المحفوظة والربط/مراجعة (من بداية الفصل)",
   absenceRecord: "سجل الغياب والاستئذان",
