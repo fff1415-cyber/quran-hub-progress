@@ -4,7 +4,10 @@ import type { Halaqa } from "@/lib/mock-data";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import type { StudentPlanSheetData } from "@/lib/plan-types";
 import type { StudentPortalVisibility } from "@/lib/student-portal-settings";
-import type { ComponentPercentages } from "@/lib/semester-grading";
+import {
+  studentWeekOverallPercentage,
+  type ComponentPercentages,
+} from "@/lib/semester-grading";
 import {
   aggregateFaceProgress,
   facePct,
@@ -74,11 +77,23 @@ export function StudentPortalPersonalSection({
   const rabtMurCombined = faceSummary
     ? faceSummary.rabtActual + faceSummary.murajaActual
     : 0;
+  const weekNumber = calendar.currentWeekNumber;
+  const hasWeekRecord = weekNumber > 0 && !!grades[student.id]?.[weekNumber];
+  const weeklyGrade = hasWeekRecord
+    ? studentWeekOverallPercentage(
+        student.id,
+        halaqa.isTalqeen,
+        grades,
+        weekNumber,
+        student.levelType,
+      )
+    : null;
 
   const showAny =
     visibility.studentHeader ||
     visibility.parentRecommendations ||
     visibility.todayAttendance ||
+    visibility.studentWeeklyGrade ||
     visibility.weeklyPercentages ||
     visibility.faceCounts ||
     visibility.absenceRecord ||
@@ -103,6 +118,22 @@ export function StudentPortalPersonalSection({
       {visibility.parentRecommendations && <ParentRecommendationsSection studentId={student.id} />}
 
       {visibility.todayAttendance && <TodayBadge status={todayStatus} />}
+
+      {visibility.studentWeeklyGrade && (
+        <div className="mt-4 rounded-xl border border-primary/25 bg-primary/5 p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h4 className="text-sm font-bold text-primary">نسبة {weekNumber > 0 ? weekLabel(weekNumber) : "الأسبوع الحالي"}</h4>
+            <p className="mt-1 text-xs text-muted-foreground">تشمل درجات التعويض إن وُجدت</p>
+          </div>
+          <div className="shrink-0 text-left font-bold tabular-nums text-primary" dir="ltr">
+            {weeklyGrade === null ? (
+              <span className="text-sm">لم يُرصد بعد</span>
+            ) : (
+              <span className="text-3xl">{weeklyGrade}%</span>
+            )}
+          </div>
+        </div>
+      )}
 
       {visibility.weeklyPercentages && (
         <div className="mt-4 p-4 rounded-xl bg-secondary/30 border border-border">
