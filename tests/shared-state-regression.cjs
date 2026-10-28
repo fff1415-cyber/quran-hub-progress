@@ -32,5 +32,9 @@ function client(send,provided) {
  tabB.captureSharedEdit('grades',{}, {S:{1:{days:{sun:{attendance:'present'}}}}});
  assert.equal(sameBrowser.length,2,'each concurrent tab writes a distinct durable operation key');
  release();await Promise.all([tabA.flushSharedEdits(),tabB.flushSharedEdits()]);assert.equal(new Set(concurrent).size,2,'both operations survive concurrent acknowledgement');assert.equal(sameBrowser.length,0);
+ let rejectA=true;const recovered=[];const conflict=client(async({data})=>{if(data.value.changes[0].path.at(-1)==='hifz'&&rejectA)throw Object.assign(Error('cell conflict'),{status:409});recovered.push(data.value);return {ok:true}});
+ conflict.captureSharedEdit('grades',{}, {S:{1:{days:{sun:{hifz:'one'}}}}});await assert.rejects(conflict.flushSharedEdits(),/cell conflict/);
+ conflict.captureSharedEdit('grades',{}, {T:{1:{days:{sun:{attendance:'present'}}}}});await assert.rejects(conflict.flushSharedEdits(),/cell conflict/);
+ conflict.cancelRejectedEdit();await conflict.flushSharedEdits();assert.equal(recovered.length,1,'cancelled rejected operation unblocks independent queued work');assert.equal(conflict.sharedSaveStatus().state,'saved');assert.equal(conflict.local.length,1,'rejected request is retained as a review record');
  console.log('PASS: edit-only patches, durable response-loss retry, semester pinning, history and clear preservation');
 })().catch(e=>{console.error(e);process.exitCode=1});

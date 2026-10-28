@@ -96,6 +96,7 @@ export function cancelRejectedEdit():void{
   const rejected=pending().find(op=>op.operation_id===status.operationId);if(!rejected)return;
   localStorage.setItem(`${queueKey()}:rejected:${rejected.operation_id}`,JSON.stringify({...rejected,cancelledAt:new Date().toISOString(),reason:status.error}));
   removePending(rejected.operation_id);report({state:pending().length?"saving":"saved"});
+  void flushSharedEdits().catch(()=>undefined);
 }
 export function flushSharedEdits(): Promise<void> {
   const run = async () => {
