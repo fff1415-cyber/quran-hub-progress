@@ -129,6 +129,7 @@ export function buildReviewOnlyPatch(
   retryDays = 2,
 ): Partial<SardQueueItem> {
   return {
+    evaluationRules: item.evaluationRules,
     phase: "review_only",
     status: "awaiting_review",
     scheduledAt: scheduleRetry(retryDays),
@@ -147,6 +148,7 @@ export function resetFullSardAttempt(segmentCount: number): Partial<SardQueueIte
   const segs = emptyReviewSegments(segmentCount);
   return {
     phase: "full",
+    evaluationRules: undefined,
     lockedHifzScore: undefined,
     lockedHifzErrors: undefined,
     lockedHifzWarnings: undefined,

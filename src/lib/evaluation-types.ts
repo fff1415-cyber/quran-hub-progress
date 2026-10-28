@@ -53,3 +53,10 @@ export const DEFAULT_EVALUATION_SETTINGS: EvaluationSettings = {
   review_segments_over_20: 5,
   retry_delay_days: 2,
 };
+
+/** A prospective attempt pins the complete rules, not just a mutable settings ID. */
+export interface EvaluationRulesSnapshot {
+  reference: string;
+  adoptedAt: string;
+  settings: EvaluationSettings;
+}
