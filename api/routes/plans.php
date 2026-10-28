@@ -818,6 +818,7 @@ function handle_assign_plan(): void
                 if ($entry['studentId'] !== $studentId || (isset($entry['assignmentId']) && $entry['assignmentId'] !== $expected) || ($entry['status'] ?? '') === 'passed') {
                     throw new RuntimeException('تغيّر طلب السرد — حدّث الصفحة');
                 }
+                if((($entry['phase']??'')==='review_only'||isset($entry['lockedHifzScore']))&&empty($entry['evaluationRules']))throw new RuntimeException('المراجعة القديمة بلا مرجع لقواعد الحفظ المثبت؛ يلزم اعتماد مصدر القواعد قبل الاجتياز');
                 $entry['status'] = 'passed';
                 $entry['assignmentId'] = $expected;
                 $entry['finalPercent'] = (float) ($sard['percent'] ?? 0);

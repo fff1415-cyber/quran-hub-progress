@@ -82,3 +82,5 @@ try{plans_record_diary($pdo,1,require_auth(),$failed);throw new RuntimeException
 $pdo->exec('ALTER TABLE app_state DROP CHECK reject_test_tuesday');
 check((int)$pdo->query("SELECT COUNT(*) FROM plan_assignment_completions WHERE student_id='diary-S' AND revoked_at IS NULL")->fetchColumn()===2,'MySQL rollback leaves neither extra grade nor extra completion');
 echo "MySQL diary migration, unique-current constraint, concurrency and rollback acceptance complete.\n";
+
+$_GET=['student_id'=>'S'];handle_student_plan_sheet();check(count($GLOBALS['response']['completions'])===4,'actual MySQL sheet read uses the protected snapshot/share-lock query');

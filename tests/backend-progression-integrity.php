@@ -15,3 +15,6 @@ $pdo=seed();$pdo->exec("UPDATE education_plans SET level_number=5030 WHERE id='c
 $GLOBALS['input']=['student_id'=>'student-1','plan_id'=>'current','expected_assignment_id'=>'old','start_segment_index'=>1,'operation_id'=>'final-pass-0001','finalize_only'=>true,'sard_result'=>['id'=>'sq-1','percent'=>90,'phase'=>'full']];handle_assign_plan();
 check((int)$pdo->query('SELECT COUNT(*) FROM student_plan_assignments')->fetchColumn()===1&&activePlan($pdo)==='current'&&queue($pdo)[0]['status']==='passed','final plan stays visible while pass and history commit atomically');
 echo "PASS: atomic profile/plan/pass/history, final plan and response-loss retries\n";
+
+$pdo=seed();$legacy=queue($pdo);$legacy[0]['phase']='review_only';$legacy[0]['lockedHifzScore']=35;app_state_upsert($pdo,'sard_queue',$legacy,1);
+expectFailure(fn()=>handle_assign_plan(),'المراجعة القديمة بلا مرجع');check(activePlan($pdo)==='current','unknown locked rules cannot produce a partial legacy pass');
