@@ -49,6 +49,7 @@ export interface DayEntry {
   compensationFaces?: number;
   /** Plan hifz segment indexes applied when this day's hifz was recorded (for undo). */
   hifzPlanSegments?: number[];
+  hifzPlanAssignmentId?: string;
   /** Custom field id → selected option (per halaqa field definitions). */
   custom?: Record<string, string>;
   /** Last local edit time — used to merge teacher/assistant concurrent saves. */
@@ -338,6 +339,7 @@ function mergeDayEntries(a: DayEntry | undefined, b: DayEntry | undefined): DayE
     wajib: pick("wajib") as boolean | undefined,
     compensationFaces: pick("compensationFaces") as number | undefined,
     hifzPlanSegments: pickHifzPlanSegments(),
+    hifzPlanAssignmentId: (fieldEditTime(right, "hifz") >= fieldEditTime(left, "hifz") ? right.hifzPlanAssignmentId : left.hifzPlanAssignmentId),
     custom: Object.keys(custom).length ? custom : undefined,
     fieldTouchedAt: Object.keys(fieldTouchedAt).length ? fieldTouchedAt : undefined,
     touchedAt: Math.max(lt, rt) || undefined,

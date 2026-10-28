@@ -44,8 +44,11 @@ async function planFetch<T>(path: string, options: RequestInit = {}): Promise<T>
   return body as T;
 }
 
-export async function fetchPlans(track?: "gold" | "silver"): Promise<EducationPlan[]> {
-  const q = track ? `?track=${track}` : "";
+export async function fetchPlans(track?: "gold" | "silver", includeArchived = false): Promise<EducationPlan[]> {
+  const params = new URLSearchParams();
+  if (track) params.set("track", track);
+  if (includeArchived) params.set("include_archived", "1");
+  const q = params.size ? `?${params}` : "";
   return planFetch<EducationPlan[]>(`/plans${q}`);
 }
 
@@ -122,13 +125,18 @@ export async function assignStudentPlan(
     face_quotas?: Partial<DailyFaceQuotas>;
     expected_assignment_id?: string;
     sard_result?: { id: string; percent: number; phase: string };
+    operation_id?: string;
   },
 ): Promise<void> {
+  const operationId = options?.operation_id ?? crypto.randomUUID();
+  const expectedSheet = options?.expected_assignment_id !== undefined ? null : await fetchStudentPlanSheet(studentId);
+  const expectedAssignmentId = options?.expected_assignment_id ?? expectedSheet?.assignment?.id ?? "";
   const result = await planFetch<{ assignment_id: string; sard_queue?: unknown[] | null }>("/plans/assign", {
       method: "POST",
       body: JSON.stringify({
         student_id: studentId,
-        expected_assignment_id: options?.expected_assignment_id,
+        expected_assignment_id: expectedAssignmentId,
+        operation_id: operationId,
         sard_result: options?.sard_result,
         plan_id: planId,
         start_segment_index: startSegment,
@@ -198,7 +206,7 @@ export async function patchStudentAssignment(
 ): Promise<void> {
   await planFetch("/plans/assignment", {
       method: "PATCH",
-      body: JSON.stringify({ student_id: studentId, status }),
+      body: JSON.stringify({ student_id: studentId, assignment_id: (await fetchStudentPlanSheet(studentId)).assignment?.id, status }),
     });
 }
 
@@ -215,6 +223,7 @@ export async function applyPlanInput(
       body: JSON.stringify({
         student_id: studentId,
         expected_assignment_id: currentSheet.assignment?.id,
+        operation_id: crypto.randomUUID(),
         task_type: taskType,
         tap,
         completed_at: completedAt,
@@ -226,13 +235,16 @@ export async function applyPlanInput(
 export async function removePlanHifzCompletions(
   studentId: string,
   segmentIndexes: number[],
+  assignmentId?: string,
 ): Promise<void> {
   if (segmentIndexes.length === 0) return;
+  if (!assignmentId) throw new Error("تعيين إنجاز اليوم غير محفوظ — افتح الاستمارة للمراجعة؛ لن نلغِ من الخطة الحالية بالتخمين");
   await planFetch<{ ok: boolean }>("/plans/remove-completions", {
       method: "POST",
       body: JSON.stringify({
         student_id: studentId,
         task_type: "hifz",
+        assignment_id: assignmentId,
         segment_indexes: segmentIndexes,
       }),
     });
@@ -262,6 +274,7 @@ export async function syncCompensationToPlan(
   recordedBy: string,
   previousFaces?: number,
 ): Promise<number[]> {
+  const assignmentId = (await fetchStudentPlanSheet(student.id)).assignment?.id;
   const target = compensationHifzSegmentTarget(faces, student.levelType);
   const tracked = [...trackedSegments];
 
@@ -280,7 +293,7 @@ export async function syncCompensationToPlan(
     }
   } else if (target < tracked.length) {
     const toRemove = tracked.splice(target);
-    await removePlanHifzCompletions(student.id, toRemove);
+    await removePlanHifzCompletions(student.id, toRemove, assignmentId);
   }
 
   return tracked;

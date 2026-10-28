@@ -100,11 +100,6 @@ function sard_reconcile_queue(array $queue, array $assignments): array
     foreach ($queue as &$q) {
         if (($q['status'] ?? '') !== 'passed') continue;
         $a = $assignments[$q['studentId'] ?? ''] ?? null;
-        if (empty($q['assignmentId']) && $a) {
-            $passedTime = strtotime((string) ($q['passedAt'] ?? ''));
-            $assignedTime = strtotime((string) ($a['assigned_at'] ?? ''));
-            if (($q['closedPlanTitle'] ?? $q['planTitle'] ?? '') === ($a['title'] ?? '') && $passedTime && $assignedTime && $passedTime >= $assignedTime) $q['assignmentId'] = $a['id'];
-        }
         if (!empty($q['assignmentId'])) $passed[$q['assignmentId']] = true;
     }
     unset($q);
@@ -115,12 +110,7 @@ function sard_reconcile_queue(array $queue, array $assignments): array
         $reason = null;
         if (!$a) $reason = 'no_current_assignment';
         elseif (!empty($q['assignmentId']) && $q['assignmentId'] !== $a['id']) $reason = 'previous_assignment';
-        elseif (empty($q['assignmentId'])) {
-            $eventTime = strtotime((string) ($q['planCompletedAt'] ?? $q['createdAt'] ?? ''));
-            $assignedTime = strtotime((string) ($a['assigned_at'] ?? ''));
-            if (($q['planTitle'] ?? '') !== ($a['title'] ?? '') || !$eventTime || !$assignedTime || $eventTime < $assignedTime) $reason = 'unverified_legacy_assignment';
-            else $q['assignmentId'] = $a['id'];
-        }
+        elseif (empty($q['assignmentId'])) $reason = 'unverified_legacy_assignment';
         if (!$reason && isset($passed[$a['id']])) $reason = 'already_passed';
         if ($reason) {
             $q['status'] = 'archived';
@@ -149,7 +139,7 @@ function sard_current_assignments(PDO $pdo, int $cid): array
 {
     if (!plans_table_exists($pdo, 'student_plan_assignments')) return [];
     $scoped = table_column_exists($pdo, 'students', 'complex_id');
-    $sql = "SELECT a.id, a.student_id, a.plan_id, a.assigned_at, a.start_segment_index, p.title
+    $sql = "SELECT a.id, a.student_id, a.plan_id, a.assigned_at, a.start_segment_index, a.content_snapshot, p.title
             FROM student_plan_assignments a JOIN students s ON s.id = a.student_id
             JOIN education_plans p ON p.id = a.plan_id
             WHERE a.status IN ('active', 'frozen')" . ($scoped ? ' AND s.complex_id = ?' : '') . ' ORDER BY a.assigned_at DESC';
@@ -195,10 +185,7 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
             if (($index === null || $restoreSupervisorHifz) && ($item['status'] ?? '') === 'plan_completed') {
                 $a = $assignments[$item['studentId']] ?? null;
                 if (!$a || empty($item['assignmentId']) || $item['assignmentId'] !== $a['id']) throw new RuntimeException('لا توجد خطة حالية مؤكدة للطلب');
-                $done = $pdo->prepare("SELECT COUNT(*) AS total, SUM(EXISTS(SELECT 1 FROM segment_completions c WHERE c.student_id = ? AND c.plan_id = s.plan_id AND c.segment_index = s.segment_index AND c.task_type = 'hifz' AND (c.assignment_id = ? OR (c.assignment_id IS NULL AND c.created_at >= ?)))) AS done FROM plan_segments s WHERE s.plan_id = ? AND s.segment_index >= ?");
-                $done->execute([$item['studentId'], $a['id'], $a['assigned_at'], $a['plan_id'], $a['start_segment_index']]);
-                $counts = $done->fetch();
-                if ((int) $counts['total'] < 1 || (int) $counts['total'] !== (int) $counts['done']) throw new RuntimeException('لم يكتمل حفظ الخطة الحالية');
+                if (!plans_hifz_complete($pdo, $a)) throw new RuntimeException('لم يكتمل حفظ الخطة الحالية');
             }
             $validated = sard_reconcile_queue([$item], $assignments)[0];
             if (($validated['status'] ?? '') === 'archived' && ($item['status'] ?? '') !== 'archived') throw new RuntimeException('الطلب يخص خطة سابقة — حدّث الصفحة');

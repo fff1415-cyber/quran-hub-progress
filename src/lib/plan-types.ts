@@ -25,6 +25,7 @@ export interface EducationPlan extends DailyFaceQuotas {
   level_number: number;
   title: string;
   segment_count: number;
+  catalog_archived_at?: string | null;
   created_at?: string | null;
 }
 
@@ -63,6 +64,8 @@ export interface StudentPlanSheetData {
   plan: EducationPlan | null;
   segments: PlanSegment[];
   completions: SegmentCompletion[];
+  legacy_completions?: SegmentCompletion[];
+  content_provenance?: string;
 }
 
 export interface ImportPlanPayload {

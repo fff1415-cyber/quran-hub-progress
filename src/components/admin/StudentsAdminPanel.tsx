@@ -26,6 +26,7 @@ function sheetRowToStudent(row: SheetRow, halaqaId: number, existing?: Student):
     || instituteLevelFromGlobalPhase(row.levelType, phase)
     || "";
   const base: Student = {
+    ...existing,
     id: existing?.id ?? `s-import-${row.nationalId}`,
     name: row.name,
     halaqaId,
@@ -141,6 +142,7 @@ export function StudentImportPanel() {
 
     let linked = 0;
     let linkFailed = 0;
+    const linkErrors: string[] = [];
     if (linkQueue.length > 0) {
       const [goldPlans, silverPlans] = await Promise.all([fetchPlans("gold"), fetchPlans("silver")]);
       for (const { student, row } of linkQueue) {
@@ -157,20 +159,21 @@ export function StudentImportPanel() {
             plansCache: row.levelType === "gold" ? goldPlans : silverPlans,
           });
           if (res.ok) linked++;
-          else linkFailed++;
-        } catch {
+          else { linkFailed++; if (res.message) linkErrors.push(res.message); }
+        } catch (error) {
           linkFailed++;
+          linkErrors.push(error instanceof Error ? error.message : "تعذّر ربط الخطة");
         }
       }
     }
 
     toast.success(
       `+${added} جديد · ${updatedCount} محدّث · ${linked} مربوط بخطة` +
-      (linkFailed ? ` · ${linkFailed} بدون خطة (استورد Excel أولاً)` : "") +
+      (linkFailed ? ` · ${linkFailed} طلب ربط لم يعتمد` : "") +
       (skipped ? ` · ${skipped} متجاهل` : ""),
     );
     if (linkFailed > 0) {
-      toast.warning("بعض الطلاب لم تُربط خططهم — تأكد من استيراد ملف Excel للخطط في صفحة المشرف", {
+      toast.warning([...new Set(linkErrors)].join(" · ") || "حُفظت بيانات الطلاب؛ راجع ربط خططهم بشكل مستقل", {
         duration: 8000,
       });
     }

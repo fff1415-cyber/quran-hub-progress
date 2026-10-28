@@ -39,7 +39,7 @@ export async function completePlanAndAdvance(
 
   if (!sheet.plan || !sheet.assignment) throw new Error("لا توجد خطة حالية مؤكدة للطالب");
 
-  const plans = await fetchPlans(track);
+  const plans = await fetchPlans(track, true);
   const currentGlobal = globalPhaseFromPlanLevel(track, sheet.plan.level_number, plans);
   if (currentGlobal === null) throw new Error("مرحلة الخطة الحالية غير صالحة");
 

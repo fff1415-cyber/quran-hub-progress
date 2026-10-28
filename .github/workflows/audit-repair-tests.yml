@@ -1,0 +1,27 @@
+name: Audit repair isolated tests
+on:
+  push:
+    branches: [fix/audit-f03-f22-preserve-history]
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  isolated-regressions:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Existing runner PHP (no system package updates)
+        run: php --version && php -m
+      - name: Existing locked project dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Client regressions
+        run: |
+          for test in tests/*regression.cjs tests/plan-server-confirmation.cjs; do node "$test"; done
+      - name: PHP syntax and isolated SQLite handlers
+        run: |
+          find api tests -name '*.php' -print0 | xargs -0 -n1 php -l
+          php tests/backend-sard-regression.php
+          if [ -f tests/backend-plan-integrity.php ]; then php tests/backend-plan-integrity.php; fi

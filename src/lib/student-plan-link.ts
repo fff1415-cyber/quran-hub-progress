@@ -7,7 +7,7 @@ import {
 } from "@/lib/plan-level-ranges";
 import { resolveFaceQuotas } from "@/lib/plan-daily-faces";
 import type { EducationPlan, PlanTrack } from "@/lib/plan-types";
-import { assignStudentPlan, fetchPlans } from "@/lib/plans-service";
+import { assignStudentPlan, fetchPlans, fetchStudentPlanSheet } from "@/lib/plans-service";
 
 export interface LinkStudentPlanOptions {
   studentId: string;
@@ -40,6 +40,13 @@ export async function linkStudentToPlan(opts: LinkStudentPlanOptions): Promise<{
     throw new Error(msg);
   }
 
+  const current = await fetchStudentPlanSheet(opts.studentId);
+  if (current.assignment) {
+    // Roster import must never replace an existing link (even if phase fields changed).
+    if (current.plan?.track === opts.track && current.plan.level_number === plan.level_number) return { ok: true };
+    return { ok: false, message: "حُفظت بيانات الطالب؛ تغيير خطته الحالية يحتاج اعتمادًا منفصلًا من المشرف" };
+  }
+
   let planStartDate = opts.planStartDate ?? null;
   if (!planStartDate) {
     try {
@@ -58,6 +65,7 @@ export async function linkStudentToPlan(opts: LinkStudentPlanOptions): Promise<{
     Math.max(1, opts.startHifzSegment ?? 1),
     opts.assignedBy,
     {
+      expected_assignment_id: "",
       plan_start_date: planStartDate ?? undefined,
       start_muraja_segment: murajaStartSegment(opts.globalPhase),
       face_quotas: quotas,

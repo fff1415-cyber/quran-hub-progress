@@ -262,22 +262,18 @@ export function SupervisorPlansPanel() {
 
   const removePlan = async (plan: EducationPlan) => {
     const ok = confirm(
-      `هل تريد حذف الخطة «${plan.title}»\n\nسيتم حذف الخطة وفك الربط الكامل عن جميع الطلاب المرتبطين بها.\n\nلا يمكن التراجع.`,
+      `إزالة الخطة «${plan.title}» من الدليل؟\n\nتبقى التعيينات والإنجازات والسجلات السابقة محفوظة، ولا يتغير محتوى خطط الطلاب المرتبطين بها.`,
     );
     if (!ok) return;
     setDeletingId(plan.id);
     try {
-      const res = await deletePlan(plan.id);
-      toast.success(
-        res.assignments_removed > 0
-          ? `تم الحذف — أُزيل الربط عن ${res.assignments_removed} طالب`
-          : "تم حذف الخطة",
-      );
+      await deletePlan(plan.id);
+      toast.success("أزيلت الخطة من الدليل؛ التعيينات والإنجازات محفوظة");
       if (selectedPlan?.id === plan.id) setSelectedPlan(null);
       await refresh();
       setLookupRefresh((k) => k + 1);
     } catch (e) {
-      toast.error(e instanceof Error ? e.message : "فشل الحذف");
+      toast.error(e instanceof Error ? e.message : "فشل الإزالة من الدليل");
     } finally {
       setDeletingId(null);
     }

@@ -1107,7 +1107,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           if (toRemove.length === 0) {
             toRemove = await lastCompletedHifzSegments(s.id, Math.max(1, segmentsForTap(s.levelType, tap)));
           }
-          await removePlanHifzCompletions(s.id, toRemove);
+          await removePlanHifzCompletions(s.id, toRemove, day.hifzPlanAssignmentId);
           updateDay(s.id, dayKey, { hifzPlanSegments: [] });
           toast.success("أُلغي الحفظ من الجدول وورقة الخطة");
           if (planSheetStudent?.id === s.id) {
@@ -1124,12 +1124,13 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     updateDay(s.id, dayKey, { hifz: gradeVal });
     void enqueuePlanApply(s.id, async () => {
       try {
+        const recordingSheet = await fetchStudentPlanSheet(s.id);
         const segs = await applyPlanInputWithRetry(() =>
           applyPlanInput(s.id, "hifz", tap, senderName),
         );
         // The teacher may have cleared the checkbox while the request was in flight.
         // Record the segments for the queued undo without restoring the checkbox.
-        updateDay(s.id, dayKey, { hifzPlanSegments: segs });
+        updateDay(s.id, dayKey, { hifzPlanSegments: segs, hifzPlanAssignmentId: recordingSheet.assignment?.id });
         toast.success(`تم تسجيل ${segs.length} مقطع — حفظ`);
         if (planSheetStudent?.id === s.id) {
           setPlanSheetData(await fetchStudentPlanSheet(s.id));
