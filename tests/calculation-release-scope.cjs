@@ -17,6 +17,11 @@ for(const [path,allowed] of [
 const workflow=fs.readFileSync('.github/workflows/deploy.yml','utf8');
 assert.match(workflow,/Determine whether API files changed/);
 assert.match(workflow,/Back up existing frontend before upload/);
+for(const name of ['Sync frontend (SFTP primary)','Sync m1 subdomain frontend (SFTP)','Sync m2 subdomain frontend (SFTP)']) {
+ const start=workflow.indexOf('      - name: '+name),end=workflow.indexOf('\n      - name:',start+1);
+ assert.ok(start>=0,name);
+ assert.match(workflow.slice(start,end<0?undefined:end),/rsyncArgs: "--recursive"/,'SFTP filtering must expand package contents instead of nesting client/');
+}
 assert.doesNotMatch(fs.readFileSync('scripts/deploy-hostinger-ci.sh','utf8'),/--delete/);
 assert.doesNotMatch(fs.readFileSync('scripts/deploy-hostinger-api-ci.sh','utf8'),/--delete/);
 console.log('PASS: calculation-only release preserves API/schema, auth, all storage declarations, weights and dependency files');
