@@ -6,6 +6,7 @@ const values = new Map();
 global.localStorage = {
   getItem: key => values.get(key) ?? null,
   setItem: (key, value) => values.set(key, value),
+  removeItem:key=>values.delete(key),
 };
 
 let localAssignments = 0;
@@ -44,10 +45,15 @@ const sheet = assignmentId => ({
     : response(200, sheet(null));
   await assert.rejects(service.assignStudentPlan('student', 'plan', 1, 'supervisor'), /تعذّر تأكيد/);
 
-  global.fetch = async (_url, options) => options?.method === 'POST'
-    ? response(200, { assignment_id: 'server-id' })
-    : response(200, sheet('server-id'));
+  const lostResponsePayload=JSON.parse(values.get('qs_pending_plan_assignment:student'));
+  let retriedPayload;
+  global.fetch = async (_url, options) => {
+    if(options?.method==='POST'){retriedPayload=JSON.parse(options.body);return response(200,{assignment_id:'server-id'});}
+    return response(200,sheet('server-id'));
+  };
   await service.assignStudentPlan('student', 'plan', 1, 'supervisor');
+  assert.equal(retriedPayload.operation_id,lostResponsePayload.operation_id,"unconfirmed request keeps original operation ID");
+  assert.equal(values.has("qs_pending_plan_assignment:student"),false);
   assert.equal(service.unconfirmedLocalPlanLink('student', sheet('server-id')), null);
 
   global.fetch = async (_url, options) => options?.method === 'POST'

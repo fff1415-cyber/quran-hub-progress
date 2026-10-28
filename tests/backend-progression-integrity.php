@@ -3,7 +3,7 @@ declare(strict_types=1);
 require __DIR__.'/backend-sard-regression.php';
 $pdo=seed();$GLOBALS['input']['operation_id']='pass-retry-0001';$GLOBALS['input']['sard_result']['hifzScore']=40;$GLOBALS['input']['sard_result']['reviewScore']=45;
 handle_assign_plan();$first=$GLOBALS['response'];handle_assign_plan();
-check($GLOBALS['response']===$first,'lost pass response replays original atomic result');
+check(app_state_json_encode($GLOBALS['response'])===app_state_json_encode($first),'lost pass response replays original atomic result');
 check((int)$pdo->query("SELECT phase_number FROM students WHERE id='student-1'")->fetchColumn()===2,'profile phase committed with assignment');
 $state=json_decode($pdo->query("SELECT value FROM app_state WHERE `key`='academic_records'")->fetchColumn(),true);
 check(count($state['scopes']['_'])===1&&$state['scopes']['_'][0]['assignmentId']==='old','one academic record binds completed assignment');
