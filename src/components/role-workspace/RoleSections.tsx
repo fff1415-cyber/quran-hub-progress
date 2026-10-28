@@ -290,7 +290,7 @@ export function SecretarySardPanel() {
   const students = loadStudents();
   const templates = loadMessageTemplates();
   const [queue,setQueue] = useState(() => loadSardQueue());
-  useInboxRefresh(()=>setQueue([...loadSardQueue()]));
+  useInboxRefresh(()=>setQueue([...loadSardQueue()]), { sharedSard: true });
   const passedSard = useMemo(() => queue.filter((q) => q.status === "passed"), [queue]);
   const finalFailed = useMemo(() => queue.filter((q) => q.status === "final_failed"), [queue]);
 
@@ -410,7 +410,7 @@ export function SupervisorPlanCompletedPanel() {
   const students = loadStudents();
   const halaqat = loadHalaqat();
   const refresh = () => setQueue([...loadSardQueue()]);
-  useInboxRefresh(refresh);
+  useInboxRefresh(refresh, { sharedSard: true });
   const { run: confirmSard, saving, error: saveError } = useConfirmedSardAction(refresh);
 
   useEffect(() => {
@@ -482,7 +482,7 @@ export function SupervisorApprovalsPanel() {
   const students = loadStudents();
   const halaqat = loadHalaqat();
   const refresh = () => setQueue([...loadSardQueue()]);
-  useInboxRefresh(refresh);
+  useInboxRefresh(refresh, { sharedSard: true });
   const { run: confirmSard, saving, error: saveError } = useConfirmedSardAction(refresh);
   const awaiting = queue.filter((q) => q.status === "awaiting_supervisor");
 
@@ -544,7 +544,7 @@ export function SupervisorForceRetryPanel() {
   const students = loadStudents();
   const halaqat = loadHalaqat();
   const refresh = () => setQueue([...loadSardQueue()]);
-  useInboxRefresh(refresh);
+  useInboxRefresh(refresh, { sharedSard: true });
   const { run: confirmSard, saving, error: saveError } = useConfirmedSardAction(refresh);
   const scheduled = queue.filter((q) => isSupervisorForceRetryCandidate(q));
 
@@ -602,7 +602,7 @@ export function SupervisorPassedPanel() {
   const students = loadStudents();
   const halaqat = loadHalaqat();
   const [queue,setQueue] = useState(() => loadSardQueue());
-  useInboxRefresh(()=>setQueue([...loadSardQueue()]));
+  useInboxRefresh(()=>setQueue([...loadSardQueue()]), { sharedSard: true });
   const passedSard = queue.filter((q) => q.status === "passed");
 
   return (

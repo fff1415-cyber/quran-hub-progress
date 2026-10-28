@@ -33,6 +33,8 @@ jobs:
           php tests/backend-independent-import.php
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
+      - name: Isolated package and backup/verification fixtures (no SSH or production credentials)
+        run: python3 tests/hostinger-backup-regression.py && python3 tests/api-release-regression.py
   database-concurrency:
     if: github.head_ref == 'fix/audit-independent-release-2'
     name: Isolated transactions (${{ matrix.engine }})

@@ -91,7 +91,7 @@ export function MusammiPage() {
   const students = loadStudents();
 
   const refresh = () => setQueue([...loadSardQueue()]);
-  useInboxRefresh(refresh);
+  useInboxRefresh(refresh, { sharedSard: true });
 
   const visible = useMemo(
     () => sortMusammiQueue(queue.filter((q) => isMusammiVisible(q))),

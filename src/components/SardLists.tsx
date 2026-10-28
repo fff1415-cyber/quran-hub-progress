@@ -12,7 +12,7 @@ import { AlertTriangle, Mic } from "lucide-react";
 /** Late-sard list (>2 days pending). Auto-notifies manager once per item. */
 export function LateSardList() {
   const [queue, setQueue] = useState<SardQueueItem[]>([]);
-  useInboxRefresh(()=>{setQueue([...loadSardQueue()]);});
+  useInboxRefresh(()=>{setQueue([...loadSardQueue()]);}, { sharedSard: true });
   const students = loadStudents();
   const halaqat = loadHalaqat();
 
@@ -64,7 +64,7 @@ export function LateSardList() {
 /** Active sard queue (pending + approved_third + scheduled-ready). Read-only. */
 export function ActiveSardList() {
   const [queue,setQueue] = useState(() => loadSardQueue());
-  useInboxRefresh(()=>setQueue([...loadSardQueue()]));
+  useInboxRefresh(()=>setQueue([...loadSardQueue()]), { sharedSard: true });
   const students = loadStudents();
   const halaqat = loadHalaqat();
 

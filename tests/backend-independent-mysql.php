@@ -68,3 +68,5 @@ check(json_decode($s->fetchColumn(),true)===$records,'original shared-history fo
 $GLOBALS['input']['value']=array_slice($records,0,500);
 try{handle_set_app_state();throw new RuntimeException('old truncation accepted');}catch(RuntimeException $error){check($error->getCode()===409,'old 500-item writer is rejected on the actual engine');}
 $s->execute([3,'sard_history']);check(json_decode($s->fetchColumn(),true)===$records,'old-client rejection retains all 651 stored records');
+$_GET=['key'=>'sard_history'];$pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();handle_list_app_state();$pdo->rollBack();
+check($GLOBALS['response'][0]['context_complex_id']===3&&$GLOBALS['response'][0]['value']===$records,'read-only history response confirms request context without changing its stored data');

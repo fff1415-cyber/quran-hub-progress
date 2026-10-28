@@ -9,7 +9,7 @@ REMOTE="${3:-}"
 MAX_ATTEMPTS="${4:-3}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LOCAL="${ROOT}/api/"
+LOCAL="${API_DEPLOY_LOCAL:-${ROOT}/api/}"
 
 if [ -z "$SSH_USER" ] || [ -z "$SERVER" ] || [ -z "$REMOTE" ]; then
   echo "Usage: FTP_PASSWORD=... bash scripts/deploy-hostinger-api-ci.sh USER SERVER REMOTE/ [attempts]"

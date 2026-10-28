@@ -62,7 +62,10 @@ function handle_list_app_state(): void
         $stmt = $pdo->prepare($sql);
         $stmt->execute($tenants ? array_merge([$cid], $allowed) : $allowed);
         $rows = $stmt->fetchAll();
-        foreach ($rows as &$row) $row['value'] = json_decode($row['value'] ?? '{}', true);
+        foreach ($rows as &$row) {
+            $row['value'] = json_decode($row['value'] ?? '{}', true);
+            $row['context_complex_id'] = $cid;
+        }
         json_response($keyFilter === '' ? $rows : array_values(array_filter($rows, fn($row) => $row['key'] === $keyFilter)));
     }
 
@@ -86,6 +89,7 @@ function handle_list_app_state(): void
     $rows = array_values(array_filter($rows, static fn (array $row): bool => ($row['key'] ?? '') !== 'staff_tasks_v1'));
     foreach ($rows as &$row) {
         $row['value'] = json_decode($row['value'] ?? '{}', true);
+        $row['context_complex_id'] = $cid;
         if (($row['key'] ?? '') === 'sard_queue' && is_array($row['value'])) {
             $row['value'] = sard_reconcile_queue($row['value'], sard_current_assignments($pdo, $cid));
         }

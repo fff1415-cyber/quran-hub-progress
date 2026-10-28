@@ -32,6 +32,7 @@ export function refreshSardQueueFromShared(): Promise<void> {
       if (!matches(before)) return;
       const row = rows.find(value => value.key === "sard_queue");
       if (row) {
+        if (!("context_complex_id" in row) || typeof row.context_complex_id !== "number" || row.context_complex_id !== before.complex) throw new Error("لم يؤكد الخادم سياق المجمع الحالي لقائمة السرد");
         if (!Array.isArray(row.value) || row.value.some(item => !item || typeof item !== "object" || typeof item.id !== "string")) throw new Error("تعذّر تأكيد قائمة السرد من الخادم");
         // A read started before a local write must not undo that write, even if it has since committed.
         if (!hasPendingSardWrites() && JSON.stringify(loadSardQueue()) === baseline) {
