@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/plan_integrity.php';
 require_once __DIR__ . '/plan_diary.php';
+require_once __DIR__ . '/plan_progression.php';
 
 function plans_require_roles(array $auth, array $roles): void
 {
@@ -752,6 +753,12 @@ function handle_assign_plan(): void
         if (array_key_exists('expected_assignment_id', $input) && ($current['id'] ?? '') !== $expected) {
             throw new RuntimeException('تغيّرت خطة الطالب — حدّث الصفحة قبل الاعتماد');
         }
+        $finalize=!empty($input['finalize_only']);
+        $catalogStmt=$pdo->prepare($tenants
+            ? 'SELECT id,level_number FROM education_plans WHERE complex_id = ? AND track = ? AND (catalog_archived_at IS NULL OR id = ?) ORDER BY level_number'
+            : 'SELECT id,level_number FROM education_plans WHERE track = ? AND (catalog_archived_at IS NULL OR id = ?) ORDER BY level_number');
+        $catalogStmt->execute($tenants?[$cid,$track,$current['plan_id']??'']:[$track,$current['plan_id']??'']);$catalog=$catalogStmt->fetchAll();
+        if($finalize && (!$current || $current['plan_id']!==$planId || !plans_hifz_complete($pdo,$current) || plans_global_phase_from_level($track,(int)$current['level_number'],$catalog)<($track==='gold'?30:60)))throw new RuntimeException('الاعتماد النهائي متاح للخطة الأخيرة المكتملة فقط');
         if (($auth['role'] ?? '') === 'musammi') {
             if ($expected === '' || !$current || $current['track'] !== $planRow['track']) {
                 throw new RuntimeException('المسمّع مخوّل بترحيل الخطة الحالية فقط');
@@ -759,15 +766,14 @@ function handle_assign_plan(): void
             if (!plans_hifz_complete($pdo, $current)) throw new RuntimeException('لم يكتمل حفظ الخطة الحالية');
             $profilePhase = (int) ($studentRow['phase_number'] ?? $studentRow['level'] ?? 0);
             $studentPhase = $profilePhase > 0 ? $profilePhase : null;
-            $catalogStmt = $pdo->prepare($tenants
-                ? 'SELECT id, level_number FROM education_plans WHERE complex_id = ? AND track = ? ORDER BY level_number'
-                : 'SELECT id, level_number FROM education_plans WHERE track = ? ORDER BY level_number');
-            $catalogStmt->execute($tenants ? [$cid, $track] : [$track]);
-            if (!plans_is_next_catalog_plan($catalogStmt->fetchAll(), $track, (string) $current['plan_id'], $planId, $studentPhase)) {
+            if (!$finalize && !plans_is_next_catalog_plan($catalog, $track, (string) $current['plan_id'], $planId, $studentPhase)) {
                 throw new RuntimeException('لا يمكن تجاوز الخطة التالية');
             }
         }
 
+        $id=$current['id']??'';
+        $dateVal=$planStartDate!==''&&preg_match('/^\d{4}-\d{2}-\d{2}$/',$planStartDate)?$planStartDate:null;
+        if(!$finalize){
         $pdo->prepare(
             "UPDATE student_plan_assignments SET status = 'transferred', transferred_at = NOW() WHERE student_id = ? AND status IN ('active', 'frozen')"
         )->execute([$studentId]);
@@ -789,6 +795,9 @@ function handle_assign_plan(): void
             $faces['faces_per_half'], $faces['faces_per_one'], $faces['faces_per_two'],
             $name, app_state_json_encode($snapshot),
         ]);
+        }
+        $profile=plans_profile_commit($pdo,$cid,$studentId,$planRow,$catalog);
+        $passRecords=[];$passedEntry=null;
 
         $sardQueue = null;
         if (isset($input['sard_result'])) {
@@ -809,18 +818,23 @@ function handle_assign_plan(): void
                 $entry['phase'] = ($sard['phase'] ?? '') === 'review_only' ? 'review_only' : 'full';
                 $entry['passedAt'] = gmdate('c');
                 $entry['closedPlanTitle'] = $current['title'] ?? null;
-                $entry['newPlanTitle'] = $planRow['title'];
+                $entry['newPlanTitle'] = $finalize?null:$planRow['title'];
                 $entry['newPlanStartDate'] = $dateVal;
+                $passedEntry=$entry;
                 $found = true;
             }
             unset($entry);
             if (!$found) throw new RuntimeException('طلب السرد غير محفوظ — حدّث الصفحة');
             $sardQueue = sard_reconcile_queue($sardQueue, sard_current_assignments($pdo, $cid));
             app_state_upsert($pdo, 'sard_queue', $sardQueue, $stateTenants ? $cid : null);
+            $passRecords=plans_pass_records($pdo,$cid,$passedEntry,$current,$sard);
         } elseif (($auth['role'] ?? '') === 'musammi') {
             throw new RuntimeException('طلب الاجتياز مطلوب لترحيل الخطة');
         }
-        $response = ['ok' => true, 'assignment_id' => $id, 'sard_queue' => $sardQueue];
+        $advance=['completedAssignmentId'=>$current['id']??null,'closedPlanTitle'=>$current['title']??null];
+        if(!$finalize)$advance=array_merge($advance,['newPlanId'=>$planId,'newPlanTitle'=>$planRow['title'],'newGlobalPhase'=>$profile['phaseNumber'],'newInstituteLevel'=>$profile['instituteLevel'],'newPlanStartDate'=>$dateVal]);
+        if(isset($passRecords['record']))$advance['record']=$passRecords['record'];
+        $response = array_merge(['ok'=>true,'assignment_id'=>$id,'sard_queue'=>$sardQueue,'profile'=>$profile,'advance'=>$advance],$passRecords);
         if (!empty($input['operation_id'])) plans_operation_save($pdo, plans_operation_id($input), $studentId, 'assign', $input, $response);
         $pdo->commit();
         json_response($response);

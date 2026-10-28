@@ -19,6 +19,7 @@ export interface SardPassPayload {
   track: PlanTrack;
   studentPhase?: number;
   assignedBy?: string;
+  hifzErrors?:number;hifzWarnings?:number;reviewErrors?:number[];reviewWarnings?:number[];
 }
 
 export interface PostPassResult extends PlanAdvanceResult {
@@ -50,11 +51,9 @@ export async function runPostPassAutomation(payload: SardPassPayload): Promise<P
     planStartDate: record.testDate.slice(0, 10),
     expectedAssignmentId: payload.assignmentId ?? sheet.assignment?.id,
     studentPhase: payload.studentPhase,
-    sardResult: payload.queueItemId ? { id: payload.queueItemId, percent: payload.percent, phase: payload.phase ?? "full" } : undefined,
+    sardResult: payload.queueItemId ? { id: payload.queueItemId, percent: payload.percent, phase: payload.phase ?? "full",hifzScore:payload.hifzScore,reviewScore:payload.reviewScore,hifzErrors:payload.hifzErrors,hifzWarnings:payload.hifzWarnings,reviewErrors:payload.reviewErrors,reviewWarnings:payload.reviewWarnings } : undefined,
   });
-  pushAcademicRecord(record);
-  if (advance.newGlobalPhase)
-    await syncStudentToGlobalPhase(payload.studentId, advance.newGlobalPhase, advance.newInstituteLevel);
+  if(!advance.record)throw new Error("لم يؤكد الخادم السجل الأكاديمي؛ لم يُعلن نجاح العملية");
   if (advance.newPlanTitle)
     notifyTeacherHalaqa(
       payload.halaqaId,
@@ -62,5 +61,5 @@ export async function runPostPassAutomation(payload: SardPassPayload): Promise<P
       "info",
     );
 
-  return { ...advance, record };
+  return { ...advance, record:advance.record };
 }

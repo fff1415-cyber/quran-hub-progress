@@ -1117,8 +1117,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       } catch(e) { toast.error(e instanceof Error ? e.message : "لم يتأكد حفظ عملية اليوم"); }
     });
   };
-  const handlePlanHifz = (s: Student, dayKey: string, checked: boolean) =>
-    recordPlanField(s,dayKey,"hifz",checked ? hifzCheckedValue(s.levelType) : "");
+  const handlePlanHifz = (s: Student, dayKey: string, checked: boolean, value?: import("@/lib/mock-data").HifzValue) =>
+    recordPlanField(s,dayKey,"hifz",value ?? (checked ? hifzCheckedValue(s.levelType) : ""));
   const handlePlanPassFail = (s: Student, dayKey: string, task: "rabt" | "muraja", value: "pass" | "fail" | "") =>
     recordPlanField(s,dayKey,task,value);
 
@@ -1361,7 +1361,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           onUpdateDay={updateDay}
           onUpdateSciScore={updateSciScore}
           onFinalizeSciScore={finalizeSciScore}
-          onPlanHifz={(s, dayKey, checked) => void handlePlanHifz(s, dayKey, checked)}
+          onPlanHifz={(s, dayKey, checked, value) => void handlePlanHifz(s, dayKey, checked, value)}
           onPlanPassFail={(s, dayKey, task, value) => void handlePlanPassFail(s, dayKey, task, value)}
           onCompensationChange={(s, dayKey, faces) => void handleDayCompensationChange(s, dayKey, faces)}
           onMarkAllPresent={markAllPresentForDay}
@@ -1693,7 +1693,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           passFailValue=""
                           onHifzChange={(v) => planLinkedIds.has(s.id) ? void recordPlanField(s,d.key,"hifz",v) : updateDay(s.id, d.key, { hifz: v })}
                           onPassFailChange={() => {}}
-                          onPlanHifzChange={(checked) => void handlePlanHifz(s, d.key, checked)}
+                          onPlanHifzChange={(checked, value) => void handlePlanHifz(s, d.key, checked, value)}
                         />
                       </td>
                       {sciCtx.visible && sciCtx.fields.hifz && (

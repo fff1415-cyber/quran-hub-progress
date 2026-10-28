@@ -17,7 +17,7 @@ assert.equal(auth.getAuthItem('qs_role'),'supervisor');assert.equal(auth.getAuth
  let plans=[];let calls=[];
  const sheet={assignment:{id:'old',status:'active'},plan:{title:'old plan',level_number:1},segments:[],completions:[]};
  const service={fetchStudentPlanSheet:async()=>sheet,fetchPlans:async()=>plans,assignStudentPlan:async(...args)=>calls.push(args),patchStudentAssignment:async()=>{throw Error('must not close before assigning')}};
- const progression=load('src/lib/plan-progression.ts',{'@/lib/plans-service':service,'@/lib/plan-level-ranges':{globalPhaseFromPlanLevel:()=>1,legacyGlobalPhaseFromPlanLevel:()=>1,maxGlobalPhase:()=>30,followingPlan:()=>plans[0]?{plan:plans[0],phase:2}:null,instituteLevelFromPlanLevel:()=>null,murajaStartSegment:()=>1},'@/lib/plan-daily-faces':{normalizeTaskQuotas:()=>({})}});
+ const progression=load('src/lib/plan-progression.ts',{'@/lib/plans-service':{...service,retryPendingPlanAdvance:async()=>null},'@/lib/plan-level-ranges':{globalPhaseFromPlanLevel:()=>1,legacyGlobalPhaseFromPlanLevel:()=>1,maxGlobalPhase:()=>30,followingPlan:()=>plans[0]?{plan:plans[0],phase:2}:null,instituteLevelFromPlanLevel:()=>null,murajaStartSegment:()=>1},'@/lib/plan-daily-faces':{normalizeTaskQuotas:()=>({})}});
  await assert.rejects(progression.completePlanAndAdvance('student','supervisor','gold'),/الخطة التالية/);assert.equal(calls.length,0);
  plans=[{id:'next',title:'next plan'}];await progression.completePlanAndAdvance('student','supervisor','gold',{expectedAssignmentId:'old'});assert.equal(calls[0][4].expected_assignment_id,'old');
  await assert.rejects(progression.completePlanAndAdvance('student','supervisor','gold',{expectedAssignmentId:'stale'}),/تغيّرت/);assert.equal(calls.length,1);
