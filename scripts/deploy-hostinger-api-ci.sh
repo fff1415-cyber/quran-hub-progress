@@ -28,7 +28,7 @@ RSYNC_SSH=(sshpass -e ssh "${SSH_OPTS[@]}")
 attempt=1
 while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
   echo "API rsync attempt ${attempt}/${MAX_ATTEMPTS} → ${SSH_USER}@${SERVER}:${REMOTE}"
-  if rsync -avz --delete --exclude=config.php -e "${RSYNC_SSH[*]}" "$LOCAL" "${SSH_USER}@${SERVER}:${REMOTE}"; then
+  if rsync -avz --exclude=config.php -e "${RSYNC_SSH[*]}" "$LOCAL" "${SSH_USER}@${SERVER}:${REMOTE}"; then
     echo "API rsync OK"
     exit 0
   fi

@@ -1,3 +1,4 @@
+import { isHifzChecked } from "@/lib/mock-data";
 import * as XLSX from "xlsx";
 import {
   loadStudents,
@@ -57,7 +58,7 @@ export function exportSemesterGradesExcel(semesterName: string, weekCount: numbe
         if (e.attendance === "absent") abs++;
         else if (e.attendance === "late") late++;
         else if (e.attendance === "excused") exc++;
-        if (e.hifz) hifz++;
+        if (isHifzChecked(e.hifz)) hifz++;
         if (e.muraja === "pass") mp++;
         else if (e.muraja === "fail") mf++;
         if (e.rabt === "pass") rp++;

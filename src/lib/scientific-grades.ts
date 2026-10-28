@@ -828,6 +828,13 @@ export function studentScientificPeriodTotals(
   return totals;
 }
 
+export function scientificPeriodAssessmentCount(data: ScientificGradesDataStore[string], studentId: string, weekNums: number[], fields: ScientificGradeField[], dayKeys?: string[]): number {
+  let count = 0;
+  for (const wn of weekNums) for (const [dayKey, cell] of Object.entries(data[studentId]?.[wn] ?? {}))
+    if (!dayKeys || dayKeys.includes(dayKey)) for (const field of fields) if (parseScientificScore(cell[field]) !== null) count++;
+  return count;
+}
+
 /** Best-case points per working day from manager defaults (for cumulative % denominator). */
 export function scientificDailyMaxPossible(config: ScientificGradesConfig): number {
   const fields = enabledScientificFields(config.fields);

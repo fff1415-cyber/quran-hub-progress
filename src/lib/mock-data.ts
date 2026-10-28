@@ -1039,8 +1039,8 @@ export function hifzCheckedValue(levelType: Student["levelType"]): HifzValue {
   return levelType === "gold" ? "one" : "half";
 }
 
-export function isHifzChecked(hifz: HifzValue): boolean {
-  return hifz !== "";
+export function isHifzChecked(hifz: unknown): boolean {
+  return hifz === "half" || hifz === "one" || hifz === "two";
 }
 
 export const COMPENSATION_FACE_OPTIONS: { value: number; label: string }[] = [
@@ -1111,7 +1111,7 @@ export function dayScore(d: DayEntry, isTalqeen: boolean, levelType?: Student["l
   const att = d.attendance === "present" ? 15 : d.attendance === "late" ? 10 : d.attendance === "excused" ? 5 : 0;
   if (isTalqeen) return att + (d.wajib ? 15 : 0);
   const hifzSlot = levelType === "gold" ? HIFZ_SCORES.one : HIFZ_SCORES.half;
-  const hifz = d.hifz !== "" ? hifzSlot : 0;
+  const hifz = isHifzChecked(d.hifz) ? hifzSlot : 0;
   const rabt = d.rabt === "pass" ? 15 : d.rabt === "fail" ? 5 : 0;
   const mur = d.muraja === "pass" ? 15 : d.muraja === "fail" ? 5 : 0;
   return att + hifz + rabt + mur;
@@ -1184,7 +1184,7 @@ export function studentStats(studentId: string, grades: GradesStore): StudentSta
       if (e.attendance === "late") stats.lateCount++;
       else if (e.attendance === "absent") stats.absentCount++;
       else if (e.attendance === "excused") stats.excusedCount++;
-      if (e.hifz) stats.hifzCount++;
+      if (isHifzChecked(e.hifz)) stats.hifzCount++;
       if (e.rabt === "pass") stats.rabtPass++;
       else if (e.rabt === "fail") stats.rabtFail++;
       if (e.muraja === "pass") stats.murajaPass++;
