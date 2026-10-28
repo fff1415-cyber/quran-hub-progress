@@ -51,6 +51,7 @@ export interface DayEntry {
   /** Plan hifz segment indexes applied when this day's hifz was recorded (for undo). */
   hifzPlanSegments?: number[];
   hifzPlanAssignmentId?: string;
+  planRecordRefs?: Partial<Record<"hifz" | "rabt" | "muraja" | "compensationFaces", {eventId:string;assignmentId:string;segments:number[];date:string;quantity:number}>>;
   /** Custom field id → selected option (per halaqa field definitions). */
   custom?: Record<string, string>;
   /** Last local edit time — used to merge teacher/assistant concurrent saves. */
@@ -777,6 +778,7 @@ export type SardStatus =
 export type SardPhase = "full" | "review_only";
 
 export interface SardQueueItem {
+  evaluationRules?: import("@/lib/evaluation-types").EvaluationRulesSnapshot;
   assignmentId?: string;
   archiveReason?: string;
   id: string;
@@ -992,6 +994,9 @@ export function notifyLateSard(students: Student[]) {
 }
 
 export interface SardHistoryItem {
+  evaluationRules?: import("@/lib/evaluation-types").EvaluationRulesSnapshot;
+  assignmentId?: string;
+  semesterId?: string | null;
   id: string;
   studentId: string;
   halaqaId: number;

@@ -1,11 +1,12 @@
 import { getToken } from "@/lib/auth-session";
 import { getActiveComplexId } from "@/lib/tenant";
-import { secureListAppState, secureSetAppState, securePatchWeeklyTest } from "@/lib/secure-data.functions";
+import { secureListAppState, secureSetAppState, securePatchWeeklyTest, secureRecordPlanDay } from "@/lib/secure-data.functions";
 
 export type SharedKey = "grades" | "weekly_tests" | "scientific_grades" | "notifications" | "academic_records" | "sard_history";
 type Cell = { present: boolean; value?: unknown };
 export type StateChange = { path: string[]; base: Cell; next: Cell };
-type Pending = { key: SharedKey; context: string; protocol: 1; operation_id: string; semester_id: string | null; changes: StateChange[]; weekly?: {studentId:string;week:number;kind:"muraja"|"rabt";index:number;result:""|"pass"|"fail";base:""|"pass"|"fail"} };
+export type PlanDayPayload = {student_id:string;expected_assignment_id:string;task_type:"hifz"|"rabt"|"muraja";tap:"half"|"one"|"two";operation_id:string;diary:{semester_id:string;week_number:number;day_key:string;date:string;field:"hifz"|"rabt"|"muraja"|"compensationFaces";base:unknown;value:unknown}};
+type Pending = { plan?: PlanDayPayload; key: SharedKey; context: string; protocol: 1; operation_id: string; semester_id: string | null; changes: StateChange[]; weekly?: {studentId:string;week:number;kind:"muraja"|"rabt";index:number;result:""|"pass"|"fail";base:""|"pass"|"fail"} };
 let semester: string | null = null;
 const EVENT = "qs-shared-save-state";
 const semesterKeys = new Set<SharedKey>(["grades", "weekly_tests", "scientific_grades"]);
@@ -57,6 +58,13 @@ export function queueWeeklyResult(weekly: NonNullable<Pending["weekly"]>): Promi
   ops.push({key:"weekly_tests",context:context(),protocol:1,operation_id:crypto.randomUUID(),semester_id:semester,weekly,changes:[{path:[weekly.studentId,String(weekly.week),weekly.kind,String(weekly.index)],base:{present:true,value:weekly.base},next:{present:true,value:weekly.result}}]});
   savePending(ops); return flushSharedEdits();
 }
+export function queuePlanDay(plan: Omit<PlanDayPayload,"operation_id">): Promise<void> {
+  const existing=pending().find(op=>op.plan && op.plan.student_id===plan.student_id && op.plan.diary.week_number===plan.diary.week_number && op.plan.diary.day_key===plan.diary.day_key && op.plan.diary.field===plan.diary.field);
+  if(existing) return Promise.reject(new Error("لهذه الخلية عملية معلقة؛ أعد محاولة الحفظ أولًا من حالة الحفظ"));
+  const operation_id=crypto.randomUUID();const ops=pending();
+  ops.push({key:"grades",context:context(),protocol:1,operation_id,semester_id:plan.diary.semester_id,changes:[],plan:{...plan,operation_id}});
+  savePending(ops);return flushSharedEdits();
+}
 export function flushSharedEdits(): Promise<void> {
   const run = async () => {
     const token = getToken(); if (!token) throw new Error("الجلسة غير متاحة؛ التعديلات المعلقة محفوظة محليًا");
@@ -65,7 +73,13 @@ export function flushSharedEdits(): Promise<void> {
       const op = pending()[0]; if (!op) { report({ state: "saved" }); return; }
       report({ state: "saving" });
       try {
-        if(op.weekly) await securePatchWeeklyTest({data:{token,...op.weekly,semester_id:op.semester_id!,operation_id:op.operation_id}});
+        if(op.plan) {
+          const confirmed=await secureRecordPlanDay({token,payload:op.plan});
+          if(scope===context()&&semester===confirmed.semester_id) {
+            const {saveGrades}=await import("./mock-data");saveGrades(reconcileShared("grades",confirmed.grades),{sync:false});
+          }
+        }
+        else if(op.weekly) await securePatchWeeklyTest({data:{token,...op.weekly,semester_id:op.semester_id!,operation_id:op.operation_id}});
         else await secureSetAppState({ data: { token, key: op.key, value: op } });
         if (scope !== context()) return;
         savePending(pending().filter(x => x.operation_id !== op.operation_id));

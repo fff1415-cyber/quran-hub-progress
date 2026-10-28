@@ -240,3 +240,8 @@ export async function secureUpdateActiveSemester({
     body: JSON.stringify({ semester: data.semester, weeks: data.weeks }),
   });
 }
+
+/** Uses the plan handler's existing access checks; grade and completion commit together. */
+export async function secureRecordPlanDay(data: {token:string;payload:unknown}) {
+  return apiFetch<{ok:boolean;grades:import("./mock-data").GradesStore;entry:import("./mock-data").DayEntry;segments:number[];semester_id:string}>("/plans/apply-input",{method:"POST",auth:data.token,body:JSON.stringify(data.payload)});
+}

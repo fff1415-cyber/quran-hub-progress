@@ -49,8 +49,11 @@ function plans_operation_replay(PDO $pdo, string $id, string $studentId, string 
 
 function plans_operation_save(PDO $pdo, string $id, string $studentId, string $kind, array $input, array $response): void
 {
-    $pdo->prepare('INSERT INTO plan_operations (id, student_id, operation_kind, input_hash, response_json) VALUES (?, ?, ?, ?, ?)')
-        ->execute([$id, $studentId, $kind, hash('sha256', app_state_json_encode($input)), app_state_json_encode($response)]);
+    $withInput=plans_column_exists($pdo,'plan_operations','input_json');
+    $pdo->prepare($withInput
+        ? 'INSERT INTO plan_operations (id, student_id, operation_kind, input_hash, response_json, input_json) VALUES (?, ?, ?, ?, ?, ?)'
+        : 'INSERT INTO plan_operations (id, student_id, operation_kind, input_hash, response_json) VALUES (?, ?, ?, ?, ?)')
+        ->execute(array_merge([$id,$studentId,$kind,hash('sha256',app_state_json_encode($input)),app_state_json_encode($response)],$withInput?[app_state_json_encode($input)]:[]));
 }
 
 /** Snapshot means content observed now, never a claim about an unknown past syllabus. */

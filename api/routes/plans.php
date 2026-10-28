@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/plan_integrity.php';
+require_once __DIR__ . '/plan_diary.php';
 
 function plans_require_roles(array $auth, array $roles): void
 {
@@ -1126,6 +1127,10 @@ function handle_apply_plan_input(): void
 
     try {
         plans_require_integrity_schema($pdo);
+        if (isset($input['diary'])) {
+            try { json_response(plans_record_diary($pdo,$cid,$auth,$input)); return; }
+            catch (Throwable $error) { error_response($error->getMessage(),409); }
+        }
         $operationId = plans_operation_id($input);
         $pdo->beginTransaction();
         plans_lock_student($pdo, $studentId);
