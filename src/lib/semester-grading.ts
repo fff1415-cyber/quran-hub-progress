@@ -8,7 +8,7 @@ import type { AcademicCalendar, SemesterDayRef } from "@/lib/academic-context";
 import { holidayDateStrings } from "@/lib/semester-holidays";
 import { isoDateToDayKey } from "@/lib/operational-date";
 import type { DayEntry, GradesStore, HifzValue, Student } from "@/lib/mock-data";
-import { DAYS, weekPercentage, compensationPoints, sumWeekCompensationFaces, type WeekRecord } from "@/lib/mock-data";
+import { isHifzChecked, DAYS, weekPercentage, compensationPoints, sumWeekCompensationFaces, type WeekRecord } from "@/lib/mock-data";
 
 export interface DailyGradeWeights {
   attendance_present: number;
@@ -97,7 +97,7 @@ export function dayScoreBreakdown(
   }
 
   const hifzMax = hifzFullMax(levelType, weights);
-  const hifzEarned = d.hifz !== "" ? hifzMax : 0;
+  const hifzEarned = isHifzChecked(d.hifz) ? hifzMax : 0;
   const rabtEarned = d.rabt === "pass" ? weights.rabt_pass : d.rabt === "fail" ? weights.rabt_fail : 0;
   const rabtMax = weights.rabt_pass;
   const murEarned = d.muraja === "pass" ? weights.muraja_pass : d.muraja === "fail" ? weights.muraja_fail : 0;
@@ -192,8 +192,8 @@ export function isDayFullyComplete(
   isTalqeen: boolean,
 ): boolean {
   const d = entry ?? EMPTY_DAY;
-  if (isTalqeen) return dayAttendanceDone(d) && d.wajib;
-  return dayAttendanceDone(d) && !!d.hifz && d.rabt === "pass" && d.muraja === "pass";
+  if (isTalqeen) return dayAttendanceDone(d) && !!d.wajib;
+  return dayAttendanceDone(d) && isHifzChecked(d.hifz) && d.rabt === "pass" && d.muraja === "pass";
 }
 
 export interface SemesterDayCompletionReport {
@@ -272,7 +272,7 @@ export function semesterDayCompletionReport(
     else if (d.attendance === "absent") absentDays += 1;
     else if (d.attendance === "excused") excusedDays += 1;
     if (dayAttendanceDone(d)) attComplete += 1;
-    if (d.hifz) hifzComplete += 1;
+    if (isHifzChecked(d.hifz)) hifzComplete += 1;
     if (d.rabt === "pass") rabtComplete += 1;
     if (d.muraja === "pass") murComplete += 1;
     if (d.wajib) wajibComplete += 1;
@@ -406,7 +406,7 @@ function accumulateComponentTotals(
     return;
   }
   const hifzMax = hifzFullMax(levelType, weights);
-  acc.hifzE += d.hifz !== "" ? hifzMax : 0;
+  acc.hifzE += isHifzChecked(d.hifz) ? hifzMax : 0;
   acc.hifzM += hifzMax;
   acc.murE += d.muraja === "pass" ? weights.muraja_pass : d.muraja === "fail" ? weights.muraja_fail : 0;
   acc.murM += weights.muraja_pass;

@@ -1,7 +1,7 @@
 /** Teacher-configured numeric scores — reflected in halaqa program totals only. */
 import { hasAuthToken } from "@/lib/auth-session";
 import { ATTENDANCE_OPTION_LABELS, type AttendanceOption } from "@/lib/grade-input-settings";
-import type { DayEntry, GradesStore } from "@/lib/mock-data";
+import { isHifzChecked, type DayEntry, type GradesStore } from "@/lib/mock-data";
 
 import {
   SCIENTIFIC_PROGRAM_ID,
@@ -147,7 +147,7 @@ export function resolveScientificScore(
       return config.defaultScores.attendance?.[att]?.trim() ?? "";
     }
     case "hifz":
-      return entry.hifz !== "" ? (config.defaultScores.hifz?.trim() ?? "") : "";
+      return isHifzChecked(entry.hifz) ? (config.defaultScores.hifz?.trim() ?? "") : "";
     case "rabt":
       return entry.rabt !== "" ? (config.defaultScores.rabt?.trim() ?? "") : "";
     case "muraja":
@@ -986,4 +986,12 @@ export function mergeScientificGradesStores(
 
 export function replaceScientificGradesStore(store: ScientificGradesStore) {
   saveScientificGradesStore(store);
+}
+
+/** Presence is independent of earned points: numeric zero is an assessment. */
+export function scientificPeriodAssessmentCount(data: ScientificGradesDataStore[string], studentId: string, weekNums: number[], fields: ScientificGradeField[]): number {
+  let count = 0;
+  for (const wn of weekNums) for (const cell of Object.values(data[studentId]?.[wn] ?? {}))
+    for (const field of fields) if (parseScientificScore(cell[field]) !== null) count++;
+  return count;
 }
