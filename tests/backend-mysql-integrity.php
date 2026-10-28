@@ -74,9 +74,11 @@ $pdo=connectAudit();$GLOBALS['pdo']=$pdo;
 check((int)$pdo->query("SELECT COUNT(*) FROM plan_assignment_completions WHERE student_id='diary-S' AND revoked_at IS NULL")->fetchColumn()===2,'real InnoDB contention preserves two dated diary completions');
 $e=json_decode($pdo->query("SELECT value FROM app_state WHERE `key`='grades'")->fetchColumn(),true);
 check(count($e['scopes']['term-A']['diary-S'][1]['days'])===2,'both grades remain in their semester after concurrent recording');
-$pdo->exec("CREATE TRIGGER reject_grade BEFORE UPDATE ON app_state FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='isolated grade failure'");
+$pdo->exec(<<<'SQL'
+ALTER TABLE app_state ADD CONSTRAINT reject_test_tuesday CHECK (`key` <> 'grades' OR JSON_EXTRACT(value, '$.scopes."term-A"."diary-S"."1".days.tue.hifz') IS NULL)
+SQL);
 $failed=['student_id'=>'diary-S','expected_assignment_id'=>'diary-A','operation_id'=>'mysql-partial-failure','task_type'=>'hifz','tap'=>'one','diary'=>['semester_id'=>'term-A','week_number'=>1,'day_key'=>'tue','date'=>'2026-10-13','field'=>'hifz','base'=>'','value'=>'one']];
-try{plans_record_diary($pdo,1,require_auth(),$failed);throw new RuntimeException('injected failure not detected');}catch(PDOException $error){check(str_contains($error->getMessage(),'isolated grade failure'),'real MySQL grade failure is surfaced');}
-$pdo->exec('DROP TRIGGER reject_grade');
+try{plans_record_diary($pdo,1,require_auth(),$failed);throw new RuntimeException('injected failure not detected');}catch(PDOException $error){check(str_contains($error->getMessage(),'reject_test_tuesday'),'real MySQL grade failure is surfaced');}
+$pdo->exec('ALTER TABLE app_state DROP CHECK reject_test_tuesday');
 check((int)$pdo->query("SELECT COUNT(*) FROM plan_assignment_completions WHERE student_id='diary-S' AND revoked_at IS NULL")->fetchColumn()===2,'MySQL rollback leaves neither extra grade nor extra completion');
 echo "MySQL diary migration, unique-current constraint, concurrency and rollback acceptance complete.\n";
