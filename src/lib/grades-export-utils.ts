@@ -1,3 +1,4 @@
+import { isHifzChecked } from "@/lib/mock-data";
 import {
   DAYS,
   loadGrades,
@@ -136,7 +137,7 @@ function tallyDayEntry(stats: PeriodDayStats, e: WeekRecord["days"][string] | un
   else if (e.attendance === "excused") stats.excused++;
   else if (e.attendance === "present") stats.present++;
 
-  if (e.hifz) stats.hifz++;
+  if (isHifzChecked(e.hifz)) stats.hifz++;
   if (e.muraja === "pass") stats.murajaPass++;
   else if (e.muraja === "fail") stats.murajaFail++;
   if (e.rabt === "pass") stats.rabtPass++;

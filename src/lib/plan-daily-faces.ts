@@ -1,3 +1,4 @@
+export type { DailyFaceQuotas } from "@/lib/plan-types";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import { getElapsedSemesterDays, getTotalSemesterWorkingDays } from "@/lib/semester-grading";
 import type { DailyFaceQuotas, PlanTrack, StudentPlanAssignment } from "@/lib/plan-types";
@@ -29,6 +30,8 @@ export const DEFAULT_FACE_QUOTAS: Pick<DailyFaceQuotas, "daily_rabt_faces" | "da
 
 export interface FaceProgressSummary {
   workingDays: number;
+  undatedHifzCompensation?: number;
+  undatedMurajaCompensation?: number;
   hifzActual: number;
   rabtActual: number;
   murajaActual: number;
@@ -168,7 +171,7 @@ export function aggregateFaceProgress(
 ): FaceProgressSummary {
   const days = getElapsedSemesterDays(calendar);
 
-  if (days.length === 0) {
+  if (days.length === 0 && !fromIso && !toIso) {
     return aggregateFaceProgressAllWeeks(studentId, grades, quotas);
   }
 
@@ -228,26 +231,21 @@ export function aggregateFaceProgress(
     murajaActual += part.muraja;
   }
 
-  const countedDayKeys = new Set(inRange.map((d) => `${d.weekNumber}:${d.dayKey}`));
-  const weekNumsInRange = new Set(inRange.map((d) => d.weekNumber));
-
-  for (const wn of weekNumsInRange) {
+  let undatedHifzCompensation = 0;
+  let undatedMurajaCompensation = 0;
+  for (const day of inRange) hifzActual += grades[studentId]?.[day.weekNumber]?.days[day.dayKey]?.compensationFaces ?? 0;
+  for (const wn of new Set(inRange.map(d => d.weekNumber))) {
     const week = grades[studentId]?.[wn];
-    if (!week?.days) continue;
-    hifzActual += sumWeekCompensationFaces(week);
-    murajaActual += week.compensationMurajaFaces ?? 0;
-    for (const [dayKey, entry] of Object.entries(week.days)) {
-      if (countedDayKeys.has(`${wn}:${dayKey}`)) continue;
-      const part = facesFromDayEntry(entry, quotas);
-      if (!part.hifz && !part.rabt && !part.muraja) continue;
-      hifzActual += part.hifz;
-      rabtActual += part.rabt;
-      murajaActual += part.muraja;
-    }
+    if (!week) continue;
+    // Weekly legacy totals have no date: report them separately, never allocate them.
+    if (!Object.values(week.days ?? {}).some(d => d.compensationFaces !== undefined)) undatedHifzCompensation += week.compensationFaces ?? 0;
+    undatedMurajaCompensation += week.compensationMurajaFaces ?? 0;
   }
 
   return {
     workingDays,
+    undatedHifzCompensation,
+    undatedMurajaCompensation,
     hifzActual,
     rabtActual,
     murajaActual,

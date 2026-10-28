@@ -36,7 +36,7 @@ RSYNC_SSH=(sshpass -e ssh "${SSH_OPTS[@]}")
 attempt=1
 while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
   echo "Rsync attempt ${attempt}/${MAX_ATTEMPTS}: ${LOCAL} → ${SSH_USER}@${SERVER}:${REMOTE}"
-  if rsync -avz --delete -e "${RSYNC_SSH[*]}" "$LOCAL" "${SSH_USER}@${SERVER}:${REMOTE}"; then
+  if rsync -avz -e "${RSYNC_SSH[*]}" "$LOCAL" "${SSH_USER}@${SERVER}:${REMOTE}"; then
     echo "Rsync deploy OK"
     exit 0
   fi

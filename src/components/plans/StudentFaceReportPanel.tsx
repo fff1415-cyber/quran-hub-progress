@@ -178,6 +178,7 @@ export function StudentFaceReportPanel() {
               <span>ربط/يوم: {data.quotas.daily_rabt_faces}</span>
               <span>مراجعة/يوم: {data.quotas.daily_muraja_faces}</span>
             </div>
+            {!!((data.summary.undatedHifzCompensation ?? 0) + (data.summary.undatedMurajaCompensation ?? 0)) && <p className="text-xs text-muted-foreground">تعويض بلا تاريخ محفوظ منفصلًا عن الفترة: حفظ {data.summary.undatedHifzCompensation ?? 0}، مراجعة {data.summary.undatedMurajaCompensation ?? 0} وجه.</p>}
             <div className="grid sm:grid-cols-3 gap-3">
               <FaceStatRow label="الحفظ" actual={data.summary.hifzActual} target={data.summary.hifzTarget} />
               <FaceStatRow label="الربط" actual={data.summary.rabtActual} target={data.summary.rabtTarget} />
