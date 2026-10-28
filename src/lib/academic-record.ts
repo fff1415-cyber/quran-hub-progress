@@ -1,9 +1,13 @@
+import { captureSharedEdit } from "@/lib/shared-state";
 import type { PlanTrack } from "@/lib/plan-types";
 import { hasAuthToken } from "@/lib/auth-session";
 import { loadSardHistory } from "@/lib/mock-data";
 
 export interface AcademicPhaseRecord {
   id: string;
+  assignmentId?:string;
+  semesterId?:string|null;
+  evaluationRules?:import("./evaluation-types").EvaluationRulesSnapshot|null;
   studentId: string;
   halaqaId: number;
   week: number;
@@ -30,13 +34,14 @@ function persistShared(value: AcademicPhaseRecord[]) {
 export function loadAcademicRecords(): AcademicPhaseRecord[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY);
-  return raw ? JSON.parse(raw) : [];
+  return raw ? (JSON.parse(raw) as AcademicPhaseRecord[]).sort((a,b)=>b.testDate.localeCompare(a.testDate)) : [];
 }
 
 export function saveAcademicRecords(list: AcademicPhaseRecord[]) {
-  const trimmed = list.slice(0, 500);
-  localStorage.setItem(KEY, JSON.stringify(trimmed));
-  persistShared(trimmed);
+  const before = loadAcademicRecords();
+  const raw=localStorage.getItem(KEY);if(raw&&!localStorage.getItem(`${KEY}:legacy-unverified`))localStorage.setItem(`${KEY}:legacy-unverified`,raw);
+  localStorage.setItem(KEY, JSON.stringify(list));
+  captureSharedEdit("academic_records", before, list);
 }
 
 export function pushAcademicRecord(record: AcademicPhaseRecord) {
@@ -54,11 +59,12 @@ export function studentAcademicRecords(studentId: string): AcademicPhaseRecord[]
 /** Includes passed sard history entries not yet migrated to academic records. */
 export function studentAcademicRecordsWithLegacy(studentId: string): AcademicPhaseRecord[] {
   const records = studentAcademicRecords(studentId);
-  const seen = new Set(records.map((r) => `${r.week}-${r.attempt}`));
+  const seen = new Set(records.map((r) => `${r.semesterId??"unverified"}:${r.assignmentId??"unverified"}:${r.week}-${r.attempt}`));
   const legacy = loadSardHistory()
-    .filter((h) => h.studentId === studentId && h.result === "passed" && !seen.has(`${h.week}-${h.attempt}`))
+    .filter((h) => h.studentId === studentId && h.result === "passed" && !seen.has(`${h.semesterId??"unverified"}:${h.assignmentId??"unverified"}:${h.week}-${h.attempt}`))
     .map((h): AcademicPhaseRecord => ({
       id: h.id,
+      assignmentId:h.assignmentId,semesterId:h.semesterId,evaluationRules:h.evaluationRules,
       studentId: h.studentId,
       halaqaId: h.halaqaId,
       week: h.week,

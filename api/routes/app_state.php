@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+require_once __DIR__ . '/app_state_integrity.php';
 
 function app_state_tenant_enabled(PDO $pdo): bool
 {
@@ -62,7 +63,7 @@ function handle_list_app_state(): void
         $stmt = $pdo->prepare($sql);
         $stmt->execute($tenants ? array_merge([$cid], $allowed) : $allowed);
         $rows = $stmt->fetchAll();
-        foreach ($rows as &$row) $row['value'] = json_decode($row['value'] ?? '{}', true);
+        foreach ($rows as &$row) $row = state_present_row($pdo, $cid, $row);
         json_response($keyFilter === '' ? $rows : array_values(array_filter($rows, fn($row) => $row['key'] === $keyFilter)));
     }
 
@@ -85,7 +86,7 @@ function handle_list_app_state(): void
     }
     $rows = array_values(array_filter($rows, static fn (array $row): bool => ($row['key'] ?? '') !== 'staff_tasks_v1'));
     foreach ($rows as &$row) {
-        $row['value'] = json_decode($row['value'] ?? '{}', true);
+        $row = state_present_row($pdo, $cid, $row);
         if (($row['key'] ?? '') === 'sard_queue' && is_array($row['value'])) {
             $row['value'] = sard_reconcile_queue($row['value'], sard_current_assignments($pdo, $cid));
         }
@@ -100,11 +101,6 @@ function sard_reconcile_queue(array $queue, array $assignments): array
     foreach ($queue as &$q) {
         if (($q['status'] ?? '') !== 'passed') continue;
         $a = $assignments[$q['studentId'] ?? ''] ?? null;
-        if (empty($q['assignmentId']) && $a) {
-            $passedTime = strtotime((string) ($q['passedAt'] ?? ''));
-            $assignedTime = strtotime((string) ($a['assigned_at'] ?? ''));
-            if (($q['closedPlanTitle'] ?? $q['planTitle'] ?? '') === ($a['title'] ?? '') && $passedTime && $assignedTime && $passedTime >= $assignedTime) $q['assignmentId'] = $a['id'];
-        }
         if (!empty($q['assignmentId'])) $passed[$q['assignmentId']] = true;
     }
     unset($q);
@@ -113,14 +109,10 @@ function sard_reconcile_queue(array $queue, array $assignments): array
         if (!in_array($q['status'] ?? '', $active, true)) continue;
         $a = $assignments[$q['studentId'] ?? ''] ?? null;
         $reason = null;
-        if (!$a) $reason = 'no_current_assignment';
+        if (!empty($a['ambiguous'])) $reason='ambiguous_current_assignment';
+        elseif (!$a) $reason = 'no_current_assignment';
         elseif (!empty($q['assignmentId']) && $q['assignmentId'] !== $a['id']) $reason = 'previous_assignment';
-        elseif (empty($q['assignmentId'])) {
-            $eventTime = strtotime((string) ($q['planCompletedAt'] ?? $q['createdAt'] ?? ''));
-            $assignedTime = strtotime((string) ($a['assigned_at'] ?? ''));
-            if (($q['planTitle'] ?? '') !== ($a['title'] ?? '') || !$eventTime || !$assignedTime || $eventTime < $assignedTime) $reason = 'unverified_legacy_assignment';
-            else $q['assignmentId'] = $a['id'];
-        }
+        elseif (empty($q['assignmentId'])) $reason = 'unverified_legacy_assignment';
         if (!$reason && isset($passed[$a['id']])) $reason = 'already_passed';
         if ($reason) {
             $q['status'] = 'archived';
@@ -149,14 +141,17 @@ function sard_current_assignments(PDO $pdo, int $cid): array
 {
     if (!plans_table_exists($pdo, 'student_plan_assignments')) return [];
     $scoped = table_column_exists($pdo, 'students', 'complex_id');
-    $sql = "SELECT a.id, a.student_id, a.plan_id, a.assigned_at, a.start_segment_index, p.title
+    $sql = "SELECT a.id, a.student_id, a.plan_id, a.assigned_at, a.start_segment_index, a.content_snapshot, p.title
             FROM student_plan_assignments a JOIN students s ON s.id = a.student_id
             JOIN education_plans p ON p.id = a.plan_id
             WHERE a.status IN ('active', 'frozen')" . ($scoped ? ' AND s.complex_id = ?' : '') . ' ORDER BY a.assigned_at DESC';
     $stmt = $pdo->prepare($sql);
     $stmt->execute($scoped ? [$cid] : []);
     $out = [];
-    foreach ($stmt->fetchAll() as $a) if (!isset($out[$a['student_id']])) $out[$a['student_id']] = $a;
+    foreach ($stmt->fetchAll() as $a) {
+        $id=$a['student_id'];
+        $out[$id]=isset($out[$id])?['ambiguous'=>true,'student_id'=>$id]:$a;
+    }
     return $out;
 }
 
@@ -194,11 +189,8 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
             if ($current != ($change['base'] ?? null)) throw new RuntimeException('تغيّر السرد من جهاز آخر — حدّث الصفحة');
             if (($index === null || $restoreSupervisorHifz) && ($item['status'] ?? '') === 'plan_completed') {
                 $a = $assignments[$item['studentId']] ?? null;
-                if (!$a || empty($item['assignmentId']) || $item['assignmentId'] !== $a['id']) throw new RuntimeException('لا توجد خطة حالية مؤكدة للطلب');
-                $done = $pdo->prepare("SELECT COUNT(*) AS total, SUM(EXISTS(SELECT 1 FROM segment_completions c WHERE c.student_id = ? AND c.plan_id = s.plan_id AND c.segment_index = s.segment_index AND c.task_type = 'hifz' AND (c.assignment_id = ? OR (c.assignment_id IS NULL AND c.created_at >= ?)))) AS done FROM plan_segments s WHERE s.plan_id = ? AND s.segment_index >= ?");
-                $done->execute([$item['studentId'], $a['id'], $a['assigned_at'], $a['plan_id'], $a['start_segment_index']]);
-                $counts = $done->fetch();
-                if ((int) $counts['total'] < 1 || (int) $counts['total'] !== (int) $counts['done']) throw new RuntimeException('لم يكتمل حفظ الخطة الحالية');
+                if (!$a || !empty($a['ambiguous']) || empty($item['assignmentId']) || $item['assignmentId'] !== $a['id']) throw new RuntimeException('لا توجد خطة حالية مؤكدة للطلب');
+                if (!plans_hifz_complete($pdo, $a)) throw new RuntimeException('لم يكتمل حفظ الخطة الحالية');
             }
             $validated = sard_reconcile_queue([$item], $assignments)[0];
             if (($validated['status'] ?? '') === 'archived' && ($item['status'] ?? '') !== 'archived') throw new RuntimeException('الطلب يخص خطة سابقة — حدّث الصفحة');
@@ -208,6 +200,7 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
         foreach (($value['removals'] ?? []) as $removal) {
             foreach ($queue as &$entry) {
                 if ($entry['id'] !== ($removal['id'] ?? '')) continue;
+                if (($entry['status']??'')==='archived'&&($entry['archiveReason']??'')==='removed_by_manager') continue;
                 if ($entry != ($removal['base'] ?? null)) throw new RuntimeException('تغيّر الطلب قبل الحذف — حدّث الصفحة');
                 if (($entry['status'] ?? '') === 'passed') throw new RuntimeException('لا يمكن حذف سجل الاجتياز');
                 $entry['status'] = 'archived';
@@ -243,6 +236,10 @@ function handle_set_app_state(): void
     }
 
     $pdo = db();
+    if (state_protected_key($key)) {
+        json_response(app_state_patch_integrity($pdo, $cid, $key, $input['value'] ?? null));
+        return;
+    }
     if ($key === 'sard_queue') {
         if (!empty($input['value']['removals']) && $role !== 'manager') error_response('المدير فقط يمكنه إزالة الطلب', 403);
         app_state_patch_sard($pdo, $cid, $input['value'] ?? null);

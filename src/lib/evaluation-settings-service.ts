@@ -1,7 +1,8 @@
 import { buildRphpUrl } from "@/lib/api-base";
 import type { EvaluationSettings } from "@/lib/evaluation-types";
 import { DEFAULT_EVALUATION_SETTINGS } from "@/lib/evaluation-types";
-import { getToken } from "@/lib/cloud-sync";
+import { getToken } from "@/lib/auth-session";
+import { getActiveComplexId } from "@/lib/tenant";
 
 const KEY_LOCAL = "qshatawi_evaluation_settings_v1";
 
@@ -11,7 +12,7 @@ function apiUrl(path: string): string {
 
 function readLocal(): EvaluationSettings {
   if (typeof window === "undefined") return { ...DEFAULT_EVALUATION_SETTINGS };
-  const raw = localStorage.getItem(KEY_LOCAL);
+  const raw = localStorage.getItem(`${KEY_LOCAL}:complex:${getActiveComplexId() ?? "none"}`);
   if (!raw) return { ...DEFAULT_EVALUATION_SETTINGS };
   try {
     return { ...DEFAULT_EVALUATION_SETTINGS, ...(JSON.parse(raw) as EvaluationSettings) };
@@ -22,13 +23,7 @@ function readLocal(): EvaluationSettings {
 
 function writeLocal(settings: EvaluationSettings): void {
   if (typeof window === "undefined") return;
-  localStorage.setItem(KEY_LOCAL, JSON.stringify(settings));
-}
-
-function isDbUnavailableError(e: unknown): boolean {
-  if (!(e instanceof Error)) return false;
-  const m = e.message;
-  return m.includes("migrate-evaluation-settings") || m.includes("HTTP 503");
+  localStorage.setItem(`${KEY_LOCAL}:complex:${getActiveComplexId() ?? "none"}`, JSON.stringify(settings));
 }
 
 async function evalFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
@@ -57,34 +52,19 @@ async function evalFetch<T>(path: string, options: RequestInit = {}): Promise<T>
   return body as T;
 }
 
-export async function fetchEvaluationSettings(): Promise<EvaluationSettings> {
-  try {
-    const res = await evalFetch<{ settings: EvaluationSettings }>("/evaluation-settings");
-    writeLocal(res.settings);
-    return res.settings;
-  } catch (e) {
-    if (isDbUnavailableError(e)) {
-      return readLocal();
-    }
-    throw e;
-  }
+function sessionContext() { return { token:getToken(), complex:getActiveComplexId() }; }
+function assertContext(before: ReturnType<typeof sessionContext>) {
+  const now=sessionContext(); if(now.token!==before.token || now.complex!==before.complex) throw new Error("تغيّرت الجلسة أثناء تحميل إعدادات التقييم؛ أعد المحاولة");
 }
-
+export async function fetchEvaluationSettings(): Promise<EvaluationSettings> {
+  const context=sessionContext();
+  const res=await evalFetch<{settings:EvaluationSettings}>("/evaluation-settings");
+  assertContext(context);writeLocal(res.settings);return res.settings;
+}
 export async function saveEvaluationSettings(settings: EvaluationSettings): Promise<EvaluationSettings> {
-  try {
-    const res = await evalFetch<{ settings: EvaluationSettings }>("/evaluation-settings", {
-      method: "PUT",
-      body: JSON.stringify({ settings }),
-    });
-    writeLocal(res.settings);
-    return res.settings;
-  } catch (e) {
-    if (isDbUnavailableError(e)) {
-      writeLocal(settings);
-      return settings;
-    }
-    throw e;
-  }
+  const context=sessionContext();
+  const res=await evalFetch<{settings:EvaluationSettings}>("/evaluation-settings",{method:"PUT",body:JSON.stringify({settings})});
+  assertContext(context);writeLocal(res.settings);return res.settings;
 }
 
 export function getCachedEvaluationSettings(): EvaluationSettings {

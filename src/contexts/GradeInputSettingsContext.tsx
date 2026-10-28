@@ -1,3 +1,6 @@
+import { getToken } from "@/lib/auth-session";
+import { getActiveComplexId } from "@/lib/tenant";
+import { flushSharedEdits } from "@/lib/shared-state";
 import {
   createContext,
   useCallback,
@@ -17,7 +20,7 @@ import {
 type Ctx = {
   settings: GradeInputSettings;
   loading: boolean;
-  save: (next: GradeInputSettings) => GradeInputSettings;
+  save: (next: GradeInputSettings) => Promise<GradeInputSettings>;
   reload: () => void;
 };
 
@@ -36,11 +39,15 @@ export function GradeInputSettingsProvider({ children }: { children: ReactNode }
     reload();
     const onChange = () => reload();
     window.addEventListener("grade-input-settings-changed", onChange);
-    return () => window.removeEventListener("grade-input-settings-changed", onChange);
+    let token=getToken(),complex=getActiveComplexId();
+    const check=()=>{const t=getToken(),c=getActiveComplexId();if(t!==token||c!==complex){token=t;complex=c;reload();}};
+    const timer=setInterval(check,1000);window.addEventListener("focus",check);
+    return () => {clearInterval(timer);window.removeEventListener("focus",check);window.removeEventListener("grade-input-settings-changed", onChange);};
   }, [reload]);
 
-  const save = useCallback((next: GradeInputSettings) => {
+  const save = useCallback(async (next: GradeInputSettings) => {
     const normalized = saveGradeInputSettings(next);
+    await flushSharedEdits();
     setSettings(normalized);
     return normalized;
   }, []);
@@ -63,7 +70,7 @@ export function useGradeInputSettings(): Ctx {
     return {
       settings: DEFAULT_GRADE_INPUT_SETTINGS,
       loading: false,
-      save: saveGradeInputSettings,
+      save: async(next)=>{const value=saveGradeInputSettings(next);await flushSharedEdits();return value;},
       reload: () => {},
     };
   }

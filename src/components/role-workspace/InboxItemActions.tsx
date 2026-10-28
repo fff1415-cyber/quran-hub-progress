@@ -92,7 +92,7 @@ export function InboxItemActions({
             <AlertDialogDescription>
               {isLateEntry
                 ? "سيُحذف الإشعار من القائمة. سجل إذن الدخول في النظام يبقى كما هو."
-                : "سيُحذف نهائياً من هذا الجهاز ولا يمكن التراجع."}
+                : "سيُزال من قائمة هذا الجهاز مع الاحتفاظ بنسخة المراجعة المحلية. المزامنة المشتركة معلّقة للصلاحيات."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

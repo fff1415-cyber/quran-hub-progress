@@ -1,3 +1,4 @@
+import { setDataSemester, reconcileShared, flushSharedEdits, fetchSharedValue, queueSardPatch } from "@/lib/shared-state";
 // Cloud sync layer — all data via Hostinger PHP API
 import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, SardHistoryItem, SardQueueItem, Student } from "./mock-data";
 import {
@@ -12,6 +13,8 @@ import {
   loadStudents,
   loadHalaqat,
   loadGrades,
+  loadNotifications,
+  saveNotifications,
   mergeGradesStores,
   ensureGradesSemester,
 } from "./mock-data";
@@ -113,7 +116,7 @@ interface CloudHalaqaRow {
   extra_assistants?: unknown;
 }
 
-function rowToStudent(r: CloudStudentRow): Student {
+export function rowToStudent(r: CloudStudentRow): Student {
   const phaseFromRow = r.phase_number ?? parseInt(r.level, 10);
   const phaseNumber = Number.isFinite(phaseFromRow) && phaseFromRow > 0 ? phaseFromRow : undefined;
   return {
@@ -132,7 +135,7 @@ function rowToStudent(r: CloudStudentRow): Student {
     memorized: r.memorized ?? undefined,
   };
 }
-function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
+export function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
   const extras = normalizeExtraAssistants(r.extra_assistants);
   return {
     id: Number(r.id),
@@ -255,6 +258,7 @@ export async function syncFromCloud(options?: {
 }): Promise<{ students: Student[]; halaqat: Halaqa[] } | null> {
   try {
     if (!options?.force && isCloudSyncFresh()) {
+      setDataSemester(loadCachedCalendar()?.semester?.id ?? null);
       return { students: loadStudents(), halaqat: loadHalaqat() };
     }
 
@@ -306,6 +310,7 @@ export async function syncFromCloud(options?: {
     if (token) {
       try {
         const calendar = await fetchActiveCalendar(!loadCachedCalendar());
+        setDataSemester(calendar.semester?.id ?? null);
         const semesterReset = ensureGradesSemester(calendar.semester?.id ?? null);
         const weeklyTestsReset = ensureWeeklyTestsSemester(calendar.semester?.id ?? null);
         const tarbawiReset = ensureTarbawiSemester(calendar.semester?.id ?? null);
@@ -314,11 +319,11 @@ export async function syncFromCloud(options?: {
         const stateRows = await secureListAppState({ data: { token } });
         const state = new Map(stateRows.map((row) => [row.key, row.value]));
         sessionStorage.setItem("qs_syncing", "1");
-        if (!semesterReset && state.has("grades")) {
+        if (state.has("grades")) {
           const cloud = state.get("grades") as GradesStore;
-          saveGrades(mergeGradesStores(loadGrades(), cloud), { sync: false });
+          saveGrades(reconcileShared("grades", cloud), { sync: false });
         }
-        if (!weeklyTestsReset && state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
+        if (state.has("weekly_tests")) saveWeeklyTests(reconcileShared("weekly_tests", state.get("weekly_tests")) as import("./weekly-tests").WeeklyTestsStore, {sync:false});
         if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
         if (state.has("staff_attendance_settings")) saveStaffAttendanceSettings(state.get("staff_attendance_settings") as import("./staff-attendance").StaffAttendanceSettings);
         if (state.has("staff_attendance")) {
@@ -332,8 +337,9 @@ export async function syncFromCloud(options?: {
           saveStaffCheckIns(merged, { sync: false });
         }
         if (state.has("sard_queue") && JSON.stringify(loadSardQueue()) === sardBeforePull) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
-        if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
-        if (state.has("academic_records")) saveAcademicRecords(state.get("academic_records") as AcademicPhaseRecord[]);
+        // F03 notifications stay local until recipient-scoped access is explicitly authorized.
+        if (state.has("sard_history")) saveSardHistory(reconcileShared("sard_history", state.get("sard_history")) as SardHistoryItem[]);
+        if (state.has("academic_records")) saveAcademicRecords(reconcileShared("academic_records", state.get("academic_records")) as AcademicPhaseRecord[]);
         if (state.has("halaqa_programs")) {
           const cloud = state.get("halaqa_programs") as HalaqaProgramsStore;
           const { loadAllHalaqaPrograms, mergeHalaqaProgramsStores, saveAllHalaqaPrograms } = await import(
@@ -350,7 +356,7 @@ export async function syncFromCloud(options?: {
             saveScientificGradesStore,
           } = await import("./scientific-grades");
           const cloud = state.get("scientific_grades") as import("./scientific-grades").ScientificGradesStore;
-          const merged = mergeScientificGradesStores(cloud, loadScientificGradesStore());
+          const merged = reconcileShared("scientific_grades", cloud);
           saveScientificGradesStore(merged);
         }
         if (state.has(ABSENCE_ALERTS_APP_STATE_KEY)) {
@@ -403,21 +409,7 @@ export async function syncFromCloud(options?: {
         }
         sessionStorage.removeItem("qs_syncing");
 
-        if (semesterReset) {
-          try {
-            await secureSetAppState({ data: { token, key: "grades", value: {} } });
-            await secureSetAppState({ data: { token, key: "weekly_tests", value: {} } });
-          } catch {
-            /* local reset is enough */
-          }
-        }
-        if (tarbawiReset) {
-          try {
-            await secureSetAppState({ data: { token, key: "tarbawi_program", value: { settingsBySemester: {}, plans: {} } } });
-          } catch {
-            /* local reset is enough */
-          }
-        }
+
       } catch (stateErr) {
         sessionStorage.removeItem("qs_syncing");
         console.warn("Cloud app-state sync failed (roster kept):", stateErr);
@@ -512,123 +504,23 @@ export async function pushAppState(
   key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_programs" | "halaqa_program_grades" | "scientific_grades" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings" | "staff_attendance" | "staff_attendance_settings" | "student_portal_settings" | "complex_features" | "push_notification_settings" | "tarbawi_program" | "financial_ledger" | typeof ABSENCE_ALERTS_APP_STATE_KEY,
   value: unknown,
 ) {
+  if(key==="sard_queue"){await queueSardPatch(value);return;}
   await secureSetAppState({ data: { token: tokenOrThrow(), key, value } });
 }
 
-export async function fetchCloudGrades(): Promise<GradesStore> {
-  const rows = await secureListAppState({ data: { token: tokenOrThrow(), key: "grades" } });
-  const row = rows.find((r) => r.key === "grades");
-  if (!row || row.value == null || typeof row.value !== "object" || Array.isArray(row.value)) {
-    return {};
-  }
-  return row.value as GradesStore;
+export async function fetchCloudGrades(): Promise<GradesStore> { return fetchSharedValue<GradesStore>("grades"); }
+export async function pushMergedGrades(_local: GradesStore): Promise<GradesStore> {
+  await flushSharedEdits(); return fetchCloudGrades();
 }
-
-let gradesPushQueue: Promise<GradesStore> = Promise.resolve({} as GradesStore);
-
-/** Skip redundant cloud pulls when the remote grades blob is unchanged. */
-let lastPulledCloudHash = "";
-
-function gradesPayloadHash(g: GradesStore): string {
-  return JSON.stringify(g);
-}
-
-/** Upload local grades after merging with the latest cloud copy (teacher + assistant). */
-export async function pushMergedGrades(local: GradesStore): Promise<GradesStore> {
-  const run = async (): Promise<GradesStore> => {
-    let cloud: GradesStore = {};
-    try {
-      cloud = await fetchCloudGrades();
-    } catch {
-      cloud = {};
-    }
-    const merged = mergeGradesStores(cloud, local);
-    await secureSetAppState({ data: { token: tokenOrThrow(), key: "grades", value: merged } });
-    // A teacher can tap another field while this request is in flight.
-    // Keep those local edits when the earlier upload finishes.
-    saveGrades(mergeGradesStores(merged, loadGrades()), { sync: false });
-    lastPulledCloudHash = gradesPayloadHash(merged);
-    return merged;
-  };
-  const next = gradesPushQueue.then(run, run);
-  gradesPushQueue = next.then(
-    (v) => v,
-    () => local,
-  );
-  return next;
-}
-
-/** Pull cloud grades and merge into local without echoing a push. */
 export async function pullMergedGrades(): Promise<GradesStore | null> {
-  const token = getToken();
-  if (!token) return null;
+  if (!getToken()) return null;
   const cloud = await fetchCloudGrades();
-  const cloudHash = gradesPayloadHash(cloud);
-  if (cloudHash === lastPulledCloudHash) return null;
-
-  const local = loadGrades();
-  const merged = mergeGradesStores(local, cloud);
-  const mergedHash = gradesPayloadHash(merged);
-  lastPulledCloudHash = cloudHash;
-
-  if (mergedHash === gradesPayloadHash(local)) return null;
-
-  const prev = sessionStorage.getItem("qs_syncing");
-  sessionStorage.setItem("qs_syncing", "1");
-  try {
-    saveGrades(merged, { sync: false });
-  } finally {
-    if (prev) sessionStorage.setItem("qs_syncing", prev);
-    else sessionStorage.removeItem("qs_syncing");
-  }
-  return merged;
+  if (JSON.stringify(cloud) === JSON.stringify(loadGrades())) return null;
+  saveGrades(cloud, {sync:false}); return cloud;
 }
-
-export async function fetchCloudScientificGrades(): Promise<import("./scientific-grades").ScientificGradesStore> {
-  const rows = await secureListAppState({ data: { token: tokenOrThrow(), key: "scientific_grades" } });
-  const row = rows.find((r) => r.key === "scientific_grades");
-  if (!row?.value || typeof row.value !== "object" || Array.isArray(row.value)) {
-    return { configs: {}, data: {}, overrides: {} };
-  }
-  return row.value as import("./scientific-grades").ScientificGradesStore;
-}
-
-let scientificPushQueue: Promise<import("./scientific-grades").ScientificGradesStore> = Promise.resolve({
-  configs: {},
-  data: {},
-  overrides: {},
-});
-
-/** Upload local scientific grades after merging with the latest cloud copy. */
-export async function pushMergedScientificGrades(
-  local: import("./scientific-grades").ScientificGradesStore,
-): Promise<import("./scientific-grades").ScientificGradesStore> {
-  const run = async (): Promise<import("./scientific-grades").ScientificGradesStore> => {
-    const { mergeScientificGradesStores, saveScientificGradesStore } = await import("./scientific-grades");
-    let cloud: import("./scientific-grades").ScientificGradesStore = { configs: {}, data: {}, overrides: {} };
-    try {
-      cloud = await fetchCloudScientificGrades();
-    } catch {
-      cloud = { configs: {}, data: {}, overrides: {} };
-    }
-    const merged = mergeScientificGradesStores(cloud, local);
-    await secureSetAppState({ data: { token: tokenOrThrow(), key: "scientific_grades", value: merged } });
-    const prev = sessionStorage.getItem("qs_syncing");
-    sessionStorage.setItem("qs_syncing", "1");
-    try {
-      saveScientificGradesStore(merged);
-    } finally {
-      if (prev) sessionStorage.setItem("qs_syncing", prev);
-      else sessionStorage.removeItem("qs_syncing");
-    }
-    return merged;
-  };
-  const next = scientificPushQueue.then(run, run);
-  scientificPushQueue = next.then(
-    (v) => v,
-    () => local,
-  );
-  return next;
+export async function fetchCloudScientificGrades(): Promise<import("./scientific-grades").ScientificGradesStore> { return fetchSharedValue("scientific_grades"); }
+export async function pushMergedScientificGrades(_local: import("./scientific-grades").ScientificGradesStore): Promise<import("./scientific-grades").ScientificGradesStore> {
+  await flushSharedEdits(); return fetchCloudScientificGrades();
 }
 
 export async function fetchCloudStaffCheckIns(): Promise<import("./staff-attendance").StaffCheckIn[]> {

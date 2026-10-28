@@ -190,9 +190,9 @@ export function GradeInputSettingsSection() {
     setDraft(settings);
   }, [settings]);
 
-  const onSave = () => {
-    save(draft);
-    toast.success("تم حفظ إعدادات طريقة التحضير");
+  const onSave = async () => {
+    try{await save(draft);toast.success("تأكد حفظ إعدادات طريقة التحضير المشتركة");}
+    catch(e){toast.error(e instanceof Error?e.message:"تعذّر تأكيد الحفظ");}
   };
 
   const onReset = () => setDraft({ ...DEFAULT_GRADE_INPUT_SETTINGS });

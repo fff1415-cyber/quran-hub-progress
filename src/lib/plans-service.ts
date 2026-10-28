@@ -44,8 +44,11 @@ async function planFetch<T>(path: string, options: RequestInit = {}): Promise<T>
   return body as T;
 }
 
-export async function fetchPlans(track?: "gold" | "silver"): Promise<EducationPlan[]> {
-  const q = track ? `?track=${track}` : "";
+export async function fetchPlans(track?: "gold" | "silver", includeArchived = false): Promise<EducationPlan[]> {
+  const params = new URLSearchParams();
+  if (track) params.set("track", track);
+  if (includeArchived) params.set("include_archived", "1");
+  const q = params.size ? `?${params}` : "";
   return planFetch<EducationPlan[]>(`/plans${q}`);
 }
 
@@ -111,6 +114,42 @@ export async function importPlans(plans: ImportPlanPayload[]): Promise<{
   });
 }
 
+export interface PlanAssignmentResult {
+  assignment_id:string;
+  sard_queue?: unknown[] | null;
+  advance?: import("./plan-progression").PlanAdvanceResult;
+  profile?: {id:string;level:string;phaseNumber:number;instituteLevel:string};
+  academic_records?: import("./academic-record").AcademicPhaseRecord[];
+  sard_history?: import("./mock-data").SardHistoryItem[];
+}
+const pendingAssignmentKey=(studentId:string)=>`qs_pending_plan_assignment:${studentId}`;
+async function submitPlanAssignment(payload: Record<string, unknown>): Promise<PlanAssignmentResult> {
+  const studentId=String(payload.student_id);
+  const result=await planFetch<PlanAssignmentResult>("/plans/assign",{method:"POST",body:JSON.stringify(payload)});
+  if(result.sard_queue)localStorage.setItem("qshatawi_sard_queue_v2",JSON.stringify(result.sard_queue));
+  const sheet=await fetchStudentPlanSheet(studentId);
+  if(!result.assignment_id||sheet.assignment?.id!==result.assignment_id||sheet.plan?.id!==payload.plan_id)throw new Error("استجاب الخادم، لكن تعذّر تأكيد التعيين الحالي؛ عملية الربط محفوظة لإعادة المحاولة");
+  if(result.profile){
+    const {loadStudents,saveStudents}=await import("./mock-data");
+    saveStudents(loadStudents().map(student=>student.id===studentId?{...student,...result.profile}:student));
+  }
+  if(result.academic_records||result.sard_history){
+    const previous=sessionStorage.getItem("qs_syncing");sessionStorage.setItem("qs_syncing","1");
+    try{
+      if(result.academic_records)(await import("./academic-record")).saveAcademicRecords(result.academic_records);
+      if(result.sard_history)(await import("./mock-data")).saveSardHistory(result.sard_history);
+    }finally{if(previous)sessionStorage.setItem("qs_syncing",previous);else sessionStorage.removeItem("qs_syncing");}
+  }
+  localStorage.removeItem(pendingAssignmentKey(studentId));
+  return result;
+}
+export async function retryPendingPlanAdvance(studentId:string,queueId?:string):Promise<import("./plan-progression").PlanAdvanceResult|null>{
+  const raw=localStorage.getItem(pendingAssignmentKey(studentId));if(!raw)return null;
+  const payload=JSON.parse(raw);
+  if(!queueId||payload.sard_result?.id!==queueId)throw new Error("عملية تعيين أخرى معلقة؛ يلزم تأكيدها أولًا");
+  const result=await submitPlanAssignment(payload);if(!result.advance)throw new Error("استجابة الانتقال غير مكتملة");return result.advance;
+}
+
 export async function assignStudentPlan(
   studentId: string,
   planId: string,
@@ -121,38 +160,26 @@ export async function assignStudentPlan(
     start_muraja_segment?: number | null;
     face_quotas?: Partial<DailyFaceQuotas>;
     expected_assignment_id?: string;
-    sard_result?: { id: string; percent: number; phase: string };
+    sard_result?: { id: string; percent: number; phase: string; semesterId?:string;hifzScore?:number;reviewScore?:number;hifzErrors?:number;hifzWarnings?:number;reviewErrors?:number[];reviewWarnings?:number[] };
+    finalize_only?:boolean;
+    operation_id?: string;
   },
-): Promise<void> {
-  const result = await planFetch<{ assignment_id: string; sard_queue?: unknown[] | null }>("/plans/assign", {
-      method: "POST",
-      body: JSON.stringify({
-        student_id: studentId,
-        expected_assignment_id: options?.expected_assignment_id,
-        sard_result: options?.sard_result,
-        plan_id: planId,
-        start_segment_index: startSegment,
-        plan_start_date: options?.plan_start_date,
-        start_muraja_segment: options?.start_muraja_segment,
-        ...options?.face_quotas,
-      }),
-    });
-  if (result.sard_queue) localStorage.setItem("qshatawi_sard_queue_v2", JSON.stringify(result.sard_queue));
-  let sheet: StudentPlanSheetData;
-  try {
-    sheet = await fetchStudentPlanSheet(studentId);
-  } catch {
-    throw new Error("استجاب الخادم لطلب الربط، لكن تعذّر التحقق من الخطة؛ افتح استمارة الطالب قبل إعادة المحاولة");
+): Promise<PlanAssignmentResult> {
+  const operationId = options?.operation_id ?? crypto.randomUUID();
+  const expectedSheet = options?.expected_assignment_id !== undefined ? null : await fetchStudentPlanSheet(studentId);
+  const expectedAssignmentId = options?.expected_assignment_id ?? expectedSheet?.assignment?.id ?? "";
+  const payload:Record<string,unknown>={
+    student_id:studentId,expected_assignment_id:expectedAssignmentId,operation_id:operationId,sard_result:options?.sard_result,
+    plan_id:planId,start_segment_index:startSegment,plan_start_date:options?.plan_start_date,start_muraja_segment:options?.start_muraja_segment,finalize_only:options?.finalize_only,...options?.face_quotas,
+  };
+  const raw=localStorage.getItem(pendingAssignmentKey(studentId));
+  if(raw){
+    const pending=JSON.parse(raw);
+    if(pending.plan_id!==planId||pending.start_segment_index!==startSegment||pending.sard_result?.id!==options?.sard_result?.id)throw new Error("عملية تعيين سابقة معلقة؛ أكدها قبل اختيار تعيين آخر");
+    return submitPlanAssignment(pending);
   }
-  if (!result.assignment_id || sheet.assignment?.id !== result.assignment_id || sheet.plan?.id !== planId) {
-    throw new Error("تعذّر تأكيد الخطة المرتبطة من الخادم؛ افتح استمارة الطالب قبل إعادة المحاولة");
-  }
-  try {
-    const catalog = await fetchPlans(sheet.plan.track);
-    await syncStudentPhaseFromPlan(studentId, sheet.plan.track, sheet.plan.level_number, catalog);
-  } catch {
-    // The assignment is already confirmed on the server; avoid reporting a failed link.
-  }
+  localStorage.setItem(pendingAssignmentKey(studentId),JSON.stringify(payload));
+  return submitPlanAssignment(payload);
 }
 
 /** Only the educational supervisor can change an individual hifz row. */
@@ -198,7 +225,7 @@ export async function patchStudentAssignment(
 ): Promise<void> {
   await planFetch("/plans/assignment", {
       method: "PATCH",
-      body: JSON.stringify({ student_id: studentId, status }),
+      body: JSON.stringify({ student_id: studentId, assignment_id: (await fetchStudentPlanSheet(studentId)).assignment?.id, status }),
     });
 }
 
@@ -215,6 +242,7 @@ export async function applyPlanInput(
       body: JSON.stringify({
         student_id: studentId,
         expected_assignment_id: currentSheet.assignment?.id,
+        operation_id: crypto.randomUUID(),
         task_type: taskType,
         tap,
         completed_at: completedAt,
@@ -226,13 +254,16 @@ export async function applyPlanInput(
 export async function removePlanHifzCompletions(
   studentId: string,
   segmentIndexes: number[],
+  assignmentId?: string,
 ): Promise<void> {
   if (segmentIndexes.length === 0) return;
+  if (!assignmentId) throw new Error("تعيين إنجاز اليوم غير محفوظ — افتح الاستمارة للمراجعة؛ لن نلغِ من الخطة الحالية بالتخمين");
   await planFetch<{ ok: boolean }>("/plans/remove-completions", {
       method: "POST",
       body: JSON.stringify({
         student_id: studentId,
         task_type: "hifz",
+        assignment_id: assignmentId,
         segment_indexes: segmentIndexes,
       }),
     });
@@ -262,6 +293,7 @@ export async function syncCompensationToPlan(
   recordedBy: string,
   previousFaces?: number,
 ): Promise<number[]> {
+  const assignmentId = (await fetchStudentPlanSheet(student.id)).assignment?.id;
   const target = compensationHifzSegmentTarget(faces, student.levelType);
   const tracked = [...trackedSegments];
 
@@ -280,7 +312,7 @@ export async function syncCompensationToPlan(
     }
   } else if (target < tracked.length) {
     const toRemove = tracked.splice(target);
-    await removePlanHifzCompletions(student.id, toRemove);
+    await removePlanHifzCompletions(student.id, toRemove, assignmentId);
   }
 
   return tracked;

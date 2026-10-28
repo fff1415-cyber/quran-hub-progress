@@ -214,7 +214,7 @@ export function followingPlan(
     return plan ? { plan, phase: target! } : null;
   }
 
-  const catalog = plans.filter((p) => p.track === track).sort((a, b) => a.level_number - b.level_number);
+  const catalog = plans.filter((p) => p.track === track && (!p.catalog_archived_at || p.id === current.id)).sort((a, b) => a.level_number - b.level_number);
   const position = catalog.findIndex((p) => p.id === current.id);
   const next = catalog[position + 1];
   if (position < 0 || !next) return null;

@@ -1,7 +1,8 @@
+import { captureSharedEdit, semesterStorageKey } from "@/lib/shared-state";
 /** Teacher-configured numeric scores — reflected in halaqa program totals only. */
 import { hasAuthToken } from "@/lib/auth-session";
 import { ATTENDANCE_OPTION_LABELS, type AttendanceOption } from "@/lib/grade-input-settings";
-import type { DayEntry, GradesStore } from "@/lib/mock-data";
+import { isHifzChecked, type DayEntry, type GradesStore } from "@/lib/mock-data";
 
 import {
   SCIENTIFIC_PROGRAM_ID,
@@ -31,7 +32,7 @@ export type ScientificGradesConfig = {
   defaultScores: ScientificDefaultScores;
 };
 
-export type ScientificDayScores = Partial<Record<ScientificGradeField, string>>;
+export type ScientificDayScores = Partial<Record<ScientificGradeField, string>> & {ruleSnapshots?:Partial<Record<ScientificGradeField,{settings:ScientificGradesConfig;adoptedAt:string;provenance:"applied_at_prep_edit"}>>};
 
 /** halaqaId → studentId → weekNum → dayKey → scores */
 export type ScientificGradesDataStore = Record<
@@ -147,11 +148,11 @@ export function resolveScientificScore(
       return config.defaultScores.attendance?.[att]?.trim() ?? "";
     }
     case "hifz":
-      return entry.hifz !== "" ? (config.defaultScores.hifz?.trim() ?? "") : "";
+      return isHifzChecked(entry.hifz) ? (config.defaultScores.hifz?.trim() ?? "") : "";
     case "rabt":
-      return entry.rabt !== "" ? (config.defaultScores.rabt?.trim() ?? "") : "";
+      return (entry.rabt === "pass" || entry.rabt === "fail") ? (config.defaultScores.rabt?.trim() ?? "") : "";
     case "muraja":
-      return entry.muraja !== "" ? (config.defaultScores.muraja?.trim() ?? "") : "";
+      return (entry.muraja === "pass" || entry.muraja === "fail") ? (config.defaultScores.muraja?.trim() ?? "") : "";
     default:
       return "";
   }
@@ -177,14 +178,14 @@ export function loadScientificGradesStore(): ScientificGradesStore {
   if (typeof window === "undefined") {
     return { configs: {}, data: {}, overrides: {} };
   }
-  const raw = localStorage.getItem(KEY);
+  const raw = localStorage.getItem(semesterStorageKey(KEY));
   if (!raw) return { configs: {}, data: {}, overrides: {} };
   try {
     const parsed = JSON.parse(raw) as Partial<ScientificGradesStore>;
     return {
-      configs: parsed.configs ?? {},
-      data: parsed.data ?? {},
-      overrides: parsed.overrides ?? {},
+      configs: { ...(parsed.configs ?? {}) },
+      data: { ...(parsed.data ?? {}) },
+      overrides: { ...(parsed.overrides ?? {}) },
     };
   } catch {
     return { configs: {}, data: {}, overrides: {} };
@@ -192,9 +193,11 @@ export function loadScientificGradesStore(): ScientificGradesStore {
 }
 
 export function saveScientificGradesStore(store: ScientificGradesStore) {
-  localStorage.setItem(KEY, JSON.stringify(store));
+  const before = loadScientificGradesStore();
+  localStorage.setItem(semesterStorageKey(KEY), JSON.stringify(store));
+  captureSharedEdit("scientific_grades", before, store);
   notifyScientificGradesChanged();
-  persist(store);
+
 }
 
 export function loadScientificConfig(halaqaId: number): ScientificGradesConfig {
@@ -268,9 +271,7 @@ export function saveScientificConfig(
     fields: { ...config.fields },
     defaultScores: incoming,
   };
-  if (options?.resetOverrides && store.overrides?.[String(halaqaId)]) {
-    delete store.overrides[String(halaqaId)];
-  }
+  // Configuration updates never erase historical manual overrides.
   const enabled = enabledScientificFields(config.fields);
   if (config.visible && enabled.length > 0) {
     ensureScientificHalaqaProgram(halaqaId, enabled);
@@ -352,10 +353,7 @@ function writeScientificDayScoreInPlace(
   const prev = data[studentId][weekNum][dayKey][field] ?? "";
   if (trimmed === "") {
     if (prev === "") return false;
-    delete data[studentId][weekNum][dayKey][field];
-    if (Object.keys(data[studentId][weekNum][dayKey]).length === 0) {
-      delete data[studentId][weekNum][dayKey];
-    }
+    data[studentId][weekNum][dayKey][field] = "";
     return true;
   }
   if (prev === trimmed) return false;
@@ -542,14 +540,24 @@ export function syncScientificScoresFromDayPatch(
 ): void {
   const store = loadScientificGradesStore();
   const data = halaqaDataRoot(store, halaqaId);
-  let changed = clearScientificOverridesForPatchInStore(
+  if(!data[studentId])data[studentId]={};
+  if(!data[studentId][weekNum])data[studentId][weekNum]={};
+  if(!data[studentId][weekNum][dayKey])data[studentId][weekNum][dayKey]={};
+  const cell=data[studentId][weekNum][dayKey];
+  for(const field of ALL_SCIENTIFIC_FIELDS)if(field in patch){
+    cell.ruleSnapshots??={};
+    cell.ruleSnapshots[field]??={settings:structuredClone(config),adoptedAt:new Date().toISOString(),provenance:"applied_at_prep_edit"};
+  }
+
+  let changed = ALL_SCIENTIFIC_FIELDS.some(field=>field in patch);
+  changed = clearScientificOverridesForPatchInStore(
     store,
     halaqaId,
     studentId,
     weekNum,
     dayKey,
     patch,
-  );
+  ) || changed;
   if ("hifz" in patch) {
     changed =
       syncScientificFieldInStore(
@@ -559,7 +567,7 @@ export function syncScientificScoresFromDayPatch(
         studentId,
         weekNum,
         dayKey,
-        config,
+        cell.ruleSnapshots?.hifz?.settings ?? config,
         "hifz",
         entry,
       ) || changed;
@@ -573,7 +581,7 @@ export function syncScientificScoresFromDayPatch(
         studentId,
         weekNum,
         dayKey,
-        config,
+        cell.ruleSnapshots?.rabt?.settings ?? config,
         "rabt",
         entry,
       ) || changed;
@@ -587,7 +595,7 @@ export function syncScientificScoresFromDayPatch(
         studentId,
         weekNum,
         dayKey,
-        config,
+        cell.ruleSnapshots?.muraja?.settings ?? config,
         "muraja",
         entry,
       ) || changed;
@@ -601,7 +609,7 @@ export function syncScientificScoresFromDayPatch(
         studentId,
         weekNum,
         dayKey,
-        config,
+        cell.ruleSnapshots?.attendance?.settings ?? config,
         "attendance",
         entry,
       ) || changed;
@@ -619,10 +627,7 @@ export function reapplyScientificScoresForHalaqa(
 ): void {
   const store = loadScientificGradesStore();
   let changed = false;
-  if (!options?.preserveOverrides && store.overrides?.[String(halaqaId)]) {
-    delete store.overrides[String(halaqaId)];
-    changed = true;
-  }
+  // Legacy scores without a rules reference remain unchanged; no guessed recalculation.
   const data = halaqaDataRoot(store, halaqaId);
 
   for (const studentId of studentIds) {
@@ -634,6 +639,8 @@ export function reapplyScientificScoresForHalaqa(
       for (const [dayKey, entry] of Object.entries(week.days)) {
         if (!entry) continue;
         for (const field of ALL_SCIENTIFIC_FIELDS) {
+          const rules=data[studentId]?.[weekNum]?.[dayKey]?.ruleSnapshots?.[field];
+          if(!rules)continue;
           if (
             syncScientificFieldInStore(
               store,
@@ -642,7 +649,7 @@ export function reapplyScientificScoresForHalaqa(
               studentId,
               weekNum,
               dayKey,
-              config,
+              rules.settings,
               field,
               entry,
             )
@@ -693,10 +700,11 @@ export function backfillMissingScientificScoresForHalaqa(
       for (const [dayKey, entry] of Object.entries(week.days)) {
         if (!entry) continue;
         for (const field of ALL_SCIENTIFIC_FIELDS) {
-          if (!config.fields[field]) continue;
+          const rules=data[studentId]?.[weekNum]?.[dayKey]?.ruleSnapshots?.[field];
+          if (!rules || !rules.settings.fields[field] || isScientificScoreOverriddenInStore(store,halaqaId,studentId,weekNum,dayKey,field)) continue;
           const existing = getScientificDayScore(data, studentId, weekNum, dayKey, field);
           if (existing.trim() !== "") continue;
-          const score = resolveScientificScore(config, field, entry);
+          const score = resolveScientificScore(rules.settings, field, entry);
           if (score.trim() === "") continue;
           if (
             writeScientificDayScoreInPlace(data, studentId, weekNum, dayKey, field, score)
@@ -735,9 +743,10 @@ export function setTeacherScientificDayScore(
   field: ScientificGradeField,
   value: string,
 ): void {
-  setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
-  // Mark overridden even when clearing — prevents auto-backfill from refilling while retyping.
-  setScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, field);
+  const store=loadScientificGradesStore();const data=halaqaDataRoot(store,halaqaId);
+  writeScientificDayScoreInPlace(data,studentId,weekNum,dayKey,field,value);
+  setScientificScoreOverrideInStore(store,halaqaId,studentId,weekNum,dayKey,field);
+  saveScientificGradesStore(store);
 }
 
 /**
@@ -757,7 +766,7 @@ export function finalizeTeacherScientificDayScore(
   const auto = resolveScientificScore(config, field, entry).trim();
   const trimmed = value.trim();
 
-  if (trimmed !== "" && trimmed !== auto) {
+  if (trimmed === "" || trimmed !== auto) {
     setTeacherScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, trimmed);
     return;
   }
@@ -826,13 +835,6 @@ export function studentScientificPeriodTotals(
     totals.total += w.total;
   }
   return totals;
-}
-
-export function scientificPeriodAssessmentCount(data: ScientificGradesDataStore[string], studentId: string, weekNums: number[], fields: ScientificGradeField[], dayKeys?: string[]): number {
-  let count = 0;
-  for (const wn of weekNums) for (const [dayKey, cell] of Object.entries(data[studentId]?.[wn] ?? {}))
-    if (!dayKeys || dayKeys.includes(dayKey)) for (const field of fields) if (parseScientificScore(cell[field]) !== null) count++;
-  return count;
 }
 
 /** Best-case points per working day from manager defaults (for cumulative % denominator). */
@@ -993,4 +995,12 @@ export function mergeScientificGradesStores(
 
 export function replaceScientificGradesStore(store: ScientificGradesStore) {
   saveScientificGradesStore(store);
+}
+
+/** Presence is independent of earned points: numeric zero is an assessment. */
+export function scientificPeriodAssessmentCount(data: ScientificGradesDataStore[string], studentId: string, weekNums: number[], fields: ScientificGradeField[], dayKeys?: string[]): number {
+  let count = 0;
+  for (const wn of weekNums) for (const [dayKey, cell] of Object.entries(data[studentId]?.[wn] ?? {}))
+    if (!dayKeys || dayKeys.includes(dayKey)) for (const field of fields) if (parseScientificScore(cell[field]) !== null) count++;
+  return count;
 }

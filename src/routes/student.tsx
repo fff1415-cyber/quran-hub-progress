@@ -1,3 +1,4 @@
+import { useLiveGrades } from "@/hooks/use-live-grades";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadHalaqat, loadStudents, loadGrades, type GradesStore } from "@/lib/mock-data";
@@ -56,7 +57,7 @@ export function StudentPage() {
   const search = useSearch({ strict: false }) as ReturnType<typeof studentValidateSearch>;
   const halaqat = loadHalaqat();
   const students = loadStudents();
-  const [grades, setGrades] = useState<GradesStore>(() => loadGrades());
+  const [grades, setGrades] = useLiveGrades();
   const [gradesReady, setGradesReady] = useState(false);
   const [authMode, setAuthMode] = useState<StudentPortalAuthMode>(() => resolveStudentPortalAuth());
   const [studentId, setStudentId] = useState<string | null>(() => {
@@ -106,7 +107,7 @@ export function StudentPage() {
     let cancelled = false;
     void (async () => {
       try {
-        await syncFromCloud();
+        await syncFromCloud({force:true});
       } finally {
         if (!cancelled) {
           setGrades(loadGrades());
@@ -229,7 +230,7 @@ export function StudentPage() {
       .catch(() => { if (!cancelled) setPlanData(null); })
       .finally(() => { if (!cancelled) setPlanLoading(false); });
     return () => { cancelled = true; };
-  }, [studentId, authMode]);
+  }, [studentId, authMode, grades]);
 
   const viewerName = useMemo(() => {
     if (authMode !== "viewer") return null;

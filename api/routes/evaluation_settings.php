@@ -76,18 +76,11 @@ function eval_settings_fetch(PDO $pdo, int $complexId): array
         $stmt = $pdo->prepare("SELECT $cols FROM evaluation_settings WHERE complex_id = ? LIMIT 1");
         $stmt->execute([$complexId]);
         $row = $stmt->fetch();
-        if (!$row) {
-            $pdo->prepare('INSERT INTO evaluation_settings (complex_id) VALUES (?)')->execute([$complexId]);
-            $stmt->execute([$complexId]);
-            $row = $stmt->fetch();
-        }
+
     } else {
         $stmt = $pdo->query("SELECT $cols FROM evaluation_settings WHERE id = 1 LIMIT 1");
         $row = $stmt->fetch();
-        if (!$row) {
-            $pdo->exec('INSERT INTO evaluation_settings (id) VALUES (1)');
-            $row = $pdo->query("SELECT $cols FROM evaluation_settings WHERE id = 1 LIMIT 1")->fetch();
-        }
+
     }
     return eval_settings_row($row ?: []);
 }
@@ -177,6 +170,7 @@ function handle_put_evaluation_settings(): void
         $params[] = $cid;
         $sql = 'UPDATE evaluation_settings SET ' . implode(', ', $sets) . ' WHERE complex_id = ?';
     } else {
+        $pdo->exec('INSERT IGNORE INTO evaluation_settings (id) VALUES (1)');
         $params[] = 1;
         $sql = 'UPDATE evaluation_settings SET ' . implode(', ', $sets) . ' WHERE id = ?';
     }

@@ -1,3 +1,4 @@
+import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, useRef } from "react";
 import {
@@ -6,7 +7,8 @@ import {
   type SardQueueItem,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
-import { useEvaluationSettings } from "@/contexts/EvaluationSettingsContext";
+import { useAttemptEvaluationSettings } from "@/hooks/use-attempt-evaluation-settings";
+import { flushSharedEdits, getDataSemester } from "@/lib/shared-state";
 import {
   computeReviewScore,
   emptyReviewSegments,
@@ -88,7 +90,8 @@ export function MusammiPage() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
 
-  const refresh = () => setQueue(loadSardQueue());
+  const refresh = () => setQueue([...loadSardQueue()]);
+  useInboxRefresh(refresh);
 
   const visible = useMemo(
     () => sortMusammiQueue(queue.filter((q) => isMusammiVisible(q))),
@@ -332,7 +335,7 @@ function SardEvaluatorFull({
   halaqaName: string;
   onDone: () => void;
 }) {
-  const { settings } = useEvaluationSettings();
+  const { settings, rules, ready, error: rulesError } = useAttemptEvaluationSettings(item);
   const juzCount = parseMemorizedJuzCount(memorized, level);
   const segmentCount = reviewSegmentCount(juzCount, settings);
   const maxMinutes = maxAllowedMinutes(juzCount, settings);
@@ -356,6 +359,7 @@ function SardEvaluatorFull({
 
   const submitting = useRef(false);
   const submit = async () => {
+    if (!ready) { toast.error(rulesError ?? "جارٍ تأكيد قواعد المحاولة"); return; }
     if (submitting.current || loadSardQueue().find(q => q.id === item.id)?.status === "passed") return;
     submitting.current = true;
     try {
@@ -365,6 +369,7 @@ function SardEvaluatorFull({
 
       if (hifz.failed) {
         pushSardHistory({
+          evaluationRules: rules, assignmentId: item.assignmentId, semesterId: getDataSemester(),
           id: `sh-${Date.now()}`, studentId: item.studentId, halaqaId: item.halaqaId,
           week: item.week, attempt: item.attempt, result: "failed", percent: 0,
           hifzErrors, hifzWarnings, reviewErrors, reviewWarnings, at: new Date().toISOString(),
@@ -394,14 +399,18 @@ function SardEvaluatorFull({
           notifyTeacherTransfer(item.studentId, item.halaqaId, item.week, studentName, "رسب في السرد — المحاولة الثالثة — نقل للمدير");
           toast.error("رسوب في الحفظ — نقل إلى الإدارة");
         }
+        await flushSardQueue();
+        await flushSharedEdits();
         onDone();
         return;
       }
 
       if (review.failed) {
-        updateSardItem(item.id, buildReviewOnlyPatch(item, hifz.score, hifzErrors, hifzWarnings, segmentCount, settings.retry_delay_days));
+        updateSardItem(item.id, buildReviewOnlyPatch({...item, evaluationRules:rules}, hifz.score, hifzErrors, hifzWarnings, segmentCount, settings.retry_delay_days));
         notifyTeacherSard(item.halaqaId, `اجتاز ${studentName} الحفظ (${hifz.score}) — جُدولت المراجعة بعد ${settings.retry_delay_days} يوم`);
         toast.success(`تم تثبيت الحفظ (${hifz.score}) — مراجعة بعد ${settings.retry_delay_days} يوم`);
+        await flushSardQueue();
+        await flushSharedEdits();
         onDone();
         return;
       }
@@ -420,6 +429,7 @@ function SardEvaluatorFull({
             week: item.week,
             attempt: item.attempt,
             percent: merged.percent,
+            hifzErrors,hifzWarnings,reviewErrors,reviewWarnings,
             hifzScore: merged.hifzScore,
             reviewScore: merged.reviewScore,
             track: levelType,
@@ -427,15 +437,7 @@ function SardEvaluatorFull({
             assignedBy: "المسمّع",
           });
           const newLevel = advance.newGlobalPhase ?? level;
-          updateSardItem(item.id, passedSardPatch(advance, merged.percent, "full"));
-          pushSardHistory({
-            id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
-            week: item.week, attempt: item.attempt,
-            result: merged.passed ? "passed" : "failed",
-            percent: merged.percent,
-            hifzErrors, hifzWarnings, reviewErrors, reviewWarnings,
-            at: new Date().toISOString(),
-          });
+          // Server confirmed assignment, profile, queue and both history records together.
           await flushSardQueue();
           const planMsg = advance.newPlanTitle
             ? ` — انتقل إلى ${advance.newPlanTitle}`
@@ -450,6 +452,7 @@ function SardEvaluatorFull({
         }
       } else {
         pushSardHistory({
+          evaluationRules: rules, assignmentId: item.assignmentId, semesterId: getDataSemester(),
           id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
           week: item.week, attempt: item.attempt, result: "failed", percent: merged.percent,
           hifzErrors, hifzWarnings,
@@ -463,6 +466,7 @@ function SardEvaluatorFull({
         toast.error(`رسب نهائياً (${merged.percent}%) — الإدارة تتخذ القرار`);
       }
       await flushSardQueue();
+      await flushSharedEdits();
       onDone();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "تعذّر الحفظ");
@@ -471,6 +475,7 @@ function SardEvaluatorFull({
 
   return (
     <div className="glass-card rounded-2xl p-6 space-y-6">
+      {!ready && <p role="status" className="text-sm text-destructive">{rulesError ?? "جارٍ تأكيد قواعد المحاولة…"}</p>}
       <StudentHeader
         studentName={studentName} halaqaName={halaqaName} week={item.week}
         level={level} levelType={levelType} attempt={item.attempt}
@@ -505,7 +510,7 @@ function SardEvaluatorFull({
         }
       />
 
-      <button type="button" onClick={() => void submit()}
+      <button type="button" disabled={!ready} onClick={() => void submit()}
         className="w-full py-4 rounded-xl gold-gradient text-primary-foreground font-bold text-lg hover:scale-[1.01] transition-transform gold-glow">
         إرسال التقييم
       </button>
@@ -524,7 +529,7 @@ function SardEvaluatorReviewOnly({
   halaqaName: string;
   onDone: () => void;
 }) {
-  const { settings } = useEvaluationSettings();
+  const { settings, rules, ready, error: rulesError } = useAttemptEvaluationSettings(item);
   const juzCount = parseMemorizedJuzCount(memorized, level);
   const segmentCount = item.reviewSegmentCount ?? reviewSegmentCount(juzCount, settings);
   const lockedHifz = item.lockedHifzScore ?? 0;
@@ -541,6 +546,7 @@ function SardEvaluatorReviewOnly({
 
   const submitting = useRef(false);
   const submit = async () => {
+    if (!ready) { toast.error(rulesError ?? "جارٍ تأكيد قواعد المحاولة"); return; }
     if (submitting.current || loadSardQueue().find(q => q.id === item.id)?.status === "passed") return;
     submitting.current = true;
     try {
@@ -558,6 +564,8 @@ function SardEvaluatorReviewOnly({
         });
         notifyTeacherSard(item.halaqaId, `رسب ${studentName} في المراجعة — إعادة بعد ${settings.retry_delay_days} يوم (الحفظ مثبت)`);
         toast.warning(`راسب في المراجعة — إعادة بعد ${settings.retry_delay_days} يوم (درجة الحفظ مثبتة)`);
+        await flushSardQueue();
+        await flushSharedEdits();
         onDone();
         return;
       }
@@ -576,6 +584,7 @@ function SardEvaluatorReviewOnly({
             week: item.week,
             attempt: item.attempt,
             percent: merged.percent,
+            hifzErrors: item.lockedHifzErrors ?? 0,hifzWarnings:item.lockedHifzWarnings ?? 0,reviewErrors,reviewWarnings,
             hifzScore: merged.hifzScore,
             reviewScore: merged.reviewScore,
             track: levelType,
@@ -583,17 +592,7 @@ function SardEvaluatorReviewOnly({
             assignedBy: "المسمّع",
           });
           const newLevel = advance.newGlobalPhase ?? level;
-          updateSardItem(item.id, passedSardPatch(advance, merged.percent, "review_only"));
-          pushSardHistory({
-            id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
-            week: item.week, attempt: item.attempt,
-            result: merged.passed ? "passed" : "failed",
-            percent: merged.percent,
-            hifzErrors: item.lockedHifzErrors ?? 0,
-            hifzWarnings: item.lockedHifzWarnings ?? 0,
-            reviewErrors, reviewWarnings,
-            at: new Date().toISOString(),
-          });
+          // Server confirmed assignment, profile, queue and both history records together.
           await flushSardQueue();
           const planMsg = advance.newPlanTitle
             ? ` — انتقل إلى ${advance.newPlanTitle}`
@@ -608,6 +607,7 @@ function SardEvaluatorReviewOnly({
         }
       } else {
         pushSardHistory({
+          evaluationRules: rules, assignmentId: item.assignmentId, semesterId: getDataSemester(),
           id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
           week: item.week, attempt: item.attempt, result: "failed", percent: merged.percent,
           hifzErrors: item.lockedHifzErrors ?? 0, hifzWarnings: item.lockedHifzWarnings ?? 0,
@@ -621,6 +621,7 @@ function SardEvaluatorReviewOnly({
         toast.error(`رسب نهائياً (${merged.percent}%) — نقل للإدارة`);
       }
       await flushSardQueue();
+      await flushSharedEdits();
       onDone();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "تعذّر الحفظ");
@@ -629,6 +630,7 @@ function SardEvaluatorReviewOnly({
 
   return (
     <div className="glass-card rounded-2xl p-6 space-y-6">
+      {!ready && <p role="status" className="text-sm text-destructive">{rulesError ?? "جارٍ تأكيد قواعد المحاولة…"}</p>}
       <StudentHeader
         studentName={studentName} halaqaName={halaqaName} week={item.week}
         level={level} levelType={levelType}
@@ -659,7 +661,7 @@ function SardEvaluatorReviewOnly({
             : undefined}
       />
 
-      <button type="button" onClick={() => void submit()}
+      <button type="button" disabled={!ready} onClick={() => void submit()}
         className="w-full py-4 rounded-xl gold-gradient text-primary-foreground font-bold text-lg hover:scale-[1.01] transition-transform gold-glow">
         إرسال تقييم المراجعة
       </button>

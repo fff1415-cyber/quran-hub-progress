@@ -86,6 +86,8 @@ export function StudentPlanSheet({
 
   return (
     <div className={cn("space-y-4", className)}>
+      {!!data.legacy_completions?.length && <p className="rounded border border-warning/40 p-3 text-sm text-warning">توجد إنجازات قديمة محفوظة دون تعيين مؤكد. لم تُحسب ضمن هذه الخطة ولم تُحذف؛ تحتاج مراجعة مصدرها.</p>}
+      {data.content_provenance?.includes("not_original") && <p className="text-xs text-muted-foreground">هذا المحتوى نسخة مرصودة من الدليل؛ لا يثبت المحتوى الأصلي قبل بدء حفظ الإصدارات.</p>}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           {studentName && <div className="font-bold text-lg text-primary">{studentName}</div>}

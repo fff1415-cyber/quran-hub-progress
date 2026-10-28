@@ -1,3 +1,5 @@
+import { captureSharedEdit } from "@/lib/shared-state";
+import { getActiveComplexId } from "@/lib/tenant";
 export type GradeInputMode = "dropdown" | "checkbox";
 
 export type AttendanceOption = "present" | "late" | "excused" | "absent";
@@ -51,6 +53,7 @@ export const DEFAULT_GRADE_INPUT_SETTINGS: GradeInputSettings = {
 };
 
 const KEY_LOCAL = "qshatawi_grade_input_settings_v1";
+const cacheKey=()=>`${KEY_LOCAL}:complex:${getActiveComplexId()??"none"}`;
 
 function normalizeOptions<T extends string>(options: T[], allowed: readonly T[]): T[] {
   const seen = new Set<T>();
@@ -90,7 +93,7 @@ export function normalizeGradeInputSettings(raw: Partial<GradeInputSettings> | n
 
 export function loadGradeInputSettings(): GradeInputSettings {
   if (typeof window === "undefined") return { ...DEFAULT_GRADE_INPUT_SETTINGS };
-  const raw = localStorage.getItem(KEY_LOCAL);
+  const raw = localStorage.getItem(cacheKey());
   if (!raw) return { ...DEFAULT_GRADE_INPUT_SETTINGS };
   try {
     return normalizeGradeInputSettings(JSON.parse(raw) as Partial<GradeInputSettings>);
@@ -102,7 +105,9 @@ export function loadGradeInputSettings(): GradeInputSettings {
 export function saveGradeInputSettings(settings: GradeInputSettings): GradeInputSettings {
   const normalized = normalizeGradeInputSettings(settings);
   if (typeof window !== "undefined") {
-    localStorage.setItem(KEY_LOCAL, JSON.stringify(normalized));
+    const before=JSON.parse(localStorage.getItem(cacheKey())??"{}");
+    localStorage.setItem(cacheKey(), JSON.stringify(normalized));
+    captureSharedEdit("grade_input_settings",before,normalized);
     window.dispatchEvent(new CustomEvent("grade-input-settings-changed", { detail: normalized }));
   }
   return normalized;
@@ -113,4 +118,9 @@ export function attendancePresetId(options: AttendanceOption[]): string {
     (p) => p.options.length === options.length && p.options.every((o, i) => o === options[i]),
   );
   return match?.id ?? "custom";
+}
+
+export function replaceGradeInputSettingsFromCloud(raw:unknown):void {
+  localStorage.setItem(cacheKey(),JSON.stringify(raw??{}));
+  window.dispatchEvent(new Event("grade-input-settings-changed"));
 }

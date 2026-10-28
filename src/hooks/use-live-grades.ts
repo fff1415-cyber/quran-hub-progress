@@ -23,7 +23,7 @@ export function useLiveGrades(): [GradesStore, (g: GradesStore) => void] {
 
     window.addEventListener(GRADES_CHANGED_EVENT, applyLocal);
     const onStorage = (e: StorageEvent) => {
-      if (e.key === "qshatawi_grades_v2") applyLocal();
+      if (e.key?.startsWith("qshatawi_grades_v2:scope:")) applyLocal();
     };
     window.addEventListener("storage", onStorage);
 

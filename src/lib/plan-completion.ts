@@ -1,5 +1,5 @@
 import { planHifzProgress } from "@/lib/plan-progress";
-import { enqueuePlanCompleted, loadSardQueue, type Student } from "@/lib/mock-data";
+import { enqueuePlanCompleted, loadSardQueue, flushSardQueue, type Student } from "@/lib/mock-data";
 import { fetchStudentPlanSheet } from "@/lib/plans-service";
 import { notifyTeacherHalaqa } from "@/lib/teacher-notifications";
 
@@ -37,6 +37,7 @@ export async function checkAndHandlePlanCompletion(
   const planTitle = sheet.plan?.title ?? "الخطة التعليمية";
   enqueuePlanCompleted(student.id, student.halaqaId, weekNum, planTitle, sheet.assignment?.id);
 
+  await flushSardQueue();
   notifyTeacherHalaqa(
     student.halaqaId,
     `الطالب ${student.name} أنهى ${planTitle} — بانتظار تحويل المشرف للسرد`,

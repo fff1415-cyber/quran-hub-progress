@@ -12,6 +12,7 @@ import { getAuthItem } from "@/lib/auth-session";
 import { EvaluationSettingsProvider } from "@/contexts/EvaluationSettingsContext";
 import { GradeInputSettingsProvider } from "@/contexts/GradeInputSettingsContext";
 import { TenantProvider } from "@/contexts/TenantContext";
+import { SharedSaveStatus } from "@/components/SharedSaveStatus";
 
 import appCss from "../styles.css?url";
 
@@ -86,6 +87,7 @@ function RootComponent() {
         <EvaluationSettingsProvider>
           <GradeInputSettingsProvider>
             <Outlet />
+            <SharedSaveStatus />
           </GradeInputSettingsProvider>
         </EvaluationSettingsProvider>
       </TenantProvider>

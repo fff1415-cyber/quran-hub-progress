@@ -10,7 +10,7 @@ interface PlanAwareTaskCellProps {
   passFailValue: string;
   onHifzChange: (v: HifzValue) => void;
   onPassFailChange: (v: "pass" | "fail" | "") => void;
-  onPlanHifzChange?: (checked: boolean) => void;
+  onPlanHifzChange?: (checked: boolean, value?: HifzValue) => void;
   onPlanPassFailChange?: (v: "pass" | "fail" | "") => void;
   disabled?: boolean;
 }
@@ -36,8 +36,8 @@ export function PlanAwareTaskCell({
         onChange={(v) => {
           const wasOn = isHifzChecked(hifzValue);
           const nowOn = v !== "";
-          if (hasPlan && wasOn !== nowOn) {
-            onPlanHifzChange?.(nowOn);
+          if (hasPlan) {
+            onPlanHifzChange?.(nowOn, v);
             return;
           }
           onHifzChange(v);
@@ -54,7 +54,7 @@ export function PlanAwareTaskCell({
         disabled={disabled}
         onChange={(v) => {
           // Single immediate grade write; plan handler also stamps the cell then queues apply.
-          if (v === "pass" && onPlanPassFailChange) {
+          if (onPlanPassFailChange) {
             onPlanPassFailChange(v);
             return;
           }

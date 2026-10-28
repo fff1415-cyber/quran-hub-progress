@@ -1,3 +1,7 @@
+import { useLiveGrades } from "@/hooks/use-live-grades";
+import { flushSardQueue } from "@/lib/mock-data";
+import { flushSharedEdits } from "@/lib/shared-state";
+import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
@@ -60,7 +64,7 @@ function whatsappAbsenceMessage(studentName: string, status: "absent" | "late", 
 export function SecretaryAttendancePanel() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
-  const grades = loadGrades();
+  const [grades] = useLiveGrades();
   const [currentWeek, setCurrentWeek] = useState(1);
   const todayKey = getCalendarDayKey();
 
@@ -198,7 +202,7 @@ export function SecretaryAbsenceThresholdPanel() {
 export function SecretaryLatePermitPanel() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
-  const grades = loadGrades();
+  const [grades] = useLiveGrades();
   const [latePermissions, setLatePermissions] = useState(() => loadLatePermissions());
   const [search, setSearch] = useState("");
   const todayISO = getCalendarIsoDate();
@@ -286,7 +290,8 @@ export function SecretarySardPanel() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
   const templates = loadMessageTemplates();
-  const [queue] = useState(() => loadSardQueue());
+  const [queue,setQueue] = useState(() => loadSardQueue());
+  useInboxRefresh(()=>setQueue([...loadSardQueue()]));
   const passedSard = useMemo(() => queue.filter((q) => q.status === "passed"), [queue]);
   const finalFailed = useMemo(() => queue.filter((q) => q.status === "final_failed"), [queue]);
 
@@ -405,7 +410,8 @@ export function SupervisorPlanCompletedPanel() {
   const [queue, setQueue] = useState(() => loadSardQueue());
   const students = loadStudents();
   const halaqat = loadHalaqat();
-  const refresh = () => setQueue(loadSardQueue());
+  const refresh = () => setQueue([...loadSardQueue()]);
+  useInboxRefresh(refresh);
 
   useEffect(() => {
     const timer = setInterval(() => setQueue(loadSardQueue()), 5000);
@@ -414,16 +420,21 @@ export function SupervisorPlanCompletedPanel() {
 
   const completed = queue.filter((q) => q.status === "plan_completed");
 
-  const forward = (id: string, studentName: string, halaqaId: number, planTitle?: string) => {
+  const forward = async (id: string, studentName: string, halaqaId: number, planTitle?: string) => {
+    try{
     const item = forwardPlanToSard(id);
     if (!item) return;
+    await flushSardQueue();
     notifyTeacherHalaqa(
       halaqaId,
       `حُوّل ${studentName} للسرد${planTitle ? ` — ${planTitle}` : ""}`,
       "sard",
     );
+    await flushSardQueue();
+    await flushSharedEdits();
     toast.success(`تم تحويل ${studentName} لقائمة المسمّع`);
     refresh();
+    }catch(error){toast.error(error instanceof Error?error.message:"لم يتأكد الحفظ");}
   };
 
   return (
@@ -476,13 +487,16 @@ export function SupervisorApprovalsPanel() {
   const [queue, setQueue] = useState(() => loadSardQueue());
   const students = loadStudents();
   const halaqat = loadHalaqat();
-  const refresh = () => setQueue(loadSardQueue());
+  const refresh = () => setQueue([...loadSardQueue()]);
+  useInboxRefresh(refresh);
   const awaiting = queue.filter((q) => q.status === "awaiting_supervisor");
 
-  const approveThird = (id: string, name: string, halaqaId: number) => {
+  const approveThird = async (id: string, name: string, halaqaId: number) => {
+    try{
     updateSardItem(id, {
       status: "approved_third",
       attempt: 3,
+      evaluationRules: undefined,
       phase: "full",
       hifzErrors: 0,
       hifzWarnings: 0,
@@ -495,8 +509,11 @@ export function SupervisorApprovalsPanel() {
     });
     pushNotification({ message: `وافق المشرف على محاولة ثالثة — ${name}`, type: "sard" });
     notifyTeacherHalaqa(halaqaId, `وافق المشرف على محاولة سرد ثالثة — ${name}`, "sard");
+    await flushSardQueue();
+    await flushSharedEdits();
     toast.success("تمت الموافقة");
     refresh();
+    }catch(error){toast.error(error instanceof Error?error.message:"لم يتأكد الحفظ");}
   };
 
   return (
@@ -533,9 +550,11 @@ export function SupervisorForceRetryPanel() {
   const [queue, setQueue] = useState(() => loadSardQueue());
   const students = loadStudents();
   const halaqat = loadHalaqat();
+  useInboxRefresh(()=>setQueue([...loadSardQueue()]));
   const scheduled = queue.filter((q) => isSupervisorForceRetryCandidate(q));
 
-  const forceImmediate = (item: typeof scheduled[number], name: string) => {
+  const forceImmediate = async (item: typeof scheduled[number], name: string) => {
+    try{
     const kind = forceRetryKind(item);
     updateSardItem(item.id, buildForceImmediatePatch(item));
     pushNotification({
@@ -544,8 +563,11 @@ export function SupervisorForceRetryPanel() {
         : `سمح المشرف بإعادة سرد فوري — ${name}`,
       type: "sard",
     });
+    await flushSardQueue();
+    await flushSharedEdits();
     toast.success(kind === "review" ? "تم — يمكن للمسمّع إجراء المراجعة فوراً" : "تم — يمكن للمسمّع البدء فوراً");
     setQueue(loadSardQueue());
+    }catch(error){toast.error(error instanceof Error?error.message:"لم يتأكد الحفظ");}
   };
 
   return (
@@ -585,7 +607,8 @@ export function SupervisorForceRetryPanel() {
 export function SupervisorPassedPanel() {
   const students = loadStudents();
   const halaqat = loadHalaqat();
-  const [queue] = useState(() => loadSardQueue());
+  const [queue,setQueue] = useState(() => loadSardQueue());
+  useInboxRefresh(()=>setQueue([...loadSardQueue()]));
   const passedSard = queue.filter((q) => q.status === "passed");
 
   return (

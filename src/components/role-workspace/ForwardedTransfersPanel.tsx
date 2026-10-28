@@ -61,7 +61,7 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
   useEffect(refresh, [refresh]);
   useInboxRefresh(refresh);
 
-  const submitAction = (n: Notification, actionText: string) => {
+  const submitAction = async (n: Notification, actionText: string) => {
     if (!n.transferData || busyId) return;
     setBusyId(n.id);
     const actorName = getSessionName(transferActionRoleLabel(role));
@@ -72,10 +72,9 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
         byName: actorName,
         text: actionText,
         at: new Date().toISOString(),
-      });
-      updateNotification(n.id, { read: true, transferStatus: "closed" });
+      }, {read:true,transferStatus:"closed"});
       refresh();
-      toast.success("تم تسجيل الإجراء وإغلاق الحالة");
+      toast.success("تم تسجيل الإجراء محليًا وإغلاق الحالة؛ المزامنة المشتركة معلّقة");
     } catch (e) {
       refresh();
       toast.error(e instanceof Error ? e.message : "فشل التحديث");

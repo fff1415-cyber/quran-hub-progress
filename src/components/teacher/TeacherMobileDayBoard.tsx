@@ -93,7 +93,7 @@ type Props = {
     field: "attendance" | "hifz" | "rabt" | "muraja",
     value: string,
   ) => void;
-  onPlanHifz: (s: Student, dayKey: string, checked: boolean) => void;
+  onPlanHifz: (s: Student, dayKey: string, checked: boolean, value?: import("@/lib/mock-data").HifzValue) => void;
   onPlanPassFail: (s: Student, dayKey: string, task: "rabt" | "muraja", value: "pass" | "fail" | "") => void;
   onCompensationChange: (s: Student, dayKey: string, faces: number) => void;
   onMarkAllPresent: (dayKey: string) => void;
@@ -511,7 +511,7 @@ export function TeacherMobileDayBoard({
                           passFailValue=""
                           onHifzChange={(v: HifzValue) => onUpdateDay(s.id, activeDayKey, { hifz: v })}
                           onPassFailChange={() => {}}
-                          onPlanHifzChange={(checked) => onPlanHifz(s, activeDayKey, checked)}
+                          onPlanHifzChange={(checked, value) => onPlanHifz(s, activeDayKey, checked, value)}
                         />
                       </TaskColumn>
                       <TaskColumn

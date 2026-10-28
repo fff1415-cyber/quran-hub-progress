@@ -178,8 +178,8 @@ export function SemesterSetupForm() {
       await fetchActiveCalendar(true);
       try {
         const { pushAppState } = await import("@/lib/cloud-sync");
-        await pushAppState("grades", {});
-        await pushAppState("weekly_tests", {});
+        // Prior semester grades remain in their explicit server bucket.
+        // Weekly test history is retained as well.
       } catch {
         /* local reset applied */
       }

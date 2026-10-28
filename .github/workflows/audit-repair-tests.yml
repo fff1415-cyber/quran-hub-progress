@@ -1,0 +1,70 @@
+name: Audit repair isolated tests
+on:
+  pull_request:
+    branches: [main]
+concurrency:
+  group: audit-repair-${{ github.ref }}
+  cancel-in-progress: true
+permissions:
+  contents: read
+jobs:
+  mysql-integrity:
+    name: Schema and concurrency (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: MySQL 8
+            image: mysql:8.0
+            health: mysqladmin ping -h 127.0.0.1
+          - engine: MariaDB 11.8
+            image: mariadb:11.8
+            health: healthcheck.sh --connect --innodb_initialized
+    services:
+      mysql:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_DATABASE: audit_test
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: [3307:3306]
+        options: --health-cmd="${{ matrix.health }}" --health-interval=5s --health-timeout=5s --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Isolated MySQL migration and real row-lock contention
+        env:
+          AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
+        run: php tests/backend-mysql-integrity.php
+  isolated-regressions:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Existing runner PHP (no system package updates)
+        run: php --version && php -m
+      - name: PHP syntax and isolated SQLite handlers
+        run: |
+          find api tests -name '*.php' -print0 | xargs -0 -n1 php -l
+          php tests/backend-sard-regression.php
+          if [ -f tests/backend-plan-integrity.php ]; then php tests/backend-plan-integrity.php; fi
+          if [ -f tests/backend-state-integrity.php ]; then php tests/backend-state-integrity.php; fi
+          if [ -f tests/backend-diary-integrity.php ]; then php tests/backend-diary-integrity.php; fi
+          if [ -f tests/backend-progression-integrity.php ]; then php tests/backend-progression-integrity.php; fi
+          if [ -f tests/backend-settings-integrity.php ]; then php tests/backend-settings-integrity.php; fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Existing locked project dependencies
+        env:
+          npm_config_fetch_timeout: 120000
+          npm_config_fetch_retries: 1
+        run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - name: Client regressions
+        run: |
+          for test in tests/*regression.cjs tests/plan-server-confirmation.cjs; do node "$test"; done

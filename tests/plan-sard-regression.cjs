@@ -4,7 +4,7 @@ const ts = require('typescript');
 function load(path, deps) {
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(path, 'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-  new Function('require','exports',code)(name => { if (!(name in deps)) throw Error(name); return deps[name]; }, exports);
+  new Function('require','exports',code)(name => { if(name==='@/lib/shared-state') return {captureSharedEdit:()=>{},sharedSaveStatus:()=>({state:"failed"}),getDataSemester:()=>null,flushSharedEdits:async()=>{},semesterStorageKey:k=>k}; if (!(name in deps)) throw Error(name); return deps[name]; }, exports);
   return exports;
 }
 const storage = () => {const map=new Map();return {getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)}};
@@ -17,9 +17,9 @@ assert.equal(auth.getAuthItem('qs_role'),'supervisor');assert.equal(auth.getAuth
  let plans=[];let calls=[];
  const sheet={assignment:{id:'old',status:'active'},plan:{title:'old plan',level_number:1},segments:[],completions:[]};
  const service={fetchStudentPlanSheet:async()=>sheet,fetchPlans:async()=>plans,assignStudentPlan:async(...args)=>calls.push(args),patchStudentAssignment:async()=>{throw Error('must not close before assigning')}};
- const progression=load('src/lib/plan-progression.ts',{'@/lib/plans-service':service,'@/lib/plan-level-ranges':{globalPhaseFromPlanLevel:()=>1,legacyGlobalPhaseFromPlanLevel:()=>1,maxGlobalPhase:()=>30,followingPlan:()=>plans[0]?{plan:plans[0],phase:2}:null,instituteLevelFromPlanLevel:()=>null,murajaStartSegment:()=>1},'@/lib/plan-daily-faces':{normalizeTaskQuotas:()=>({})}});
+ const progression=load('src/lib/plan-progression.ts',{'@/lib/operational-date':{getCalendarIsoDate:()=> '2026-10-29'},'@/lib/plans-service':{...service,retryPendingPlanAdvance:async()=>null},'@/lib/plan-level-ranges':{globalPhaseFromPlanLevel:()=>1,legacyGlobalPhaseFromPlanLevel:()=>1,maxGlobalPhase:()=>30,followingPlan:()=>plans[0]?{plan:plans[0],phase:2}:null,instituteLevelFromPlanLevel:()=>null,murajaStartSegment:()=>1},'@/lib/plan-daily-faces':{normalizeTaskQuotas:()=>({})}});
  await assert.rejects(progression.completePlanAndAdvance('student','supervisor','gold'),/الخطة التالية/);assert.equal(calls.length,0);
- plans=[{id:'next',title:'next plan'}];await progression.completePlanAndAdvance('student','supervisor','gold',{expectedAssignmentId:'old'});assert.equal(calls[0][4].expected_assignment_id,'old');
+ plans=[{id:'next',title:'next plan'}];await progression.completePlanAndAdvance('student','supervisor','gold',{expectedAssignmentId:'old'});assert.equal(calls[0][4].expected_assignment_id,'old');assert.equal(calls[0][4].plan_start_date,'2026-10-29','transition uses the same calendar date source instead of a UTC slice');
  await assert.rejects(progression.completePlanAndAdvance('student','supervisor','gold',{expectedAssignmentId:'stale'}),/تغيّرت/);assert.equal(calls.length,1);
  console.log('PASS: token identity reconciliation, missing next plan preservation, expected assignment guard and atomic assignment request');
 })().catch(e=>{console.error(e);process.exitCode=1});
