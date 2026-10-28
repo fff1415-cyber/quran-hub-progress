@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 // Storage/versioning helpers. Every entry point keeps its existing authorization.
 function state_semester_key(string $key): bool {return in_array($key,['grades','weekly_tests','scientific_grades'],true);}
-function state_list_key(string $key): bool {return in_array($key,['notifications','academic_records','sard_history'],true);}
+function state_list_key(string $key): bool {return in_array($key,['academic_records','sard_history'],true);}
 function state_protected_key(string $key): bool {return state_semester_key($key)||state_list_key($key)||in_array($key,['grade_input_settings','grade_point_settings'],true);}
 function state_active_semester(PDO $pdo,int $cid,bool $lock=false): string {
     $scoped=table_column_exists($pdo,'semesters','complex_id');
@@ -18,6 +18,7 @@ function state_envelope(mixed $raw): array {
 }
 function state_scope_value(array $e,string $key,string $scope): array {
     $v=$e['scopes'][$scope]??(state_semester_key($key)?[]:($e['legacy']??[]));
+    if($key==='scientific_grades'&&!array_key_exists($scope,$e['scopes']??[]))$v=['configs'=>$e['shared_config']??$e['legacy']['configs']??[],'data'=>[],'overrides'=>[]];
     if(!is_array($v))return [];
     if(state_list_key($key)) {
         $map=[];foreach($v as $item)if(is_array($item)&&isset($item['id']))$map[(string)$item['id']]=$item;
@@ -79,6 +80,7 @@ function app_state_patch_integrity(PDO $pdo,int $cid,string $key,mixed $input): 
                 state_set_cell($v,$path,$next);
             }
             $e['scopes'][$scope]=state_list_key($key)?array_values($v):$v;
+            if($key==='scientific_grades')$e['shared_config']=$v['configs']??[];
             $e['revision']=($e['revision']??0)+1;$e['operations'][$id]=$hash;$e['operation_log'][$id]=$input;
             app_state_upsert($pdo,$key,$e,app_state_tenant_enabled($pdo)?$cid:null);
         }

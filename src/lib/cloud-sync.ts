@@ -116,7 +116,7 @@ interface CloudHalaqaRow {
   extra_assistants?: unknown;
 }
 
-function rowToStudent(r: CloudStudentRow): Student {
+export function rowToStudent(r: CloudStudentRow): Student {
   const phaseFromRow = r.phase_number ?? parseInt(r.level, 10);
   const phaseNumber = Number.isFinite(phaseFromRow) && phaseFromRow > 0 ? phaseFromRow : undefined;
   return {
@@ -135,7 +135,7 @@ function rowToStudent(r: CloudStudentRow): Student {
     memorized: r.memorized ?? undefined,
   };
 }
-function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
+export function rowToHalaqa(r: CloudHalaqaRow): Halaqa {
   const extras = normalizeExtraAssistants(r.extra_assistants);
   return {
     id: Number(r.id),
@@ -337,7 +337,7 @@ export async function syncFromCloud(options?: {
           saveStaffCheckIns(merged, { sync: false });
         }
         if (state.has("sard_queue") && JSON.stringify(loadSardQueue()) === sardBeforePull) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
-        if (state.has("notifications")) saveNotifications(reconcileShared("notifications", state.get("notifications")) as import("./mock-data").Notification[]);
+        // F03 notifications stay local until recipient-scoped access is explicitly authorized.
         if (state.has("sard_history")) saveSardHistory(reconcileShared("sard_history", state.get("sard_history")) as SardHistoryItem[]);
         if (state.has("academic_records")) saveAcademicRecords(reconcileShared("academic_records", state.get("academic_records")) as AcademicPhaseRecord[]);
         if (state.has("halaqa_programs")) {

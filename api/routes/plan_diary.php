@@ -17,7 +17,7 @@ function plans_record_diary(PDO $pdo,int $cid,array $auth,array $input): array {
     $pdo->beginTransaction();
     try {
         plans_lock_student($pdo,$studentId);
-        $replay=plans_operation_replay($pdo,$op,$studentId,'diary',$input);
+        $replay=plans_operation_replay($pdo,$op,$studentId,'diary',$input,$cid);
         if($replay!==null){$pdo->commit();return $replay;}
         $semester=state_active_semester($pdo,$cid,true);
         if(($d['semester_id']??'')!==$semester)throw new RuntimeException('تغيّر الفصل الدراسي — لم تُحفظ العملية');

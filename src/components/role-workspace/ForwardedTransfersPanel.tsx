@@ -1,4 +1,3 @@
-import { flushSharedEdits } from "@/lib/shared-state";
 import { useCallback, useEffect, useState } from "react";
 import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { InboxItemActions } from "@/components/role-workspace/InboxItemActions";
@@ -74,9 +73,8 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
         text: actionText,
         at: new Date().toISOString(),
       }, {read:true,transferStatus:"closed"});
-      await flushSharedEdits();
       refresh();
-      toast.success("تم تسجيل الإجراء وإغلاق الحالة");
+      toast.success("تم تسجيل الإجراء محليًا وإغلاق الحالة؛ المزامنة المشتركة معلّقة");
     } catch (e) {
       refresh();
       toast.error(e instanceof Error ? e.message : "فشل التحديث");

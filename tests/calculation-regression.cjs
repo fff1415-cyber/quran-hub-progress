@@ -5,7 +5,7 @@ function load(path, dependencies) {
   const e={}; const js=ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
   new Function('require','exports',js)(n=>{if(!(n in dependencies))throw Error(n);return dependencies[n]},e);return e;
 }
-const mock=load('src/lib/mock-data.ts',{'@/lib/shared-state':{captureSharedEdit:()=>{},getDataSemester:()=>null,semesterStorageKey:k=>k},'@/lib/auth-session':{hasAuthToken:()=>false}});
+const mock=load('src/lib/mock-data.ts',{'@/lib/shared-state':{captureSharedEdit:()=>{},sharedSaveStatus:()=>({state:"failed"}),getDataSemester:()=>null,semesterStorageKey:k=>k},'@/lib/auth-session':{hasAuthToken:()=>false}});
 const semester=load('src/lib/semester-grading.ts',{'@/lib/mock-data':mock,'@/lib/calendar-generator':{},'@/lib/semester-holidays':{},'@/lib/operational-date':{}});
 for(const hifz of [undefined,null,'','bogus',0,false]) {
   assert.equal(mock.isHifzChecked(hifz),false);
@@ -23,7 +23,7 @@ const sheet={assignment:{start_segment_index:11},plan:{},segments:Array.from({le
 assert.deepEqual(progress.planHifzProgress(sheet),{done:10,total:10,percent:100,complete:true});
 sheet.completions.pop();assert.equal(progress.planHifzProgress(sheet).percent,90);assert.equal(progress.planHifzProgress(sheet).complete,false);
 sheet.assignment.start_segment_index=21;assert.equal(progress.planHifzProgress(sheet).complete,false);
-const sci=load('src/lib/scientific-grades.ts',{'@/lib/shared-state':{captureSharedEdit:()=>{},getDataSemester:()=>null,semesterStorageKey:k=>k},'@/lib/auth-session':{hasAuthToken:()=>false},'@/lib/grade-input-settings':{},'@/lib/mock-data':mock,'@/lib/scientific-grades-program':{}});
+const sci=load('src/lib/scientific-grades.ts',{'@/lib/shared-state':{captureSharedEdit:()=>{},sharedSaveStatus:()=>({state:"failed"}),getDataSemester:()=>null,semesterStorageKey:k=>k},'@/lib/auth-session':{hasAuthToken:()=>false},'@/lib/grade-input-settings':{},'@/lib/mock-data':mock,'@/lib/scientific-grades-program':{}});
 assert.equal(sci.scientificPeriodAssessmentCount({S:{1:{sun:{hifz:'0'},mon:{hifz:''},tue:{hifz:'invalid'}}}},'S',[1],['hifz']),1);
 const combined=load('src/lib/halaqa-program-combined-totals.ts',{'@/lib/halaqa-programs':{studentAllProgramsWeekTotals:()=>({earned:0,maxPossible:0,filledSlots:0})},'@/lib/scientific-grades':sci});
 const config={visible:true,fields:{hifz:true},defaultScores:{hifz:'10'}};

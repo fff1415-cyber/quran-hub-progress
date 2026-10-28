@@ -34,11 +34,12 @@ function persistShared(value: AcademicPhaseRecord[]) {
 export function loadAcademicRecords(): AcademicPhaseRecord[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY);
-  return raw ? JSON.parse(raw) : [];
+  return raw ? (JSON.parse(raw) as AcademicPhaseRecord[]).sort((a,b)=>b.testDate.localeCompare(a.testDate)) : [];
 }
 
 export function saveAcademicRecords(list: AcademicPhaseRecord[]) {
   const before = loadAcademicRecords();
+  const raw=localStorage.getItem(KEY);if(raw&&!localStorage.getItem(`${KEY}:legacy-unverified`))localStorage.setItem(`${KEY}:legacy-unverified`,raw);
   localStorage.setItem(KEY, JSON.stringify(list));
   captureSharedEdit("academic_records", before, list);
 }

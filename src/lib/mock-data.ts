@@ -1,4 +1,4 @@
-import { captureSharedEdit, flushSharedEdits, semesterStorageKey, getDataSemester } from "@/lib/shared-state";
+import { captureSharedEdit, flushSharedEdits, semesterStorageKey, getDataSemester, sharedSaveStatus } from "@/lib/shared-state";
 // Mock data + localStorage store for مجمع حلقات الشتيوي
 import { hasAuthToken } from "@/lib/auth-session";
 
@@ -632,15 +632,17 @@ export const NOTIFICATIONS_CHANGED_EVENT = "qshatawi:notifications-changed";
 function writeNotificationsLocal(list: Notification[]) {
   if (typeof window === "undefined") return;
   const before = loadNotifications();
+  const legacy=localStorage.getItem(KEY_NOTIFICATIONS);if(legacy&&!localStorage.getItem(`${KEY_NOTIFICATIONS}:legacy-unverified`))localStorage.setItem(`${KEY_NOTIFICATIONS}:legacy-unverified`,legacy);
   localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list));
-  captureSharedEdit("notifications", before, list);
+  // F03 shared publication is held: existing app-state reads lack recipient scope.
+  // Preserve the existing local inbox until that excluded access decision is authorized.
   window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
 }
 
 export function loadNotifications(): Notification[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY_NOTIFICATIONS);
-  return raw ? JSON.parse(raw) : [];
+  return raw ? (JSON.parse(raw) as Notification[]).sort((a,b)=>b.createdAt.localeCompare(a.createdAt)) : [];
 }
 
 export function pushNotification(n: Omit<Notification, "id" | "createdAt" | "read">) {
@@ -823,7 +825,12 @@ export function loadSardQueue(): SardQueueItem[] {
 let sardWrites: Promise<void> = Promise.resolve();
 let pendingSardWrites = 0;
 export function hasPendingSardWrites(): boolean { return pendingSardWrites > 0; }
-export function flushSardQueue(): Promise<void> { return sardWrites; }
+export async function flushSardQueue(): Promise<void> {
+  try{await sardWrites;}catch(error){
+    // A durable retry (including after response loss or reload) can confirm this write.
+    await flushSharedEdits();if(sharedSaveStatus().state!=="saved")throw error;
+  }
+}
 export function saveSardQueue(q: SardQueueItem[]) {
   const previous = loadSardQueue();
   const syncing = sessionStorage.getItem("qs_syncing") === "1";
@@ -1016,10 +1023,11 @@ export interface SardHistoryItem {
 export function loadSardHistory(): SardHistoryItem[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY_SARD_HISTORY);
-  return raw ? JSON.parse(raw) : [];
+  return raw ? (JSON.parse(raw) as SardHistoryItem[]).sort((a,b)=>b.at.localeCompare(a.at)) : [];
 }
 export function pushSardHistory(h: SardHistoryItem) {
   const before = loadSardHistory();
+  const legacy=localStorage.getItem(KEY_SARD_HISTORY);if(legacy&&!localStorage.getItem(`${KEY_SARD_HISTORY}:legacy-unverified`))localStorage.setItem(`${KEY_SARD_HISTORY}:legacy-unverified`,legacy);
   const list = loadSardHistory().filter(item => item.id !== h.id);
   list.unshift(h);
   localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list));
@@ -1027,6 +1035,7 @@ export function pushSardHistory(h: SardHistoryItem) {
 }
 export function saveSardHistory(list: SardHistoryItem[]) {
   const before = loadSardHistory();
+  const legacy=localStorage.getItem(KEY_SARD_HISTORY);if(legacy&&!localStorage.getItem(`${KEY_SARD_HISTORY}:legacy-unverified`))localStorage.setItem(`${KEY_SARD_HISTORY}:legacy-unverified`,legacy);
   localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list));
   captureSharedEdit("sard_history", before, list);
 }

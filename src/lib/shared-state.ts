@@ -2,7 +2,7 @@ import { getToken } from "@/lib/auth-session";
 import { getActiveComplexId } from "@/lib/tenant";
 import { secureListAppState, secureSetAppState, securePatchWeeklyTest, secureRecordPlanDay } from "@/lib/secure-data.functions";
 
-export type SharedKey = "grades" | "weekly_tests" | "scientific_grades" | "notifications" | "academic_records" | "sard_history" | "sard_queue" | "grade_input_settings" | "grade_point_settings";
+export type SharedKey = "grades" | "weekly_tests" | "scientific_grades" | "academic_records" | "sard_history" | "sard_queue" | "grade_input_settings" | "grade_point_settings";
 type Cell = { present: boolean; value?: unknown };
 export type StateChange = { path: string[]; base: Cell; next: Cell };
 export type PlanDayPayload = {student_id:string;expected_assignment_id:string;task_type:"hifz"|"rabt"|"muraja";tap:"half"|"one"|"two";operation_id:string;diary:{semester_id:string;week_number:number;day_key:string;date:string;field:"hifz"|"rabt"|"muraja"|"compensationFaces";base:unknown;value:unknown}};
@@ -11,7 +11,7 @@ let semester: string | null = null;
 let semesterContext: string | null = null;
 const EVENT = "qs-shared-save-state";
 const semesterKeys = new Set<SharedKey>(["grades", "weekly_tests", "scientific_grades"]);
-const listKeys = new Set<SharedKey>(["notifications", "academic_records", "sard_history"]);
+const listKeys = new Set<SharedKey>(["academic_records", "sard_history"]);
 export const SHARED_SAVE_EVENT = EVENT;
 let status: { state: "saved" | "saving" | "failed"; error?: string; conflict?:boolean } = { state: "saved" };
 export function sharedSaveStatus() { return status; }
@@ -121,4 +121,11 @@ export async function fetchSharedValue<T>(key: SharedKey): Promise<T> {
   const rows = await secureListAppState({ data: { token, key } }); const row = rows.find(r => r.key === key);
   if (semesterKeys.has(key) && row && row.integrity?.semester_id !== semester) throw new Error("تغيّر الفصل الدراسي — أعد تحميل الصفحة قبل المتابعة");
   return reconcileShared(key, (row?.value ?? (listKeys.has(key) ? [] : {})) as T);
+}
+
+let resumedToken:string|null=null,resumedContext:string|null=null;
+export async function resumePendingEdits():Promise<void>{
+  const token=getToken(),scope=context();if(!token||(resumedToken===token&&resumedContext===scope))return;
+  resumedToken=token;resumedContext=scope;
+  if(pending().length){report({state:"saving"});await flushSharedEdits();}
 }

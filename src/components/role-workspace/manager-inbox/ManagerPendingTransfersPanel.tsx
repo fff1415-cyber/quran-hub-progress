@@ -1,4 +1,3 @@
-import { flushSharedEdits } from "@/lib/shared-state";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   loadStudents, loadHalaqat, loadGrades, updateNotification,
@@ -75,8 +74,7 @@ export function ManagerPendingTransfersPanel() {
           rootTransferId: n.id,
         },
       });
-      await flushSharedEdits();
-      toast.success(TRANSFER_TOAST[status]);
+      toast.success(`${TRANSFER_TOAST[status]} — محفوظ على هذا الجهاز؛ المزامنة المشتركة معلّقة للصلاحيات`);
       reload();
     } catch (e) {
       reload();
@@ -97,8 +95,7 @@ export function ManagerPendingTransfersPanel() {
         text: actionText,
         at: new Date().toISOString(),
       }, {transferStatus:"struggling",read:true});
-      await flushSharedEdits();
-      toast.success("تم تسجيل الإجراء ونقل الطالب للمتعثرين");
+      toast.success("تم تسجيل الإجراء محليًا ونقل الطالب للمتعثرين؛ المزامنة المشتركة معلّقة");
       setStrugglingPromptId(null);
       reload();
     } catch (e) {

@@ -1,3 +1,4 @@
+import { useLiveGrades } from "@/hooks/use-live-grades";
 import { flushSardQueue } from "@/lib/mock-data";
 import { flushSharedEdits } from "@/lib/shared-state";
 import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
@@ -63,7 +64,7 @@ function whatsappAbsenceMessage(studentName: string, status: "absent" | "late", 
 export function SecretaryAttendancePanel() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
-  const grades = loadGrades();
+  const [grades] = useLiveGrades();
   const [currentWeek, setCurrentWeek] = useState(1);
   const todayKey = getCalendarDayKey();
 
@@ -201,7 +202,7 @@ export function SecretaryAbsenceThresholdPanel() {
 export function SecretaryLatePermitPanel() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
-  const grades = loadGrades();
+  const [grades] = useLiveGrades();
   const [latePermissions, setLatePermissions] = useState(() => loadLatePermissions());
   const [search, setSearch] = useState("");
   const todayISO = getCalendarIsoDate();
@@ -289,7 +290,8 @@ export function SecretarySardPanel() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
   const templates = loadMessageTemplates();
-  const [queue] = useState(() => loadSardQueue());
+  const [queue,setQueue] = useState(() => loadSardQueue());
+  useInboxRefresh(()=>setQueue([...loadSardQueue()]));
   const passedSard = useMemo(() => queue.filter((q) => q.status === "passed"), [queue]);
   const finalFailed = useMemo(() => queue.filter((q) => q.status === "final_failed"), [queue]);
 
@@ -605,7 +607,8 @@ export function SupervisorForceRetryPanel() {
 export function SupervisorPassedPanel() {
   const students = loadStudents();
   const halaqat = loadHalaqat();
-  const [queue] = useState(() => loadSardQueue());
+  const [queue,setQueue] = useState(() => loadSardQueue());
+  useInboxRefresh(()=>setQueue([...loadSardQueue()]));
   const passedSard = queue.filter((q) => q.status === "passed");
 
   return (

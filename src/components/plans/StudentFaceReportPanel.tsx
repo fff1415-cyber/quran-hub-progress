@@ -1,3 +1,4 @@
+import { useLiveGrades } from "@/hooks/use-live-grades";
 import { useEffect, useMemo, useState } from "react";
 import { loadGrades, loadStudents, type Student } from "@/lib/mock-data";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
@@ -67,7 +68,7 @@ export function StudentFaceReportPanel() {
   } | null>(null);
 
   const students = loadStudents();
-  const grades = loadGrades();
+  const [grades] = useLiveGrades();
 
   useEffect(() => {
     let cancelled = false;

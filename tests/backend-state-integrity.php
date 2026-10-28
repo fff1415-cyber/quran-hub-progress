@@ -26,10 +26,7 @@ $records=[];for($i=0;$i<650;$i++)$records[]=['id'=>'history-'.$i,'studentId'=>'S
 app_state_upsert($pdo,'academic_records',$records,1);
 $r=patchState($pdo,'academic_records','history-append-001',[change(['history-new'],['id'=>'history-new','studentId'=>'S'])],null);
 check(count($r['value'])===651,'history beyond 500 remains after append');
-patchState($pdo,'notifications','transfer-create-001',[change(['N'],['id'=>'N','targetRole'=>'supervisor','transferStatus'=>'pending'])],null);
-$r=patchState($pdo,'notifications','transfer-action-001',[change(['N','transferStatus'],'closed','pending',true),change(['N','actions'],[['text'=>'reviewed']])],null);
-check($r['value'][0]['targetRole']==='supervisor'&&$r['value'][0]['transferStatus']==='closed','shared transfer keeps target and action across clients');
-echo "PASS: state CAS, explicit clear, semester cutoff, unverified legacy, durable history and transfers\n";
+echo "PASS: state CAS, explicit clear, semester cutoff, unverified legacy, durable history\n";
 require __DIR__.'/../api/routes/kiosk.php';
 check(kiosk_write_attendance($pdo,1,'term-B','S',1,'sun','present'),'kiosk attendance commits current semester only');
 check(!kiosk_write_attendance($pdo,1,'term-B','S',1,'sun','late'),'repeated kiosk attendance does not overwrite confirmed check-in');

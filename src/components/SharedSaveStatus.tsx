@@ -1,5 +1,5 @@
 import { useEffect,useState } from "react";
-import { SHARED_SAVE_EVENT,sharedSaveStatus,flushSharedEdits,cancelRejectedEdit } from "@/lib/shared-state";
+import { SHARED_SAVE_EVENT,sharedSaveStatus,flushSharedEdits,cancelRejectedEdit,resumePendingEdits } from "@/lib/shared-state";
 import { refreshSharedCaches,CLOCK_TICK_EVENT } from "@/lib/shared-refresh";
 import { getToken } from "@/lib/auth-session";
 
@@ -8,7 +8,7 @@ export function SharedSaveStatus(){
   const [pullError,setPullError]=useState<string>();
   useEffect(()=>{
     const update=()=>setState({...sharedSaveStatus()});window.addEventListener(SHARED_SAVE_EVENT,update);
-    const pull=()=>{if(!getToken())return;void refreshSharedCaches().then(()=>setPullError(undefined)).catch(e=>setPullError(e instanceof Error?e.message:String(e)));};
+    const pull=()=>{if(!getToken())return;void refreshSharedCaches().then(()=>resumePendingEdits()).then(()=>setPullError(undefined)).catch(e=>setPullError(e instanceof Error?e.message:String(e)));};
     const timer=setInterval(()=>{window.dispatchEvent(new Event(CLOCK_TICK_EVENT));if(!document.hidden)pull();},15000);
     window.addEventListener("focus",pull);pull();
     return ()=>{clearInterval(timer);window.removeEventListener("focus",pull);window.removeEventListener(SHARED_SAVE_EVENT,update);};

@@ -743,7 +743,7 @@ function handle_assign_plan(): void
         $studentStmt->execute([$studentId]);
         $studentRow = $studentStmt->fetch();
         if (!empty($input['operation_id'])) {
-            $replay = plans_operation_replay($pdo, plans_operation_id($input), $studentId, 'assign', $input);
+            $replay = plans_operation_replay($pdo, plans_operation_id($input), $studentId, 'assign', $input, $cid);
             if ($replay !== null) { $pdo->commit(); json_response($replay); return; }
         }
         $lockedPlanStmt=$pdo->prepare('SELECT * FROM education_plans WHERE id = ?'.($tenants?' AND complex_id = ?':'').' FOR UPDATE');
@@ -1155,7 +1155,7 @@ function handle_apply_plan_input(): void
         $operationId = plans_operation_id($input);
         $pdo->beginTransaction();
         plans_lock_student($pdo, $studentId);
-        $replay = plans_operation_replay($pdo, $operationId, $studentId, 'apply', $input);
+        $replay = plans_operation_replay($pdo, $operationId, $studentId, 'apply', $input, $cid);
         if ($replay !== null) { $pdo->commit(); json_response($replay); return; }
         $assignment = plans_current_assignment($pdo, $studentId);
         if (!$assignment || $assignment['status'] !== 'active') throw new RuntimeException('الطالب غير مربوط بخطة نشطة');

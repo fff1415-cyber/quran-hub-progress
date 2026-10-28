@@ -38,7 +38,7 @@ function plans_operation_id(array $input): string
     return $id;
 }
 
-function plans_operation_replay(PDO $pdo, string $id, string $studentId, string $kind, array $input): ?array
+function plans_operation_replay(PDO $pdo, string $id, string $studentId, string $kind, array $input, ?int $cid = null): ?array
 {
     $stmt = $pdo->prepare('SELECT student_id, operation_kind, input_hash, response_json FROM plan_operations WHERE id = ? FOR UPDATE');
     $stmt->execute([$id]);
@@ -46,11 +46,22 @@ function plans_operation_replay(PDO $pdo, string $id, string $studentId, string 
     if (!$row) return null;
     $hash = hash('sha256', app_state_json_encode($input));
     if ($row['student_id'] !== $studentId || $row['operation_kind'] !== $kind || $row['input_hash'] !== $hash) throw new RuntimeException('معرّف العملية مستخدم لطلب مختلف — أعد تحميل الحالة');
-    return json_decode($row['response_json'], true);
+    $response=json_decode($row['response_json'],true);
+    foreach($response['_bulk_keys']??[] as $key){
+        if($cid===null)throw new RuntimeException('سياق استعادة العملية غير متاح');
+        $scoped=app_state_tenant_enabled($pdo);$s=$pdo->prepare('SELECT value FROM app_state WHERE '.($scoped?'complex_id = ? AND ':'').'`key` = ?');$s->execute($scoped?[$cid,$key]:[$key]);$raw=json_decode((string)$s->fetchColumn(),true);
+        if($key==='sard_queue')$response[$key]=$raw??[];
+        else{$value=state_scope_value(state_envelope($raw),$key,$key==='grades'?(string)$response['semester_id']:'_');$response[$key]=state_list_key($key)?array_values($value):$value;}
+    }
+    unset($response['_bulk_keys']);return $response;
 }
 
 function plans_operation_save(PDO $pdo, string $id, string $studentId, string $kind, array $input, array $response): void
 {
+    // Persist the operation result, not an ever-growing duplicate of every student's store.
+    // Replays reload confirmed shared values while retaining the original event/assignment identity.
+    $bulk=[];foreach(['grades','academic_records','sard_history','sard_queue'] as $key)if(isset($response[$key])&&is_array($response[$key])){$bulk[]=$key;unset($response[$key]);}
+    if($bulk)$response['_bulk_keys']=$bulk;
     $withInput=plans_column_exists($pdo,'plan_operations','input_json');
     $pdo->prepare($withInput
         ? 'INSERT INTO plan_operations (id, student_id, operation_kind, input_hash, response_json, input_json) VALUES (?, ?, ?, ?, ?, ?)'

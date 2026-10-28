@@ -230,7 +230,7 @@ export function StudentPage() {
       .catch(() => { if (!cancelled) setPlanData(null); })
       .finally(() => { if (!cancelled) setPlanLoading(false); });
     return () => { cancelled = true; };
-  }, [studentId, authMode]);
+  }, [studentId, authMode, grades]);
 
   const viewerName = useMemo(() => {
     if (authMode !== "viewer") return null;

@@ -974,7 +974,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       },
       transferStatus: "pending",
     });
-    try{await flushSharedEdits();}catch(e){toast.error(e instanceof Error?e.message:"لم يتأكد حفظ التحويل");return;}
     void dispatchPushEvent({
       event: "teacher_transfer",
       title: "طلب تحويل طالب",
@@ -982,7 +981,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       url: tenantPath("/manager"),
       targets: { roles: ["manager"] },
     });
-    toast.success("تم إرسال الطالب للإدارة");
+    toast.success("حُفظ طلب التحويل على هذا الجهاز؛ إيصاله بين الحسابات معلّق للصلاحيات");
     setTransferOpen(false);
     setTransferStudentId("");
     setTransferReason("");
