@@ -84,3 +84,18 @@ check((int)$pdo->query("SELECT COUNT(*) FROM plan_assignment_completions WHERE s
 echo "MySQL diary migration, unique-current constraint, concurrency and rollback acceptance complete.\n";
 
 $_GET=['student_id'=>'S'];handle_student_plan_sheet();check(count($GLOBALS['response']['completions'])===4,'actual MySQL sheet read uses the protected snapshot/share-lock query');
+
+// The operational preflight must work in a DB-enforced read-only transaction.
+require __DIR__.'/../scripts/audit-release-preflight.php';
+$before=(int)$pdo->query('SELECT COUNT(*) FROM segment_completions')->fetchColumn();
+$pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();
+$readiness=audit_release_readiness($pdo);$pdo->rollBack();
+check($readiness['integrity_migrations_present']===true,'release readiness detects additive migrations');
+check($readiness['unattributed_plan_completions']===1 && in_array('unattributed_plan_completions',$readiness['blockers'],true),'readiness holds deployment for ambiguous old completions without modifying them');
+check($readiness['duplicate_current_students']===0,'readiness checks current assignment duplicates');
+check((int)$pdo->query('SELECT COUNT(*) FROM segment_completions')->fetchColumn()===$before,'read-only readiness retains all completions');
+$pdo->prepare("INSERT INTO app_state(complex_id, `key`, value) VALUES (1,'weekly_tests',?)")->execute([json_encode(['S'=>['1'=>0]])]);
+$pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();
+$readiness=audit_release_readiness($pdo);$pdo->rollBack();
+check($readiness['legacy_semester_rows']['weekly_tests']===1 && in_array('legacy_semester_attribution_requires_evidence',$readiness['blockers'],true),'readiness holds unassigned legacy zero grades rather than guessing their semester');
+check(!str_contains(json_encode($readiness),'diary-S') && !str_contains(json_encode($readiness),'term-A'),'readiness report contains no student or semester identifiers');

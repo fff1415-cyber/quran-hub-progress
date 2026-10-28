@@ -1,0 +1,86 @@
+name: Audit release readiness (read only)
+on:
+  push:
+    branches: [fix/audit-f03-f22-preserve-history]
+    paths:
+      - scripts/audit-release-preflight.php
+      - .github/workflows/audit-release-preflight.yml
+      - tests/backend-mysql-integrity.php
+permissions:
+  contents: read
+concurrency:
+  group: audit-production-readiness
+  cancel-in-progress: false
+jobs:
+  isolated-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: audit_test
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: [3307:3306]
+        options: --health-cmd="mysqladmin ping -h 127.0.0.1" --health-interval=5s --health-timeout=5s --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Syntax and SELECT-only readiness against isolated fixtures
+        env:
+          AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
+        run: php -l scripts/audit-release-preflight.php && php tests/backend-mysql-integrity.php
+  production-readiness:
+    needs: isolated-check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read readiness over existing Hostinger SSH connection (no deployment or migration)
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          SEPARATE_SUBDOMAINS: ${{ vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import ipaddress, json, os, pathlib, shlex, subprocess, tempfile
+          required = ['DEPLOY_HOST', 'DEPLOY_USER', 'DEPLOY_API_PATH', 'DEPLOY_SSH_PASSWORD']
+          if not all(os.environ.get(k) for k in required):
+              raise SystemExit('Hostinger deployment secrets required; no live action performed.')
+          host = os.environ['DEPLOY_HOST']
+          ipaddress.IPv4Address(host)
+          user = os.environ['DEPLOY_USER'].split('@')[0]
+          if not user or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in user):
+              raise SystemExit('Unsupported SSH username; no live action performed.')
+          api = '/' + os.environ['DEPLOY_API_PATH'].lstrip('/')
+          if not api.startswith('/home/'):
+              api = '/home/' + user + api
+          paths = [api]
+          if os.environ.get('SEPARATE_SUBDOMAINS') == 'true':
+              paths += ['/home/' + user + '/domains/' + sub + '.msht.io/public_html/api' for sub in ['m1', 'm2']]
+          payload = pathlib.Path('scripts/audit-release-preflight.php').read_bytes()
+          blocked = False
+          with tempfile.TemporaryDirectory() as tmp:
+              askpass = pathlib.Path(tmp, 'askpass')
+              askpass.write_text('#!/bin/sh\nprintf "%s\\n" "$DEPLOY_SSH_PASSWORD"\n')
+              askpass.chmod(0o700)
+              env = dict(os.environ, SSH_ASKPASS=str(askpass), SSH_ASKPASS_REQUIRE='force', DISPLAY=':0')
+              for index, path in enumerate(dict.fromkeys(paths)):
+                  command = 'php /dev/stdin --production-readiness ' + shlex.quote(path)
+                  result = subprocess.run(['ssh', '-T', '-p', '65002', '-o', 'ConnectTimeout=30', '-o', 'ServerAliveInterval=15', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'NumberOfPasswordPrompts=1', user + '@' + host, command], input=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, timeout=90, start_new_session=True)
+                  if result.returncode:
+                      raise SystemExit('Read-only readiness SSH/PHP step failed; private connection details withheld.')
+                  try:
+                      report = json.loads(result.stdout)
+                  except (ValueError, UnicodeError):
+                      raise SystemExit('Unexpected readiness output; contents withheld.')
+                  print(json.dumps({'target': index + 1, 'readiness': report}, indent=2))
+                  blocked |= bool(report.get('blockers'))
+          if blocked:
+              raise SystemExit('Release held: existing records require evidence/review. No deployment or migration performed.')
+          print('Read-only preflight passed. This workflow does not deploy or migrate.')
+          PY
