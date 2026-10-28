@@ -51,12 +51,12 @@ jobs:
           required = ['DEPLOY_HOST', 'DEPLOY_USER', 'DEPLOY_API_PATH', 'DEPLOY_SSH_PASSWORD']
           if not all(os.environ.get(k) for k in required):
               raise SystemExit('Hostinger deployment secrets required; no live action performed.')
-          host = os.environ['DEPLOY_HOST']
+          host = os.environ['DEPLOY_HOST'].strip()
           ipaddress.IPv4Address(host)
-          user = os.environ['DEPLOY_USER'].split('@')[0]
+          user = os.environ['DEPLOY_USER'].strip().split('@')[0]
           if not user or any(c not in 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-' for c in user):
               raise SystemExit('Unsupported SSH username; no live action performed.')
-          api = '/' + os.environ['DEPLOY_API_PATH'].lstrip('/')
+          api = '/' + os.environ['DEPLOY_API_PATH'].strip().lstrip('/')
           if not api.startswith('/home/'):
               api = '/home/' + user + api
           paths = [api]
@@ -70,10 +70,21 @@ jobs:
               askpass.chmod(0o700)
               env = dict(os.environ, SSH_ASKPASS=str(askpass), SSH_ASKPASS_REQUIRE='force', DISPLAY=':0')
               for index, path in enumerate(dict.fromkeys(paths)):
-                  command = 'php /dev/stdin --production-readiness ' + shlex.quote(path)
-                  result = subprocess.run(['ssh', '-T', '-p', '65002', '-o', 'ConnectTimeout=30', '-o', 'ServerAliveInterval=15', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'NumberOfPasswordPrompts=1', user + '@' + host, command], input=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, timeout=90, start_new_session=True)
+                  command = 'AUDIT_RELEASE_MODE=readiness AUDIT_RELEASE_API=' + shlex.quote(path) + ' php'
+                  try:
+                      result = subprocess.run(['ssh', '-T', '-p', '65002', '-o', 'ConnectTimeout=30', '-o', 'ServerAliveInterval=15', '-o', 'StrictHostKeyChecking=accept-new', '-o', 'NumberOfPasswordPrompts=1', user + '@' + host, command], input=payload, stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env, timeout=90, start_new_session=True)
+                  except subprocess.TimeoutExpired:
+                      raise SystemExit('Read-only readiness SSH timeout; no deployment or migration performed.')
                   if result.returncode:
-                      raise SystemExit('Read-only readiness SSH/PHP step failed; private connection details withheld.')
+                      error = result.stderr.decode(errors='replace').lower()
+                      reason = 'remote_runtime'
+                      if 'permission denied' in error: reason = 'ssh_authentication'
+                      elif 'connection refused' in error: reason = 'ssh_port_refused'
+                      elif 'connection timed out' in error: reason = 'ssh_timeout'
+                      elif result.returncode == 255: reason = 'ssh_connection'
+                      for stage in ['configuration', 'database_connection', 'read_only_transaction', 'schema_readiness']:
+                          if 'failed at ' + stage in error: reason = stage
+                      raise SystemExit('Read-only readiness failed at ' + reason + '; private details withheld.')
                   try:
                       report = json.loads(result.stdout)
                   except (ValueError, UnicodeError):

@@ -45,22 +45,26 @@ function audit_release_readiness(PDO $pdo): array
     return $report;
 }
 
-if (PHP_SAPI === 'cli' && ($argv[1] ?? '') === '--production-readiness') {
+if (PHP_SAPI === 'cli' && getenv('AUDIT_RELEASE_MODE') === 'readiness') {
     // Configuration stays on the server. No credentials, names, IDs or scores in output.
     ini_set('display_errors', '0');
+    $stage = 'configuration';
     try {
-        $api = realpath((string)($argv[2] ?? ''));
+        $api = realpath(trim((string)getenv('AUDIT_RELEASE_API')));
         if (!$api || !is_file($api . '/config.php')) throw new RuntimeException('Missing API configuration');
         require $api . '/config.php';
+        $stage = 'database_connection';
         $pdo = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=' . (defined('DB_CHARSET') ? DB_CHARSET : 'utf8mb4'), DB_USER, DB_PASS, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]);
+        $stage = 'read_only_transaction';
         $pdo->exec('SET TRANSACTION READ ONLY');
         $pdo->beginTransaction();
+        $stage = 'schema_readiness';
         $report = audit_release_readiness($pdo);
         $pdo->rollBack();
         echo json_encode($report, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR) . "\n";
     } catch (Throwable $error) {
         if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
-        fwrite(STDERR, "Release readiness could not complete; configuration and query details withheld.\n");
+        fwrite(STDERR, "Release readiness failed at " . $stage . "; private details withheld.\n");
         exit(1);
     }
 }
