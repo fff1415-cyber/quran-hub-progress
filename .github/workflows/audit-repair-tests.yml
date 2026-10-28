@@ -44,6 +44,7 @@ jobs:
           if [ -f tests/backend-state-integrity.php ]; then php tests/backend-state-integrity.php; fi
           if [ -f tests/backend-diary-integrity.php ]; then php tests/backend-diary-integrity.php; fi
           if [ -f tests/backend-progression-integrity.php ]; then php tests/backend-progression-integrity.php; fi
+          if [ -f tests/backend-settings-integrity.php ]; then php tests/backend-settings-integrity.php; fi
       - uses: actions/setup-node@v4
         with:
           node-version: 24
