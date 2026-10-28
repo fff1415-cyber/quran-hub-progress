@@ -4,7 +4,7 @@ const ts = require('typescript');
 function load(path, deps) {
   const exports = {};
   const code = ts.transpileModule(fs.readFileSync(path, 'utf8'), {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;
-  new Function('require','exports',code)(name => { if (!(name in deps)) throw Error(name); return deps[name]; }, exports);
+  new Function('require','exports',code)(name => { if(name==='@/lib/shared-state') return {captureSharedEdit:()=>{},flushSharedEdits:async()=>{},semesterStorageKey:k=>k}; if (!(name in deps)) throw Error(name); return deps[name]; }, exports);
   return exports;
 }
 const storage = () => {const map=new Map();return {getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)}};

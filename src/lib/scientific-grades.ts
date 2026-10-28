@@ -1,3 +1,4 @@
+import { captureSharedEdit, semesterStorageKey } from "@/lib/shared-state";
 /** Teacher-configured numeric scores — reflected in halaqa program totals only. */
 import { hasAuthToken } from "@/lib/auth-session";
 import { ATTENDANCE_OPTION_LABELS, type AttendanceOption } from "@/lib/grade-input-settings";
@@ -177,7 +178,7 @@ export function loadScientificGradesStore(): ScientificGradesStore {
   if (typeof window === "undefined") {
     return { configs: {}, data: {}, overrides: {} };
   }
-  const raw = localStorage.getItem(KEY);
+  const raw = localStorage.getItem(semesterStorageKey(KEY));
   if (!raw) return { configs: {}, data: {}, overrides: {} };
   try {
     const parsed = JSON.parse(raw) as Partial<ScientificGradesStore>;
@@ -192,9 +193,11 @@ export function loadScientificGradesStore(): ScientificGradesStore {
 }
 
 export function saveScientificGradesStore(store: ScientificGradesStore) {
-  localStorage.setItem(KEY, JSON.stringify(store));
+  const before = loadScientificGradesStore();
+  localStorage.setItem(semesterStorageKey(KEY), JSON.stringify(store));
+  captureSharedEdit("scientific_grades", before, store);
   notifyScientificGradesChanged();
-  persist(store);
+
 }
 
 export function loadScientificConfig(halaqaId: number): ScientificGradesConfig {
@@ -352,10 +355,7 @@ function writeScientificDayScoreInPlace(
   const prev = data[studentId][weekNum][dayKey][field] ?? "";
   if (trimmed === "") {
     if (prev === "") return false;
-    delete data[studentId][weekNum][dayKey][field];
-    if (Object.keys(data[studentId][weekNum][dayKey]).length === 0) {
-      delete data[studentId][weekNum][dayKey];
-    }
+    data[studentId][weekNum][dayKey][field] = "";
     return true;
   }
   if (prev === trimmed) return false;
@@ -757,7 +757,7 @@ export function finalizeTeacherScientificDayScore(
   const auto = resolveScientificScore(config, field, entry).trim();
   const trimmed = value.trim();
 
-  if (trimmed !== "" && trimmed !== auto) {
+  if (trimmed === "" || trimmed !== auto) {
     setTeacherScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, trimmed);
     return;
   }

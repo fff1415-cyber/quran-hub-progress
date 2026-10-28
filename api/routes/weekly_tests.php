@@ -37,6 +37,10 @@ function handle_patch_weekly_test(): void
 
     $pdo->beginTransaction();
     try {
+        $semester=state_active_semester($pdo,$cid,true);
+        if(($input['semester_id']??'')!==$semester)throw new RuntimeException('تغيّر الفصل الدراسي — لم يُحفظ اختبار التبويب القديم');
+        $op=(string)($input['operation_id']??'');
+        if(!preg_match('/^[a-zA-Z0-9:_-]{8,128}$/',$op)||!array_key_exists('base',$input))throw new RuntimeException('حدّث الصفحة؛ مرجع عملية الاختبار مطلوب');
         $insert = $pdo->prepare($tenants
             ? 'INSERT IGNORE INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)'
             : 'INSERT IGNORE INTO app_state (`key`, value) VALUES (?, ?)');
@@ -45,12 +49,18 @@ function handle_patch_weekly_test(): void
             ? 'SELECT value FROM app_state WHERE complex_id = ? AND `key` = ? FOR UPDATE'
             : 'SELECT value FROM app_state WHERE `key` = ? FOR UPDATE');
         $select->execute($tenants ? [$cid, 'weekly_tests'] : ['weekly_tests']);
-        $store = json_decode((string) $select->fetchColumn(), true);
-        if (!is_array($store)) $store = [];
+        $envelope=state_envelope(json_decode((string)$select->fetchColumn(),true));
+        $hash=hash('sha256',state_canonical($input));
+        if(isset($envelope['operations'][$op])) {
+            if($envelope['operations'][$op]!==$hash)throw new RuntimeException('معرّف الاختبار مستخدم لطلب مختلف');
+            $pdo->commit();json_response(['ok'=>true]);return;
+        }
+        $store=state_scope_value($envelope,'weekly_tests',$semester);
         $row = $store[$studentId][(string) $week] ?? [];
         if (!is_array($row)) $row = [];
         $values = $row[$kind] ?? [];
         if (!is_array($values)) $values = $values === '' ? [] : [$values];
+        if(($values[$index]??'')!==$input['base']&&($values[$index]??'')!==$result)throw new RuntimeException('تعارض تعديل الاختبار — حدّث القيمة قبل إعادة المحاولة');
         $values = array_pad(array_values($values), $index + 1, '');
         $values[$index] = $result;
         $row[$kind] = $values;
@@ -68,7 +78,8 @@ function handle_patch_weekly_test(): void
         $attribution[$kind] = $records;
         $row['attribution'] = $attribution;
         $store[$studentId][(string) $week] = $row;
-        app_state_upsert($pdo, 'weekly_tests', $store, $tenants ? $cid : null);
+        $envelope['scopes'][$semester]=$store;$envelope['operations'][$op]=$hash;$envelope['revision']=($envelope['revision']??0)+1;
+        app_state_upsert($pdo, 'weekly_tests', $envelope, $tenants ? $cid : null);
         $pdo->commit();
         json_response(['ok' => true, 'attribution' => $records[$index]]);
     } catch (Throwable $e) {

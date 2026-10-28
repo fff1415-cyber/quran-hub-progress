@@ -1,3 +1,4 @@
+import { captureSharedEdit } from "@/lib/shared-state";
 import type { PlanTrack } from "@/lib/plan-types";
 import { hasAuthToken } from "@/lib/auth-session";
 import { loadSardHistory } from "@/lib/mock-data";
@@ -34,9 +35,9 @@ export function loadAcademicRecords(): AcademicPhaseRecord[] {
 }
 
 export function saveAcademicRecords(list: AcademicPhaseRecord[]) {
-  const trimmed = list.slice(0, 500);
-  localStorage.setItem(KEY, JSON.stringify(trimmed));
-  persistShared(trimmed);
+  const before = loadAcademicRecords();
+  localStorage.setItem(KEY, JSON.stringify(list));
+  captureSharedEdit("academic_records", before, list);
 }
 
 export function pushAcademicRecord(record: AcademicPhaseRecord) {

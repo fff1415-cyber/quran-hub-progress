@@ -18,3 +18,11 @@ for (const name of ['handle_assign_plan','handle_import_plans','handle_patch_ass
   assert.deepEqual(guards(after),guards(before),`authorization changed: ${name}`);
 }
 console.log('PASS: F01/F02 protected files and existing plan authorization checks unchanged');
+for(const [path,name,until] of [
+ ['api/routes/app_state.php','handle_set_app_state','    $pdo = db();'],
+ ['api/routes/weekly_tests.php','handle_patch_weekly_test','    $pdo->beginTransaction();']
+]) {
+ const before=extract(original(path),name),after=extract(fs.readFileSync(path,'utf8'),name);
+ assert.equal(after.slice(0,after.indexOf(until)),before.slice(0,before.indexOf(until)),`existing authorization preamble changed: ${name}`);
+}
+for(const path of ['package.json','package-lock.json']) assert.equal(fs.readFileSync(path,'utf8'),original(path),'dependency files unchanged');

@@ -163,25 +163,25 @@ export async function secureDeleteRoleAccount({ data }: { data: { token: string;
 // ---------- SHARED APP STATE ----------
 export async function secureListAppState({ data }: { data: { token: string; key?: string } }) {
   const q = data.key ? `?key=${encodeURIComponent(data.key)}` : "";
-  return apiFetch<{ key: string; value: unknown }[]>(`/app-state${q}`, {
+  return apiFetch<{ key: string; value: unknown; integrity?: { version: number; semester_id: string | null; revision: number; legacy_available: boolean; legacy_view: boolean } }[]>(`/app-state${q}`, {
     method: "GET",
     auth: data.token,
   });
 }
 
 export async function secureSetAppState({ data }: { data: { token: string; key: string; value: unknown } }) {
-  return apiFetch<{ ok: boolean }>("/app-state", {
+  return apiFetch<{ ok: boolean; value?: unknown; revision?: number; semester_id?: string | null }>("/app-state", {
     method: "POST",
     auth: data.token,
     body: JSON.stringify({ key: data.key, value: data.value }),
   });
 }
 
-export async function securePatchWeeklyTest({ data }: { data: { token: string; studentId: string; week: number; kind: "muraja" | "rabt"; index: number; result: "" | "pass" | "fail" } }) {
+export async function securePatchWeeklyTest({ data }: { data: { token: string; studentId: string; week: number; kind: "muraja" | "rabt"; index: number; result: "" | "pass" | "fail"; base: "" | "pass" | "fail"; semester_id: string; operation_id: string } }) {
   return apiFetch<{ ok: boolean }>("/weekly-tests/result", {
     method: "POST",
     auth: data.token,
-    body: JSON.stringify({ studentId: data.studentId, week: data.week, kind: data.kind, index: data.index, result: data.result }),
+    body: JSON.stringify({ studentId: data.studentId, week: data.week, kind: data.kind, index: data.index, result: data.result, base: data.base, semester_id: data.semester_id, operation_id: data.operation_id }),
   });
 }
 

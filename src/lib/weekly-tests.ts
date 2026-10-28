@@ -1,3 +1,4 @@
+import { semesterStorageKey } from "@/lib/shared-state";
 /**
  * Weekly tests track — independent from semester overall % and plan progress.
  * Slot counts configured by manager (muraja_slots, rabt_slots).
@@ -116,14 +117,14 @@ function normalizeMuraja(
 
 export function loadWeeklyTests(): WeeklyTestsStore {
   if (typeof window === "undefined") return {};
-  const raw = localStorage.getItem(KEY_STORE);
+  const raw = localStorage.getItem(semesterStorageKey(KEY_STORE));
   return raw ? JSON.parse(raw) : {};
 }
 
 export function saveWeeklyTests(store: WeeklyTestsStore, options?: { sync?: boolean }) {
-  localStorage.setItem(KEY_STORE, JSON.stringify(store));
+  localStorage.setItem(semesterStorageKey(KEY_STORE), JSON.stringify(store));
   window.dispatchEvent(new Event(WEEKLY_TESTS_CHANGED));
-  if (options?.sync !== false) persistStore(store);
+  // Result mutations use the existing dedicated server endpoint. Pulls never echo a blob.
 }
 
 export function loadWeeklyTestsSettings(): WeeklyTestsSettings {
@@ -155,7 +156,8 @@ export function setWeeklyTestsSemesterId(id: string | null) {
 }
 
 export function resetWeeklyTestsForNewSemester(semesterId: string | null) {
-  saveWeeklyTests({});
+  const legacy = localStorage.getItem(KEY_STORE);
+  if (legacy) localStorage.setItem(`${KEY_STORE}:legacy-unverified`, legacy);
   setWeeklyTestsSemesterId(semesterId);
 }
 

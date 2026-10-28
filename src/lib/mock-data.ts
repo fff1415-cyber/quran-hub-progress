@@ -1,3 +1,4 @@
+import { captureSharedEdit, flushSharedEdits, semesterStorageKey } from "@/lib/shared-state";
 // Mock data + localStorage store for مجمع حلقات الشتيوي
 import { hasAuthToken } from "@/lib/auth-session";
 
@@ -438,19 +439,8 @@ function scheduleGradesCloudPush(g: GradesStore): void {
 }
 
 /** Flush debounced grade upload immediately (e.g. before logout). */
-export function flushGradesToCloud(): void {
-  if (gradesSoonTimer) {
-    clearTimeout(gradesSoonTimer);
-    gradesSoonTimer = null;
-  }
-  if (gradesCloudTimer) {
-    clearTimeout(gradesCloudTimer);
-    gradesCloudTimer = null;
-  }
-  const payload = pendingGradesCloud ?? loadGrades();
-  pendingGradesCloud = null;
-  if (typeof window === "undefined" || !hasAuthToken()) return;
-  void import("./cloud-sync").then((m) => m.pushMergedGrades(payload)).catch(() => undefined);
+export function flushGradesToCloud(): Promise<void> {
+  return flushSharedEdits();
 }
 
 const GRADES_CLOUD_SOON_MS = 50;
@@ -461,7 +451,7 @@ export function flushGradesToCloudSoon(): void {
   if (gradesSoonTimer) clearTimeout(gradesSoonTimer);
   gradesSoonTimer = setTimeout(() => {
     gradesSoonTimer = null;
-    flushGradesToCloud();
+    void flushGradesToCloud().catch(() => undefined);
   }, GRADES_CLOUD_SOON_MS);
 }
 
@@ -489,15 +479,17 @@ export function saveHalaqat(h: Halaqa[], options?: { allowEmpty?: boolean }) {
 
 export function loadGrades(): GradesStore {
   if (typeof window === "undefined") return {};
-  const raw = localStorage.getItem(KEY_GRADES);
+  const raw = localStorage.getItem(semesterStorageKey(KEY_GRADES));
   return raw ? JSON.parse(raw) : {};
 }
 export function saveGrades(g: GradesStore, options?: { sync?: boolean | "immediate" }) {
-  localStorage.setItem(KEY_GRADES, JSON.stringify(g));
+  const before = loadGrades();
+  localStorage.setItem(semesterStorageKey(KEY_GRADES), JSON.stringify(g));
+  if (options?.sync !== false) captureSharedEdit("grades", before, g);
   notifyGradesChanged();
   if (options?.sync === false) return;
-  scheduleGradesCloudPush(g);
-  if (options?.sync === "immediate") flushGradesToCloud();
+  // Per-edit patches are already queued with their semester and original values.
+  if (options?.sync === "immediate") void flushGradesToCloud().catch(() => undefined);
 }
 
 export function getGradesSemesterId(): string | null {
@@ -511,22 +503,16 @@ export function setGradesSemesterId(id: string | null) {
   else localStorage.removeItem(KEY_GRADES_SEMESTER);
 }
 
-/** Clear grades when a new academic semester becomes active. */
+/** Archive the unversioned local cache without assigning it to a semester. */
 export function resetGradesForNewSemester(semesterId: string | null) {
-  saveGrades({});
+  if (localStorage.getItem(KEY_GRADES)) localStorage.setItem(`${KEY_GRADES}:legacy-unverified`, localStorage.getItem(KEY_GRADES)!);
   setGradesSemesterId(semesterId);
+  notifyGradesChanged();
 }
-
-/** Returns true if grades were reset due to semester change. */
 export function ensureGradesSemester(semesterId: string | null): boolean {
-  if (!semesterId) return false;
-  const current = getGradesSemesterId();
-  if (current && current !== semesterId) {
-    resetGradesForNewSemester(semesterId);
-    return true;
-  }
-  if (!current) setGradesSemesterId(semesterId);
-  return false;
+  const changed = getGradesSemesterId() !== semesterId;
+  if (changed) resetGradesForNewSemester(semesterId);
+  return changed;
 }
 
 export type TransferActionRole = "manager" | "secretary" | "supervisor";
@@ -618,6 +604,7 @@ function mergeNotificationPair(a: Notification, b: Notification): Notification {
     targetRole: primary.targetRole ?? secondary.targetRole,
     transferData: tdP || tdS
       ? {
+          ...(tdP ?? tdS)!,
           ...(tdS ?? {}),
           ...(tdP ?? {}),
           actions: mergeTransferActions(tdS?.actions, tdP?.actions),
@@ -636,14 +623,16 @@ export function mergeNotifications(cloud: Notification[], local: Notification[])
   }
   return Array.from(byId.values())
     .sort((x, y) => y.createdAt.localeCompare(x.createdAt))
-    .slice(0, 200);
+;
 }
 
 export const NOTIFICATIONS_CHANGED_EVENT = "qshatawi:notifications-changed";
 
 function writeNotificationsLocal(list: Notification[]) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.slice(0, 200)));
+  const before = loadNotifications();
+  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list));
+  captureSharedEdit("notifications", before, list);
   window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
 }
 
@@ -661,7 +650,7 @@ export function pushNotification(n: Omit<Notification, "id" | "createdAt" | "rea
     createdAt: new Date().toISOString(),
     read: false,
   });
-  writeNotificationsLocal(list.slice(0, 200));
+  writeNotificationsLocal(list);
 }
 
 export function saveNotifications(list: Notification[]) {
@@ -1022,14 +1011,16 @@ export function loadSardHistory(): SardHistoryItem[] {
   return raw ? JSON.parse(raw) : [];
 }
 export function pushSardHistory(h: SardHistoryItem) {
+  const before = loadSardHistory();
   const list = loadSardHistory().filter(item => item.id !== h.id);
   list.unshift(h);
-  localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list.slice(0, 500)));
-  persistShared("sard_history", list.slice(0, 500));
+  localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list));
+  captureSharedEdit("sard_history", before, list);
 }
 export function saveSardHistory(list: SardHistoryItem[]) {
-  localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list.slice(0, 500)));
-  persistShared("sard_history", list.slice(0, 500));
+  const before = loadSardHistory();
+  localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list));
+  captureSharedEdit("sard_history", before, list);
 }
 
 // ---- Scoring ----

@@ -38,6 +38,7 @@ jobs:
           find api tests -name '*.php' -print0 | xargs -0 -n1 php -l
           php tests/backend-sard-regression.php
           if [ -f tests/backend-plan-integrity.php ]; then php tests/backend-plan-integrity.php; fi
+          if [ -f tests/backend-state-integrity.php ]; then php tests/backend-state-integrity.php; fi
       - name: Existing locked project dependencies
         run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
       - name: Client regressions

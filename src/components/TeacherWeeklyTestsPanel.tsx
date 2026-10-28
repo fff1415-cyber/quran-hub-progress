@@ -1,3 +1,4 @@
+import { queueWeeklyResult, reconcileShared } from "@/lib/shared-state";
 import { Fragment, useMemo, useState } from "react";
 import { loadHalaqat, type Student } from "@/lib/mock-data";
 import { gradeViewerSectionLabel, resolveAssistantCode, shouldShowGradeViewerDivider } from "@/lib/halaqa-assistants";
@@ -143,13 +144,13 @@ export function TeacherWeeklyTestsPanel({
   const persistTest = (studentId: string, kind: "muraja" | "rabt", index: number, result: WeeklyTestResult) => {
     const token = getToken();
     if (!token) { toast.error("انتهت جلسة الدخول"); return; }
-    void securePatchWeeklyTest({ data: { token, studentId, week: weekNum, kind, index, result } }).catch(async (error) => {
+    void queueWeeklyResult({studentId,week:weekNum,kind,index,result,base:(getStudentWeeklyTests(store,studentId,weekNum,settings)[kind] as WeeklyTestResult[])[index]??""}).catch(async (error) => {
       toast.error(error instanceof Error ? error.message : "تعذّر حفظ الاختبار");
       try {
         const remote = (await secureListAppState({ data: { token, key: "weekly_tests" } })).find((row) => row.key === "weekly_tests")?.value;
         if (remote && typeof remote === "object" && !Array.isArray(remote)) {
-          setStore(remote as WeeklyTestsStore);
-          saveWeeklyTests(remote as WeeklyTestsStore, { sync: false });
+          setStore(reconcileShared("weekly_tests", remote as WeeklyTestsStore));
+          saveWeeklyTests(reconcileShared("weekly_tests", remote as WeeklyTestsStore), { sync: false });
         }
       } catch { /* Keep the visible draft until connectivity returns. */ }
     });

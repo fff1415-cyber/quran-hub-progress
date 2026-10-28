@@ -1,6 +1,7 @@
 <?php
 
 declare(strict_types=1);
+require_once __DIR__ . '/app_state_integrity.php';
 
 function app_state_tenant_enabled(PDO $pdo): bool
 {
@@ -62,7 +63,7 @@ function handle_list_app_state(): void
         $stmt = $pdo->prepare($sql);
         $stmt->execute($tenants ? array_merge([$cid], $allowed) : $allowed);
         $rows = $stmt->fetchAll();
-        foreach ($rows as &$row) $row['value'] = json_decode($row['value'] ?? '{}', true);
+        foreach ($rows as &$row) $row = state_present_row($pdo, $cid, $row);
         json_response($keyFilter === '' ? $rows : array_values(array_filter($rows, fn($row) => $row['key'] === $keyFilter)));
     }
 
@@ -85,7 +86,7 @@ function handle_list_app_state(): void
     }
     $rows = array_values(array_filter($rows, static fn (array $row): bool => ($row['key'] ?? '') !== 'staff_tasks_v1'));
     foreach ($rows as &$row) {
-        $row['value'] = json_decode($row['value'] ?? '{}', true);
+        $row = state_present_row($pdo, $cid, $row);
         if (($row['key'] ?? '') === 'sard_queue' && is_array($row['value'])) {
             $row['value'] = sard_reconcile_queue($row['value'], sard_current_assignments($pdo, $cid));
         }
@@ -230,6 +231,10 @@ function handle_set_app_state(): void
     }
 
     $pdo = db();
+    if (state_protected_key($key)) {
+        json_response(app_state_patch_integrity($pdo, $cid, $key, $input['value'] ?? null));
+        return;
+    }
     if ($key === 'sard_queue') {
         if (!empty($input['value']['removals']) && $role !== 'manager') error_response('المدير فقط يمكنه إزالة الطلب', 403);
         app_state_patch_sard($pdo, $cid, $input['value'] ?? null);
