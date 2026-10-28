@@ -109,7 +109,8 @@ function sard_reconcile_queue(array $queue, array $assignments): array
         if (!in_array($q['status'] ?? '', $active, true)) continue;
         $a = $assignments[$q['studentId'] ?? ''] ?? null;
         $reason = null;
-        if (!$a) $reason = 'no_current_assignment';
+        if (!empty($a['ambiguous'])) $reason='ambiguous_current_assignment';
+        elseif (!$a) $reason = 'no_current_assignment';
         elseif (!empty($q['assignmentId']) && $q['assignmentId'] !== $a['id']) $reason = 'previous_assignment';
         elseif (empty($q['assignmentId'])) $reason = 'unverified_legacy_assignment';
         if (!$reason && isset($passed[$a['id']])) $reason = 'already_passed';
@@ -147,7 +148,10 @@ function sard_current_assignments(PDO $pdo, int $cid): array
     $stmt = $pdo->prepare($sql);
     $stmt->execute($scoped ? [$cid] : []);
     $out = [];
-    foreach ($stmt->fetchAll() as $a) if (!isset($out[$a['student_id']])) $out[$a['student_id']] = $a;
+    foreach ($stmt->fetchAll() as $a) {
+        $id=$a['student_id'];
+        $out[$id]=isset($out[$id])?['ambiguous'=>true,'student_id'=>$id]:$a;
+    }
     return $out;
 }
 
@@ -185,7 +189,7 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
             if ($current != ($change['base'] ?? null)) throw new RuntimeException('تغيّر السرد من جهاز آخر — حدّث الصفحة');
             if (($index === null || $restoreSupervisorHifz) && ($item['status'] ?? '') === 'plan_completed') {
                 $a = $assignments[$item['studentId']] ?? null;
-                if (!$a || empty($item['assignmentId']) || $item['assignmentId'] !== $a['id']) throw new RuntimeException('لا توجد خطة حالية مؤكدة للطلب');
+                if (!$a || !empty($a['ambiguous']) || empty($item['assignmentId']) || $item['assignmentId'] !== $a['id']) throw new RuntimeException('لا توجد خطة حالية مؤكدة للطلب');
                 if (!plans_hifz_complete($pdo, $a)) throw new RuntimeException('لم يكتمل حفظ الخطة الحالية');
             }
             $validated = sard_reconcile_queue([$item], $assignments)[0];

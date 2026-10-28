@@ -837,6 +837,12 @@ function handle_assign_plan(): void
             $passRecords=plans_pass_records($pdo,$cid,$passedEntry,$current,$sard);
         } elseif (($auth['role'] ?? '') === 'musammi') {
             throw new RuntimeException('طلب الاجتياز مطلوب لترحيل الخطة');
+        } else {
+            $stateTenants=app_state_tenant_enabled($pdo);$stateParams=$stateTenants?[$cid,'sard_queue']:['sard_queue'];
+            $pdo->prepare($stateTenants?'INSERT IGNORE INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)':'INSERT IGNORE INTO app_state (`key`, value) VALUES (?, ?)')->execute([...$stateParams,'[]']);
+            $queueRead=$pdo->prepare('SELECT value FROM app_state WHERE '.($stateTenants?'complex_id = ? AND ':'').'`key` = ? FOR UPDATE');$queueRead->execute($stateParams);
+            $sardQueue=sard_reconcile_queue(json_decode((string)$queueRead->fetchColumn(),true)?:[],sard_current_assignments($pdo,$cid));
+            app_state_upsert($pdo,'sard_queue',$sardQueue,$stateTenants?$cid:null);
         }
         $advance=['completedAssignmentId'=>$current['id']??null,'closedPlanTitle'=>$current['title']??null];
         if(!$finalize)$advance=array_merge($advance,['newPlanId'=>$planId,'newPlanTitle'=>$planRow['title'],'newGlobalPhase'=>$profile['phaseNumber'],'newInstituteLevel'=>$profile['instituteLevel'],'newPlanStartDate'=>$dateVal]);

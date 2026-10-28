@@ -3,6 +3,8 @@
 Base: `7e9adf1d4059f20289f182e31613e18fe2cf0877` (latest main at start).
 Branch: `fix/audit-f03-f22-preserve-history`.
 
+Final tracking, stage evidence and limitations: [validation.md](validation.md). Conditional migration and rollback plan: [deployment.md](deployment.md). F03 shared recipient delivery is held by the excluded access scope; F12/F16 activation and legacy locked rules require decisions. No production action is included.
+
 ## Non-negotiable scope
 
 F01/F02 are excluded. Authentication, role membership, membership codes, permission checks, account access scopes, student ownership and tenant isolation behavior must remain unchanged. Each touched handler retains its original authorization preamble. No production calls, migrations, deployments, merges, or historical grade recalculation. Unknown legacy provenance remains unknown; review queues preserve original records. Migrations are explicit and additive, never run by application startup or GET.

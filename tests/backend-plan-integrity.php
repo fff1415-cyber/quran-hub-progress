@@ -62,3 +62,8 @@ $audits=$pdo->query("SELECT response_json FROM plan_operations WHERE operation_k
 check(count($audits)===2,'repeated supervisor complete is idempotent while actual changes are journaled');
 $removed=json_decode($audits[0],true);$restored=json_decode($audits[1],true);
 check($removed['before']['completed_at']==='2026-10-02'&&$restored['after']['completed_at']==='2026-10-14','supervisor remove/recomplete retains original and replacement dates');
+
+$pdo=seed();$GLOBALS['auth']['role']='manager';$GLOBALS['input']=['student_id'=>'student-1','plan_id'=>'next','start_segment_index'=>1];handle_assign_plan();
+check(queue($pdo)[0]['status']==='archived'&&queue($pdo)[0]['archiveReason']==='previous_assignment','manual replacement archives prior live queue in the same transaction');
+$pdo=seed();$pdo->exec("INSERT INTO student_plan_assignments(id,student_id,plan_id,start_segment_index,status) VALUES('ambiguous','student-1','current',1,'active')");
+$review=sard_reconcile_queue(queue($pdo),sard_current_assignments($pdo,1));check($review[0]['archiveReason']==='ambiguous_current_assignment'&&$review[0]['assignmentId']==='old','duplicate legacy current assignments are quarantined without choosing or relabeling one');
