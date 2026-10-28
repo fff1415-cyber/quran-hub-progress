@@ -1,0 +1,26 @@
+name: Calculation-only release checks
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  calculations-and-package:
+    if: startsWith(github.head_ref, 'release/audit-calculations')
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - name: Calculation regressions and unchanged storage/access boundaries
+        run: for test in tests/*.cjs; do node "$test" || exit; done
+      - name: Backup extraction and manifest regression (isolated only)
+        run: python3 tests/hostinger-backup-regression.py
+      - name: Build and verify actual Hostinger package (no deployment)
+        run: npm run build:hostinger

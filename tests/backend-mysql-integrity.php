@@ -79,7 +79,8 @@ ALTER TABLE app_state ADD CONSTRAINT reject_test_tuesday CHECK (`key` <> 'grades
 SQL);
 $failed=['student_id'=>'diary-S','expected_assignment_id'=>'diary-A','operation_id'=>'mysql-partial-failure','task_type'=>'hifz','tap'=>'one','diary'=>['semester_id'=>'term-A','week_number'=>1,'day_key'=>'tue','date'=>'2026-10-13','field'=>'hifz','base'=>'','value'=>'one']];
 try{plans_record_diary($pdo,1,require_auth(),$failed);throw new RuntimeException('injected failure not detected');}catch(PDOException $error){check(str_contains($error->getMessage(),'reject_test_tuesday'),'real MySQL grade failure is surfaced');}
-$pdo->exec('ALTER TABLE app_state DROP CHECK reject_test_tuesday');
+$mariaDb = str_contains(strtolower((string)$pdo->query('SELECT VERSION()')->fetchColumn()), 'mariadb');
+$pdo->exec($mariaDb ? 'ALTER TABLE app_state DROP CONSTRAINT reject_test_tuesday' : 'ALTER TABLE app_state DROP CHECK reject_test_tuesday');
 check((int)$pdo->query("SELECT COUNT(*) FROM plan_assignment_completions WHERE student_id='diary-S' AND revoked_at IS NULL")->fetchColumn()===2,'MySQL rollback leaves neither extra grade nor extra completion');
 echo "MySQL diary migration, unique-current constraint, concurrency and rollback acceptance complete.\n";
 

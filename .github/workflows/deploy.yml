@@ -16,6 +16,20 @@ jobs:
     steps:
       - name: Get latest code
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine whether API files changed
+        id: changes
+        env:
+          PREVIOUS_SHA: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          changed=true
+          if [[ "$PREVIOUS_SHA" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "$PREVIOUS_SHA^{commit}" 2>/dev/null; then
+            if git diff --quiet "$PREVIOUS_SHA" "$GITHUB_SHA" -- api/; then changed=false; fi
+          fi
+          echo "api_changed=$changed" >> "$GITHUB_OUTPUT"
 
       - name: Validate secrets
         run: |
@@ -114,19 +128,29 @@ jobs:
             echo "::warning::Neither port responded to nc — continuing anyway; SFTP deploy will confirm connectivity."
           fi
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: 24
+          cache: npm
 
       - name: Install dependencies
-        run: bun install
+        run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
 
       - name: Build project
-        run: bun run build:hostinger
+        run: npm run build:hostinger
 
       - name: Write deploy marker
         run: echo "${{ github.sha }}" > dist/client/deploy-sha.txt
+
+      - name: Back up existing frontend before upload
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ steps.paths.outputs.ssh_user }}
+          DEPLOY_FRONTEND: ${{ steps.paths.outputs.frontend }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          DEPLOY_SHA: ${{ github.sha }}
+        run: python3 scripts/backup-hostinger-frontend.py
 
       # Hostinger: SFTP on port 65002 is more reliable than FTPS from GitHub Actions
       - name: Sync frontend (SFTP primary)
@@ -142,7 +166,7 @@ jobs:
           remote_path: ${{ steps.paths.outputs.frontend }}
           sftp_only: true
           sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
-          rsyncArgs: "--delete"
+          rsyncArgs: "--recursive"
 
       - name: Sync frontend (rsync fallback, 3 retries)
         id: rsync_frontend
@@ -196,6 +220,7 @@ jobs:
           exit 1
 
       - name: Sync PHP API (SFTP primary)
+        if: steps.changes.outputs.api_changed == 'true'
         id: sftp_api
         continue-on-error: true
         uses: wlixcc/SFTP-Deploy-Action@v1.2.5
@@ -212,7 +237,7 @@ jobs:
 
       - name: Sync PHP API (rsync fallback, 3 retries)
         id: rsync_api
-        if: steps.sftp_api.outcome == 'failure'
+        if: steps.changes.outputs.api_changed == 'true' && steps.sftp_api.outcome == 'failure'
         continue-on-error: true
         env:
           FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
@@ -224,7 +249,7 @@ jobs:
             "${{ steps.paths.outputs.api }}/"
 
       - name: Sync PHP API (FTPS fallback)
-        if: steps.sftp_api.outcome == 'failure' && steps.rsync_api.outcome != 'success'
+        if: steps.changes.outputs.api_changed == 'true' && steps.sftp_api.outcome == 'failure' && steps.rsync_api.outcome != 'success'
         id: ftps_api
         continue-on-error: true
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -242,7 +267,7 @@ jobs:
             **/config.php
 
       - name: Ensure API deployed
-        if: always()
+        if: always() && steps.changes.outputs.api_changed == 'true'
         run: |
           echo "API deploy results: SFTP=${{ steps.sftp_api.outcome }}, rsync=${{ steps.rsync_api.outcome || 'skipped' }}, FTPS=${{ steps.ftps_api.outcome || 'skipped' }}"
           ok=0
@@ -272,12 +297,12 @@ jobs:
           remote_path: ${{ steps.paths.outputs.m1_frontend }}
           sftp_only: true
           sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
-          rsyncArgs: "--delete"
+          rsyncArgs: "--recursive"
 
       - name: Sync m1 subdomain API (SFTP)
         id: sftp_m1_api
         continue-on-error: true
-        if: (steps.sftp_api.outcome == 'success' || steps.rsync_api.outcome == 'success' || steps.ftps_api.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
+        if: steps.changes.outputs.api_changed == 'true' && (steps.sftp_api.outcome == 'success' || steps.rsync_api.outcome == 'success' || steps.ftps_api.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
         uses: wlixcc/SFTP-Deploy-Action@v1.2.5
         with:
           username: ${{ steps.paths.outputs.ssh_user }}
@@ -316,12 +341,12 @@ jobs:
           remote_path: ${{ steps.paths.outputs.m2_frontend }}
           sftp_only: true
           sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
-          rsyncArgs: "--delete"
+          rsyncArgs: "--recursive"
 
       - name: Sync m2 subdomain API (SFTP)
         id: sftp_m2_api
         continue-on-error: true
-        if: (steps.sftp_api.outcome == 'success' || steps.rsync_api.outcome == 'success' || steps.ftps_api.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
+        if: steps.changes.outputs.api_changed == 'true' && (steps.sftp_api.outcome == 'success' || steps.rsync_api.outcome == 'success' || steps.ftps_api.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
         uses: wlixcc/SFTP-Deploy-Action@v1.2.5
         with:
           username: ${{ steps.paths.outputs.ssh_user }}
@@ -366,7 +391,6 @@ jobs:
 
       - name: Verify live deploy
         if: steps.sftp_frontend.outcome == 'success' || steps.rsync_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success'
-        continue-on-error: true
         run: |
           set +e
           EXPECTED="${{ github.sha }}"
@@ -389,7 +413,7 @@ jobs:
             local host="$1"
             local label="$2"
             local sha
-            sha=$(curl -fsS "${CURL_EXTRA[@]}" "https://${host}/deploy-sha.txt" 2>/dev/null)
+            sha=$(curl -fsS "${CURL_EXTRA[@]}" "https://${host}/deploy-sha.txt?release=${EXPECTED}" 2>/dev/null)
             if [ "$sha" = "$EXPECTED" ]; then
               echo "Deploy verified on ${label} (commit ${EXPECTED:0:7})"
               return 0
@@ -416,4 +440,4 @@ jobs:
           done
           echo "::warning::msht.io deploy-sha not confirmed from GitHub — upload may still have succeeded."
           echo "Check manually: https://msht.io/deploy-sha.txt (expected ${EXPECTED:0:7}…)"
-          exit 0
+          exit 1
