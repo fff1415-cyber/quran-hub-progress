@@ -807,6 +807,7 @@ function handle_assign_plan(): void
         $sardQueue = null;
         if (isset($input['sard_result'])) {
             $sard = $input['sard_result'];
+            if(isset($sard['semesterId'])&&state_active_semester($pdo,$cid,true)!==$sard['semesterId'])throw new RuntimeException('تغيّر فصل التقييم؛ لم يُحفظ انتقال جزئي');
             $stateTenants = app_state_tenant_enabled($pdo);
             $stateStmt = $pdo->prepare($stateTenants ? "SELECT value FROM app_state WHERE complex_id = ? AND `key` = 'sard_queue' FOR UPDATE" : "SELECT value FROM app_state WHERE `key` = 'sard_queue' FOR UPDATE");
             $stateStmt->execute($stateTenants ? [$cid] : []);
@@ -1290,12 +1291,20 @@ function handle_remove_plan_completions(): void
 
     $placeholders = implode(',', array_fill(0, count($indexes), '?'));
     $params = array_merge([$studentId, $planId, $assignmentId, $taskType], $indexes);
-    $stmt = $pdo->prepare(
-        "UPDATE plan_assignment_completions SET revoked_at = NOW() WHERE student_id = ? AND plan_id = ? AND assignment_id = ? AND task_type = ? AND segment_index IN ($placeholders) AND revoked_at IS NULL"
-    );
-    $stmt->execute($params);
-
-    json_response(['ok' => true, 'removed' => $stmt->rowCount()]);
+    $pdo->beginTransaction();
+    try {
+        plans_lock_student($pdo,$studentId);
+        $beforeStmt=$pdo->prepare("SELECT * FROM plan_assignment_completions WHERE student_id = ? AND plan_id = ? AND assignment_id = ? AND task_type = ? AND segment_index IN ($placeholders) AND revoked_at IS NULL FOR UPDATE");
+        $beforeStmt->execute($params);$before=$beforeStmt->fetchAll();
+        if(plans_table_exists($pdo,'plan_diary_events'))foreach($before as $row)if(!empty($row['operation_id'])){
+            $bound=$pdo->prepare('SELECT COUNT(*) FROM plan_diary_events WHERE operation_id = ? AND assignment_id = ? AND revoked_at IS NULL');$bound->execute([$row['operation_id'],$assignmentId]);
+            if((int)$bound->fetchColumn()>0)throw new RuntimeException('الإنجاز مرتبط بدرجة يوم؛ استخدم تعديل اليوم المتزامن لحماية الدرجة والخطة');
+        }
+        $stmt=$pdo->prepare("UPDATE plan_assignment_completions SET revoked_at = NOW() WHERE student_id = ? AND plan_id = ? AND assignment_id = ? AND task_type = ? AND segment_index IN ($placeholders) AND revoked_at IS NULL");
+        $stmt->execute($params);$removed=$stmt->rowCount();
+        if($removed)plans_operation_save($pdo,new_uuid(),$studentId,'remove',$input,['before'=>$before,'action'=>'revoked','recorded_at'=>gmdate('c')]);
+        $pdo->commit();json_response(['ok'=>true,'removed'=>$removed]);
+    } catch(Throwable $error) {if($pdo->inTransaction())$pdo->rollBack();error_response($error->getMessage(),409);}
 }
 
 /** Edit one hifz row of the current plan, keeping the supervisor's completion queue in sync. */
@@ -1373,23 +1382,32 @@ function handle_supervisor_plan_hifz(): void
         }
 
         $completionStmt = $pdo->prepare(
-            "SELECT id, assignment_id FROM plan_assignment_completions
-             WHERE student_id = ? AND plan_id = ? AND assignment_id = ? AND segment_index = ? AND task_type = 'hifz' AND revoked_at IS NULL FOR UPDATE"
+            "SELECT * FROM plan_assignment_completions
+             WHERE student_id = ? AND plan_id = ? AND assignment_id = ? AND segment_index = ? AND task_type = 'hifz' FOR UPDATE"
         );
         $completionStmt->execute([$studentId, $assignment['plan_id'], $assignmentId, $segment]);
-        $completion = $completionStmt->fetch();
+        $previousCompletion=$completionStmt->fetch();
+        $completion=$previousCompletion&&$previousCompletion['revoked_at']===null?$previousCompletion:null;
+        $changed=false;
         if ($action === 'complete' && !$completion) {
+            $changed=true;
             $insert = $pdo->prepare(
                 "INSERT INTO plan_assignment_completions
                  (id, student_id, plan_id, segment_index, task_type, completed_at, recorded_by, assignment_id)
                  VALUES (?, ?, ?, ?, 'hifz', ?, ?, ?) ON DUPLICATE KEY UPDATE completed_at = VALUES(completed_at), recorded_by = VALUES(recorded_by), revoked_at = NULL"
             );
             $insert->execute([new_uuid(), $studentId, $assignment['plan_id'], $segment, $date, (string) ($auth['name'] ?? 'المشرف التعليمي'), $assignmentId]);
+            $pdo->prepare("UPDATE plan_assignment_completions SET operation_id = NULL WHERE assignment_id = ? AND segment_index = ? AND task_type = 'hifz'")->execute([$assignmentId,$segment]);
         } elseif ($action === 'remove' && $completion) {
+            $changed=true;
             $delete = $pdo->prepare('UPDATE plan_assignment_completions SET revoked_at = NOW() WHERE id = ?');
             $delete->execute([$completion['id']]);
         }
 
+        if($changed){
+            $completionStmt->execute([$studentId,$assignment['plan_id'],$assignmentId,$segment]);
+            plans_operation_save($pdo,new_uuid(),$studentId,'supervisor_hifz',$input,['before'=>$previousCompletion?:null,'after'=>$completionStmt->fetch()?:null,'recorded_at'=>gmdate('c')]);
+        }
         $isComplete = plans_hifz_complete($pdo, $assignment);
         if (!$isComplete && $queueIndex !== null && ($queue[$queueIndex]['status'] ?? '') === 'plan_completed') {
             $queue[$queueIndex]['status'] = 'archived';

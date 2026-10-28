@@ -28,11 +28,11 @@ function plans_append_record(PDO $pdo,int $cid,string $key,array $record): array
 }
 function plans_pass_records(PDO $pdo,int $cid,array $queueItem,array $oldAssignment,array $sard): array {
     $snapshot=plans_assignment_content($pdo,$oldAssignment);$p=$snapshot['plan'];$phase=($queueItem['phase']??'full')==='review_only'?'review_only':'full';$at=(string)$queueItem['passedAt'];
-    $semester=$queueItem['semesterId']??null; // Never infer a historical request's semester from today's active semester.
-    $record=['id'=>'ar-assignment-'.$oldAssignment['id'],'studentId'=>$oldAssignment['student_id'],'assignmentId'=>$oldAssignment['id'],'semesterId'=>$semester,
+    $semester=$sard['semesterId']??null; // Supplied and validated for this assessment; legacy remains unknown.
+    $record=['id'=>'ar-assignment-'.$oldAssignment['id'],'studentId'=>$oldAssignment['student_id'],'assignmentId'=>$oldAssignment['id'],'semesterId'=>$semester,'queueSemesterId'=>$queueItem['semesterId']??null,'weekProvenance'=>'queue_week',
       'halaqaId'=>(int)($queueItem['halaqaId']??0),'week'=>(int)($queueItem['week']??0),'attempt'=>(int)($queueItem['attempt']??1),'result'=>'passed','percent'=>(float)$sard['percent'],
       'hifzScore'=>(float)($sard['hifzScore']??0),'reviewScore'=>(float)($sard['reviewScore']??0),'testDate'=>$at,'planId'=>$oldAssignment['plan_id'],'planTitle'=>$p['title'],'levelNumber'=>(int)$p['level_number'],'track'=>$p['track'],'evaluationRules'=>$queueItem['evaluationRules']??null];
-    $history=['id'=>'sh-'.$queueItem['id'].'-'.$record['attempt'].'-'.$phase,'studentId'=>$record['studentId'],'assignmentId'=>$oldAssignment['id'],'semesterId'=>$semester,'halaqaId'=>$record['halaqaId'],'week'=>$record['week'],'attempt'=>$record['attempt'],'result'=>'passed','percent'=>$record['percent'],'at'=>$at,
+    $history=['id'=>'sh-'.$queueItem['id'].'-'.$record['attempt'].'-'.$phase,'studentId'=>$record['studentId'],'assignmentId'=>$oldAssignment['id'],'semesterId'=>$semester,'queueSemesterId'=>$queueItem['semesterId']??null,'weekProvenance'=>'queue_week','halaqaId'=>$record['halaqaId'],'week'=>$record['week'],'attempt'=>$record['attempt'],'result'=>'passed','percent'=>$record['percent'],'at'=>$at,
       'hifzErrors'=>(int)($sard['hifzErrors']??$queueItem['lockedHifzErrors']??0),'hifzWarnings'=>(int)($sard['hifzWarnings']??$queueItem['lockedHifzWarnings']??0),'reviewErrors'=>$sard['reviewErrors']??[],'reviewWarnings'=>$sard['reviewWarnings']??[],'evaluationRules'=>$queueItem['evaluationRules']??null];
     return ['record'=>$record,'academic_records'=>plans_append_record($pdo,$cid,'academic_records',$record),'sard_history'=>plans_append_record($pdo,$cid,'sard_history',$history)];
 }

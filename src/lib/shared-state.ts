@@ -146,3 +146,10 @@ export async function resumePendingEdits():Promise<void>{
   resumedToken=token;resumedContext=scope;
   if(pending().length){report({state:"saving"});await flushSharedEdits();}
 }
+
+/** Read-only historical source for reports/review; never changes the tab's write semester. */
+export async function fetchStoredHistory<T>(key:"grades"|"weekly_tests"|"scientific_grades",source:{semesterId:string}|{legacy:true}):Promise<T>{
+  const token=getToken();if(!token)throw new Error("غير مسجل الدخول");
+  const rows=await secureListAppState({data:{token,key,...("semesterId" in source?{semester_id:source.semesterId}:{legacy:true})}});
+  return (rows.find(row=>row.key===key)?.value??{}) as T;
+}

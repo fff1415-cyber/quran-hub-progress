@@ -54,3 +54,11 @@ $GLOBALS['input']=['student_id'=>'student-1','plan_id'=>'current','expected_assi
 check($GLOBALS['response']['plan']['title']==='replacement syllabus'&&$GLOBALS['response']['segments'][0]['hifz_plan']==='replacement hifz','new assignment adopts imported version while previous assignment stays pinned');
 check((int)$pdo->query("SELECT COUNT(*) FROM plan_assignment_completions WHERE assignment_id='old'")->fetchColumn()===2,'syllabus import/reassignment retains previous completions');
 $pdo=seed();$GLOBALS['auth']['role']='secretary';expectFailure(fn()=>handle_assign_plan(),'Forbidden');
+
+$pdo=seed();$GLOBALS['auth']['role']='supervisor';app_state_upsert($pdo,'sard_queue',[],1);
+$GLOBALS['input']=['student_id'=>'student-1','assignment_id'=>'old','segment_index'=>1,'action'=>'remove','completed_at'=>'2026-10-11','week'=>1];handle_supervisor_plan_hifz();
+$GLOBALS['input']['action']='complete';$GLOBALS['input']['completed_at']='2026-10-14';handle_supervisor_plan_hifz();handle_supervisor_plan_hifz();
+$audits=$pdo->query("SELECT response_json FROM plan_operations WHERE operation_kind='supervisor_hifz'")->fetchAll(PDO::FETCH_COLUMN);
+check(count($audits)===2,'repeated supervisor complete is idempotent while actual changes are journaled');
+$removed=json_decode($audits[0],true);$restored=json_decode($audits[1],true);
+check($removed['before']['completed_at']==='2026-10-02'&&$restored['after']['completed_at']==='2026-10-14','supervisor remove/recomplete retains original and replacement dates');

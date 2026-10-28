@@ -49,3 +49,7 @@ $pdo=diarySeed();$GLOBALS['auth']=['role'=>'teacher','halaqaId'=>1,'complexId'=>
 recordDay(diaryInput('legit-teacher-001','hifz','one'));check($GLOBALS['response']['entry']['hifz']==='one','current legitimate teacher access still records paired data');
 $GLOBALS['auth']=['role'=>'assistant','halaqaId'=>2,'complexId'=>1,'name'=>'isolated other'];expectFailure(fn()=>recordDay(diaryInput('wrong-halaqa-001','hifz','two','one')),'حلقة');
 foreach(['student','parent'] as $role){$GLOBALS['auth']=['role'=>$role,'studentId'=>'student-1','complexId'=>1];$_GET=['student_id'=>'student-1'];handle_student_plan_sheet();check(count($GLOBALS['response']['completions'])===1,"$role reads the same confirmed assignment completion");}
+
+$pdo=diarySeed();recordDay(diaryInput('paired-delete-test','hifz','one'));
+$GLOBALS['input']=['student_id'=>'student-1','assignment_id'=>'old','task_type'=>'hifz','segment_indexes'=>[1]];expectFailure(fn()=>handle_remove_plan_completions(),'مرتبط بدرجة يوم');
+check((int)$pdo->query('SELECT COUNT(*) FROM plan_assignment_completions WHERE revoked_at IS NULL')->fetchColumn()===1,'legacy standalone removal cannot orphan a paired diary grade');

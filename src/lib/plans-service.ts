@@ -160,7 +160,7 @@ export async function assignStudentPlan(
     start_muraja_segment?: number | null;
     face_quotas?: Partial<DailyFaceQuotas>;
     expected_assignment_id?: string;
-    sard_result?: { id: string; percent: number; phase: string; hifzScore?:number;reviewScore?:number;hifzErrors?:number;hifzWarnings?:number;reviewErrors?:number[];reviewWarnings?:number[] };
+    sard_result?: { id: string; percent: number; phase: string; semesterId?:string;hifzScore?:number;reviewScore?:number;hifzErrors?:number;hifzWarnings?:number;reviewErrors?:number[];reviewWarnings?:number[] };
     finalize_only?:boolean;
     operation_id?: string;
   },

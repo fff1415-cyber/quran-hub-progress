@@ -30,11 +30,14 @@ function state_present_row(PDO $pdo,int $cid,array $row): array {
     $key=(string)$row['key'];$raw=json_decode((string)($row['value']??'null'),true);
     if(!state_protected_key($key)){ $row['value']=$raw;return $row; }
     $e=state_envelope($raw);$scope='_';
-    if(state_semester_key($key)){try{$scope=state_active_semester($pdo,$cid);}catch(RuntimeException){$scope='';}}
+    if(state_semester_key($key)){
+        $requested=trim((string)($_GET['semester_id']??''));
+        if($requested!=='')$scope=$requested;else{try{$scope=state_active_semester($pdo,$cid);}catch(RuntimeException){$scope='';}}
+    }
     $legacy=state_semester_key($key)&&!empty($_GET['legacy']);
     $v=$legacy?($e['legacy']??[]):state_scope_value($e,$key,$scope);
     $row['value']=state_list_key($key)?array_values($v):($v?:new stdClass());
-    $row['integrity']=['version'=>1,'semester_id'=>state_semester_key($key)?$scope:null,'revision'=>$e['revision']??0,'legacy_available'=>!empty($e['legacy']),'legacy_view'=>$legacy];
+    $row['integrity']=['version'=>1,'semester_id'=>state_semester_key($key)?$scope:null,'revision'=>$e['revision']??0,'legacy_available'=>empty($e['legacy_reviewed'])&&($key==='scientific_grades'?(!empty($e['legacy']['data'])||!empty($e['legacy']['overrides'])):!empty($e['legacy'])),'legacy_view'=>$legacy];
     return $row;
 }
 function state_canonical(mixed $v): string {

@@ -1,3 +1,4 @@
+import { getCalendarIsoDate } from "@/lib/operational-date";
 import type { EducationPlan, PlanTrack } from "@/lib/plan-types";
 import {
   followingPlan,
@@ -26,7 +27,7 @@ export async function completePlanAndAdvance(
   studentId: string,
   assignedBy: string,
   track: PlanTrack,
-  options?: { planStartDate?: string; expectedAssignmentId?: string; studentPhase?: number; sardResult?: { id: string; percent: number; phase: string; hifzScore?:number;reviewScore?:number;hifzErrors?:number;hifzWarnings?:number;reviewErrors?:number[];reviewWarnings?:number[] } },
+  options?: { planStartDate?: string; expectedAssignmentId?: string; studentPhase?: number; sardResult?: { id: string; percent: number; phase: string; semesterId?:string;hifzScore?:number;reviewScore?:number;hifzErrors?:number;hifzWarnings?:number;reviewErrors?:number[];reviewWarnings?:number[] } },
 ): Promise<PlanAdvanceResult> {
   const pending=await retryPendingPlanAdvance(studentId,options?.sardResult?.id);
   if(pending)return pending;
@@ -60,7 +61,7 @@ export async function completePlanAndAdvance(
   const { plan: next, phase: nextPhase } = following;
 
   const prevQuotas = sheet.assignment ? normalizeTaskQuotas(sheet.assignment) : undefined;
-  const startDate = options?.planStartDate ?? new Date().toISOString().slice(0, 10);
+  const startDate = options?.planStartDate ?? getCalendarIsoDate();
 
   const confirmed=await assignStudentPlan(studentId, next.id, 1, assignedBy, {
     expected_assignment_id: sheet.assignment?.id,

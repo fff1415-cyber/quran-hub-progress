@@ -32,3 +32,7 @@ check(kiosk_write_attendance($pdo,1,'term-B','S',1,'sun','present'),'kiosk atten
 check(!kiosk_write_attendance($pdo,1,'term-B','S',1,'sun','late'),'repeated kiosk attendance does not overwrite confirmed check-in');
 $raw=json_decode($pdo->query("SELECT value FROM app_state WHERE `key`='grades'")->fetchColumn(),true);
 check($raw['scopes']['term-B']['S'][1]['days']['sun']['hifz']==='two'&&isset($raw['scopes']['term-A']),'kiosk patch preserves hifz, other semesters and legacy envelope');
+
+$_GET=['semester_id'=>'term-A'];$row=$pdo->query("SELECT `key`,value FROM app_state WHERE `key`='grades'")->fetch();$historic=state_present_row($pdo,1,$row);
+check($historic['value']['S'][1]['days']['sun']['hifz']===''&&$historic['integrity']['semester_id']==='term-A','explicit historical read returns old semester without changing current writes');
+$_GET=['legacy'=>1];$legacy=state_present_row($pdo,1,$row);check(isset($legacy['value']['legacy-student'])&&$legacy['integrity']['legacy_view'],'unassigned legacy data remains available for read-only review');$_GET=[];

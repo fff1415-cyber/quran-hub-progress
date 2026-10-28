@@ -1,3 +1,5 @@
+import { getDataSemester } from "@/lib/shared-state";
+import { getCalendarIsoDate } from "@/lib/operational-date";
 import { pushAcademicRecord, type AcademicPhaseRecord } from "@/lib/academic-record";
 import { completePlanAndAdvance, type PlanAdvanceResult } from "@/lib/plan-progression";
 import { syncStudentToGlobalPhase } from "@/lib/student-phase-promote";
@@ -27,6 +29,8 @@ export interface PostPassResult extends PlanAdvanceResult {
 }
 
 export async function runPostPassAutomation(payload: SardPassPayload): Promise<PostPassResult> {
+  const semesterId=getDataSemester();
+  if(!semesterId)throw new Error("مرجع فصل التقييم غير مؤكد؛ أعد تحميل الصفحة قبل الاعتماد");
   const assignedBy = payload.assignedBy ?? "النظام";
   const sheet = await fetchStudentPlanSheet(payload.studentId);
 
@@ -48,10 +52,10 @@ export async function runPostPassAutomation(payload: SardPassPayload): Promise<P
   };
 
   const advance = await completePlanAndAdvance(payload.studentId, assignedBy, payload.track, {
-    planStartDate: record.testDate.slice(0, 10),
+    planStartDate: getCalendarIsoDate(),
     expectedAssignmentId: payload.assignmentId ?? sheet.assignment?.id,
     studentPhase: payload.studentPhase,
-    sardResult: payload.queueItemId ? { id: payload.queueItemId, percent: payload.percent, phase: payload.phase ?? "full",hifzScore:payload.hifzScore,reviewScore:payload.reviewScore,hifzErrors:payload.hifzErrors,hifzWarnings:payload.hifzWarnings,reviewErrors:payload.reviewErrors,reviewWarnings:payload.reviewWarnings } : undefined,
+    sardResult: payload.queueItemId ? { id: payload.queueItemId, percent: payload.percent, phase: payload.phase ?? "full",semesterId,hifzScore:payload.hifzScore,reviewScore:payload.reviewScore,hifzErrors:payload.hifzErrors,hifzWarnings:payload.hifzWarnings,reviewErrors:payload.reviewErrors,reviewWarnings:payload.reviewWarnings } : undefined,
   });
   if(!advance.record)throw new Error("لم يؤكد الخادم السجل الأكاديمي؛ لم يُعلن نجاح العملية");
   if (advance.newPlanTitle)

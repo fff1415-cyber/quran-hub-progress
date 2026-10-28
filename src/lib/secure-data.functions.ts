@@ -162,8 +162,9 @@ export async function secureDeleteRoleAccount({ data }: { data: { token: string;
 }
 
 // ---------- SHARED APP STATE ----------
-export async function secureListAppState({ data }: { data: { token: string; key?: string } }) {
-  const q = data.key ? `?key=${encodeURIComponent(data.key)}` : "";
+export async function secureListAppState({ data }: { data: { token: string; key?: string; semester_id?:string; legacy?:boolean } }) {
+  const params=new URLSearchParams();if(data.key)params.set("key",data.key);if(data.semester_id)params.set("semester_id",data.semester_id);if(data.legacy)params.set("legacy","1");
+  const q=params.size?`?${params.toString()}`:"";
   return apiFetch<{ key: string; value: unknown; integrity?: { version: number; semester_id: string | null; revision: number; legacy_available: boolean; legacy_view: boolean } }[]>(`/app-state${q}`, {
     method: "GET",
     auth: data.token,

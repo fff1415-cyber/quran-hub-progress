@@ -8,6 +8,7 @@ import { saveGrades, saveNotifications, saveSardHistory, saveSardQueue,saveStude
 import { saveAcademicRecords } from "@/lib/academic-record";
 import { saveScientificGradesStore } from "@/lib/scientific-grades";
 import { saveWeeklyTests } from "@/lib/weekly-tests";
+export const LEGACY_REVIEW_EVENT="qs-legacy-review-needed";
 export const SHARED_REFRESH_EVENT="qs-shared-refreshed";
 export const CLOCK_TICK_EVENT="qs-operational-clock-tick";
 let inFlight: Promise<void> | null=null;
@@ -21,6 +22,8 @@ export function refreshSharedCaches(): Promise<void> {
     if(getToken()!==token)return;
     if(results[0].status==='rejected')throw results[0].reason;
     const rows=results[0].value;
+    const legacy=rows.some(row=>["grades","weekly_tests","scientific_grades"].includes(row.key)&&row.integrity?.legacy_available);
+    window.dispatchEvent(new CustomEvent(LEGACY_REVIEW_EVENT,{detail:legacy}));
     const {rowToStudent,rowToHalaqa}=await import("./cloud-sync");
     if(results[1].status==='fulfilled'&&Array.isArray(results[1].value))saveStudents((results[1].value as Parameters<typeof rowToStudent>[0][]).map(rowToStudent));
     if(results[2].status==='fulfilled'&&Array.isArray(results[2].value))saveHalaqat((results[2].value as Parameters<typeof rowToHalaqa>[0][]).map(rowToHalaqa));
