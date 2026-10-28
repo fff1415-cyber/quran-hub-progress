@@ -34,3 +34,9 @@ for(const [path,name,marker] of [
 
 assert.doesNotMatch(fs.readFileSync('src/lib/mock-data.ts','utf8'), /captureSharedEdit\(["']notifications/, 'F03 cannot publish recipient data through the unscoped endpoint');
 assert.doesNotMatch(fs.readFileSync('src/lib/shared-refresh.ts','utf8'), /case ["']notifications/, 'F03 cannot pull recipient data through the unscoped endpoint');
+const ts=require('typescript');
+function declarations(code){const sf=ts.createSourceFile('scope.tsx',code,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);return new Map(sf.statements.filter(ts.isFunctionDeclaration).filter(n=>n.name).map(n=>[n.name.text,n.getText(sf)]));}
+const apiPath='src/lib/secure-data.functions.ts',baseApi=declarations(original(apiPath)),currentApi=declarations(fs.readFileSync(apiPath,'utf8'));
+for(const [name,body] of baseApi)if(!['apiFetch','secureListAppState','secureSetAppState','securePatchWeeklyTest'].includes(name))assert.equal(currentApi.get(name),body,`unrelated login/role/ownership API changed: ${name}`);
+const adminPath='src/components/admin/ManagerDataSections.tsx',baseAdmin=declarations(original(adminPath)),currentAdmin=declarations(fs.readFileSync(adminPath,'utf8'));
+for(const name of ['HalaqatManagementSection','CodesManagementSection'])assert.equal(currentAdmin.get(name),baseAdmin.get(name),`unrelated role management UI changed: ${name}`);
