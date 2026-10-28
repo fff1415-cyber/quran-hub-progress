@@ -1,8 +1,13 @@
 -- Explicit operator migration, NOT called by API or GET. Back up before applying.
 -- Preserve segment_completions unchanged. Only existing explicit assignment IDs
 -- whose student AND plan match are copied; NULL/mismatched provenance is not guessed.
-ALTER TABLE education_plans ADD COLUMN catalog_archived_at DATETIME NULL;
-ALTER TABLE student_plan_assignments ADD COLUMN content_snapshot LONGTEXT NULL;
+-- Rerunnable after an interrupted DDL run; MySQL DDL is not transactional.
+SET @audit_ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='education_plans' AND column_name='catalog_archived_at')=0, 'ALTER TABLE education_plans ADD COLUMN catalog_archived_at DATETIME NULL', 'SELECT 1');
+PREPARE audit_stmt FROM @audit_ddl; EXECUTE audit_stmt; DEALLOCATE PREPARE audit_stmt;
+SET @audit_ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='student_plan_assignments' AND column_name='content_snapshot')=0, 'ALTER TABLE student_plan_assignments ADD COLUMN content_snapshot LONGTEXT NULL', 'SELECT 1');
+PREPARE audit_stmt FROM @audit_ddl; EXECUTE audit_stmt; DEALLOCATE PREPARE audit_stmt;
+SET @audit_ddl = IF((SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name='segment_completions' AND column_name='assignment_id')=0, 'ALTER TABLE segment_completions ADD COLUMN assignment_id CHAR(36) NULL', 'SELECT 1');
+PREPARE audit_stmt FROM @audit_ddl; EXECUTE audit_stmt; DEALLOCATE PREPARE audit_stmt;
 CREATE TABLE IF NOT EXISTS plan_assignment_completions (
   id CHAR(36) NOT NULL PRIMARY KEY,
   student_id VARCHAR(50) NOT NULL,
