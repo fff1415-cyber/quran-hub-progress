@@ -60,16 +60,18 @@ function assertContext(before: ReturnType<typeof sessionContext>) {
 export async function fetchEvaluationSettings(): Promise<EvaluationSettings> {
   const request = ++latestRequest;
   const context=sessionContext();
-  const res=await evalFetch<{settings:EvaluationSettings}>("/evaluation-settings");
+  const res=await evalFetch<{settings:EvaluationSettings;context_complex_id:number}>("/evaluation-settings");
   assertContext(context);
+  if (res.context_complex_id !== context.complex || typeof res.context_complex_id !== "number") throw new Error("لم يؤكد الخادم سياق المجمع الحالي؛ أعد المحاولة بعد تحديث الصفحة");
   if (request !== latestRequest) throw new Error("وصلت استجابة إعدادات أقدم — أعد تحميل المعتمد من الخادم");
   const settings = confirmedSettings(res.settings); writeLocal(settings); return settings;
 }
 export async function saveEvaluationSettings(settings: EvaluationSettings): Promise<EvaluationSettings> {
   const request = ++latestRequest;
   const context=sessionContext();
-  const res=await evalFetch<{settings:EvaluationSettings}>("/evaluation-settings",{method:"PUT",body:JSON.stringify({settings})});
+  const res=await evalFetch<{settings:EvaluationSettings;context_complex_id:number}>("/evaluation-settings",{method:"PUT",body:JSON.stringify({settings})});
   assertContext(context);
+  if (res.context_complex_id !== context.complex || typeof res.context_complex_id !== "number") throw new Error("لم يؤكد الخادم سياق المجمع الحالي؛ أعد المحاولة بعد تحديث الصفحة");
   if (request !== latestRequest) throw new Error("وصلت استجابة إعدادات أقدم — أعد تحميل المعتمد من الخادم");
   const confirmed = confirmedSettings(res.settings); writeLocal(confirmed); return confirmed;
 }

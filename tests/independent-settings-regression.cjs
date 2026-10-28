@@ -3,7 +3,7 @@ const {load,storage,deferred,flush,hooks,jsx,find,text}=require('./independent-t
 global.window=new EventTarget();global.localStorage=storage();
 const types=load('src/lib/evaluation-types.ts',{});let token='fixture-session-A',complex=1;
 const service=load('src/lib/evaluation-settings-service.ts',{'@/lib/api-base':{buildRphpUrl:p=>p},'@/lib/evaluation-types':types,'@/lib/auth-session':{getToken:()=>token},'@/lib/tenant':{getActiveComplexId:()=>complex}});
-const response=settings=>({ok:true,text:async()=>JSON.stringify({settings})});
+const response=(settings,context_complex_id=complex)=>({ok:true,text:async()=>JSON.stringify({settings,context_complex_id})});
 (async()=>{
  const seven={...types.DEFAULT_EVALUATION_SETTINGS,error_deduction:7};
  localStorage.setItem('qshatawi_evaluation_settings_v1',JSON.stringify({...seven,error_deduction:99}));
@@ -20,6 +20,7 @@ const response=settings=>({ok:true,text:async()=>JSON.stringify({settings})});
  global.fetch=async()=>response({...seven,error_deduction:0});await service.saveEvaluationSettings(seven);
  oldRead.resolve(response({...seven,error_deduction:3}));await assert.rejects(pending,/أقدم/);
  assert.equal(service.getCachedEvaluationSettings().error_deduction,0,'old GET cannot overwrite a confirmed PUT in the same session');
+ global.fetch=async()=>response(seven,99);await assert.rejects(service.fetchEvaluationSettings(),/سياق المجمع/);assert.equal(service.getCachedEvaluationSettings().error_deduction,0);
  global.fetch=async()=>response({error_deduction:1});await assert.rejects(service.saveEvaluationSettings(seven),/صالحة/);
  assert.equal(service.getCachedEvaluationSettings().error_deduction,0);
  assert.equal(JSON.parse(localStorage.getItem('qshatawi_evaluation_settings_v1')).error_deduction,99,'old unassigned cache remains intact');

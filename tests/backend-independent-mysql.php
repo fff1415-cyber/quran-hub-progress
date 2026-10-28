@@ -54,13 +54,17 @@ $pdo->exec('ALTER TABLE evaluation_settings ADD CONSTRAINT fixture_reject_nine C
 $GLOBALS['auth']['complexId']=2;$GLOBALS['input']['settings']['error_deduction']=9;unset($GLOBALS['response']);
 try{handle_put_evaluation_settings();throw new RuntimeException('fixture failure not detected');}catch(PDOException $error){check(str_contains($error->getMessage(),'fixture_reject_nine'),'real constraint failure is surfaced');}
 check(!isset($GLOBALS['response'])&&(int)$pdo->query('SELECT COUNT(*) FROM evaluation_settings WHERE complex_id=2')->fetchColumn()===0,'real transaction rolls back initialized settings after failed update');
+$pdo->exec('ALTER TABLE evaluation_settings ADD CONSTRAINT fixture_reject_three CHECK(complex_id<>3)');
+$GLOBALS['auth']['complexId']=3;$GLOBALS['input']['settings']['error_deduction']=7;unset($GLOBALS['response']);
+try{handle_put_evaluation_settings();throw new RuntimeException('initialization falsely succeeded');}catch(Throwable $error){check(str_contains($error->getMessage(),'تعذّر تهيئة')||str_contains($error->getMessage(),'fixture_reject_three'),'ignored or rejected initialization never confirms defaults as a saved row');}
+check(!isset($GLOBALS['response'])&&(int)$pdo->query('SELECT COUNT(*) FROM evaluation_settings WHERE complex_id=3')->fetchColumn()===0,'no silent success when INSERT IGNORE could not create settings');
 $pdo->exec('DROP TABLE evaluation_settings');$pdo->exec('CREATE TABLE evaluation_settings(id INT PRIMARY KEY,'.implode(',',$columns).') ENGINE=InnoDB');
 $GLOBALS['input']['settings']['error_deduction']=7;handle_put_evaluation_settings();
 check($GLOBALS['response']['settings']['error_deduction']===7&&(int)$pdo->query('SELECT COUNT(*) FROM evaluation_settings')->fetchColumn()===1,'original non-tenant schema still supports explicit confirmed save');
 $records=[];for($i=0;$i<651;$i++)$records[]=['id'=>'fixture-'.$i,'percent'=>0,'unverified'=>null];
 $GLOBALS['input']=['key'=>'sard_history','value'=>$records];handle_set_app_state();
-$s=$pdo->prepare('SELECT value FROM app_state WHERE complex_id=? AND `key`=?');$s->execute([2,'sard_history']);
+$s=$pdo->prepare('SELECT value FROM app_state WHERE complex_id=? AND `key`=?');$s->execute([3,'sard_history']);
 check(json_decode($s->fetchColumn(),true)===$records,'original shared-history format retains 651 exact records on the actual engine');
 $GLOBALS['input']['value']=array_slice($records,0,500);
 try{handle_set_app_state();throw new RuntimeException('old truncation accepted');}catch(RuntimeException $error){check($error->getCode()===409,'old 500-item writer is rejected on the actual engine');}
-$s->execute([2,'sard_history']);check(json_decode($s->fetchColumn(),true)===$records,'old-client rejection retains all 651 stored records');
+$s->execute([3,'sard_history']);check(json_decode($s->fetchColumn(),true)===$records,'old-client rejection retains all 651 stored records');

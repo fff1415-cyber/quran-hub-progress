@@ -131,10 +131,10 @@ function handle_get_evaluation_settings(): void
     $cid = require_complex_id($auth);
     $pdo = db();
     if (!eval_settings_table_exists($pdo)) {
-        json_response(['settings' => eval_settings_defaults(), 'source' => 'defaults']);
+        json_response(['settings' => eval_settings_defaults(), 'source' => 'defaults', 'context_complex_id' => $cid]);
         return;
     }
-    json_response(['settings' => eval_settings_fetch($pdo, $cid), 'source' => 'database']);
+    json_response(['settings' => eval_settings_fetch($pdo, $cid), 'source' => 'database', 'context_complex_id' => $cid]);
 }
 
 function handle_put_evaluation_settings(): void
@@ -172,6 +172,9 @@ function handle_put_evaluation_settings(): void
         $params[] = 1;
         $sql = 'UPDATE evaluation_settings SET ' . implode(', ', $sets) . ' WHERE id = ?';
     }
+    $exists = $pdo->prepare($tenants ? 'SELECT 1 FROM evaluation_settings WHERE complex_id = ? FOR UPDATE' : 'SELECT 1 FROM evaluation_settings WHERE id = ? FOR UPDATE');
+    $exists->execute([$tenants ? $cid : 1]);
+    if (!$exists->fetchColumn()) throw new RuntimeException('تعذّر تهيئة صف إعدادات التقييم — لم يتأكد الحفظ');
     $pdo->prepare($sql)->execute($params);
     $saved = eval_settings_fetch($pdo, $cid);
     $pdo->commit();
@@ -180,5 +183,5 @@ function handle_put_evaluation_settings(): void
         throw $error;
     }
 
-    json_response(['ok' => true, 'settings' => $saved]);
+    json_response(['ok' => true, 'settings' => $saved, 'context_complex_id' => $cid]);
 }
