@@ -1,5 +1,5 @@
 import { useEffect,useState } from "react";
-import { SHARED_SAVE_EVENT,sharedSaveStatus,flushSharedEdits,cancelRejectedEdit,resumePendingEdits } from "@/lib/shared-state";
+import { SHARED_SAVE_EVENT,sharedSaveStatus,flushSharedEdits,cancelRejectedEdit,resumePendingEdits,refreshPendingStatus } from "@/lib/shared-state";
 import { refreshSharedCaches,CLOCK_TICK_EVENT } from "@/lib/shared-refresh";
 import { getToken } from "@/lib/auth-session";
 
@@ -8,10 +8,11 @@ export function SharedSaveStatus(){
   const [pullError,setPullError]=useState<string>();
   useEffect(()=>{
     const update=()=>setState({...sharedSaveStatus()});window.addEventListener(SHARED_SAVE_EVENT,update);
+    const onStorage=(event:StorageEvent)=>{if(event.key?.startsWith("qs_shared_pending_v2:"))refreshPendingStatus();};window.addEventListener("storage",onStorage);
     const pull=()=>{if(!getToken())return;void refreshSharedCaches().then(()=>resumePendingEdits()).then(()=>setPullError(undefined)).catch(e=>setPullError(e instanceof Error?e.message:String(e)));};
     const timer=setInterval(()=>{window.dispatchEvent(new Event(CLOCK_TICK_EVENT));if(!document.hidden)pull();},15000);
     window.addEventListener("focus",pull);pull();
-    return ()=>{clearInterval(timer);window.removeEventListener("focus",pull);window.removeEventListener(SHARED_SAVE_EVENT,update);};
+    return ()=>{window.removeEventListener("storage",onStorage);clearInterval(timer);window.removeEventListener("focus",pull);window.removeEventListener(SHARED_SAVE_EVENT,update);};
   },[]);
   if(!getToken()||(state.state==="saved"&&!pullError))return null;
   return <aside role="status" className="fixed bottom-3 left-3 z-50 max-w-sm rounded-lg border bg-background p-3 text-xs shadow-lg" dir="rtl">

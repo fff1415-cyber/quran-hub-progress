@@ -13,7 +13,7 @@ class TestDatabase extends PDO {
     }
     public function prepare(string $query, array $options = []): PDOStatement|false {
         if (str_contains($query, 'information_schema.tables')) $query = "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?";
-        $query = str_replace(' FOR UPDATE', '', $query);
+        $query = str_replace([' FOR UPDATE',' LOCK IN SHARE MODE'], '', $query);
         $query = str_replace('ON DUPLICATE KEY UPDATE completed_at = VALUES(completed_at), recorded_by = VALUES(recorded_by), revoked_at = NULL', 'ON CONFLICT(assignment_id, task_type, segment_index) DO UPDATE SET completed_at = excluded.completed_at, recorded_by = excluded.recorded_by, revoked_at = NULL', $query);
         $query = str_replace('ON DUPLICATE KEY UPDATE completed_at = VALUES(completed_at), recorded_by = VALUES(recorded_by), operation_id = VALUES(operation_id), revoked_at = NULL', 'ON CONFLICT(assignment_id, task_type, segment_index) DO UPDATE SET completed_at = excluded.completed_at, recorded_by = excluded.recorded_by, operation_id = excluded.operation_id, revoked_at = NULL', $query);
         $query = str_replace('INSERT IGNORE', 'INSERT OR IGNORE', $query);

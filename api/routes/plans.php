@@ -993,6 +993,7 @@ function handle_student_plan_sheet(): void
         plans_ensure_daily_faces_columns($pdo);
         plans_ensure_completion_assignment_column($pdo);
 
+        $pdo->beginTransaction();
         $assignStmt = $pdo->prepare(
             'SELECT id, student_id, plan_id, start_segment_index, plan_start_date, start_muraja_segment,
                     daily_hifz_faces, daily_rabt_faces, daily_muraja_faces,
@@ -1000,13 +1001,14 @@ function handle_student_plan_sheet(): void
                     status, assigned_by, assigned_at, frozen_at, content_snapshot
              FROM student_plan_assignments
              WHERE student_id = ? AND status IN (\'active\', \'frozen\')
-             ORDER BY assigned_at DESC'
+             ORDER BY assigned_at DESC LOCK IN SHARE MODE'
         );
         $assignStmt->execute([$studentId]);
         $assignmentRows=$assignStmt->fetchAll();
         if(count($assignmentRows)>1)throw new RuntimeException("تعيينات حالية متعددة محفوظة؛ يلزم مراجعتها دون اختيار تلقائي");
         $assignment=$assignmentRows[0]??null;
         if (!$assignment) {
+            $pdo->commit();
             json_response(['assignment' => null, 'plan' => null, 'segments' => [], 'completions' => []]);
             return;
         }
@@ -1024,6 +1026,7 @@ function handle_student_plan_sheet(): void
         );
         $compStmt->execute([$studentId, $planId, $assignment['id']]);
 
+        $pdo->commit();
         json_response([
             'assignment' => assignment_row($assignment),
             'plan' => $plan ? plan_row($plan) : null,
@@ -1035,6 +1038,7 @@ function handle_student_plan_sheet(): void
     } catch (PDOException $e) {
         plans_abort_with_sql_error($pdo, $e, 'ورقة خطة الطالب');
     } catch (Throwable $e) {
+        if($pdo->inTransaction())$pdo->rollBack();
         error_response('فشل تحميل ورقة الخطة: ' . $e->getMessage(), 500);
     }
 }

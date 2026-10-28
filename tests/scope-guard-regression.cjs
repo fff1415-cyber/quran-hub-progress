@@ -31,3 +31,6 @@ for(const [path,name,marker] of [
  ['api/routes/kiosk.php','handle_kiosk_check_in','    $grades = kiosk_load_grades'],
  ['api/routes/evaluation_settings.php','handle_put_evaluation_settings','    $tenants = eval_settings_tenant_enabled'],
 ]){const before=extract(original(path),name),after=extract(fs.readFileSync(path,'utf8'),name);assert.equal(after.slice(0,after.indexOf(marker)),before.slice(0,before.indexOf(marker)),`authorization changed: ${name}`);}
+
+assert.doesNotMatch(fs.readFileSync('src/lib/mock-data.ts','utf8'), /captureSharedEdit\(["']notifications/, 'F03 cannot publish recipient data through the unscoped endpoint');
+assert.doesNotMatch(fs.readFileSync('src/lib/shared-refresh.ts','utf8'), /case ["']notifications/, 'F03 cannot pull recipient data through the unscoped endpoint');

@@ -22,8 +22,8 @@ export function refreshSharedCaches(): Promise<void> {
     if(results[0].status==='rejected')throw results[0].reason;
     const rows=results[0].value;
     const {rowToStudent,rowToHalaqa}=await import("./cloud-sync");
-    if(results[1].status==='fulfilled'&&Array.isArray(results[1].value))saveStudents(results[1].value.map(rowToStudent));
-    if(results[2].status==='fulfilled'&&Array.isArray(results[2].value))saveHalaqat(results[2].value.map(rowToHalaqa));
+    if(results[1].status==='fulfilled'&&Array.isArray(results[1].value))saveStudents((results[1].value as Parameters<typeof rowToStudent>[0][]).map(rowToStudent));
+    if(results[2].status==='fulfilled'&&Array.isArray(results[2].value))saveHalaqat((results[2].value as Parameters<typeof rowToHalaqa>[0][]).map(rowToHalaqa));
     const previous=sessionStorage.getItem("qs_syncing");sessionStorage.setItem("qs_syncing","1");
     try {
       for(const row of rows){

@@ -183,9 +183,9 @@ export function loadScientificGradesStore(): ScientificGradesStore {
   try {
     const parsed = JSON.parse(raw) as Partial<ScientificGradesStore>;
     return {
-      configs: parsed.configs ?? {},
-      data: parsed.data ?? {},
-      overrides: parsed.overrides ?? {},
+      configs: { ...(parsed.configs ?? {}) },
+      data: { ...(parsed.data ?? {}) },
+      overrides: { ...(parsed.overrides ?? {}) },
     };
   } catch {
     return { configs: {}, data: {}, overrides: {} };

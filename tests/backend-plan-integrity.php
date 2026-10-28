@@ -44,3 +44,13 @@ $pinned=plans_assignment_content($pdo,$row);
 check($pinned['segments'][0]['hifz_plan']===$before['segments'][0]['hifz_plan'],'catalog update does not relabel observed assignment content');
 check($pinned['provenance']==='observed_before_catalog_update_not_original','legacy content snapshot does not claim unverified original provenance');
 echo "PASS: assignment-specific history, exact undo, freeze, idempotence, rollback and catalog snapshots\n";
+
+$pdo=seed();$GLOBALS['auth']['role']='manager';
+$oldTitle=$pdo->query("SELECT title FROM education_plans WHERE id='current'")->fetchColumn();
+$GLOBALS['input']=['plans'=>[['track'=>'gold','level_number'=>1001,'title'=>'replacement syllabus','segments'=>[['segment_index'=>1,'hifz_plan'=>'replacement hifz','rabt_plan'=>'replacement rabt','muraja_plan'=>'replacement muraja'],['segment_index'=>2,'hifz_plan'=>'second replacement','rabt_plan'=>'rabt','muraja_plan'=>'muraja']]]]];
+handle_import_plans();$_GET=['student_id'=>'student-1'];handle_student_plan_sheet();
+check($GLOBALS['response']['plan']['title']===$oldTitle&&$GLOBALS['response']['segments'][0]['hifz_plan']==='hifz','real catalog import preserves historical assignment title and syllabus');
+$GLOBALS['input']=['student_id'=>'student-1','plan_id'=>'current','expected_assignment_id'=>'old','start_segment_index'=>1];handle_assign_plan();handle_student_plan_sheet();
+check($GLOBALS['response']['plan']['title']==='replacement syllabus'&&$GLOBALS['response']['segments'][0]['hifz_plan']==='replacement hifz','new assignment adopts imported version while previous assignment stays pinned');
+check((int)$pdo->query("SELECT COUNT(*) FROM plan_assignment_completions WHERE assignment_id='old'")->fetchColumn()===2,'syllabus import/reassignment retains previous completions');
+$pdo=seed();$GLOBALS['auth']['role']='secretary';expectFailure(fn()=>handle_assign_plan(),'Forbidden');

@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),ts=require('typescript');
-const map=new Map();global.localStorage={getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,String(v)),removeItem:k=>map.delete(k)};global.sessionStorage={getItem:()=>null};global.window={dispatchEvent:()=>{}};
+const map=new Map();global.localStorage={get length(){return map.size},key:i=>Array.from(map.keys())[i]??null,getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,String(v)),removeItem:k=>map.delete(k)};global.sessionStorage={getItem:()=>null};global.window={dispatchEvent:()=>{}};
 function load(path,deps){const e={};const js=ts.transpileModule(fs.readFileSync(path,'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;new Function('require','exports',js)(n=>{if(!deps[n])throw Error(n);return deps[n]},e);return e;}
 let offline=true,requests=0;
 const shared=load('src/lib/shared-state.ts',{'@/lib/auth-session':{getToken:()=> 'isolated'},'@/lib/tenant':{getActiveComplexId:()=>1},'@/lib/secure-data.functions':{secureSetAppState:async()=>{requests++;if(offline)throw Error('offline');return {ok:true}}}});shared.setDataSemester('A');

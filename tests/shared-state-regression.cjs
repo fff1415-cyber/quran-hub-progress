@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');const fs=require('node:fs');const ts=require('typescript');
-function storage(){const m=new Map();return {getItem:k=>m.get(k)??null,setItem:(k,v)=>m.set(k,String(v)),removeItem:k=>m.delete(k)}}
-function client(send) {
- const local=storage(),session=storage(),e={};const deps={
+function storage(){const m=new Map();return {get length(){return m.size},key:i=>Array.from(m.keys())[i]??null,getItem:k=>m.get(k)??null,setItem:(k,v)=>m.set(k,String(v)),removeItem:k=>m.delete(k)}}
+function client(send,provided) {
+ const local=provided??storage(),session=storage(),e={};const deps={
   '@/lib/auth-session':{getToken:()=> 'isolated-token'},'@/lib/tenant':{getActiveComplexId:()=>1},
   '@/lib/secure-data.functions':{secureSetAppState:send,secureListAppState:async()=>[],securePatchWeeklyTest:send}
  };
@@ -25,5 +25,12 @@ function client(send) {
  const history=Array.from({length:650},(_,i)=>({id:String(i)}));c.captureSharedEdit('academic_records',history,[{id:'new'},...history]);await c.flushSharedEdits();assert.equal(calls.at(-1).value.changes.length,1);assert.equal(calls.at(-1).value.changes[0].path[0],'new');
  const d=client(async()=>{throw Error('offline')});d.captureSharedEdit('scientific_grades',{data:{H:{S:{1:{sun:{hifz:'7'}}}}}},{data:{H:{S:{1:{sun:{hifz:''}}}}}});await assert.rejects(d.flushSharedEdits());
  assert.equal(d.reconcileShared('scientific_grades',{data:{H:{S:{1:{sun:{hifz:'7'}}}}}}).data.H.S[1].sun.hifz,'','pending explicit clear survives pull');
+ const sameBrowser=storage();let release;const gate=new Promise(r=>release=r);const concurrent=[];
+ const send=async({data})=>{concurrent.push(data.value.operation_id);await gate;return {ok:true}};
+ const tabA=client(send,sameBrowser),tabB=client(send,sameBrowser);
+ tabA.captureSharedEdit('grades',{}, {S:{1:{days:{sun:{hifz:'one'}}}}});
+ tabB.captureSharedEdit('grades',{}, {S:{1:{days:{sun:{attendance:'present'}}}}});
+ assert.equal(sameBrowser.length,2,'each concurrent tab writes a distinct durable operation key');
+ release();await Promise.all([tabA.flushSharedEdits(),tabB.flushSharedEdits()]);assert.equal(new Set(concurrent).size,2,'both operations survive concurrent acknowledgement');assert.equal(sameBrowser.length,0);
  console.log('PASS: edit-only patches, durable response-loss retry, semester pinning, history and clear preservation');
 })().catch(e=>{console.error(e);process.exitCode=1});
