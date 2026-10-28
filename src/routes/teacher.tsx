@@ -897,7 +897,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     };
     window.addEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onSciChanged);
     const onStorage = (e: StorageEvent) => {
-      if (e.key === "qshatawi_scientific_grades_v1") onSciChanged();
+      if (e.key?.startsWith("qshatawi_scientific_grades_v1:scope:")) onSciChanged();
     };
     window.addEventListener("storage", onStorage);
     return () => {
@@ -956,7 +956,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     col?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [isCurrentWeek, todayKey, weekNum, useMobileBoard]);
 
-  const submitTransfer = () => {
+  const submitTransfer = async () => {
     const student = students.find((s) => s.id === transferStudentId);
     if (!student) { toast.error("اختر الطالب"); return; }
     const reason = transferReason.trim();
@@ -974,6 +974,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       },
       transferStatus: "pending",
     });
+    try{await flushSharedEdits();}catch(e){toast.error(e instanceof Error?e.message:"لم يتأكد حفظ التحويل");return;}
     void dispatchPushEvent({
       event: "teacher_transfer",
       title: "طلب تحويل طالب",
@@ -1202,7 +1203,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }
   };
 
-  const markAllPresentForDay = (dayKey: string) => {
+  const markAllPresentForDay = async (dayKey: string) => {
     if (closedDayKeys.has(dayKey)) {
       toast.info("هذا اليوم إجازة أو خارج أيام العمل — لم يُعدَّل التسجيل");
       return;
@@ -1234,6 +1235,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     setGrades(g);
     saveGrades(g, { sync: "immediate" });
     refreshSciData();
+    try{await flushSharedEdits();}catch(e){toast.error(e instanceof Error?e.message:"لم يتأكد حفظ الحضور");return;}
     const dayLabel = DAYS.find((d) => d.key === dayKey)?.label ?? dayKey;
     toast.success(
       updated > 0

@@ -1,4 +1,4 @@
-import { captureSharedEdit, flushSharedEdits, semesterStorageKey } from "@/lib/shared-state";
+import { captureSharedEdit, flushSharedEdits, semesterStorageKey, getDataSemester } from "@/lib/shared-state";
 // Mock data + localStorage store for مجمع حلقات الشتيوي
 import { hasAuthToken } from "@/lib/auth-session";
 
@@ -778,6 +778,7 @@ export type SardStatus =
 export type SardPhase = "full" | "review_only";
 
 export interface SardQueueItem {
+  semesterId?:string|null;
   evaluationRules?: import("@/lib/evaluation-types").EvaluationRulesSnapshot;
   assignmentId?: string;
   archiveReason?: string;
@@ -890,6 +891,7 @@ export function enqueuePlanCompleted(
 
   const now = new Date().toISOString();
   const item: SardQueueItem = {
+    semesterId:getDataSemester(),
     id: assignmentId ? `sq-assignment-${assignmentId}` : `sq-${Date.now()}-${Math.random()}`,
     assignmentId,
     studentId,
@@ -941,6 +943,7 @@ export function enqueueSard(studentId: string, halaqaId: number, week: number) {
   const existing = activeSardForStudent(queue, studentId);
   if (existing) return existing;
   const item: SardQueueItem = {
+    semesterId:getDataSemester(),
     id: `sq-${Date.now()}-${Math.random()}`,
     studentId, halaqaId, week,
     attempt: 1,

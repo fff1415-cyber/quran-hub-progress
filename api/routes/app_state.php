@@ -196,6 +196,7 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
         foreach (($value['removals'] ?? []) as $removal) {
             foreach ($queue as &$entry) {
                 if ($entry['id'] !== ($removal['id'] ?? '')) continue;
+                if (($entry['status']??'')==='archived'&&($entry['archiveReason']??'')==='removed_by_manager') continue;
                 if ($entry != ($removal['base'] ?? null)) throw new RuntimeException('تغيّر الطلب قبل الحذف — حدّث الصفحة');
                 if (($entry['status'] ?? '') === 'passed') throw new RuntimeException('لا يمكن حذف سجل الاجتياز');
                 $entry['status'] = 'archived';

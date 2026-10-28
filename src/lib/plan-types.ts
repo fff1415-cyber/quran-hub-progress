@@ -53,6 +53,7 @@ export interface StudentPlanAssignment extends DailyFaceQuotas {
 }
 
 export interface SegmentCompletion {
+  plan_id?: string;
   segment_index: number;
   task_type: PlanTaskType;
   completed_at: string;

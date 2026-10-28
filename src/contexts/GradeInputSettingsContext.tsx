@@ -1,3 +1,4 @@
+import { flushSharedEdits } from "@/lib/shared-state";
 import {
   createContext,
   useCallback,
@@ -17,7 +18,7 @@ import {
 type Ctx = {
   settings: GradeInputSettings;
   loading: boolean;
-  save: (next: GradeInputSettings) => GradeInputSettings;
+  save: (next: GradeInputSettings) => Promise<GradeInputSettings>;
   reload: () => void;
 };
 
@@ -39,8 +40,9 @@ export function GradeInputSettingsProvider({ children }: { children: ReactNode }
     return () => window.removeEventListener("grade-input-settings-changed", onChange);
   }, [reload]);
 
-  const save = useCallback((next: GradeInputSettings) => {
+  const save = useCallback(async (next: GradeInputSettings) => {
     const normalized = saveGradeInputSettings(next);
+    await flushSharedEdits();
     setSettings(normalized);
     return normalized;
   }, []);
@@ -63,7 +65,7 @@ export function useGradeInputSettings(): Ctx {
     return {
       settings: DEFAULT_GRADE_INPUT_SETTINGS,
       loading: false,
-      save: saveGradeInputSettings,
+      save: async(next)=>{const value=saveGradeInputSettings(next);await flushSharedEdits();return value;},
       reload: () => {},
     };
   }

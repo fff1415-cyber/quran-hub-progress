@@ -32,7 +32,7 @@ export type ScientificGradesConfig = {
   defaultScores: ScientificDefaultScores;
 };
 
-export type ScientificDayScores = Partial<Record<ScientificGradeField, string>>;
+export type ScientificDayScores = Partial<Record<ScientificGradeField, string>> & {ruleSnapshots?:Partial<Record<ScientificGradeField,{settings:ScientificGradesConfig;adoptedAt:string;provenance:"applied_at_prep_edit"}>>};
 
 /** halaqaId → studentId → weekNum → dayKey → scores */
 export type ScientificGradesDataStore = Record<
@@ -150,9 +150,9 @@ export function resolveScientificScore(
     case "hifz":
       return isHifzChecked(entry.hifz) ? (config.defaultScores.hifz?.trim() ?? "") : "";
     case "rabt":
-      return entry.rabt !== "" ? (config.defaultScores.rabt?.trim() ?? "") : "";
+      return (entry.rabt === "pass" || entry.rabt === "fail") ? (config.defaultScores.rabt?.trim() ?? "") : "";
     case "muraja":
-      return entry.muraja !== "" ? (config.defaultScores.muraja?.trim() ?? "") : "";
+      return (entry.muraja === "pass" || entry.muraja === "fail") ? (config.defaultScores.muraja?.trim() ?? "") : "";
     default:
       return "";
   }
@@ -271,9 +271,7 @@ export function saveScientificConfig(
     fields: { ...config.fields },
     defaultScores: incoming,
   };
-  if (options?.resetOverrides && store.overrides?.[String(halaqaId)]) {
-    delete store.overrides[String(halaqaId)];
-  }
+  // Configuration updates never erase historical manual overrides.
   const enabled = enabledScientificFields(config.fields);
   if (config.visible && enabled.length > 0) {
     ensureScientificHalaqaProgram(halaqaId, enabled);
@@ -542,14 +540,24 @@ export function syncScientificScoresFromDayPatch(
 ): void {
   const store = loadScientificGradesStore();
   const data = halaqaDataRoot(store, halaqaId);
-  let changed = clearScientificOverridesForPatchInStore(
+  if(!data[studentId])data[studentId]={};
+  if(!data[studentId][weekNum])data[studentId][weekNum]={};
+  if(!data[studentId][weekNum][dayKey])data[studentId][weekNum][dayKey]={};
+  const cell=data[studentId][weekNum][dayKey];
+  for(const field of ALL_SCIENTIFIC_FIELDS)if(field in patch){
+    cell.ruleSnapshots??={};
+    cell.ruleSnapshots[field]??={settings:structuredClone(config),adoptedAt:new Date().toISOString(),provenance:"applied_at_prep_edit"};
+  }
+
+  let changed = ALL_SCIENTIFIC_FIELDS.some(field=>field in patch);
+  changed = clearScientificOverridesForPatchInStore(
     store,
     halaqaId,
     studentId,
     weekNum,
     dayKey,
     patch,
-  );
+  ) || changed;
   if ("hifz" in patch) {
     changed =
       syncScientificFieldInStore(
@@ -559,7 +567,7 @@ export function syncScientificScoresFromDayPatch(
         studentId,
         weekNum,
         dayKey,
-        config,
+        cell.ruleSnapshots?.hifz?.settings ?? config,
         "hifz",
         entry,
       ) || changed;
@@ -573,7 +581,7 @@ export function syncScientificScoresFromDayPatch(
         studentId,
         weekNum,
         dayKey,
-        config,
+        cell.ruleSnapshots?.rabt?.settings ?? config,
         "rabt",
         entry,
       ) || changed;
@@ -587,7 +595,7 @@ export function syncScientificScoresFromDayPatch(
         studentId,
         weekNum,
         dayKey,
-        config,
+        cell.ruleSnapshots?.muraja?.settings ?? config,
         "muraja",
         entry,
       ) || changed;
@@ -601,7 +609,7 @@ export function syncScientificScoresFromDayPatch(
         studentId,
         weekNum,
         dayKey,
-        config,
+        cell.ruleSnapshots?.attendance?.settings ?? config,
         "attendance",
         entry,
       ) || changed;
@@ -619,10 +627,7 @@ export function reapplyScientificScoresForHalaqa(
 ): void {
   const store = loadScientificGradesStore();
   let changed = false;
-  if (!options?.preserveOverrides && store.overrides?.[String(halaqaId)]) {
-    delete store.overrides[String(halaqaId)];
-    changed = true;
-  }
+  // Legacy scores without a rules reference remain unchanged; no guessed recalculation.
   const data = halaqaDataRoot(store, halaqaId);
 
   for (const studentId of studentIds) {
@@ -634,6 +639,8 @@ export function reapplyScientificScoresForHalaqa(
       for (const [dayKey, entry] of Object.entries(week.days)) {
         if (!entry) continue;
         for (const field of ALL_SCIENTIFIC_FIELDS) {
+          const rules=data[studentId]?.[weekNum]?.[dayKey]?.ruleSnapshots?.[field];
+          if(!rules)continue;
           if (
             syncScientificFieldInStore(
               store,
@@ -642,7 +649,7 @@ export function reapplyScientificScoresForHalaqa(
               studentId,
               weekNum,
               dayKey,
-              config,
+              rules.settings,
               field,
               entry,
             )
@@ -693,10 +700,11 @@ export function backfillMissingScientificScoresForHalaqa(
       for (const [dayKey, entry] of Object.entries(week.days)) {
         if (!entry) continue;
         for (const field of ALL_SCIENTIFIC_FIELDS) {
-          if (!config.fields[field]) continue;
+          const rules=data[studentId]?.[weekNum]?.[dayKey]?.ruleSnapshots?.[field];
+          if (!rules || !rules.settings.fields[field] || isScientificScoreOverriddenInStore(store,halaqaId,studentId,weekNum,dayKey,field)) continue;
           const existing = getScientificDayScore(data, studentId, weekNum, dayKey, field);
           if (existing.trim() !== "") continue;
-          const score = resolveScientificScore(config, field, entry);
+          const score = resolveScientificScore(rules.settings, field, entry);
           if (score.trim() === "") continue;
           if (
             writeScientificDayScoreInPlace(data, studentId, weekNum, dayKey, field, score)
@@ -735,9 +743,10 @@ export function setTeacherScientificDayScore(
   field: ScientificGradeField,
   value: string,
 ): void {
-  setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
-  // Mark overridden even when clearing — prevents auto-backfill from refilling while retyping.
-  setScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, field);
+  const store=loadScientificGradesStore();const data=halaqaDataRoot(store,halaqaId);
+  writeScientificDayScoreInPlace(data,studentId,weekNum,dayKey,field,value);
+  setScientificScoreOverrideInStore(store,halaqaId,studentId,weekNum,dayKey,field);
+  saveScientificGradesStore(store);
 }
 
 /**

@@ -30,3 +30,8 @@ patchState($pdo,'notifications','transfer-create-001',[change(['N'],['id'=>'N','
 $r=patchState($pdo,'notifications','transfer-action-001',[change(['N','transferStatus'],'closed','pending',true),change(['N','actions'],[['text'=>'reviewed']])],null);
 check($r['value'][0]['targetRole']==='supervisor'&&$r['value'][0]['transferStatus']==='closed','shared transfer keeps target and action across clients');
 echo "PASS: state CAS, explicit clear, semester cutoff, unverified legacy, durable history and transfers\n";
+require __DIR__.'/../api/routes/kiosk.php';
+check(kiosk_write_attendance($pdo,1,'term-B','S',1,'sun','present'),'kiosk attendance commits current semester only');
+check(!kiosk_write_attendance($pdo,1,'term-B','S',1,'sun','late'),'repeated kiosk attendance does not overwrite confirmed check-in');
+$raw=json_decode($pdo->query("SELECT value FROM app_state WHERE `key`='grades'")->fetchColumn(),true);
+check($raw['scopes']['term-B']['S'][1]['days']['sun']['hifz']==='two'&&isset($raw['scopes']['term-A']),'kiosk patch preserves hifz, other semesters and legacy envelope');

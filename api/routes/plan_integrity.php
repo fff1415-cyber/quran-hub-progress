@@ -26,7 +26,9 @@ function plans_current_assignment(PDO $pdo, string $studentId): ?array
     $stmt->execute([$studentId]);
     $rows = $stmt->fetchAll();
     if (count($rows) > 1) throw new RuntimeException('للطالب تعيينات حالية متعددة محفوظة — يلزم مراجعتها دون حذفها');
-    return $rows[0] ?? null;
+    $row=$rows[0]??null;
+    if($row){$snapshot=json_decode((string)($row['content_snapshot']??''),true);foreach(['track','title','level_number'] as $field)if(isset($snapshot['plan'][$field]))$row[$field]=$snapshot['plan'][$field];}
+    return $row;
 }
 
 function plans_operation_id(array $input): string
@@ -59,7 +61,7 @@ function plans_operation_save(PDO $pdo, string $id, string $studentId, string $k
 /** Snapshot means content observed now, never a claim about an unknown past syllabus. */
 function plans_content_snapshot(PDO $pdo, string $planId, string $provenance = 'assigned_from_catalog'): array
 {
-    $stmt = $pdo->prepare('SELECT * FROM education_plans WHERE id = ?');
+    $stmt = $pdo->prepare('SELECT * FROM education_plans WHERE id = ?'.($pdo->inTransaction()?' FOR UPDATE':''));
     $stmt->execute([$planId]);
     $plan = $stmt->fetch();
     if (!$plan) throw new RuntimeException('الخطة غير موجودة');

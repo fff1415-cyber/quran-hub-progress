@@ -423,11 +423,11 @@ function handle_import_plans(): void
             $planId = new_uuid();
             if ($tenants) {
                 $exist = $pdo->prepare(
-                    'SELECT id FROM education_plans WHERE complex_id = ? AND track = ? AND level_number = ?'
+                    'SELECT id FROM education_plans WHERE complex_id = ? AND track = ? AND level_number = ? FOR UPDATE'
                 );
                 $exist->execute([$cid, $track, $level]);
             } else {
-                $exist = $pdo->prepare('SELECT id FROM education_plans WHERE track = ? AND level_number = ?');
+                $exist = $pdo->prepare('SELECT id FROM education_plans WHERE track = ? AND level_number = ? FOR UPDATE');
                 $exist->execute([$track, $level]);
             }
             $existing = $exist->fetch();
@@ -746,6 +746,11 @@ function handle_assign_plan(): void
             $replay = plans_operation_replay($pdo, plans_operation_id($input), $studentId, 'assign', $input);
             if ($replay !== null) { $pdo->commit(); json_response($replay); return; }
         }
+        $lockedPlanStmt=$pdo->prepare('SELECT * FROM education_plans WHERE id = ?'.($tenants?' AND complex_id = ?':'').' FOR UPDATE');
+        $lockedPlanStmt->execute($tenants?[$planId,$cid]:[$planId]);$planRow=$lockedPlanStmt->fetch();
+        if(!$planRow)throw new RuntimeException('الخطة لم تعد متاحة في هذا الدليل');
+        if(!empty($planRow['catalog_archived_at'])&&empty($input['finalize_only']))throw new RuntimeException('أُزيلت الخطة من الدليل؛ حدّث الاختيارات قبل التعيين');
+        $track=($planRow['track']??'')==='silver'?'silver':'gold';$faces=plans_track_face_quotas($track);
         $current = plans_current_assignment($pdo, $studentId);
         $snapshot = plans_content_snapshot($pdo, $planId);
         plans_assert_start($snapshot, $startSegment);
@@ -995,10 +1000,12 @@ function handle_student_plan_sheet(): void
                     status, assigned_by, assigned_at, frozen_at, content_snapshot
              FROM student_plan_assignments
              WHERE student_id = ? AND status IN (\'active\', \'frozen\')
-             ORDER BY assigned_at DESC LIMIT 1'
+             ORDER BY assigned_at DESC'
         );
         $assignStmt->execute([$studentId]);
-        $assignment = $assignStmt->fetch();
+        $assignmentRows=$assignStmt->fetchAll();
+        if(count($assignmentRows)>1)throw new RuntimeException("تعيينات حالية متعددة محفوظة؛ يلزم مراجعتها دون اختيار تلقائي");
+        $assignment=$assignmentRows[0]??null;
         if (!$assignment) {
             json_response(['assignment' => null, 'plan' => null, 'segments' => [], 'completions' => []]);
             return;

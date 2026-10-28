@@ -1,14 +1,16 @@
 name: Audit repair isolated tests
 on:
-  push:
-    branches: [fix/audit-f03-f22-preserve-history]
   pull_request:
     branches: [main]
+concurrency:
+  group: audit-repair-${{ github.ref }}
+  cancel-in-progress: true
 permissions:
   contents: read
 jobs:
   mysql-integrity:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     services:
       mysql:
         image: mysql:8.0
@@ -27,6 +29,7 @@ jobs:
         run: php tests/backend-mysql-integrity.php
   isolated-regressions:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
         with:
@@ -41,7 +44,14 @@ jobs:
           if [ -f tests/backend-state-integrity.php ]; then php tests/backend-state-integrity.php; fi
           if [ -f tests/backend-diary-integrity.php ]; then php tests/backend-diary-integrity.php; fi
           if [ -f tests/backend-progression-integrity.php ]; then php tests/backend-progression-integrity.php; fi
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
       - name: Existing locked project dependencies
+        env:
+          npm_config_fetch_timeout: 120000
+          npm_config_fetch_retries: 1
         run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
       - name: Client regressions
         run: |

@@ -1,3 +1,4 @@
+import { flushSharedEdits } from "@/lib/shared-state";
 import { useCallback, useEffect, useState } from "react";
 import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { InboxItemActions } from "@/components/role-workspace/InboxItemActions";
@@ -61,7 +62,7 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
   useEffect(refresh, [refresh]);
   useInboxRefresh(refresh);
 
-  const submitAction = (n: Notification, actionText: string) => {
+  const submitAction = async (n: Notification, actionText: string) => {
     if (!n.transferData || busyId) return;
     setBusyId(n.id);
     const actorName = getSessionName(transferActionRoleLabel(role));
@@ -72,8 +73,8 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
         byName: actorName,
         text: actionText,
         at: new Date().toISOString(),
-      });
-      updateNotification(n.id, { read: true, transferStatus: "closed" });
+      }, {read:true,transferStatus:"closed"});
+      await flushSharedEdits();
       refresh();
       toast.success("تم تسجيل الإجراء وإغلاق الحالة");
     } catch (e) {

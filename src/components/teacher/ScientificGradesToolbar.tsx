@@ -1,3 +1,4 @@
+import { flushSharedEdits } from "@/lib/shared-state";
 import { useEffect, useState } from "react";
 import { ChevronDown, FlaskConical, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -111,7 +112,7 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
     });
   };
 
-  const confirmSetup = () => {
+  const confirmSetup = async () => {
     const err = validateDefaultScoresForFields(draftFields, draftScores);
     if (err) {
       toast.error(err);
@@ -124,6 +125,7 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
     };
     applyConfig(next, true);
     setDialogOpen(false);
+    try{await flushSharedEdits();}catch(e){toast.error(e instanceof Error?e.message:"تعذّر تأكيد الحفظ");return false;}
     toast.success(isActive ? "تم حفظ إعدادات البرنامج العلمي" : "تم تفعيل البرنامج العلمي");
     return true;
   };
@@ -178,7 +180,7 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
             <DialogTitle>{isActive ? "تعديل البرنامج العلمي" : "تفعيل البرنامج العلمي"}</DialogTitle>
           </DialogHeader>
           <p className="text-sm text-muted-foreground">
-            فعّل البنود وحدّد نقاط كل بند. تُحسب الدرجات تلقائياً في «برنامج الحلقة» عند التحضير.
+            فعّل البنود وحدّد نقاط كل بند. تُطبّق القواعد المثبتة عند التحضير. تغيير الإعدادات لا يعيد حساب السجلات القديمة أو يمسح الدرجات اليدوية.
           </p>
           <div className="space-y-4 py-2">
             {ALL_SCIENTIFIC_FIELDS.map((field) => (

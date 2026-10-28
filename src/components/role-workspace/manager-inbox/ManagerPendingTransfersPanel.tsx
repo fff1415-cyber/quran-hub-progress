@@ -1,3 +1,4 @@
+import { flushSharedEdits } from "@/lib/shared-state";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   loadStudents, loadHalaqat, loadGrades, updateNotification,
@@ -6,7 +7,7 @@ import {
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { studentReportPercentages } from "@/lib/semester-grading";
 import { getSessionName } from "@/lib/session-role";
-import { appendTransferAction } from "@/lib/transfer-actions";
+import { appendTransferAction,forwardTransferRecord } from "@/lib/transfer-actions";
 import { TransferActionForm } from "@/components/role-workspace/TransferActionForm";
 import { InboxItemActions } from "@/components/role-workspace/InboxItemActions";
 import { TransferPctStat } from "@/components/role-workspace/manager-inbox/TransferPctStat";
@@ -59,10 +60,10 @@ export function ManagerPendingTransfersPanel() {
 
     setProcessingId(n.id);
     try {
-      updateNotification(n.id, patch);
+
       const targetRole = status === "to_secretary" ? "secretary" : "supervisor";
       const targetLabel = status === "to_secretary" ? "السكرتير" : "المشرف العلمي";
-      pushNotification({
+      forwardTransferRecord(n,status,{
         message: `تحويل من المدير: الطالب ${student?.name || "—"} (${halaqa?.name || "—"}) → ${targetLabel} — ${td.reason}`,
         type: "transfer",
         targetRole,
@@ -74,6 +75,7 @@ export function ManagerPendingTransfersPanel() {
           rootTransferId: n.id,
         },
       });
+      await flushSharedEdits();
       toast.success(TRANSFER_TOAST[status]);
       reload();
     } catch (e) {
@@ -94,8 +96,8 @@ export function ManagerPendingTransfersPanel() {
         byName: managerName,
         text: actionText,
         at: new Date().toISOString(),
-      });
-      updateNotification(n.id, { transferStatus: "struggling", read: true });
+      }, {transferStatus:"struggling",read:true});
+      await flushSharedEdits();
       toast.success("تم تسجيل الإجراء ونقل الطالب للمتعثرين");
       setStrugglingPromptId(null);
       reload();

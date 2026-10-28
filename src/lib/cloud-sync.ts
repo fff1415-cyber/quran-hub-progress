@@ -1,4 +1,4 @@
-import { setDataSemester, reconcileShared, flushSharedEdits, fetchSharedValue } from "@/lib/shared-state";
+import { setDataSemester, reconcileShared, flushSharedEdits, fetchSharedValue, queueSardPatch } from "@/lib/shared-state";
 // Cloud sync layer — all data via Hostinger PHP API
 import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, SardHistoryItem, SardQueueItem, Student } from "./mock-data";
 import {
@@ -258,6 +258,7 @@ export async function syncFromCloud(options?: {
 }): Promise<{ students: Student[]; halaqat: Halaqa[] } | null> {
   try {
     if (!options?.force && isCloudSyncFresh()) {
+      setDataSemester(loadCachedCalendar()?.semester?.id ?? null);
       return { students: loadStudents(), halaqat: loadHalaqat() };
     }
 
@@ -503,6 +504,7 @@ export async function pushAppState(
   key: "grades" | "sard_queue" | "sard_history" | "academic_records" | "halaqa_programs" | "halaqa_program_grades" | "scientific_grades" | "message_templates" | "late_permissions" | "weekly_tests" | "weekly_tests_settings" | "staff_attendance" | "staff_attendance_settings" | "student_portal_settings" | "complex_features" | "push_notification_settings" | "tarbawi_program" | "financial_ledger" | typeof ABSENCE_ALERTS_APP_STATE_KEY,
   value: unknown,
 ) {
+  if(key==="sard_queue"){await queueSardPatch(value);return;}
   await secureSetAppState({ data: { token: tokenOrThrow(), key, value } });
 }
 

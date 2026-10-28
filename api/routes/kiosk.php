@@ -402,27 +402,24 @@ function kiosk_empty_week(array $workingDayKeys): array
     ];
 }
 
-function kiosk_load_grades(PDO $pdo, int $complexId): array
-{
-    $tenants = app_state_tenant_enabled($pdo);
-    if ($tenants) {
-        $stmt = $pdo->prepare('SELECT value FROM app_state WHERE complex_id = ? AND `key` = ? LIMIT 1');
-        $stmt->execute([$complexId, 'grades']);
-    } else {
-        $stmt = $pdo->prepare('SELECT value FROM app_state WHERE `key` = ? LIMIT 1');
-        $stmt->execute(['grades']);
-    }
-    $raw = $stmt->fetchColumn();
-    if ($raw === false || $raw === '') {
-        return [];
-    }
-    $decoded = json_decode((string) $raw, true);
-    return is_array($decoded) ? $decoded : [];
+function kiosk_load_grades(PDO $pdo,int $complexId):array {
+  $tenants=app_state_tenant_enabled($pdo);
+  $s=$pdo->prepare('SELECT value FROM app_state WHERE '.($tenants?'complex_id = ? AND ':'').'`key` = ?');$s->execute($tenants?[$complexId,'grades']:['grades']);
+  $e=state_envelope(json_decode((string)$s->fetchColumn(),true));return state_scope_value($e,'grades',state_active_semester($pdo,$complexId));
 }
-
-function kiosk_save_grades(PDO $pdo, int $complexId, array $grades): void
-{
-    app_state_upsert($pdo, 'grades', $grades, app_state_tenant_enabled($pdo) ? $complexId : null);
+/** Attendance-only patch, inside the existing scan authorization; never replace the grade store. */
+function kiosk_write_attendance(PDO $pdo,int $complexId,string $semester,string $studentId,int $week,string $day,string $attendance):bool {
+  $pdo->beginTransaction();
+  try {
+    if(state_active_semester($pdo,$complexId,true)!==$semester)throw new RuntimeException('تغيّر الفصل الدراسي؛ أعد المسح');
+    $e=state_lock_envelope($pdo,$complexId,'grades');$grades=state_scope_value($e,'grades',$semester);
+    $entry=$grades[$studentId][(string)$week]['days'][$day]??[];$before=$entry['attendance']??'';
+    if(in_array($before,['present','late','excused'],true)){$pdo->commit();return false;}
+    $entry['attendance']=$attendance;$at=(int)round(microtime(true)*1000);$entry['touchedAt']=$at;$entry['fieldTouchedAt']['attendance']=$at;
+    $grades[$studentId][(string)$week]['days'][$day]=$entry;$e['scopes'][$semester]=$grades;$e['revision']=($e['revision']??0)+1;
+    $e['operation_log']['kiosk-'.new_uuid()]=['semester_id'=>$semester,'student_id'=>$studentId,'week'=>$week,'day'=>$day,'attendance_before'=>$before,'attendance_after'=>$attendance];
+    app_state_upsert($pdo,'grades',$e,app_state_tenant_enabled($pdo)?$complexId:null);$pdo->commit();return true;
+  }catch(Throwable $error){if($pdo->inTransaction())$pdo->rollBack();throw $error;}
 }
 
 /** @return array{semester: ?array, weeks: array} */
@@ -597,7 +594,9 @@ function handle_kiosk_check_in(): void
 
     $week['days'][$dayKey]['attendance'] = $attendance;
     $grades[$sid][$weekKey] = $week;
-    kiosk_save_grades($pdo, $cid, $grades);
+    if(!kiosk_write_attendance($pdo,$cid,(string)$cal['semester']['id'],$sid,$weekNum,$dayKey,$attendance)){
+        json_response(['status'=>'already_checked_in','message'=>'تم تحضيرك مسبقاً','studentName'=>$student['name']]);return;
+    }
 
     if ($attendance === 'late') {
         json_response([

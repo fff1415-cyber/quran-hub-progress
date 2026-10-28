@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict');const fs=require('fs');const ts=require('typescript');
 function storage(){const map=new Map();return {getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)}}
-function loadMock(push){const exports={};const code=ts.transpileModule(fs.readFileSync('src/lib/mock-data.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;new Function('require','exports',code)(name=>name==='@/lib/shared-state'?{captureSharedEdit:()=>{},flushSharedEdits:async()=>{},semesterStorageKey:k=>k}:name==='@/lib/auth-session'?{hasAuthToken:()=>true}:name==='./cloud-sync'?{pushAppState:push}:name==='sonner'?{toast:{error:()=>{}}}:(()=>{throw Error(name)})(),exports);return exports;}
+function loadMock(push){const exports={};const code=ts.transpileModule(fs.readFileSync('src/lib/mock-data.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText;new Function('require','exports',code)(name=>name==='@/lib/shared-state'?{captureSharedEdit:()=>{},getDataSemester:()=>null,flushSharedEdits:async()=>{},semesterStorageKey:k=>k}:name==='@/lib/auth-session'?{hasAuthToken:()=>true}:name==='./cloud-sync'?{pushAppState:push}:name==='sonner'?{toast:{error:()=>{}}}:(()=>{throw Error(name)})(),exports);return exports;}
 global.window={};
 (async()=>{
  global.localStorage=storage();global.sessionStorage=storage();let release;const gate=new Promise(resolve=>release=resolve);const calls=[];

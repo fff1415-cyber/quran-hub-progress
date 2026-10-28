@@ -1,3 +1,4 @@
+import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { useEffect, useMemo, useState } from "react";
 import { loadGrades, loadHalaqat, loadStudents } from "@/lib/mock-data";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
@@ -27,6 +28,7 @@ export function SupervisorHalaqaResultsPanel() {
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  useInboxRefresh(()=>setRefreshKey(v=>v+1));
 
   const halaqat = loadHalaqat();
   const students = loadStudents();

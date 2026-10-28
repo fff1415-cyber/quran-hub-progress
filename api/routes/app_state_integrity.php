@@ -4,7 +4,7 @@ declare(strict_types=1);
 // Storage/versioning helpers. Every entry point keeps its existing authorization.
 function state_semester_key(string $key): bool {return in_array($key,['grades','weekly_tests','scientific_grades'],true);}
 function state_list_key(string $key): bool {return in_array($key,['notifications','academic_records','sard_history'],true);}
-function state_protected_key(string $key): bool {return state_semester_key($key)||state_list_key($key);}
+function state_protected_key(string $key): bool {return state_semester_key($key)||state_list_key($key)||in_array($key,['grade_input_settings','grade_point_settings'],true);}
 function state_active_semester(PDO $pdo,int $cid,bool $lock=false): string {
     $scoped=table_column_exists($pdo,'semesters','complex_id');
     $s=$pdo->prepare('SELECT id FROM semesters WHERE is_active = 1'.($scoped?' AND complex_id = ?':'').' ORDER BY id'.($lock?' FOR UPDATE':''));
@@ -79,7 +79,7 @@ function app_state_patch_integrity(PDO $pdo,int $cid,string $key,mixed $input): 
                 state_set_cell($v,$path,$next);
             }
             $e['scopes'][$scope]=state_list_key($key)?array_values($v):$v;
-            $e['revision']=($e['revision']??0)+1;$e['operations'][$id]=$hash;
+            $e['revision']=($e['revision']??0)+1;$e['operations'][$id]=$hash;$e['operation_log'][$id]=$input;
             app_state_upsert($pdo,$key,$e,app_state_tenant_enabled($pdo)?$cid:null);
         }
         $pdo->commit();$v=state_scope_value($e,$key,$scope);

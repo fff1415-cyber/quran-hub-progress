@@ -33,3 +33,19 @@ $bad=diaryInput('bad-term-0001','hifz','one');$bad['diary']['semester_id']='old-
 recordDay(diaryInput('quantity-two-001','hifz','two'));
 check((int)$pdo->query('SELECT COUNT(*) FROM plan_assignment_completions WHERE revoked_at IS NULL')->fetchColumn()===2,'actual two tap quantity is used instead of default one');
 echo "PASS: atomic dated diary, exact assignment reversal, retries, quantity and rollback\n";
+
+$pdo=diarySeed();recordDay(diaryInput('comp-half-sun-001','compensationFaces',0.5,0));
+check((int)$pdo->query('SELECT COUNT(*) FROM plan_assignment_completions WHERE revoked_at IS NULL')->fetchColumn()===0,'gold half compensation preserves weekly floor conversion');
+recordDay(diaryInput('comp-half-mon-001','compensationFaces',0.5,0,'old','mon','2026-10-12'));
+check((int)$pdo->query('SELECT COUNT(*) FROM plan_assignment_completions WHERE revoked_at IS NULL')->fetchColumn()===1,'two dated gold halves produce one compensation segment');
+check($pdo->query('SELECT completed_at FROM plan_assignment_completions WHERE revoked_at IS NULL')->fetchColumn()==='2026-10-12','threshold crossing has the date of its explicit dated event');
+recordDay(diaryInput('comp-undo-sun-001','compensationFaces',0,0.5));
+check((int)$pdo->query('SELECT COUNT(*) FROM plan_assignment_completions WHERE revoked_at IS NULL')->fetchColumn()===0,'removing an earlier half reverses the known weekly carry without changing remaining grades');
+$pdo->exec("UPDATE student_plan_assignments SET status='transferred' WHERE id='old'; INSERT INTO student_plan_assignments(id,student_id,plan_id,start_segment_index,status) VALUES('new','student-1','next',1,'active')");
+recordDay(diaryInput('comp-new-tue-001','compensationFaces',1,0,'new','tue','2026-10-13'));
+recordDay(diaryInput('comp-old-mon-001','compensationFaces',1,0.5,'old','mon','2026-10-12'));
+check((int)$pdo->query("SELECT COUNT(*) FROM plan_assignment_completions WHERE assignment_id='new' AND revoked_at IS NULL")->fetchColumn()===1,'old compensation edit leaves the new assignment untouched');
+$pdo=diarySeed();$GLOBALS['auth']=['role'=>'teacher','halaqaId'=>1,'complexId'=>1,'name'=>'isolated teacher'];
+recordDay(diaryInput('legit-teacher-001','hifz','one'));check($GLOBALS['response']['entry']['hifz']==='one','current legitimate teacher access still records paired data');
+$GLOBALS['auth']=['role'=>'assistant','halaqaId'=>2,'complexId'=>1,'name'=>'isolated other'];expectFailure(fn()=>recordDay(diaryInput('wrong-halaqa-001','hifz','two','one')),'حلقة');
+foreach(['student','parent'] as $role){$GLOBALS['auth']=['role'=>$role,'studentId'=>'student-1','complexId'=>1];$_GET=['student_id'=>'student-1'];handle_student_plan_sheet();check(count($GLOBALS['response']['completions'])===1,"$role reads the same confirmed assignment completion");}

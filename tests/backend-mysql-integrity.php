@@ -56,3 +56,27 @@ check((int)$pdo->query('SELECT COUNT(*) FROM plan_assignment_completions')->fetc
 runConcurrent(['distinct-operation-001','distinct-operation-002']);$pdo=$GLOBALS['pdo'];
 check((int)$pdo->query('SELECT COUNT(*) FROM plan_assignment_completions')->fetchColumn()===4,'different concurrent requests preserve both completions');
 echo "MySQL migration and InnoDB concurrency acceptance complete.\n";
+$pdo->exec(file_get_contents(__DIR__.'/../database/migrate-audit-diary-events.sql'));
+$pdo->exec(file_get_contents(__DIR__.'/../database/migrate-audit-diary-events.sql'));
+$pdo->exec(file_get_contents(__DIR__.'/../database/migrate-audit-current-assignment-constraint.sql'));
+$pdo->exec(file_get_contents(__DIR__.'/../database/migrate-audit-current-assignment-constraint.sql'));
+try{$pdo->exec("INSERT INTO student_plan_assignments(id,student_id,plan_id,status) VALUES('duplicate','S','P','frozen')");throw new RuntimeException('duplicate unexpectedly accepted');}
+catch(PDOException $error){check($error->getCode()==='23000','database constraint rejects a second active/frozen assignment');}
+$pdo->exec("CREATE TABLE semesters(id CHAR(36) PRIMARY KEY,complex_id INT,is_active INT);INSERT INTO semesters VALUES('term-A',1,1),('term-B',1,0);
+ CREATE TABLE academic_weeks(semester_id CHAR(36),week_number INT,start_date DATE,end_date DATE);INSERT INTO academic_weeks VALUES('term-A',1,'2026-10-11','2026-10-15');
+ INSERT INTO students(id) VALUES('diary-S');INSERT INTO student_plan_assignments(id,student_id,plan_id,status) VALUES('diary-A','diary-S','P','active');");
+$children=[];
+foreach([['sun','2026-10-11'],['mon','2026-10-12']] as [$day,$date]){
+ $pid=pcntl_fork();if($pid===0){try{$p=connectAudit();plans_record_diary($p,1,require_auth(),['student_id'=>'diary-S','expected_assignment_id'=>'diary-A','operation_id'=>'concurrent-diary-'.$day,'task_type'=>'hifz','tap'=>'one','diary'=>['semester_id'=>'term-A','week_number'=>1,'day_key'=>$day,'date'=>$date,'field'=>'hifz','base'=>'','value'=>'one']]);exit(0);}catch(Throwable $e){fwrite(STDERR,$e->getMessage()."\n");exit(1);}}$children[]=$pid;
+}
+foreach($children as $pid){pcntl_waitpid($pid,$status);check(pcntl_wexitstatus($status)===0,'concurrent diary worker commits');}
+$pdo=connectAudit();$GLOBALS['pdo']=$pdo;
+check((int)$pdo->query("SELECT COUNT(*) FROM plan_assignment_completions WHERE student_id='diary-S' AND revoked_at IS NULL")->fetchColumn()===2,'real InnoDB contention preserves two dated diary completions');
+$e=json_decode($pdo->query("SELECT value FROM app_state WHERE `key`='grades'")->fetchColumn(),true);
+check(count($e['scopes']['term-A']['diary-S'][1]['days'])===2,'both grades remain in their semester after concurrent recording');
+$pdo->exec("CREATE TRIGGER reject_grade BEFORE UPDATE ON app_state FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='isolated grade failure'");
+$failed=['student_id'=>'diary-S','expected_assignment_id'=>'diary-A','operation_id'=>'mysql-partial-failure','task_type'=>'hifz','tap'=>'one','diary'=>['semester_id'=>'term-A','week_number'=>1,'day_key'=>'tue','date'=>'2026-10-13','field'=>'hifz','base'=>'','value'=>'one']];
+try{plans_record_diary($pdo,1,require_auth(),$failed);throw new RuntimeException('injected failure not detected');}catch(PDOException $error){check(str_contains($error->getMessage(),'isolated grade failure'),'real MySQL grade failure is surfaced');}
+$pdo->exec('DROP TRIGGER reject_grade');
+check((int)$pdo->query("SELECT COUNT(*) FROM plan_assignment_completions WHERE student_id='diary-S' AND revoked_at IS NULL")->fetchColumn()===2,'MySQL rollback leaves neither extra grade nor extra completion');
+echo "MySQL diary migration, unique-current constraint, concurrency and rollback acceptance complete.\n";

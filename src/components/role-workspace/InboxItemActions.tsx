@@ -1,3 +1,4 @@
+import { flushSharedEdits } from "@/lib/shared-state";
 import { useState } from "react";
 import { Check, Trash2 } from "lucide-react";
 import {
@@ -39,7 +40,7 @@ export function InboxItemActions({
     setBusy(true);
     try {
       if (onDismiss) await onDismiss();
-      else dismissNotification(id);
+      else {dismissNotification(id);await flushSharedEdits();}
       onDone();
       toast.success("تم");
     } catch (error) {
@@ -51,7 +52,7 @@ export function InboxItemActions({
     setBusy(true);
     try {
       if (onRemove) await onRemove();
-      else deleteNotification(id);
+      else {deleteNotification(id);await flushSharedEdits();}
       setOpen(false);
       onDone();
       toast.success("تم الحذف");
@@ -92,7 +93,7 @@ export function InboxItemActions({
             <AlertDialogDescription>
               {isLateEntry
                 ? "سيُحذف الإشعار من القائمة. سجل إذن الدخول في النظام يبقى كما هو."
-                : "سيُحذف نهائياً من هذا الجهاز ولا يمكن التراجع."}
+                : "سيُزال من القائمة المشتركة مع الاحتفاظ بسجل العملية المحفوظ."}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

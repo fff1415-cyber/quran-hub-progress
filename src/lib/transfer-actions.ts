@@ -20,6 +20,7 @@ export function transferActionRoleLabel(role: TransferActionRole): string {
 export function appendTransferAction(
   notificationId: string,
   action: TransferActionRecord,
+  finalPatch?: Partial<Pick<Notification, "read" | "transferStatus">>,
 ): void {
   const list = loadNotifications();
   const idx = list.findIndex((n) => n.id === notificationId);
@@ -38,6 +39,7 @@ export function appendTransferAction(
   };
 
   list[idx] = applyActions(list[idx], action);
+  if(finalPatch) list[idx]={...list[idx],...finalPatch};
 
   const rootId = list[idx].transferData?.rootTransferId;
   if (rootId && rootId !== notificationId) {
@@ -47,5 +49,15 @@ export function appendTransferAction(
     }
   }
 
+  saveNotifications(list);
+}
+
+/** Root routing and recipient creation are one shared operation, with a stable recipient ID. */
+export function forwardTransferRecord(root: Notification, status: "to_secretary"|"to_supervisor", recipient: Omit<Notification,"id"|"createdAt"|"read">): void {
+  const list=loadNotifications();const index=list.findIndex(n=>n.id===root.id);
+  if(index<0)throw new Error("التحويل الأصلي غير موجود؛ حدّث القائمة");
+  const id=`forward-${root.id}-${recipient.targetRole}`;
+  list[index]={...list[index],transferStatus:status,read:true};
+  if(!list.some(n=>n.id===id))list.push({...recipient,id,createdAt:new Date().toISOString(),read:false});
   saveNotifications(list);
 }

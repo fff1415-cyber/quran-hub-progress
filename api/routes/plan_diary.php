@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/plan_compensation.php';
 
 /** Called only after handle_apply_plan_input's unchanged authorization preamble. */
 function plans_record_diary(PDO $pdo,int $cid,array $auth,array $input): array {
@@ -45,6 +46,10 @@ function plans_record_diary(PDO $pdo,int $cid,array $auth,array $input): array {
         }
         // An old day's event always targets its original assignment, even after progression.
         $content=plans_assignment_content($pdo,$a);$segments=array_map('intval',array_column($content['segments'],'segment_index'));
+        if($field==='compensationFaces'){
+            $response=plans_compensation_diary($pdo,$cid,$auth,$input,$a,$e,$grades,$content);
+            plans_operation_save($pdo,$op,$studentId,'diary',$input,$response);$pdo->commit();return $response;
+        }
         $track=(string)$content['plan']['track'];$level=(int)$content['plan']['level_number'];
         $quantity=$field==='compensationFaces'?(float)$value:($field==='hifz'?($value==='half'?0.5:($value==='one'?1:($value==='two'?2:0))):($value==='pass'?1:0));
         if($old){

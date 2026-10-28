@@ -19,6 +19,9 @@ function client(send) {
  fail=false;await c.flushSharedEdits();assert.equal(c.sharedSaveStatus().state,'saved');assert.equal(calls.at(-1).value.operation_id,calls[0].value.operation_id,'lost response retry reuses durable ID');
  assert.throws(()=>c.setDataSemester('B'),/تغيّر الفصل/);assert.equal(c.getDataSemester(),'A','old tab remains pinned');
  const distinct=c.stateChanges({}, {S:{1:{days:{sun:{hifz:'one'},mon:{rabt:'pass'}}}}});assert.equal(distinct.length,2,'new student branches still patch independent cells');
+ const initial={S:{1:{days:{sun:{attendance:'',hifz:'one',rabt:'',muraja:'',wajib:false,compensationFaces:0,touchedAt:10,fieldTouchedAt:{hifz:10}},mon:{attendance:'',hifz:'',rabt:'',muraja:'',wajib:false,compensationFaces:0}}}}};
+ c.captureSharedEdit('grades',{},initial);await c.flushSharedEdits();
+ assert.deepEqual(calls.at(-1).value.changes.map(x=>x.path.join('/')).sort(),['S/1/days/sun/fieldTouchedAt/hifz','S/1/days/sun/hifz'],'generated blank defaults and day timestamps do not conflict with another cell');
  const history=Array.from({length:650},(_,i)=>({id:String(i)}));c.captureSharedEdit('academic_records',history,[{id:'new'},...history]);await c.flushSharedEdits();assert.equal(calls.at(-1).value.changes.length,1);assert.equal(calls.at(-1).value.changes[0].path[0],'new');
  const d=client(async()=>{throw Error('offline')});d.captureSharedEdit('scientific_grades',{data:{H:{S:{1:{sun:{hifz:'7'}}}}}},{data:{H:{S:{1:{sun:{hifz:''}}}}}});await assert.rejects(d.flushSharedEdits());
  assert.equal(d.reconcileShared('scientific_grades',{data:{H:{S:{1:{sun:{hifz:'7'}}}}}}).data.H.S[1].sun.hifz,'','pending explicit clear survives pull');

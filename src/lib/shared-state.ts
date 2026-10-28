@@ -2,20 +2,21 @@ import { getToken } from "@/lib/auth-session";
 import { getActiveComplexId } from "@/lib/tenant";
 import { secureListAppState, secureSetAppState, securePatchWeeklyTest, secureRecordPlanDay } from "@/lib/secure-data.functions";
 
-export type SharedKey = "grades" | "weekly_tests" | "scientific_grades" | "notifications" | "academic_records" | "sard_history";
+export type SharedKey = "grades" | "weekly_tests" | "scientific_grades" | "notifications" | "academic_records" | "sard_history" | "sard_queue" | "grade_input_settings" | "grade_point_settings";
 type Cell = { present: boolean; value?: unknown };
 export type StateChange = { path: string[]; base: Cell; next: Cell };
 export type PlanDayPayload = {student_id:string;expected_assignment_id:string;task_type:"hifz"|"rabt"|"muraja";tap:"half"|"one"|"two";operation_id:string;diary:{semester_id:string;week_number:number;day_key:string;date:string;field:"hifz"|"rabt"|"muraja"|"compensationFaces";base:unknown;value:unknown}};
-type Pending = { plan?: PlanDayPayload; key: SharedKey; context: string; protocol: 1; operation_id: string; semester_id: string | null; changes: StateChange[]; weekly?: {studentId:string;week:number;kind:"muraja"|"rabt";index:number;result:""|"pass"|"fail";base:""|"pass"|"fail"} };
+type Pending = { sard?:unknown; plan?: PlanDayPayload; key: SharedKey; context: string; protocol: 1; operation_id: string; semester_id: string | null; changes: StateChange[]; weekly?: {studentId:string;week:number;kind:"muraja"|"rabt";index:number;result:""|"pass"|"fail";base:""|"pass"|"fail"} };
 let semester: string | null = null;
+let semesterContext: string | null = null;
 const EVENT = "qs-shared-save-state";
 const semesterKeys = new Set<SharedKey>(["grades", "weekly_tests", "scientific_grades"]);
 const listKeys = new Set<SharedKey>(["notifications", "academic_records", "sard_history"]);
 export const SHARED_SAVE_EVENT = EVENT;
-let status: { state: "saved" | "saving" | "failed"; error?: string } = { state: "saved" };
+let status: { state: "saved" | "saving" | "failed"; error?: string; conflict?:boolean } = { state: "saved" };
 export function sharedSaveStatus() { return status; }
 function report(next: typeof status) { status = next; if (typeof window !== "undefined") window.dispatchEvent(new Event(EVENT)); }
-export function setDataSemester(id: string | null) { if (semester && semester !== id) { report({state:"failed",error:"تغيّر الفصل الدراسي — أعد تحميل الصفحة؛ التعديلات القديمة محفوظة للمراجعة"}); throw new Error("تغيّر الفصل الدراسي — أعد تحميل الصفحة"); } semester = id; }
+export function setDataSemester(id: string | null) { const nextContext=context();if(semesterContext!==nextContext){semester=null;semesterContext=nextContext;} if (semester && semester !== id) { report({state:"failed",error:"تغيّر الفصل الدراسي — أعد تحميل الصفحة؛ التعديلات القديمة محفوظة للمراجعة"}); throw new Error("تغيّر الفصل الدراسي — أعد تحميل الصفحة"); } semester = id; }
 export function getDataSemester() { return semester; }
 function context() { return String(getActiveComplexId() ?? "current"); }
 export function semesterStorageKey(key: string) { return `${key}:scope:${context()}:semester:${semester ?? "unverified"}`; }
@@ -43,7 +44,12 @@ export function stateChanges(before: Record<string, unknown>, after: Record<stri
 }
 export function captureSharedEdit(key: SharedKey, before: unknown, after: unknown): void {
   if (typeof window === "undefined" || !getToken() || sessionStorage.getItem("qs_syncing") === "1") return;
-  const changes = stateChanges(normalized(key, before), normalized(key, after));
+  const changes = stateChanges(normalized(key, before), normalized(key, after)).filter(change=>{
+    if(key!=="grades")return true;
+    if(change.path.at(-1)==="touchedAt")return false; // Day-wide UI metadata must not conflict with another field.
+    const v=change.next.value;
+    return change.base.present || !(v===""||v===false||v===0||v===null||(Array.isArray(v)&&v.length===0));
+  });
   if (!changes.length) return;
   if (semesterKeys.has(key) && !semester) { report({ state: "failed", error: "لم يُحمّل الفصل الدراسي؛ التعديل مسودة محلية لم يؤكّد حفظها" }); return; }
   const ops = pending();
@@ -65,6 +71,15 @@ export function queuePlanDay(plan: Omit<PlanDayPayload,"operation_id">): Promise
   ops.push({key:"grades",context:context(),protocol:1,operation_id,semester_id:plan.diary.semester_id,changes:[],plan:{...plan,operation_id}});
   savePending(ops);return flushSharedEdits();
 }
+export function queueSardPatch(sard:unknown):Promise<void>{
+  const operation_id=crypto.randomUUID();const ops=pending();ops.push({key:"sard_queue",context:context(),protocol:1,operation_id,semester_id:null,changes:[],sard});savePending(ops);return flushSharedEdits();
+}
+/** Only an explicit server rejection can be cancelled; unknown-response operations must be retried. */
+export function cancelRejectedEdit():void{
+  if(!status.conflict)throw new Error("يلزم تأكيد نتيجة الطلب قبل إلغائه");
+  const ops=pending();const rejected=ops.shift();if(!rejected)return;
+  const archive=JSON.parse(localStorage.getItem(`${queueKey()}:rejected`)??"[]");archive.push({...rejected,cancelledAt:new Date().toISOString(),reason:status.error});localStorage.setItem(`${queueKey()}:rejected`,JSON.stringify(archive));savePending(ops);report({state:ops.length?"saving":"saved"});
+}
 export function flushSharedEdits(): Promise<void> {
   const run = async () => {
     const token = getToken(); if (!token) throw new Error("الجلسة غير متاحة؛ التعديلات المعلقة محفوظة محليًا");
@@ -73,7 +88,8 @@ export function flushSharedEdits(): Promise<void> {
       const op = pending()[0]; if (!op) { report({ state: "saved" }); return; }
       report({ state: "saving" });
       try {
-        if(op.plan) {
+        if(op.sard) await secureSetAppState({data:{token,key:"sard_queue",value:op.sard}});
+        else if(op.plan) {
           const confirmed=await secureRecordPlanDay({token,payload:op.plan});
           if(scope===context()&&semester===confirmed.semester_id) {
             const {saveGrades}=await import("./mock-data");saveGrades(reconcileShared("grades",confirmed.grades),{sync:false});
@@ -83,7 +99,7 @@ export function flushSharedEdits(): Promise<void> {
         else await secureSetAppState({ data: { token, key: op.key, value: op } });
         if (scope !== context()) return;
         savePending(pending().filter(x => x.operation_id !== op.operation_id));
-      } catch (e) { report({ state: "failed", error: e instanceof Error ? e.message : String(e) }); throw e; }
+      } catch (e) { report({ state: "failed", error: e instanceof Error ? e.message : String(e), conflict:(e as {status?:number})?.status===409 }); throw e; }
     }
   };
   const next = chain.then(run, run); chain = next.catch(() => undefined); return next;
@@ -103,6 +119,6 @@ export function reconcileShared<T>(key: SharedKey, cloud: T): T {
 export async function fetchSharedValue<T>(key: SharedKey): Promise<T> {
   const token = getToken(); if (!token) throw new Error("غير مسجل الدخول");
   const rows = await secureListAppState({ data: { token, key } }); const row = rows.find(r => r.key === key);
-  if (semesterKeys.has(key) && row?.integrity?.semester_id !== semester) throw new Error("تغيّر الفصل الدراسي — أعد تحميل الصفحة قبل المتابعة");
+  if (semesterKeys.has(key) && row && row.integrity?.semester_id !== semester) throw new Error("تغيّر الفصل الدراسي — أعد تحميل الصفحة قبل المتابعة");
   return reconcileShared(key, (row?.value ?? (listKeys.has(key) ? [] : {})) as T);
 }

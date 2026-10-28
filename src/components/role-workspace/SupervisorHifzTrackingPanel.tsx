@@ -1,3 +1,4 @@
+import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { useEffect, useMemo, useState } from "react";
 import { loadGrades, loadHalaqat, loadStudents } from "@/lib/mock-data";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
@@ -38,11 +39,12 @@ function pctClass(pct: number): string {
 export function SupervisorHifzTrackingPanel() {
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
+  useInboxRefresh(()=>setRefreshKey(v=>v+1));
   const [halaqaFilter, setHalaqaFilter] = useState<string>("all");
   const [sortKey, setSortKey] = useState<HifzTrackingSortKey>("percent-desc");
 
-  const halaqat = useMemo(() => loadHalaqat().filter((h) => !h.isTalqeen), []);
-  const students = useMemo(() => loadStudents(), []);
+  const halaqat = useMemo(() => loadHalaqat().filter((h) => !h.isTalqeen), [refreshKey]);
+  const students = useMemo(() => loadStudents(), [refreshKey]);
   const grades = useMemo(() => {
     void refreshKey;
     return loadGrades();

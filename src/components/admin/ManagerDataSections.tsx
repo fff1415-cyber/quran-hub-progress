@@ -1,3 +1,4 @@
+import { loadGradePointDraft,saveGradePointDraft,GRADE_POLICY_EVENT } from "@/lib/grade-policy-preview";
 import { useEffect, useState } from "react";
 import {
   loadHalaqat, saveHalaqat, type Halaqa, type HalaqaAssistant,
@@ -437,25 +438,17 @@ function defaultGradeSettings(): Record<string, number> {
 }
 
 export function GradeItemsSection() {
-  const KEY = "qshatawi_grade_settings_v2";
-  const [settings, setSettings] = useState(() => {
-    if (typeof window === "undefined") return defaultGradeSettings();
-    const raw = localStorage.getItem(KEY);
-    return raw ? JSON.parse(raw) as Record<string, number> : defaultGradeSettings();
-  });
-
-  const save = (s: Record<string, number>) => {
-    setSettings(s);
-    localStorage.setItem(KEY, JSON.stringify(s));
-    toast.success("تم الحفظ");
-  };
+  const [settings,setSettings]=useState(()=>loadGradePointDraft().values??defaultGradeSettings());
+  const [saving,setSaving]=useState(false);
+  useEffect(()=>{const refresh=()=>setSettings(loadGradePointDraft().values??defaultGradeSettings());window.addEventListener(GRADE_POLICY_EVENT,refresh);return ()=>window.removeEventListener(GRADE_POLICY_EVENT,refresh);},[]);
+  const save=async()=>{setSaving(true);try{await saveGradePointDraft(settings);toast.success("حُفظت مسودة القيم المشتركة؛ التفعيل ينتظر اعتماد سياسة الحساب وتاريخ التطبيق");}catch(e){toast.error(e instanceof Error?e.message:"تعذّر تأكيد الحفظ");}finally{setSaving(false);}};
 
   return (
     <div className="space-y-6">
       <GradeInputSettingsSection />
       <div className="glass-card rounded-2xl p-5">
       <h3 className="font-bold mb-3 text-primary">قيم بنود الدرجات</h3>
-      <p className="text-xs text-muted-foreground mb-4">نقاط كل بند في حساب النسب (حضور، حفظ، ربط، مراجعة).</p>
+      <p className="text-xs text-muted-foreground mb-4">مسودة نقاط مشتركة. تبقى الحسابات الحالية والسجلات القديمة كما هي حتى اعتماد تاريخ التطبيق وسياسة نقاط الحفظ والإعفاء.</p>
       <div className="grid md:grid-cols-2 gap-3">
         {Object.entries(settings).map(([k, v]) => (
           <div key={k} className="flex items-center justify-between p-3 rounded-lg bg-secondary/50">
@@ -463,12 +456,13 @@ export function GradeItemsSection() {
             <input
               type="number"
               value={v}
-              onChange={(e) => save({ ...settings, [k]: Number(e.target.value) })}
+              onChange={(e) => setSettings({ ...settings, [k]: Number(e.target.value) })}
               className="w-20 px-2 py-1 rounded bg-input border border-border text-center font-bold text-primary"
             />
           </div>
         ))}
       </div>
+      <button type="button" disabled={saving} onClick={()=>void save()} className="mt-4 rounded border px-3 py-2">{saving?"جارٍ تأكيد الحفظ…":"حفظ المسودة المشتركة"}</button>
       </div>
     </div>
   );

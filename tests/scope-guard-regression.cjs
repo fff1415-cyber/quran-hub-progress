@@ -26,3 +26,8 @@ for(const [path,name,until] of [
  assert.equal(after.slice(0,after.indexOf(until)),before.slice(0,before.indexOf(until)),`existing authorization preamble changed: ${name}`);
 }
 for(const path of ['package.json','package-lock.json']) assert.equal(fs.readFileSync(path,'utf8'),original(path),'dependency files unchanged');
+
+for(const [path,name,marker] of [
+ ['api/routes/kiosk.php','handle_kiosk_check_in','    $grades = kiosk_load_grades'],
+ ['api/routes/evaluation_settings.php','handle_put_evaluation_settings','    $tenants = eval_settings_tenant_enabled'],
+]){const before=extract(original(path),name),after=extract(fs.readFileSync(path,'utf8'),name);assert.equal(after.slice(0,after.indexOf(marker)),before.slice(0,before.indexOf(marker)),`authorization changed: ${name}`);}

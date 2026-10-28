@@ -1,3 +1,4 @@
+import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { useEffect, useMemo, useState } from "react";
 import {
   loadSardQueue, loadStudents, loadHalaqat, isLateSard, notifyLateSard, sortMusammiQueue,
@@ -10,6 +11,7 @@ import { AlertTriangle, Mic } from "lucide-react";
 /** Late-sard list (>2 days pending). Auto-notifies manager once per item. */
 export function LateSardList() {
   const [queue, setQueue] = useState<SardQueueItem[]>([]);
+  useInboxRefresh(()=>{setQueue([...loadSardQueue()]);notifyLateSard(loadStudents());});
   const students = loadStudents();
   const halaqat = loadHalaqat();
 
@@ -59,7 +61,8 @@ export function LateSardList() {
 
 /** Active sard queue (pending + approved_third + scheduled-ready). Read-only. */
 export function ActiveSardList() {
-  const [queue] = useState(() => loadSardQueue());
+  const [queue,setQueue] = useState(() => loadSardQueue());
+  useInboxRefresh(()=>setQueue([...loadSardQueue()]));
   const students = loadStudents();
   const halaqat = loadHalaqat();
 

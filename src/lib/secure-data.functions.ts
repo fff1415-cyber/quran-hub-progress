@@ -44,7 +44,8 @@ async function apiFetch<T>(
     }
   }
   if (!res.ok) {
-    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+    const error=new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+    Object.assign(error,{status:res.status});throw error;
   }
   return body as T;
 }
