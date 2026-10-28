@@ -1,0 +1,24 @@
+const assert=require('node:assert/strict');
+const {load,storage,flush}=require('./independent-test-support.cjs');
+global.window=new EventTarget();global.localStorage=storage();global.sessionStorage=storage();
+const writes=[],errors=[];const deps={'@/lib/auth-session':{hasAuthToken:()=>true},'./cloud-sync':{pushAppState:async(key,value)=>writes.push([key,structuredClone(value)])},'sonner':{toast:{error:message=>errors.push(message)}}};
+const mock=load('src/lib/mock-data.ts',deps);
+const academic=load('src/lib/academic-record.ts',{...deps,'@/lib/mock-data':mock});
+(async()=>{
+ const records=Array.from({length:651},(_,i)=>({id:'fixture-'+i,studentId:'synthetic',percent:i===0?0:80,week:1,attempt:1,testDate:'2026-10-01',at:'2026-10-01',unknownOriginalValue:i===1?null:'retained'}));
+ const original=JSON.stringify(records.slice(0,650));
+ localStorage.setItem('qshatawi_sard_history_v2',original);localStorage.setItem('qshatawi_academic_records_v1',original);
+ mock.saveSardHistory(records);academic.saveAcademicRecords(records);await flush();
+ assert.deepEqual(mock.loadSardHistory(),records);assert.deepEqual(academic.loadAcademicRecords(),records);
+ assert.equal(localStorage.getItem('qshatawi_sard_history_v2:before-history-repair'),original);
+ assert.equal(localStorage.getItem('qshatawi_academic_records_v1:before-history-repair'),original);
+ assert.equal(writes.length,2);for(const [,payload] of writes)assert.deepEqual(payload,records,'wire values are complete and unmodified');
+ mock.pushSardHistory({...records[0],percent:0});academic.pushAcademicRecord({...records[0],percent:0});await flush();
+ assert.equal(mock.loadSardHistory().length,651);assert.equal(academic.loadAcademicRecords().length,651);
+ assert.equal(mock.loadSardHistory().filter(x=>x.id==='fixture-0').length,1);
+ const count=writes.length;sessionStorage.setItem('qs_syncing','1');mock.saveSardHistory(records);academic.saveAcademicRecords(records);await flush();assert.equal(writes.length,count,'cloud read never echoes another write');
+ assert.ok(mock.loadSardHistory().every(x=>!('semesterId'in x)&&!('assignmentId'in x)),'history is not relabeled by this repair');
+ sessionStorage.removeItem('qs_syncing');deps['./cloud-sync'].pushAppState=async()=>{throw Error('fixture history conflict');};
+ mock.saveSardHistory(records);academic.saveAcademicRecords(records);await flush();assert.equal(errors.length,2);assert.ok(errors.every(message=>message.includes('fixture history conflict')));assert.deepEqual(mock.loadSardHistory(),records);
+ console.log('PASS: 651 complete records, raw backup, zero/null preservation, exact-ID update and unchanged shared format');
+})().catch(error=>{console.error(error);process.exitCode=1;});

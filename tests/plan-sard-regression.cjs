@@ -8,7 +8,7 @@ function load(path, deps) {
   return exports;
 }
 const storage = () => {const map=new Map();return {getItem:k=>map.get(k)??null,setItem:(k,v)=>map.set(k,v),removeItem:k=>map.delete(k)}};
-global.window={};global.localStorage=storage();global.sessionStorage=storage();
+global.window=new EventTarget();global.localStorage=storage();global.sessionStorage=storage();
 const auth=load('src/lib/auth-session.ts',{});
 const token=Buffer.from(JSON.stringify({role:'supervisor',accountId:'new',complexId:2})).toString('base64url')+'.signature';
 auth.setToken(token);auth.setAuthItem('qs_role','teacher');auth.setAuthItem('qs_halaqa','9');auth.ensureSessionFromToken();

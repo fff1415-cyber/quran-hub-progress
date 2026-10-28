@@ -1,0 +1,66 @@
+name: Independent audit release checks
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: independent-audit-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  client-and-sqlite:
+    if: github.head_ref == 'fix/audit-independent-release-2'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - name: Client and offline archive regressions (no production configuration)
+        run: |
+          set -e
+          for test in tests/*-regression.cjs tests/plan-server-confirmation.cjs; do node "$test"; done
+      - name: Real PHP handlers with disposable SQLite fixtures
+        run: |
+          set -e
+          find api tests -name '*.php' -print0 | xargs -0 -n1 php -l
+          php tests/backend-independent-settings.php
+          php tests/backend-independent-import.php
+      - name: Actual Hostinger package build without deployment
+        run: npm run build:hostinger
+  database-concurrency:
+    if: github.head_ref == 'fix/audit-independent-release-2'
+    name: Isolated transactions (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: MySQL 8
+            image: mysql:8.0
+            health: mysqladmin ping -h 127.0.0.1
+          - engine: MariaDB 11.8
+            image: mariadb:11.8
+            health: healthcheck.sh --connect --innodb_initialized
+    services:
+      mysql:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_DATABASE: audit_test
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: [3307:3306]
+        options: --health-cmd="${{ matrix.health }}" --health-interval=5s --health-timeout=5s --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Real row-lock contention and partial-failure rollback
+        env:
+          AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
+        run: php tests/backend-independent-mysql.php

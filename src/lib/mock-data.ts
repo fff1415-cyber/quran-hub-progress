@@ -221,7 +221,9 @@ const KEY_LATE_PERMISSIONS = "qshatawi_late_permissions_v2";
 function persistShared(key: "grades" | "sard_queue" | "sard_history" | "message_templates", value: unknown) {
   if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
-  void import("./cloud-sync").then((m) => m.pushAppState(key, value)).catch(() => undefined);
+  void import("./cloud-sync").then((m) => m.pushAppState(key, value)).catch((error) => {
+    if (key === "sard_history") void import("sonner").then(({ toast }) => toast.error(`لم يتأكد حفظ تاريخ السرد على الخادم: ${error instanceof Error ? error.message : "تعذّرت المزامنة"}`));
+  });
 }
 
 const GRADES_CLOUD_DEBOUNCE_MS = 800;
@@ -826,6 +828,7 @@ export function loadSardQueue(): SardQueueItem[] {
   const raw = localStorage.getItem(KEY_SARD_QUEUE);
   return raw ? JSON.parse(raw) : [];
 }
+export const SARD_QUEUE_CHANGED_EVENT = "qs-sard-queue-changed";
 let sardWrites: Promise<void> = Promise.resolve();
 let pendingSardWrites = 0;
 export function hasPendingSardWrites(): boolean { return pendingSardWrites > 0; }
@@ -835,6 +838,7 @@ export function saveSardQueue(q: SardQueueItem[]) {
   const syncing = sessionStorage.getItem("qs_syncing") === "1";
   if (syncing && hasPendingSardWrites()) return;
   localStorage.setItem(KEY_SARD_QUEUE, JSON.stringify(q));
+  window.dispatchEvent(new Event(SARD_QUEUE_CHANGED_EVENT));
   if (syncing || !hasAuthToken()) return;
   const changes = q.filter(item => JSON.stringify(item) !== JSON.stringify(previous.find(p => p.id === item.id)))
     .map(item => ({ item, base: previous.find(p => p.id === item.id) ?? null }));
@@ -850,6 +854,7 @@ export function saveSardQueue(q: SardQueueItem[]) {
   void write.catch(async () => {
     if (JSON.stringify(loadSardQueue()) === JSON.stringify(q)) {
       localStorage.setItem(KEY_SARD_QUEUE, JSON.stringify(previous));
+      window.dispatchEvent(new Event(SARD_QUEUE_CHANGED_EVENT));
     }
     const { toast } = await import("sonner");
     toast.error("تعذّر حفظ تحديث السرد أو تغيّر من جهاز آخر — حدّث الصفحة قبل المحاولة");
@@ -1019,15 +1024,21 @@ export function loadSardHistory(): SardHistoryItem[] {
   const raw = localStorage.getItem(KEY_SARD_HISTORY);
   return raw ? JSON.parse(raw) : [];
 }
+function retainSardHistoryBeforeRepair() {
+  const previous = localStorage.getItem(KEY_SARD_HISTORY);
+  if (previous && !localStorage.getItem(`${KEY_SARD_HISTORY}:before-history-repair`)) localStorage.setItem(`${KEY_SARD_HISTORY}:before-history-repair`, previous);
+}
 export function pushSardHistory(h: SardHistoryItem) {
+  retainSardHistoryBeforeRepair();
   const list = loadSardHistory().filter(item => item.id !== h.id);
   list.unshift(h);
-  localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list.slice(0, 500)));
-  persistShared("sard_history", list.slice(0, 500));
+  localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list));
+  persistShared("sard_history", list);
 }
 export function saveSardHistory(list: SardHistoryItem[]) {
-  localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list.slice(0, 500)));
-  persistShared("sard_history", list.slice(0, 500));
+  retainSardHistoryBeforeRepair();
+  localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list));
+  persistShared("sard_history", list);
 }
 
 // ---- Scoring ----

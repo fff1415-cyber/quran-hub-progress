@@ -734,6 +734,11 @@ function handle_assign_plan(): void
         $studentStmt = $pdo->prepare('SELECT ' . implode(', ', $studentColumns) . ' FROM students WHERE id = ? FOR UPDATE');
         $studentStmt->execute([$studentId]);
         $studentRow = $studentStmt->fetch();
+        if (!empty($input['only_if_unassigned'])) {
+            $existingLink = $pdo->prepare("SELECT id FROM student_plan_assignments WHERE student_id = ? AND status IN ('active', 'frozen') FOR UPDATE");
+            $existingLink->execute([$studentId]);
+            if ($existingLink->fetch()) throw new RuntimeException('توجد خطة حالية للطالب — لم يُستبدل التعيين؛ حدّث الصفحة');
+        }
         $currentStmt = $pdo->prepare("SELECT a.id, a.assigned_at, a.plan_id, a.start_segment_index, p.track, p.title, p.level_number FROM student_plan_assignments a JOIN education_plans p ON p.id = a.plan_id WHERE a.student_id = ? AND a.status = 'active' FOR UPDATE");
         $currentStmt->execute([$studentId]);
         $current = $currentStmt->fetch();
