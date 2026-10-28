@@ -6,6 +6,7 @@ permissions:
   contents: read
 jobs:
   calculations-and-package:
+    if: github.head_ref == 'release/audit-calculations'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
