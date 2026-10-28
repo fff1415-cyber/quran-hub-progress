@@ -23,12 +23,14 @@ const sheet={assignment:{start_segment_index:11},plan:{},segments:Array.from({le
 assert.deepEqual(progress.planHifzProgress(sheet),{done:10,total:10,percent:100,complete:true});
 sheet.completions.pop();assert.equal(progress.planHifzProgress(sheet).percent,90);assert.equal(progress.planHifzProgress(sheet).complete,false);
 sheet.assignment.start_segment_index=21;assert.equal(progress.planHifzProgress(sheet).complete,false);
+sheet.assignment.start_segment_index=11;sheet.segments=sheet.segments.filter(s=>s.segment_index!==11);assert.equal(progress.planHifzProgress(sheet).total,0);assert.equal(progress.planHifzProgress(sheet).complete,false);
 const sci=load('src/lib/scientific-grades.ts',{'@/lib/shared-state':{captureSharedEdit:()=>{},sharedSaveStatus:()=>({state:"failed"}),getDataSemester:()=>null,semesterStorageKey:k=>k},'@/lib/auth-session':{hasAuthToken:()=>false},'@/lib/grade-input-settings':{},'@/lib/mock-data':mock,'@/lib/scientific-grades-program':{}});
 assert.equal(sci.scientificPeriodAssessmentCount({S:{1:{sun:{hifz:'0'},mon:{hifz:''},tue:{hifz:'invalid'}}}},'S',[1],['hifz']),1);
 const combined=load('src/lib/halaqa-program-combined-totals.ts',{'@/lib/halaqa-programs':{studentAllProgramsWeekTotals:()=>({earned:0,maxPossible:0,filledSlots:0})},'@/lib/scientific-grades':sci});
 const config={visible:true,fields:{hifz:true},defaultScores:{hifz:'10'}};
 assert.equal(combined.buildCombinedProgramTotals([],{},'S',[1],{S:{1:{sun:{hifz:'0'}}}},['hifz'],['sun'],config).hasData,true);
 assert.equal(combined.buildCombinedProgramTotals([],{},'S',[1],{},['hifz'],['sun'],config).hasData,false);
+assert.equal(combined.buildCombinedProgramTotals([],{},'S',[1],{S:{1:{mon:{hifz:'0'}}}},['hifz'],['sun'],config).hasData,false);
 const days=[{weekNumber:1,dayKey:'sun',iso:'2026-10-11'},{weekNumber:1,dayKey:'mon',iso:'2026-10-12'}];
 const faces=load('src/lib/plan-daily-faces.ts',{'@/lib/mock-data':mock,'@/lib/semester-grading':{getElapsedSemesterDays:()=>days,getTotalSemesterWorkingDays:()=>10}});
 const grades={S:{1:{days:{sun:{hifz:'one',compensationFaces:0.5},mon:{hifz:'two',compensationFaces:1}},compensationMurajaFaces:20}}};

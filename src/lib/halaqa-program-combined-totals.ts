@@ -61,7 +61,7 @@ export function buildCombinedProgramTotals(
     earned,
     maxPossible,
     percent: maxPossible > 0 ? Math.round((earned / maxPossible) * 100) : 0,
-    hasData: stdTotals.filledSlots > 0 || (sciTotals !== null && scientificPeriodAssessmentCount(sciData, studentId, weekNums, sciFields) > 0),
+    hasData: stdTotals.filledSlots > 0 || (sciTotals !== null && scientificPeriodAssessmentCount(sciData, studentId, weekNums, sciFields, workingDayKeys) > 0),
     hasPercent: maxPossible > 0,
     sciTotals,
     programBreakdown: standardPrograms.map((p) => ({

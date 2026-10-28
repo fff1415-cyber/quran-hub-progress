@@ -998,9 +998,9 @@ export function replaceScientificGradesStore(store: ScientificGradesStore) {
 }
 
 /** Presence is independent of earned points: numeric zero is an assessment. */
-export function scientificPeriodAssessmentCount(data: ScientificGradesDataStore[string], studentId: string, weekNums: number[], fields: ScientificGradeField[]): number {
+export function scientificPeriodAssessmentCount(data: ScientificGradesDataStore[string], studentId: string, weekNums: number[], fields: ScientificGradeField[], dayKeys?: string[]): number {
   let count = 0;
-  for (const wn of weekNums) for (const cell of Object.values(data[studentId]?.[wn] ?? {}))
-    for (const field of fields) if (parseScientificScore(cell[field]) !== null) count++;
+  for (const wn of weekNums) for (const [dayKey, cell] of Object.entries(data[studentId]?.[wn] ?? {}))
+    if (!dayKeys || dayKeys.includes(dayKey)) for (const field of fields) if (parseScientificScore(cell[field]) !== null) count++;
   return count;
 }
