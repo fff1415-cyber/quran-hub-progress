@@ -62,7 +62,10 @@ function handle_list_app_state(): void
         $stmt = $pdo->prepare($sql);
         $stmt->execute($tenants ? array_merge([$cid], $allowed) : $allowed);
         $rows = $stmt->fetchAll();
-        foreach ($rows as &$row) $row['value'] = json_decode($row['value'] ?? '{}', true);
+        foreach ($rows as &$row) {
+            $row['value'] = json_decode($row['value'] ?? '{}', true);
+            $row['context_complex_id'] = $cid;
+        }
         json_response($keyFilter === '' ? $rows : array_values(array_filter($rows, fn($row) => $row['key'] === $keyFilter)));
     }
 
@@ -86,6 +89,7 @@ function handle_list_app_state(): void
     $rows = array_values(array_filter($rows, static fn (array $row): bool => ($row['key'] ?? '') !== 'staff_tasks_v1'));
     foreach ($rows as &$row) {
         $row['value'] = json_decode($row['value'] ?? '{}', true);
+        $row['context_complex_id'] = $cid;
         if (($row['key'] ?? '') === 'sard_queue' && is_array($row['value'])) {
             $row['value'] = sard_reconcile_queue($row['value'], sard_current_assignments($pdo, $cid));
         }
@@ -224,6 +228,55 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
     }
 }
 
+/** Retention comparison only: never assigns an ID to a legacy row. */
+function app_state_history_is_list(array $value): bool
+{
+    return $value === [] || array_keys($value) === range(0, count($value) - 1);
+}
+
+function app_state_history_retention_key(mixed $record): string
+{
+    if (is_array($record) && (is_string($record['id'] ?? null) && $record['id'] !== '' || is_int($record['id'] ?? null))) {
+        return 'id:' . app_state_json_encode($record['id']);
+    }
+    return 'raw:' . hash('sha256', app_state_json_encode($record));
+}
+
+/** Keep the existing array format; a stale or truncated client must not silently omit stored rows. */
+function app_state_save_untruncated_history(PDO $pdo, int $cid, string $key, array $value): void
+{
+    $tenants = app_state_tenant_enabled($pdo);
+    $pdo->beginTransaction();
+    try {
+        $stmt = $pdo->prepare('SELECT value FROM app_state WHERE ' . ($tenants ? 'complex_id = ? AND ' : '') . '`key` = ? FOR UPDATE');
+        $stmt->execute($tenants ? [$cid, $key] : [$key]);
+        $raw = $stmt->fetchColumn();
+        $previous = $raw === false ? null : json_decode((string) $raw, true);
+        if ($raw !== false && $raw !== 'null' && (!str_starts_with(ltrim((string) $raw), '[') || !is_array($previous) || !app_state_history_is_list($previous))) {
+            $pdo->rollBack();
+            error_response('السجل السابق محفوظ بصيغة تحتاج مراجعة — لم يُستبدل', 409);
+        }
+        $remaining = [];
+        foreach ($value as $record) {
+            $keyForRow = app_state_history_retention_key($record);
+            $remaining[$keyForRow] = ($remaining[$keyForRow] ?? 0) + 1;
+        }
+        foreach ($previous ?? [] as $record) {
+            $keyForRow = app_state_history_retention_key($record);
+            if (empty($remaining[$keyForRow])) {
+                $pdo->rollBack();
+                error_response('الطلب مختصر أو قديم وسيُسقط سجلات محفوظة — حدّث الصفحة؛ لم يتغير التاريخ المحفوظ', 409);
+            }
+            $remaining[$keyForRow]--;
+        }
+        app_state_upsert($pdo, $key, $value, $tenants ? $cid : null);
+        $pdo->commit();
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $error;
+    }
+}
+
 function handle_set_app_state(): void
 {
     $auth = require_auth();
@@ -250,6 +303,11 @@ function handle_set_app_state(): void
         return;
     }
     try {
+        if (in_array($key, ['sard_history', 'academic_records'], true) && is_array($input['value'] ?? null) && app_state_history_is_list($input['value'])) {
+            app_state_save_untruncated_history($pdo, $cid, $key, $input['value']);
+            json_response(['ok' => true]);
+            return;
+        }
         if (app_state_tenant_enabled($pdo)) {
             app_state_upsert($pdo, $key, $input['value'] ?? null, $cid);
         } else {

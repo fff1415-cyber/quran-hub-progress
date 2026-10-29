@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import {
   loadHalaqat, saveHalaqat, loadStudents, saveStudents, type Halaqa, type Student,
 } from "@/lib/mock-data";
@@ -32,10 +32,10 @@ function sheetRowToStudent(row: SheetRow, halaqaId: number, existing?: Student):
     nationalId: row.nationalId,
     parentPhone: row.parentPhone,
     studentPhone: row.studentPhone || undefined,
-    level: String(phase),
-    phaseNumber: phase,
-    instituteLevel,
-    levelType: row.levelType,
+    level: existing?.level ?? String(phase),
+    phaseNumber: existing?.phaseNumber ?? phase,
+    instituteLevel: existing?.instituteLevel ?? instituteLevel,
+    levelType: existing?.levelType ?? row.levelType,
   };
   return base;
 }
@@ -46,6 +46,7 @@ export function StudentImportPanel() {
   const [preview, setPreview] = useState<SheetRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const importBusy = useRef(false);
 
   const halaqatCurrent = useMemo(() => loadHalaqat(), [preview]);
   const halaqatByNorm = useMemo(
@@ -73,7 +74,11 @@ export function StudentImportPanel() {
   };
 
   const applyImport = async () => {
+    if (importBusy.current) return;
+    importBusy.current = true;
     setImporting(true);
+    let stage = "roster";
+    try {
     const assignedBy = getSessionName("الاستيراد");
     const halaqatByName = new Map(halaqatCurrent.map((h) => [normalizeArabic(h.name), h]));
     const nextHalaqat = [...halaqatCurrent];
@@ -99,6 +104,7 @@ export function StudentImportPanel() {
     const updated: Student[] = [...existingStudents];
     const linkQueue: { student: Student; row: SheetRow }[] = [];
     let added = 0, updatedCount = 0, skipped = 0;
+    const planDifferences:string[]=[];
 
     for (const row of preview) {
       const halaqa = halaqatByName.get(normalizeArabic(row.halaqaName));
@@ -113,6 +119,7 @@ export function StudentImportPanel() {
 
       const existing = studentsByNid.get(row.nationalId);
       const student = sheetRowToStudent(row, halaqa.id, existing);
+      if(existing && row.phaseNumber>0 && (row.phaseNumber!==(existing.phaseNumber??Number(existing.level)) || row.levelType!==existing.levelType))planDifferences.push("حُفظت بيانات الطالب مع إبقاء مرحلته وخطته؛ تغيير المرحلة أو المسار يحتاج اعتمادًا منفصلًا");
       if (existing) {
         const idx = updated.findIndex((s) => s.id === existing.id);
         updated[idx] = student;
@@ -128,8 +135,6 @@ export function StudentImportPanel() {
       }
     }
 
-    saveHalaqat(nextHalaqat);
-    saveStudents(updated);
     try {
       await pushHalaqat(nextHalaqat);
       await pushStudents(updated);
@@ -139,44 +144,50 @@ export function StudentImportPanel() {
       return;
     }
 
+    stage = "plans";
     let linked = 0;
     let linkFailed = 0;
+    const linkErrors: string[] = [];
     if (linkQueue.length > 0) {
       const [goldPlans, silverPlans] = await Promise.all([fetchPlans("gold"), fetchPlans("silver")]);
       for (const { student, row } of linkQueue) {
         try {
           const res = await linkStudentToPlan({
             studentId: student.id,
-            track: row.levelType,
+            track: student.levelType,
             instituteLevel: student.instituteLevel || row.instituteLevel,
             globalPhase: student.phaseNumber ?? row.phaseNumber,
             startHifzSegment: row.startHifzSegment,
             planStartDate: row.planStartDate || null,
             assignedBy,
             optional: true,
-            plansCache: row.levelType === "gold" ? goldPlans : silverPlans,
+            plansCache: student.levelType === "gold" ? goldPlans : silverPlans,
           });
           if (res.ok) linked++;
-          else linkFailed++;
-        } catch {
+          else { linkFailed++; if (res.message) linkErrors.push(res.message); }
+        } catch (error) {
           linkFailed++;
+          linkErrors.push(error instanceof Error ? error.message : "تعذّر ربط الخطة");
         }
       }
     }
 
     toast.success(
       `+${added} جديد · ${updatedCount} محدّث · ${linked} مربوط بخطة` +
-      (linkFailed ? ` · ${linkFailed} بدون خطة (استورد Excel أولاً)` : "") +
+      (linkFailed ? ` · ${linkFailed} طلب ربط لم يعتمد` : "") +
       (skipped ? ` · ${skipped} متجاهل` : ""),
     );
-    if (linkFailed > 0) {
-      toast.warning("بعض الطلاب لم تُربط خططهم — تأكد من استيراد ملف Excel للخطط في صفحة المشرف", {
+    if (linkFailed > 0 || planDifferences.length) {
+      toast.warning([...new Set([...linkErrors,...planDifferences])].join(" · ") || "حُفظت بيانات الطلاب؛ راجع ربط خططهم بشكل مستقل", {
         duration: 8000,
       });
     }
     setPreview([]);
     setUrl("");
-    setImporting(false);
+    } catch (cause) {
+      const detail = cause instanceof Error ? cause.message : "تعذّر الحفظ";
+      toast.error(stage === "plans" ? `حُفظت بيانات الطلاب؛ لم يتأكد ربط الخطط: ${detail}` : detail);
+    } finally { importBusy.current = false; setImporting(false); }
   };
 
   return (

@@ -1,3 +1,5 @@
+import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
+import { SardQueueRefreshStatus } from "@/components/SardQueueRefreshStatus";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, useRef } from "react";
 import {
@@ -88,7 +90,8 @@ export function MusammiPage() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
 
-  const refresh = () => setQueue(loadSardQueue());
+  const refresh = () => setQueue([...loadSardQueue()]);
+  useInboxRefresh(refresh, { sharedSard: true });
 
   const visible = useMemo(
     () => sortMusammiQueue(queue.filter((q) => isMusammiVisible(q))),
@@ -105,6 +108,7 @@ export function MusammiPage() {
         <Toaster position="top-center" richColors />
         <AppHeader title="تقييم السرد" subtitle="مسمّع" />
         <main className="max-w-3xl mx-auto px-4 py-8">
+          <SardQueueRefreshStatus />
           <button onClick={() => setActiveId(null)} className="flex items-center gap-2 text-sm text-primary mb-4">
             <ArrowRight className="w-4 h-4" /> العودة لقائمة السرد
           </button>

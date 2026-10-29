@@ -121,6 +121,7 @@ export async function assignStudentPlan(
     start_muraja_segment?: number | null;
     face_quotas?: Partial<DailyFaceQuotas>;
     expected_assignment_id?: string;
+    only_if_unassigned?: boolean;
     sard_result?: { id: string; percent: number; phase: string };
   },
 ): Promise<void> {
@@ -129,6 +130,7 @@ export async function assignStudentPlan(
       body: JSON.stringify({
         student_id: studentId,
         expected_assignment_id: options?.expected_assignment_id,
+        only_if_unassigned: options?.only_if_unassigned,
         sard_result: options?.sard_result,
         plan_id: planId,
         start_segment_index: startSegment,

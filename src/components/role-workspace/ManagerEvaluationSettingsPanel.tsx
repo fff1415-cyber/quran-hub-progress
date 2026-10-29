@@ -49,7 +49,7 @@ const SECTIONS: { title: string; fields: { key: FieldKey; label: string; step?: 
 ];
 
 export function ManagerEvaluationSettingsPanel() {
-  const { settings, loading, save } = useEvaluationSettings();
+  const { settings, loading, saving, verified, error, refresh, save } = useEvaluationSettings();
   const [draft, setDraft] = useState<EvaluationSettings>(settings);
 
   useEffect(() => {
@@ -88,9 +88,14 @@ export function ManagerEvaluationSettingsPanel() {
           <ClipboardList className="w-5 h-5" /> درجات السرد
         </h2>
         <p className="text-xs text-muted-foreground">
-          تُطبَّق على تقييم السرد والمراجعة في صفحة المسمّع — لا أرقام ثابتة في الكود
+          مصدر إعدادات التقييم المشترك. لا يعاد احتساب السجلات المحفوظة عند حفظ الإعدادات.
         </p>
       </div>
+
+      {(error || !verified) && <div role="status" className="rounded-lg border border-warning/30 p-3 text-sm">
+        <p>{error ?? "الإعدادات المعروضة لم تُؤكد من الخادم في هذه الجلسة"}</p>
+        <Button type="button" variant="outline" onClick={() => void refresh()} disabled={saving} className="mt-2">إعادة تحميل المعتمد من الخادم</Button>
+      </div>}
 
       {SECTIONS.map((section) => (
         <div key={section.title} className="rounded-xl border border-border p-4 bg-secondary/20">
@@ -114,10 +119,10 @@ export function ManagerEvaluationSettingsPanel() {
       ))}
 
       <div className="flex flex-wrap gap-2 pt-2">
-        <Button type="button" onClick={() => void onSave()} className="gold-gradient text-primary-foreground gap-2">
-          <Save className="w-4 h-4" /> حفظ الإعدادات
+        <Button type="button" onClick={() => void onSave()} disabled={saving} className="gold-gradient text-primary-foreground gap-2">
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />} {saving ? "جارٍ تأكيد الحفظ…" : "حفظ الإعدادات"}
         </Button>
-        <Button type="button" variant="outline" onClick={onReset} className="gap-2">
+        <Button type="button" variant="outline" onClick={onReset} disabled={saving} className="gap-2">
           <RotateCcw className="w-4 h-4" /> استعادة الافتراضي
         </Button>
       </div>
