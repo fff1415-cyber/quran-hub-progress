@@ -41,6 +41,7 @@ with tempfile.TemporaryDirectory() as temporary:
     assert not (root/'dist/api-release/config.php').exists()
     assert manifest[1]['beforeSha256']==hashlib.sha256(before).hexdigest()
     target=pathlib.Path(temporary,'target');(target/'routes').mkdir(parents=True)
+    (target/'index.html').write_text('unrelated API-root placeholder, outside the upload package')
     (target/'routes/route.php').write_bytes(before)
     args=[value for item in manifest for value in [item['path'],item['sha256'],item['beforeSha256'] or 'MISSING']]
     def run(phase):
@@ -72,6 +73,12 @@ with tempfile.TemporaryDirectory() as temporary:
     result=subprocess.run(['bash','-s','--',str(target),str(archive),'routes'],input=backup.REMOTE_SCRIPT,text=True,capture_output=True,env=dict(os.environ,BACKUP_PACKAGE_KIND='api'))
     assert result.returncode==0
     assert (archive/'restore-check/routes/new.php').is_file()
+    assert not (archive/'restore-check/index.html').exists(),'unrelated API-root index must not be required in a routes-only backup'
+    assert (target/'index.html').read_text()=='unrelated API-root placeholder, outside the upload package'
+    (target/'routes/linked.php').symlink_to(root/'frontend.txt')
+    rejected=subprocess.run(['bash','-s','--',str(target),str(archive)+'-symlink','routes'],input=backup.REMOTE_SCRIPT,text=True,capture_output=True,env=dict(os.environ,BACKUP_PACKAGE_KIND='api'))
+    assert rejected.returncode!=0 and 'BACKUP_FAILED:symlink-check' in rejected.stderr,'API symlinks must still stop the upload'
+    assert (target/'routes/linked.php').is_symlink()
     # Tracked runtime configuration is rejected rather than deployed.
     git('add','api/config.php');git('commit','-qm','fixture forbidden config');bad=git('rev-parse','HEAD')
     try:prepare.prepare_api_release(root,base,bad)

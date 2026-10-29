@@ -38,6 +38,8 @@ def backup_arguments(env, entries):
 
 
 REMOTE_SCRIPT = r'''set -euo pipefail
+stage=prepare
+trap 'printf "BACKUP_FAILED:%s\n" "$stage" >&2' ERR
 umask 077
 front="$1"
 backup="$2"
@@ -45,6 +47,7 @@ shift 2
 test -d "$front"
 mkdir -p "$backup"
 if [ -f "$backup/verified" ]; then
+  stage=verify-existing-archive
   tar -tzf "$backup/frontend.tgz" >/dev/null
   echo "Private frontend rollback archive already verified."
   exit 0
@@ -52,16 +55,21 @@ fi
 existing=()
 for name in "$@"; do
   if [ -e "$front/$name" ] || [ -L "$front/$name" ]; then
-    if [ "${BACKUP_PACKAGE_KIND:-frontend}" = api ] && { [ -L "$front/$name" ] || [ -n "$(find "$front/$name" -type l -print -quit)" ]; }; then exit 1; fi
+    if [ "${BACKUP_PACKAGE_KIND:-frontend}" = api ] && { [ -L "$front/$name" ] || [ -n "$(find "$front/$name" -type l -print -quit)" ]; }; then printf 'BACKUP_FAILED:symlink-check\n' >&2; exit 1; fi
     existing+=("$name")
   fi
 done
 test "${#existing[@]}" -gt 0
+stage=create-archive
 tar -czf "$backup/frontend.tgz" -C "$front" -- "${existing[@]}"
+stage=extract-archive
 mkdir -p "$backup/restore-check"
 tar -xzf "$backup/frontend.tgz" -C "$backup/restore-check"
+stage=compare-source
 tar -dzf "$backup/frontend.tgz" -C "$front" >/dev/null
-if [ -f "$front/index.html" ]; then cmp "$front/index.html" "$backup/restore-check/index.html"; fi
+stage=compare-restored-index
+if [ -f "$backup/restore-check/index.html" ]; then cmp "$front/index.html" "$backup/restore-check/index.html"; fi
+stage=verify-archive
 tar -tzf "$backup/frontend.tgz" >/dev/null
 printf '%s\n' verified > "$backup/verified"
 echo "Private frontend rollback archive created and extraction verified."
@@ -91,7 +99,9 @@ def main():
             except subprocess.TimeoutExpired:
                 raise SystemExit('Deployment backup timed out; upload has not started.')
             if result.returncode:
-                raise SystemExit('Deployment backup or restore verification failed; upload has not started. Private details withheld.')
+                match = re.search(rb'BACKUP_FAILED:([a-z-]+)', result.stderr)
+                stage = match.group(1).decode() if match else 'ssh-or-unknown'
+                raise SystemExit('Deployment backup failed at ' + stage + '; upload has not started. Private details withheld.')
         print('Private deployment backup and isolated extraction verified; no database changes.')
 
 

@@ -23,17 +23,17 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Determine whether API files changed
+      - name: Determine API changes from the actual published release
         id: changes
         env:
-          PREVIOUS_SHA: ${{ github.event.before }}
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
         run: |
           set -euo pipefail
-          changed=true
-          if [[ "$PREVIOUS_SHA" =~ ^[0-9a-f]{40}$ ]] && git cat-file -e "$PREVIOUS_SHA^{commit}" 2>/dev/null; then
-            if git diff --quiet "$PREVIOUS_SHA" "$GITHUB_SHA" -- api/; then changed=false; fi
-          fi
-          echo "api_changed=$changed" >> "$GITHUB_OUTPUT"
+          [[ "$DEPLOY_HOST" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          marker=$(curl -fsS --connect-timeout 15 --max-time 30 \
+            --resolve "msht.io:443:${DEPLOY_HOST}" \
+            "https://msht.io/deploy-sha.txt?release_base=${GITHUB_RUN_ID}")
+          python3 scripts/select-hostinger-release-base.py "$marker" "$GITHUB_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Validate secrets
         run: |
@@ -160,10 +160,9 @@ jobs:
       - name: Prepare changed API files from the approved commit
         if: steps.changes.outputs.api_changed == 'true'
         env:
-          PREVIOUS_SHA: ${{ github.event.before }}
+          PUBLISHED_SHA: ${{ steps.changes.outputs.base_sha }}
         run: |
-          base="${PREVIOUS_SHA:-${GITHUB_SHA}^1}"
-          python3 scripts/prepare-hostinger-api.py "$base" "$GITHUB_SHA"
+          python3 scripts/prepare-hostinger-api.py "$PUBLISHED_SHA" "$GITHUB_SHA"
 
       - name: Verify existing API files before replacement
         if: steps.changes.outputs.api_changed == 'true'
