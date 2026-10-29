@@ -42,6 +42,7 @@ jobs:
           php tests/backend-independent-settings.php
           php tests/backend-independent-import.php
           php tests/backend-plan-safeguards.php
+          php tests/backend-evaluation-reference.php
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
       - name: Isolated package and backup/verification fixtures (no SSH or production credentials)
@@ -50,6 +51,15 @@ jobs:
         env:
           EXPECTED_PUBLISHED_SHA: ${{ github.event.pull_request.base.sha }}
         run: python3 scripts/verify-published-static.py "$EXPECTED_PUBLISHED_SHA"
+      - name: Build and verify compatible rollback without production calls
+        if: github.head_ref == 'fix/audit-safe-score-records'
+        run: python3 scripts/prepare-record-confirmation-rollback.py
+      - uses: actions/upload-artifact@v4
+        if: github.head_ref == 'fix/audit-safe-score-records'
+        with:
+          name: record-confirmation-compatible-rollback
+          path: dist/record-confirmation-compatible-rollback/frontend.zip
+          retention-days: 30
   database-concurrency:
     if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-')
     name: Isolated transactions (${{ matrix.engine }})

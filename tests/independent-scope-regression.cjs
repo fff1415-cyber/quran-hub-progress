@@ -19,7 +19,7 @@ const readBefore=phpFunction(original('api/routes/app_state.php'),'handle_list_a
 const readGuards=code=>code.split('\n').filter(line=>/require_auth\(|require_complex_id\(|\$role|\$allowed|WHERE complex_id|\$tenants|\$stmt->execute/.test(line)).map(line=>line.trim());
 assert.deepEqual(readGuards(readAfter),readGuards(readBefore),'response context metadata cannot change existing read roles or tenant predicates');
 for(const [path,allowed] of [
- ['src/lib/mock-data.ts',['persistShared','saveSardQueue','pushSardHistory','saveSardHistory']],
+ ['src/lib/mock-data.ts',['persistShared','saveSardQueue','pushSardHistory','saveSardHistory','mergeNotifications','writeNotificationsLocal','pushNotification']],
  ['src/lib/plans-service.ts',['assignStudentPlan','patchStudentAssignment']],
  ['src/components/role-workspace/RoleSections.tsx',['SecretarySardPanel','SupervisorPlanCompletedPanel','SupervisorApprovalsPanel','SupervisorForceRetryPanel','SupervisorPassedPanel']],
 ]){const current=functions(fs.readFileSync(path,'utf8'));for(const [name,body] of functions(original(path)))if(!allowed.includes(name))assert.equal(current.get(name),body,`unrelated function changed: ${name}`);}

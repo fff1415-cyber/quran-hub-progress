@@ -1,0 +1,16 @@
+const assert=require('node:assert/strict'),fs=require('node:fs');
+const {load,hooks,jsx}=require('./independent-test-support.cjs');
+const types=load('src/lib/evaluation-types.ts',{}),calc=load('src/lib/evaluation-calculator.ts',{'@/lib/evaluation-types':types});
+const snapshots=load('src/lib/evaluation-rules-snapshot.ts',{'@/lib/evaluation-types':types});
+const snapshot=snapshots.snapshotEvaluationRules(types.DEFAULT_EVALUATION_SETTINGS);
+const runtime=hooks(),source=fs.readFileSync(process.argv[2]??'src/routes/musammi.tsx','utf8')+'\nexport { SardEvaluatorReviewOnly };';
+const deps=Object.fromEntries([...source.matchAll(/from "([^"]+)"/g)].map(m=>[m[1],{}]));let used=[];
+const changed={...types.DEFAULT_EVALUATION_SETTINGS,review_error_deduction:40,hifz_max_score:90};
+Object.assign(deps,{'react':runtime.react,'react/jsx-runtime':jsx,'@tanstack/react-router':{createFileRoute:()=>()=>({})},'@/contexts/EvaluationSettingsContext':{useEvaluationSettings:()=>({settings:changed,verified:false})},'@/lib/evaluation-rules-snapshot':snapshots,'@/lib/evaluation-calculator':{...calc,computeReviewScore:(segments,settings)=>{used.push(settings);return calc.computeReviewScore(segments,settings);}},'@/lib/sard-phased-flow':load('src/lib/sard-phased-flow.ts',{'@/lib/evaluation-calculator':calc})});
+const route=load('src/routes/musammi.tsx',deps,source);
+runtime.render(()=>route.SardEvaluatorReviewOnly({item:{id:'fixture',phase:'review_only',evaluationRules:snapshot,lockedHifzScore:45,reviewErrors:[1,0,0]},studentName:'fixture',halaqaName:'fixture',level:'1',levelType:'gold',onDone:()=>{}}));
+assert.deepEqual(used.at(-1),snapshot.settings);
+const pinned=calc.computeReviewScore([{errors:1,warnings:0},{errors:0,warnings:0},{errors:0,warnings:0}],used.at(-1));
+assert.equal(pinned.score,48);
+assert.notEqual(calc.computeReviewScore([{errors:1,warnings:0},{errors:0,warnings:0},{errors:0,warnings:0}],changed).score,48);
+console.log('PASS: current/compatible rollback evaluator reads recorded review rules after global settings change');

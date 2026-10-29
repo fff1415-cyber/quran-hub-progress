@@ -635,15 +635,19 @@ export function mergeNotifications(cloud: Notification[], local: Notification[])
     byId.set(n.id, prev ? mergeNotificationPair(prev, n) : n);
   }
   return Array.from(byId.values())
-    .sort((x, y) => y.createdAt.localeCompare(x.createdAt))
-    .slice(0, 200);
+    .sort((x, y) => y.createdAt.localeCompare(x.createdAt));
 }
 
 export const NOTIFICATIONS_CHANGED_EVENT = "qshatawi:notifications-changed";
 
 function writeNotificationsLocal(list: Notification[]) {
   if (typeof window === "undefined") return;
-  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.slice(0, 200)));
+  const backupKey = `${KEY_NOTIFICATIONS}:before-history-repair`;
+  if (localStorage.getItem(backupKey) === null) {
+    const original = localStorage.getItem(KEY_NOTIFICATIONS);
+    if (original !== null) localStorage.setItem(backupKey, original);
+  }
+  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list));
   window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
 }
 
@@ -661,7 +665,7 @@ export function pushNotification(n: Omit<Notification, "id" | "createdAt" | "rea
     createdAt: new Date().toISOString(),
     read: false,
   });
-  writeNotificationsLocal(list.slice(0, 200));
+  writeNotificationsLocal(list);
 }
 
 export function saveNotifications(list: Notification[]) {
@@ -788,6 +792,7 @@ export type SardStatus =
 export type SardPhase = "full" | "review_only";
 
 export interface SardQueueItem {
+  evaluationRules?: import("@/lib/evaluation-types").EvaluationRulesSnapshot;
   assignmentId?: string;
   archiveReason?: string;
   id: string;
@@ -1006,6 +1011,7 @@ export function notifyLateSard(students: Student[]) {
 }
 
 export interface SardHistoryItem {
+  evaluationRules?: import("@/lib/evaluation-types").EvaluationRulesSnapshot;
   id: string;
   studentId: string;
   halaqaId: number;

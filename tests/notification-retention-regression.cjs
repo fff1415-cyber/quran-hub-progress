@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict');
+const {load,storage}=require('./independent-test-support.cjs');
+global.localStorage=storage();global.sessionStorage=storage();global.window=new EventTarget();
+const mock=load('src/lib/mock-data.ts',{'@/lib/auth-session':{hasAuthToken:()=>false}});
+const rows=Array.from({length:651},(_,i)=>({id:'fixture-'+i,createdAt:new Date(1700000000000+i).toISOString(),read:false,type:'transfer',transferData:{studentId:'synthetic',actions:[{id:'action-'+i,status:'retained'}]}}));
+mock.saveNotifications(rows);const rawKey=[...localStorage.data.keys()].find(k=>JSON.parse(localStorage.getItem(k))?.length===651);
+assert.equal(mock.loadNotifications().length,651);mock.saveNotifications(rows);assert.equal(localStorage.getItem(rawKey+':before-history-repair'),JSON.stringify(rows));
+mock.pushNotification({type:'transfer',title:'fixture',message:'fixture'});assert.equal(mock.loadNotifications().length,652);
+assert.equal(mock.mergeNotifications(rows.slice(0,400),rows.slice(250)).length,651);assert.deepEqual(mock.loadNotifications().find(x=>x.id==='fixture-0').transferData.actions,rows[0].transferData.actions);
+assert.equal(mock.loadNotifications().some(x=>x.transferData&&'semesterId'in x.transferData),false);
+console.log('PASS: 651 local notification/transfer records and actions survive save, append and merge without recipient/access changes');
