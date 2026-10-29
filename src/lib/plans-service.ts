@@ -125,11 +125,13 @@ export async function assignStudentPlan(
     sard_result?: { id: string; percent: number; phase: string };
   },
 ): Promise<void> {
+  if (!Number.isInteger(startSegment) || startSegment < 1) throw new Error("مقطع البداية يجب أن يكون عددًا صحيحًا موجبًا");
+  const expectedAssignment = options?.expected_assignment_id ?? (await fetchStudentPlanSheet(studentId)).assignment?.id ?? "";
   const result = await planFetch<{ assignment_id: string; sard_queue?: unknown[] | null }>("/plans/assign", {
       method: "POST",
       body: JSON.stringify({
         student_id: studentId,
-        expected_assignment_id: options?.expected_assignment_id,
+        expected_assignment_id: expectedAssignment,
         only_if_unassigned: options?.only_if_unassigned,
         sard_result: options?.sard_result,
         plan_id: planId,
@@ -197,11 +199,14 @@ export async function patchAssignmentFaceQuotas(
 export async function patchStudentAssignment(
   studentId: string,
   status: "active" | "frozen" | "transferred",
+  assignmentId: string,
 ): Promise<void> {
-  await planFetch("/plans/assignment", {
+  if (!assignmentId) throw new Error("حدّث استمارة الطالب لتحديد التعيين");
+  const result = await planFetch<{ok: boolean; assignment_id: string; status: string}>("/plans/assignment", {
       method: "PATCH",
-      body: JSON.stringify({ student_id: studentId, status }),
+      body: JSON.stringify({ student_id: studentId, assignment_id: assignmentId, status }),
     });
+  if (!result.ok || result.assignment_id !== assignmentId || result.status !== status) throw new Error("تعذّر تأكيد حالة التعيين من الخادم");
 }
 
 export async function applyPlanInput(

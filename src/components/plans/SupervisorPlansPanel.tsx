@@ -167,6 +167,24 @@ export function SupervisorPlansPanel() {
   const [lookupRefresh, setLookupRefresh] = useState(0);
   const [studentsVersion, setStudentsVersion] = useState(0);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [assignmentView, setAssignmentView] = useState<{ studentId: string; sheet: StudentPlanSheetData } | null>(null);
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const assignmentBusy = useRef(false);
+
+  useEffect(() => {
+    let active = true;
+    setAssignmentView(null);
+    setAssignmentError(null);
+    if (selectedStudent) void fetchStudentPlanSheet(selectedStudent.id).then(sheet => {
+      if (active) setAssignmentView({ studentId: selectedStudent.id, sheet });
+    }).catch(error => {
+      if (active) setAssignmentError(error instanceof Error ? error.message : "تعذّر تحميل التعيين الحالي");
+    });
+    return () => { active = false; };
+  }, [selectedStudent?.id, lookupRefresh]);
+
+  const currentAssignment = assignmentView?.studentId === selectedStudent?.id ? assignmentView?.sheet.assignment : undefined;
+  const assignmentReady = !!selectedStudent && assignmentView?.studentId === selectedStudent.id;
 
   const me = getSessionName("المشرف");
 
@@ -223,6 +241,7 @@ export function SupervisorPlansPanel() {
   }, [plans, trackFilter, planQ]);
 
   const submitAssign = async () => {
+    if (assignmentBusy.current || !assignmentReady) return;
     if (!selectedPlan || !selectedStudent) {
       toast.error("اختر الطالب والخطة");
       return;
@@ -234,17 +253,19 @@ export function SupervisorPlansPanel() {
       return;
     }
     const globalPhase = globalPhaseFromPlanLevel(selectedPlan.track, selectedPlan.level_number, plans);
+    assignmentBusy.current = true;
     setAssigning(true);
     try {
       await assignStudentPlan(
         selectedStudent.id,
         selectedPlan.id,
-        Number(startHifz) || 1,
+        Number(startHifz),
         me,
         {
           plan_start_date: planStartDate,
           start_muraja_segment: globalPhase !== null ? murajaStartSegment(globalPhase) : null,
           face_quotas: faceQuotasFromPlan(selectedPlan),
+          expected_assignment_id: currentAssignment?.id ?? "",
         },
       );
       toast.success(`تم ربط ${selectedStudent.name} — ${selectedPlan.title}`);
@@ -256,7 +277,24 @@ export function SupervisorPlansPanel() {
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "فشل الربط");
     } finally {
+      assignmentBusy.current = false;
       setAssigning(false);
+    }
+  };
+
+  const changeAssignmentStatus = async (status: "active" | "frozen") => {
+    if (assignmentBusy.current || !selectedStudent || !assignmentReady || !currentAssignment) return;
+    assignmentBusy.current = true;
+    setAssigning(true);
+    try {
+      await patchStudentAssignment(selectedStudent.id, status, currentAssignment.id);
+      toast.success(status === "frozen" ? "تم تجميد الخطة" : "تم إلغاء التجميد — يمكن للمعلم التنفيذ");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "تعذّر تحديث التعيين");
+    } finally {
+      assignmentBusy.current = false;
+      setAssigning(false);
+      setLookupRefresh(k => k + 1);
     }
   };
 
@@ -378,7 +416,7 @@ export function SupervisorPlansPanel() {
                     key={s.id}
                     type="button"
                     onClick={() => {
-                      setSelectedStudent(s);
+                      if (!assignmentBusy.current) setSelectedStudent(s);
                       setStudentQ(s.name);
                       setTrackFilter(s.levelType);
                     }}
@@ -460,11 +498,19 @@ export function SupervisorPlansPanel() {
             </div>
           )}
 
+          {selectedStudent && (
+            <p className="text-sm" role={assignmentError ? "alert" : "status"}>
+              {assignmentError ?? (!assignmentReady ? "جارٍ تأكيد التعيين الحالي..." : currentAssignment
+                ? `الخطة الحالية: ${assignmentView?.sheet.plan?.title ?? ""} (${currentAssignment.status === "frozen" ? "مجمّدة" : "نشطة"})`
+                : "لا يوجد تعيين حالي مؤكد")}
+              {assignmentError && <Button type="button" variant="outline" onClick={() => setLookupRefresh(k => k + 1)}>إعادة المحاولة</Button>}
+            </p>
+          )}
           <div className="flex gap-2 pt-2">
             <Button
               type="button"
               className="flex-1 gold-gradient text-primary-foreground gap-1"
-              disabled={assigning || !selectedStudent || !selectedPlan}
+              disabled={assigning || !assignmentReady || !selectedPlan}
               onClick={() => void submitAssign()}
             >
               {assigning ? <Loader2 className="w-4 h-4 animate-spin" /> : <Link2 className="w-4 h-4" />}
@@ -476,12 +522,8 @@ export function SupervisorPlansPanel() {
                   type="button"
                   variant="outline"
                   title="تجميد الخطة"
-                  onClick={() => void patchStudentAssignment(selectedStudent.id, "frozen")
-                    .then(() => {
-                      toast.success("تم تجميد الخطة");
-                      setLookupRefresh((k) => k + 1);
-                    })
-                    .catch((e) => toast.error(e instanceof Error ? e.message : "فشل التجميد"))}
+                  disabled={assigning || !assignmentReady || !currentAssignment || currentAssignment.status === "frozen"}
+                  onClick={() => void changeAssignmentStatus("frozen")}
                 >
                   <Snowflake className="w-4 h-4" />
                 </Button>
@@ -489,12 +531,8 @@ export function SupervisorPlansPanel() {
                   type="button"
                   variant="outline"
                   title="إلغاء التجميد"
-                  onClick={() => void patchStudentAssignment(selectedStudent.id, "active")
-                    .then(() => {
-                      toast.success("تم إلغاء التجميد — يمكن للمعلّm التنفيذ");
-                      setLookupRefresh((k) => k + 1);
-                    })
-                    .catch((e) => toast.error(e instanceof Error ? e.message : "فشل إلغاء التجميد"))}
+                  disabled={assigning || !assignmentReady || !currentAssignment || currentAssignment.status !== "frozen"}
+                  onClick={() => void changeAssignmentStatus("active")}
                 >
                   <Sun className="w-4 h-4" />
                 </Button>

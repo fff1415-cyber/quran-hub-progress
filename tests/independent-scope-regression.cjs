@@ -6,9 +6,10 @@ assert.deepEqual(cp.execFileSync('git',['diff','--name-only',base,'--','api'],{e
 assert.equal(cp.execFileSync('git',['diff',base,'--','database'],{encoding:'utf8'}),'','release requires no schema migration');
 function functions(code){const sf=ts.createSourceFile('scope.tsx',code,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);return new Map(sf.statements.filter(ts.isFunctionDeclaration).filter(n=>n.name).map(n=>[n.name.text,n.getText(sf)]));}
 function phpFunction(code,name){const start=code.indexOf(`function ${name}(`),end=code.indexOf('\nfunction ',start+1);assert.ok(start>=0,name);return code.slice(start,end<0?undefined:end).trim();}
-for(const name of ['plans_require_roles','plans_assert_student_in_complex','plans_assert_plan_in_complex','plans_assert_teacher_student_access','handle_patch_assignment','handle_apply_plan_input'])assert.equal(phpFunction(fs.readFileSync('api/routes/plans.php','utf8'),name),phpFunction(original('api/routes/plans.php'),name),name);
+for(const name of ['plans_require_roles','plans_assert_student_in_complex','plans_assert_plan_in_complex','plans_assert_teacher_student_access','handle_apply_plan_input'])assert.equal(phpFunction(fs.readFileSync('api/routes/plans.php','utf8'),name),phpFunction(original('api/routes/plans.php'),name),name);
 const before=phpFunction(original('api/routes/plans.php'),'handle_assign_plan'),after=phpFunction(fs.readFileSync('api/routes/plans.php','utf8'),'handle_assign_plan');
-assert.equal(after.slice(0,after.indexOf('    try {')),before.slice(0,before.indexOf('    try {')),'assignment authorization remains literal');
+const planGuards=code=>code.split('\n').filter(line=>/require_auth\(|require_complex_id\(|plans_require_roles\(|plans_assert_student_in_complex\(|plans_assert_plan_in_complex\(/.test(line)).map(line=>line.trim());
+for(const name of ['handle_assign_plan','handle_patch_assignment'])assert.deepEqual(planGuards(phpFunction(fs.readFileSync('api/routes/plans.php','utf8'),name)),planGuards(phpFunction(original('api/routes/plans.php'),name)),'plan authorization remains literal: '+name);
 const oldEval=phpFunction(original('api/routes/evaluation_settings.php'),'handle_put_evaluation_settings'),newEval=phpFunction(fs.readFileSync('api/routes/evaluation_settings.php','utf8'),'handle_put_evaluation_settings');
 assert.equal(newEval.slice(0,newEval.indexOf('    $tenants =')),oldEval.slice(0,oldEval.indexOf('    $tenants =')),'settings roles and scope remain literal');
 for(const name of ['eval_settings_defaults','eval_settings_sanitize'])assert.equal(phpFunction(fs.readFileSync('api/routes/evaluation_settings.php','utf8'),name),phpFunction(original('api/routes/evaluation_settings.php'),name),'no threshold, weight, rounding or retry policy change');
@@ -19,7 +20,7 @@ const readGuards=code=>code.split('\n').filter(line=>/require_auth\(|require_com
 assert.deepEqual(readGuards(readAfter),readGuards(readBefore),'response context metadata cannot change existing read roles or tenant predicates');
 for(const [path,allowed] of [
  ['src/lib/mock-data.ts',['persistShared','saveSardQueue','pushSardHistory','saveSardHistory']],
- ['src/lib/plans-service.ts',['assignStudentPlan']],
+ ['src/lib/plans-service.ts',['assignStudentPlan','patchStudentAssignment']],
  ['src/components/role-workspace/RoleSections.tsx',['SecretarySardPanel','SupervisorPlanCompletedPanel','SupervisorApprovalsPanel','SupervisorForceRetryPanel','SupervisorPassedPanel']],
 ]){const current=functions(fs.readFileSync(path,'utf8'));for(const [name,body] of functions(original(path)))if(!allowed.includes(name))assert.equal(current.get(name),body,`unrelated function changed: ${name}`);}
 assert.ok(!fs.readFileSync('src/lib/sard-queue-refresh.ts','utf8').includes('secureSetAppState'),'queue refresh cannot write shared state');

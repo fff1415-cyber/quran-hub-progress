@@ -41,6 +41,7 @@ jobs:
           find api tests -name '*.php' -print0 | xargs -0 -n1 php -l
           php tests/backend-independent-settings.php
           php tests/backend-independent-import.php
+          php tests/backend-plan-safeguards.php
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
       - name: Isolated package and backup/verification fixtures (no SSH or production credentials)

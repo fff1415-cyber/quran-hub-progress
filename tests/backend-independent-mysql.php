@@ -70,3 +70,37 @@ try{handle_set_app_state();throw new RuntimeException('old truncation accepted')
 $s->execute([3,'sard_history']);check(json_decode($s->fetchColumn(),true)===$records,'old-client rejection retains all 651 stored records');
 $_GET=['key'=>'sard_history'];$pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();handle_list_app_state();$pdo->rollBack();
 check($GLOBALS['response'][0]['context_complex_id']===3&&$GLOBALS['response'][0]['value']===$records,'read-only history response confirms request context without changing its stored data');
+// F07/F20 use existing rows only: no migration or inferred legacy provenance.
+$GLOBALS['auth']=['role'=>'supervisor','complexId'=>1,'name'=>'fixture'];
+$pdo->exec("INSERT INTO students VALUES('target-S',1,1,'1'),('middle-S',1,1,'1'),('rollback-S',1,1,'1');
+ INSERT INTO education_plans(id,track,level_number,title,segment_count) VALUES('Q','gold',1002,'next fixture',2);
+ INSERT INTO plan_segments(id,plan_id,segment_index,hifz_plan,rabt_plan,muraja_plan) VALUES('q-1','Q',1,'h','r','m'),('q-3','Q',3,'h','r','m');
+ INSERT INTO student_plan_assignments(id,student_id,plan_id,status) VALUES('A','target-S','P','active'),('R','rollback-S','P','active');
+ INSERT INTO segment_completions(id,student_id,plan_id,assignment_id,segment_index,task_type,completed_at) VALUES('legacy-exact','target-S','P','A',1,'hifz','2026-10-01'),('legacy-unbound','target-S','P',NULL,2,'hifz','2026-10-01');");
+$history=$pdo->query("SELECT * FROM segment_completions WHERE student_id='target-S' ORDER BY id")->fetchAll();
+$GLOBALS['input']=['student_id'=>'target-S','assignment_id'=>'A','status'=>'frozen'];handle_patch_assignment();$frozen=$pdo->query("SELECT frozen_at FROM student_plan_assignments WHERE id='A'")->fetchColumn();handle_patch_assignment();
+check($GLOBALS['response']['updated']===0&&$pdo->query("SELECT frozen_at FROM student_plan_assignments WHERE id='A'")->fetchColumn()===$frozen,'real engine repeated freeze preserves the first timestamp');
+$GLOBALS['input']=['student_id'=>'target-S','plan_id'=>'Q','expected_assignment_id'=>'A'];handle_assign_plan();$assigned=$GLOBALS['response']['assignment_id'];
+check((int)$pdo->query("SELECT COUNT(*) FROM student_plan_assignments WHERE student_id='target-S' AND status IN ('active','frozen')")->fetchColumn()===1,'frozen replacement leaves one current plan on the actual engine');
+$GLOBALS['input']=['student_id'=>'target-S','assignment_id'=>'A','status'=>'active'];
+try{handle_patch_assignment();throw new RuntimeException('old assignment resumed');}catch(RuntimeException $e){check($e->getCode()===409,'stale resume rejects the old identity');}
+check($pdo->query("SELECT * FROM segment_completions WHERE student_id='target-S' ORDER BY id")->fetchAll()===$history,'bound and unbound original completions are preserved byte-for-value without guessing');
+$pdo->prepare("UPDATE student_plan_assignments SET status='frozen' WHERE id=?")->execute([$assigned]);
+$children=[];for($i=0;$i<2;$i++){
+ $pid=pcntl_fork();if($pid===-1)throw new RuntimeException('fork unavailable');
+ if($pid===0){$GLOBALS['pdo']=connectFixture();$GLOBALS['input']=$i===0?['student_id'=>'target-S','plan_id'=>'P','expected_assignment_id'=>$assigned]:['student_id'=>'target-S','assignment_id'=>$assigned,'status'=>'active'];
+  try{if($i===0)handle_assign_plan();else handle_patch_assignment();exit(0);}catch(Throwable $e){exit(str_contains($e->getMessage(),'تغيّرت خطة الطالب')?0:1);}}
+ $children[]=$pid;
+}
+foreach($children as $pid){pcntl_waitpid($pid,$status);check(pcntl_wexitstatus($status)===0,'concurrent replacement/resume commits or reports a genuine stale assignment');}
+$GLOBALS['pdo']=$pdo=connectFixture();check((int)$pdo->query("SELECT COUNT(*) FROM student_plan_assignments WHERE student_id='target-S' AND status IN ('active','frozen')")->fetchColumn()===1,'student row lock prevents two current assignments during real concurrency');
+$pdo->exec("INSERT INTO student_plan_assignments(id,student_id,plan_id,status) VALUES('duplicate-current','target-S','Q','frozen')");
+$GLOBALS['input']=['student_id'=>'target-S','assignment_id'=>'duplicate-current','status'=>'active'];
+try{handle_patch_assignment();throw new RuntimeException('ambiguous data changed');}catch(RuntimeException $e){check(str_contains($e->getMessage(),'تعيينات حالية متعددة'),'ambiguous current rows are held intact instead of selecting one');}
+check((int)$pdo->query("SELECT COUNT(*) FROM student_plan_assignments WHERE student_id='target-S' AND status IN ('active','frozen')")->fetchColumn()===2,'both ambiguous fixture rows remain available for review');
+foreach([0,-1,1.5,'bad',2,99] as $start){$GLOBALS['input']=['student_id'=>'middle-S','plan_id'=>'Q','expected_assignment_id'=>'','start_segment_index'=>$start];try{handle_assign_plan();throw new RuntimeException('invalid start accepted');}catch(RuntimeException $e){check(str_contains($e->getMessage(),in_array($start,[2,99],true)?'غير موجود':'عددًا صحيحًا'),'invalid or missing start is rejected without creating an assignment');}}
+$GLOBALS['input']['start_segment_index']=3;handle_assign_plan();check((int)$pdo->query("SELECT start_segment_index FROM student_plan_assignments WHERE student_id='middle-S'")->fetchColumn()===3,'a real middle segment is accepted');
+$pdo->exec("ALTER TABLE student_plan_assignments ADD CONSTRAINT fixture_reject_frozen CHECK(student_id<>'rollback-S' OR status<>'frozen')");
+$GLOBALS['input']=['student_id'=>'rollback-S','assignment_id'=>'R','status'=>'frozen'];
+try{handle_patch_assignment();throw new RuntimeException('freeze failure was hidden');}catch(RuntimeException $e){check(str_contains($e->getMessage(),'fixture_reject_frozen'),'actual freeze constraint failure is surfaced');}
+check($pdo->query("SELECT status FROM student_plan_assignments WHERE id='R'")->fetchColumn()==='active','failed freeze rolls back its existing row on the actual engine');
