@@ -487,6 +487,28 @@ function handle_kiosk_session(): void
     ]);
 }
 
+/** Only the already-authorized check-in handler calls this writer. */
+function kiosk_record_attendance(PDO $pdo,int $cid,string $sid,string $weekKey,string $dayKey,array $workingKeys,string $attendance,?string $semester): string
+{
+    $pdo->beginTransaction();
+    try {
+        [$grades,$meta]=grade_cells_lock($pdo,$cid);
+        if (grade_cells_context($pdo,$cid,true)['semester_id']!==$semester) throw new RuntimeException('تغيّر الفصل الدراسي؛ أعد قراءة رمز التحضير');
+        if(!isset($grades[$sid])||!is_array($grades[$sid]))$grades[$sid]=[];
+        if(!isset($grades[$sid][$weekKey])||!is_array($grades[$sid][$weekKey]))$grades[$sid][$weekKey]=kiosk_empty_week($workingKeys);
+        $week=$grades[$sid][$weekKey];
+        if(!isset($week['days'])||!is_array($week['days']))$week['days']=[];
+        foreach($workingKeys as $key)if(!isset($week['days'][$key])||!is_array($week['days'][$key]))$week['days'][$key]=kiosk_empty_day();
+        $current=(string)($week['days'][$dayKey]['attendance']??'');
+        if(in_array($current,['present','late','excused'],true)){$pdo->commit();return $current;}
+        $week['days'][$dayKey]['attendance']=$attendance;$grades[$sid][$weekKey]=$week;
+        kiosk_save_grades($pdo,$cid,$grades);
+        grade_cell_mark($meta,[$sid,$weekKey,'days',$dayKey,'attendance'],new_uuid());
+        app_state_upsert($pdo,'__qhp_grade_cell_versions_v1',$meta,app_state_tenant_enabled($pdo)?$cid:null);
+        $pdo->commit();return $current;
+    }catch(Throwable $error){if($pdo->inTransaction())$pdo->rollBack();throw $error;}
+}
+
 function handle_kiosk_check_in(): void
 {
     if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -559,25 +581,7 @@ function handle_kiosk_check_in(): void
     $weekKey = (string) $weekNum;
     $sid = (string) $student['id'];
 
-    $grades = kiosk_load_grades($pdo, $cid);
-    if (!isset($grades[$sid]) || !is_array($grades[$sid])) {
-        $grades[$sid] = [];
-    }
-    if (!isset($grades[$sid][$weekKey]) || !is_array($grades[$sid][$weekKey])) {
-        $grades[$sid][$weekKey] = kiosk_empty_week($workingKeys);
-    }
-
-    $week = $grades[$sid][$weekKey];
-    if (!isset($week['days']) || !is_array($week['days'])) {
-        $week['days'] = [];
-    }
-    foreach ($workingKeys as $k) {
-        if (!isset($week['days'][$k]) || !is_array($week['days'][$k])) {
-            $week['days'][$k] = kiosk_empty_day();
-        }
-    }
-
-    $current = $week['days'][$dayKey]['attendance'] ?? '';
+    $current = kiosk_record_attendance($pdo, $cid, $sid, $weekKey, $dayKey, $workingKeys, $attendance, (string)$cal['semester']['id']);
     if ($current === 'present' || $current === 'late') {
         json_response([
             'status' => 'already_checked_in',
@@ -594,10 +598,6 @@ function handle_kiosk_check_in(): void
         ]);
         return;
     }
-
-    $week['days'][$dayKey]['attendance'] = $attendance;
-    $grades[$sid][$weekKey] = $week;
-    kiosk_save_grades($pdo, $cid, $grades);
 
     if ($attendance === 'late') {
         json_response([

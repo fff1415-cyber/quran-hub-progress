@@ -1,5 +1,6 @@
 // Mock data + localStorage store for مجمع حلقات الشتيوي
 import { hasAuthToken } from "@/lib/auth-session";
+import { captureGradeCellEdit } from "@/lib/grade-cell-sync";
 
 export type Role = "manager" | "secretary" | "supervisor" | "program_supervisor" | "test_member" | "test_chair" | "teacher" | "assistant" | "musammi" | "student" | "parent";
 
@@ -493,6 +494,7 @@ export function loadGrades(): GradesStore {
   return raw ? JSON.parse(raw) : {};
 }
 export function saveGrades(g: GradesStore, options?: { sync?: boolean | "immediate" }) {
+  if (options?.sync !== false && sessionStorage.getItem("qs_syncing") !== "1" && hasAuthToken()) captureGradeCellEdit(loadGrades(), g);
   localStorage.setItem(KEY_GRADES, JSON.stringify(g));
   notifyGradesChanged();
   if (options?.sync === false) return;
@@ -513,7 +515,9 @@ export function setGradesSemesterId(id: string | null) {
 
 /** Clear grades when a new academic semester becomes active. */
 export function resetGradesForNewSemester(semesterId: string | null) {
-  saveGrades({});
+  const original = localStorage.getItem(KEY_GRADES);
+  if (original !== null) localStorage.setItem(`${KEY_GRADES}:before-semester-reset:${Date.now()}`, original);
+  saveGrades({}, { sync: false });
   setGradesSemesterId(semesterId);
 }
 

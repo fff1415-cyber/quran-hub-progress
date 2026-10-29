@@ -52,6 +52,7 @@ import {
 import { fetchActiveCalendar, loadCachedCalendar } from "./academic-context";
 import { mergeAbsenceAlertRecordFromCloud, ABSENCE_ALERTS_APP_STATE_KEY } from "./semester-absence";
 import { getActiveComplexId } from "@/lib/tenant";
+import { acceptGradeCellSnapshot, flushGradeCellEdits, readGradeCellSnapshot } from "@/lib/grade-cell-sync";
 import {
   getAuthItem,
   getToken,
@@ -316,7 +317,8 @@ export async function syncFromCloud(options?: {
         sessionStorage.setItem("qs_syncing", "1");
         if (!semesterReset && state.has("grades")) {
           const cloud = state.get("grades") as GradesStore;
-          saveGrades(mergeGradesStores(loadGrades(), cloud), { sync: false });
+          const row = stateRows.find(row => row.key === "grades")!;
+          saveGrades(acceptGradeCellSnapshot(cloud, row.cell_sync, row.context_complex_id), { sync: false });
         }
         if (!weeklyTestsReset && state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
         if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
@@ -403,14 +405,7 @@ export async function syncFromCloud(options?: {
         }
         sessionStorage.removeItem("qs_syncing");
 
-        if (semesterReset) {
-          try {
-            await secureSetAppState({ data: { token, key: "grades", value: {} } });
-            await secureSetAppState({ data: { token, key: "weekly_tests", value: {} } });
-          } catch {
-            /* local reset is enough */
-          }
-        }
+        // A semester switch never erases the shared, unclassified historical stores.
         if (tarbawiReset) {
           try {
             await secureSetAppState({ data: { token, key: "tarbawi_program", value: { settingsBySemester: {}, plans: {} } } });
@@ -516,12 +511,7 @@ export async function pushAppState(
 }
 
 export async function fetchCloudGrades(): Promise<GradesStore> {
-  const rows = await secureListAppState({ data: { token: tokenOrThrow(), key: "grades" } });
-  const row = rows.find((r) => r.key === "grades");
-  if (!row || row.value == null || typeof row.value !== "object" || Array.isArray(row.value)) {
-    return {};
-  }
-  return row.value as GradesStore;
+  return readGradeCellSnapshot();
 }
 
 let gradesPushQueue: Promise<GradesStore> = Promise.resolve({} as GradesStore);
@@ -535,27 +525,8 @@ function gradesPayloadHash(g: GradesStore): string {
 
 /** Upload local grades after merging with the latest cloud copy (teacher + assistant). */
 export async function pushMergedGrades(local: GradesStore): Promise<GradesStore> {
-  const run = async (): Promise<GradesStore> => {
-    let cloud: GradesStore = {};
-    try {
-      cloud = await fetchCloudGrades();
-    } catch {
-      cloud = {};
-    }
-    const merged = mergeGradesStores(cloud, local);
-    await secureSetAppState({ data: { token: tokenOrThrow(), key: "grades", value: merged } });
-    // A teacher can tap another field while this request is in flight.
-    // Keep those local edits when the earlier upload finishes.
-    saveGrades(mergeGradesStores(merged, loadGrades()), { sync: false });
-    lastPulledCloudHash = gradesPayloadHash(merged);
-    return merged;
-  };
-  const next = gradesPushQueue.then(run, run);
-  gradesPushQueue = next.then(
-    (v) => v,
-    () => local,
-  );
-  return next;
+  void local;
+  return flushGradeCellEdits();
 }
 
 /** Pull cloud grades and merge into local without echoing a push. */
@@ -567,7 +538,7 @@ export async function pullMergedGrades(): Promise<GradesStore | null> {
   if (cloudHash === lastPulledCloudHash) return null;
 
   const local = loadGrades();
-  const merged = mergeGradesStores(local, cloud);
+  const merged = cloud;
   const mergedHash = gradesPayloadHash(merged);
   lastPulledCloudHash = cloudHash;
 

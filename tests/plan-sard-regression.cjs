@@ -23,7 +23,7 @@ assert.equal(auth.getAuthItem('qs_role'),'supervisor');assert.equal(auth.getAuth
  await assert.rejects(progression.completePlanAndAdvance('student','supervisor','gold',{expectedAssignmentId:'stale'}),/تغيّرت/);assert.equal(calls.length,1);
  console.log('PASS: token identity reconciliation, missing next plan preservation, expected assignment guard and atomic assignment request');
 })().catch(e=>{console.error(e);process.exitCode=1});
-const mock = load('src/lib/mock-data.ts', {'@/lib/auth-session':{hasAuthToken:()=>false}});
+const mock = load('src/lib/mock-data.ts', {'@/lib/grade-cell-sync':{captureGradeCellEdit:()=>{}},'@/lib/auth-session':{hasAuthToken:()=>false}});
 localStorage.clear=()=>{};
 localStorage.removeItem('qshatawi_sard_queue_v2');
 const first=mock.enqueuePlanCompleted('student',1,2,'plan','assignment-1');

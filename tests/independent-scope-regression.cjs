@@ -1,8 +1,8 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),cp=require('node:child_process'),ts=require('typescript');
 const base='3511c25308393218a6a9d5db69efaa8011f8cebc';
 const original=path=>cp.execFileSync('git',['show',`${base}:${path}`],{encoding:'utf8'});
-for(const path of ['api/auth.php','api/tenant.php','api/routes/login.php','api/routes/students.php','api/routes/halaqat.php','api/routes/role_accounts.php','src/lib/auth-session.ts','src/lib/auth-redirect.ts','src/lib/tenant-session.ts','src/lib/tenant.ts','src/lib/permissions.ts','src/lib/teacher-halaqa-access.ts','src/lib/cloud-sync.ts','src/lib/secure-data.functions.ts','src/lib/semester-grading.ts','src/lib/evaluation-calculator.ts','package.json','package-lock.json','bun.lock'])assert.equal(fs.readFileSync(path,'utf8'),original(path),path);
-assert.deepEqual(cp.execFileSync('git',['diff','--name-only',base,'--','api'],{encoding:'utf8'}).trim().split('\n').sort(),['api/routes/app_state.php','api/routes/evaluation_settings.php','api/routes/plans.php'],'the API package cannot contain unrelated permission/login/ownership files');
+for(const path of ['api/auth.php','api/tenant.php','api/routes/login.php','api/routes/students.php','api/routes/halaqat.php','api/routes/role_accounts.php','src/lib/auth-session.ts','src/lib/auth-redirect.ts','src/lib/tenant-session.ts','src/lib/tenant.ts','src/lib/permissions.ts','src/lib/teacher-halaqa-access.ts','src/lib/semester-grading.ts','src/lib/evaluation-calculator.ts','package.json','package-lock.json','bun.lock'])assert.equal(fs.readFileSync(path,'utf8'),original(path),path);
+assert.deepEqual(cp.execFileSync('git',['diff','--name-only',base,'--','api'],{encoding:'utf8'}).trim().split('\n').sort(),['api/routes/app_state.php','api/routes/evaluation_settings.php','api/routes/kiosk.php','api/routes/plans.php'],'the API package cannot contain unrelated permission/login/ownership files');
 assert.equal(cp.execFileSync('git',['diff',base,'--','database'],{encoding:'utf8'}),'','release requires no schema migration');
 function functions(code){const sf=ts.createSourceFile('scope.tsx',code,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);return new Map(sf.statements.filter(ts.isFunctionDeclaration).filter(n=>n.name).map(n=>[n.name.text,n.getText(sf)]));}
 function phpFunction(code,name){const start=code.indexOf(`function ${name}(`),end=code.indexOf('\nfunction ',start+1);assert.ok(start>=0,name);return code.slice(start,end<0?undefined:end).trim();}
@@ -19,11 +19,22 @@ const readBefore=phpFunction(original('api/routes/app_state.php'),'handle_list_a
 const readGuards=code=>code.split('\n').filter(line=>/require_auth\(|require_complex_id\(|\$role|\$allowed|WHERE complex_id|\$tenants|\$stmt->execute/.test(line)).map(line=>line.trim());
 assert.deepEqual(readGuards(readAfter),readGuards(readBefore),'response context metadata cannot change existing read roles or tenant predicates');
 for(const [path,allowed] of [
- ['src/lib/mock-data.ts',['persistShared','saveSardQueue','pushSardHistory','saveSardHistory','mergeNotifications','writeNotificationsLocal','pushNotification']],
+ ['src/lib/mock-data.ts',['persistShared','saveSardQueue','pushSardHistory','saveSardHistory','mergeNotifications','writeNotificationsLocal','pushNotification','saveGrades','resetGradesForNewSemester']],
  ['src/lib/plans-service.ts',['assignStudentPlan','patchStudentAssignment']],
  ['src/components/role-workspace/RoleSections.tsx',['SecretarySardPanel','SupervisorPlanCompletedPanel','SupervisorApprovalsPanel','SupervisorForceRetryPanel','SupervisorPassedPanel']],
 ]){const current=functions(fs.readFileSync(path,'utf8'));for(const [name,body] of functions(original(path)))if(!allowed.includes(name))assert.equal(current.get(name),body,`unrelated function changed: ${name}`);}
 assert.ok(!fs.readFileSync('src/lib/sard-queue-refresh.ts','utf8').includes('secureSetAppState'),'queue refresh cannot write shared state');
+
+for(const path of ['src/lib/secure-data.functions.ts','src/lib/cloud-sync.ts']){
+ const current=functions(fs.readFileSync(path,'utf8'));
+ const allowed=path.includes('secure-data')?['secureListAppState']:['syncFromCloud','fetchCloudGrades','pushMergedGrades','pullMergedGrades'];
+ for(const [name,body] of functions(original(path)))if(!allowed.includes(name))assert.equal(current.get(name),body,`unrelated access/transport function changed: ${name}`);
+}
+const oldSync=functions(original('src/lib/cloud-sync.ts')).get('syncFromCloud'),newSync=functions(fs.readFileSync('src/lib/cloud-sync.ts','utf8')).get('syncFromCloud');
+assert.equal(newSync.slice(0,newSync.indexOf('    if (token) {\n      try {\n        const calendar')),oldSync.slice(0,oldSync.indexOf('    if (token) {\n      try {\n        const calendar')),'roster ownership, login/session and tenant selection are unchanged');
+const oldKiosk=phpFunction(original('api/routes/kiosk.php'),'handle_kiosk_check_in'),newKiosk=phpFunction(fs.readFileSync('api/routes/kiosk.php','utf8'),'handle_kiosk_check_in');
+assert.equal(newKiosk.slice(0,newKiosk.indexOf('    $current = kiosk_record_attendance')),oldKiosk.slice(0,oldKiosk.indexOf('    $grades = kiosk_load_grades')),'kiosk tokens, identity, ownership, dates and access checks unchanged');
+
 const workflow=fs.readFileSync('.github/workflows/deploy.yml','utf8');
 assert.ok(workflow.indexOf('Verify existing API files before replacement')<workflow.indexOf('Sync PHP API (SFTP primary)'));
 assert.ok(workflow.indexOf('Verify changed API files before frontend upload')<workflow.indexOf('Sync frontend (SFTP primary)'));
@@ -31,4 +42,4 @@ assert.equal((workflow.match(/local_path: \.\/dist\/api-release\//g)||[]).length
 assert.doesNotMatch(workflow,/local_path: \.\/api\//);
 assert.match(workflow,/API_DEPLOY_LOCAL: \.\/dist\/api-release\//);
 assert.match(workflow,/state-name: \.ftp-deploy-api-\$\{\{ github.sha \}\}-state.json/,'a partial FTP payload must not reuse a full-deployment deletion inventory');
-console.log('PASS: F01/F02, ownership, tenancy, grade storage, policy rules, API guards and dependencies unchanged; deploy only the three changed API files');
+console.log('PASS: F01/F02, ownership, tenancy, policy formulas, original API authorization and dependencies unchanged; only reviewed API routes differ');

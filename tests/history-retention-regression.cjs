@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const {load,storage,flush}=require('./independent-test-support.cjs');
 global.window=new EventTarget();global.localStorage=storage();global.sessionStorage=storage();
-const writes=[],errors=[];const deps={'@/lib/auth-session':{hasAuthToken:()=>true},'./cloud-sync':{pushAppState:async(key,value)=>writes.push([key,structuredClone(value)])},'sonner':{toast:{error:message=>errors.push(message)}}};
+const writes=[],errors=[];const deps={'@/lib/grade-cell-sync':{captureGradeCellEdit:()=>{}},'@/lib/auth-session':{hasAuthToken:()=>true},'./cloud-sync':{pushAppState:async(key,value)=>writes.push([key,structuredClone(value)])},'sonner':{toast:{error:message=>errors.push(message)}}};
 const mock=load('src/lib/mock-data.ts',deps);
 const academic=load('src/lib/academic-record.ts',{...deps,'@/lib/mock-data':mock});
 (async()=>{
