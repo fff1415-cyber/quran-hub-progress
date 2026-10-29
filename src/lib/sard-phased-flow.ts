@@ -1,4 +1,4 @@
-import type { EvaluationSettings, SegmentTally } from "@/lib/evaluation-types";
+import type { EvaluationSettings, SegmentTally, EvaluationRulesSnapshot } from "@/lib/evaluation-types";
 import type { SardQueueItem } from "@/lib/mock-data";
 import {
   computeHifzScore,
@@ -127,8 +127,10 @@ export function buildReviewOnlyPatch(
   hifzWarnings: number,
   segmentCount: number,
   retryDays = 2,
+  evaluationRules?: EvaluationRulesSnapshot,
 ): Partial<SardQueueItem> {
   return {
+    ...(evaluationRules ? { evaluationRules } : {}),
     phase: "review_only",
     status: "awaiting_review",
     scheduledAt: scheduleRetry(retryDays),
