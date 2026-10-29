@@ -850,35 +850,44 @@ function handle_patch_assignment_quotas(): void
     plans_require_roles($auth, ['supervisor']);
     $input = json_input();
     $studentId = trim((string) ($input['student_id'] ?? ''));
+    $assignmentId = trim((string) ($input['assignment_id'] ?? ''));
     if ($studentId === '') {
         error_response('student_id مطلوب');
     }
     $pdo = db();
     $tenants = plans_tenant_enabled($pdo);
     plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
+    if ($assignmentId === '') error_response('حدّث الاستمارة؛ معرّف التعيين مطلوب لتحديث الكميات', 409);
     plans_ensure_daily_faces_columns($pdo);
-    $trackStmt = $pdo->prepare(
-        'SELECT p.track FROM student_plan_assignments a
-         JOIN education_plans p ON p.id = a.plan_id
-         WHERE a.student_id = ? AND a.status IN (\'active\', \'frozen\')
-         LIMIT 1'
-    );
-    $trackStmt->execute([$studentId]);
-    $trackRow = $trackStmt->fetch();
-    $track = ($trackRow['track'] ?? '') === 'silver' ? 'silver' : 'gold';
-    $faces = plans_track_face_quotas($track);
-    $stmt = $pdo->prepare(
-        'UPDATE student_plan_assignments
-         SET daily_hifz_faces = ?, daily_rabt_faces = ?, daily_muraja_faces = ?,
-             faces_per_half = ?, faces_per_one = ?, faces_per_two = ?
-         WHERE student_id = ? AND status IN (\'active\', \'frozen\')'
-    );
-    $stmt->execute([
-        $faces['daily_hifz_faces'], $faces['daily_rabt_faces'], $faces['daily_muraja_faces'],
-        $faces['faces_per_half'], $faces['faces_per_one'], $faces['faces_per_two'],
-        $studentId,
-    ]);
-    json_response(['ok' => true, 'updated' => $stmt->rowCount()]);
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('SELECT id FROM students WHERE id = ? FOR UPDATE')->execute([$studentId]);
+        $current = plans_locked_current_assignment($pdo, $studentId);
+        if (!$current || $current['id'] !== $assignmentId) throw new RuntimeException('تغيّرت خطة الطالب — حدّث الاستمارة قبل تحديث الكميات');
+        $trackStmt = $pdo->prepare('SELECT p.track FROM student_plan_assignments a JOIN education_plans p ON p.id = a.plan_id WHERE a.id = ? AND a.student_id = ?');
+        $trackStmt->execute([$assignmentId, $studentId]);
+        $trackRow = $trackStmt->fetch();
+        if (!$trackRow) throw new RuntimeException('تعذّر تأكيد مسار التعيين');
+        $track = ($trackRow['track'] ?? '') === 'silver' ? 'silver' : 'gold';
+        $faces = plans_track_face_quotas($track);
+        $stmt = $pdo->prepare(
+            'UPDATE student_plan_assignments
+             SET daily_hifz_faces = ?, daily_rabt_faces = ?, daily_muraja_faces = ?,
+                 faces_per_half = ?, faces_per_one = ?, faces_per_two = ?
+             WHERE id = ? AND student_id = ?'
+        );
+        $stmt->execute([
+            $faces['daily_hifz_faces'], $faces['daily_rabt_faces'], $faces['daily_muraja_faces'],
+            $faces['faces_per_half'], $faces['faces_per_one'], $faces['faces_per_two'],
+            $assignmentId, $studentId,
+        ]);
+        $updated = $stmt->rowCount();
+        $pdo->commit();
+        json_response(['ok' => true, 'updated' => $updated, 'assignment_id' => $assignmentId]);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_response($e->getMessage(), $e instanceof PDOException ? 500 : 409);
+    }
 }
 
 function handle_patch_assignment(): void

@@ -8,6 +8,8 @@ function functions(code){const sf=ts.createSourceFile('scope.tsx',code,ts.Script
 function phpFunction(code,name){const start=code.indexOf(`function ${name}(`),end=code.indexOf('\nfunction ',start+1);assert.ok(start>=0,name);return code.slice(start,end<0?undefined:end).trim();}
 for(const [name,body] of functions(original('src/lib/secure-data.functions.ts')))assert.equal(functions(fs.readFileSync('src/lib/secure-data.functions.ts','utf8')).get(name).replace('    cache: "no-store",\n',''),body,'API/login method unchanged: '+name);
 for(const name of ['plans_require_roles','plans_assert_student_in_complex','plans_assert_plan_in_complex','plans_assert_teacher_student_access','handle_apply_plan_input'])assert.equal(phpFunction(fs.readFileSync('api/routes/plans.php','utf8'),name),phpFunction(original('api/routes/plans.php'),name),name);
+assert.deepEqual(planGuardsForQuota(phpFunction(fs.readFileSync('api/routes/plans.php','utf8'),'handle_patch_assignment_quotas')),planGuardsForQuota(phpFunction(original('api/routes/plans.php'),'handle_patch_assignment_quotas')),'quota roles and existing student scope unchanged');
+function planGuardsForQuota(code){return code.split('\n').filter(line=>/require_auth\(|require_complex_id\(|plans_require_roles\(|plans_assert_student_in_complex\(|\$tenants =/.test(line)).map(line=>line.trim());}
 const before=phpFunction(original('api/routes/plans.php'),'handle_assign_plan'),after=phpFunction(fs.readFileSync('api/routes/plans.php','utf8'),'handle_assign_plan');
 const planGuards=code=>code.split('\n').filter(line=>/require_auth\(|require_complex_id\(|plans_require_roles\(|plans_assert_student_in_complex\(|plans_assert_plan_in_complex\(/.test(line)).map(line=>line.trim());
 for(const name of ['handle_assign_plan','handle_patch_assignment'])assert.deepEqual(planGuards(phpFunction(fs.readFileSync('api/routes/plans.php','utf8'),name)),planGuards(phpFunction(original('api/routes/plans.php'),name)),'plan authorization remains literal: '+name);
@@ -21,7 +23,7 @@ const readGuards=code=>code.split('\n').filter(line=>/require_auth\(|require_com
 assert.deepEqual(readGuards(readAfter),readGuards(readBefore),'response context metadata cannot change existing read roles or tenant predicates');
 for(const [path,allowed] of [
  ['src/lib/mock-data.ts',['persistShared','saveSardQueue','pushSardHistory','saveSardHistory','mergeNotifications','writeNotificationsLocal','pushNotification']],
- ['src/lib/plans-service.ts',['assignStudentPlan','patchStudentAssignment']],
+ ['src/lib/plans-service.ts',['assignStudentPlan','patchStudentAssignment','patchAssignmentFaceQuotas']],
  ['src/components/role-workspace/RoleSections.tsx',['SecretarySardPanel','SupervisorPlanCompletedPanel','SupervisorApprovalsPanel','SupervisorForceRetryPanel','SupervisorPassedPanel']],
 ]){const current=functions(fs.readFileSync(path,'utf8'));for(const [name,body] of functions(original(path)))if(!allowed.includes(name))assert.equal(current.get(name),body,`unrelated function changed: ${name}`);}
 assert.ok(!fs.readFileSync('src/lib/sard-queue-refresh.ts','utf8').includes('secureSetAppState'),'queue refresh cannot write shared state');

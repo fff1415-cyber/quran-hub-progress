@@ -189,11 +189,14 @@ export async function updateSupervisorPlanHifz(
 export async function patchAssignmentFaceQuotas(
   studentId: string,
   quotas: Partial<DailyFaceQuotas>,
+  assignmentId: string,
 ): Promise<void> {
-  await planFetch("/plans/assignment-quotas", {
+  if (!assignmentId) throw new Error("حدّث الاستمارة لتحديد التعيين قبل تحديث الكميات");
+  const result = await planFetch<{ok:boolean; assignment_id:string}>("/plans/assignment-quotas", {
       method: "PATCH",
-      body: JSON.stringify({ student_id: studentId, ...quotas }),
+      body: JSON.stringify({ ...quotas, student_id: studentId, assignment_id: assignmentId }),
     });
+  if (!result.ok || result.assignment_id !== assignmentId) throw new Error("تعذّر تأكيد كميات التعيين من الخادم");
 }
 
 export async function patchStudentAssignment(
