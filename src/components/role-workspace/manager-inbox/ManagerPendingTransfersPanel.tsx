@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
-  loadStudents, loadHalaqat, loadGrades, updateNotification,
-  pushNotification, loadTransfersForRole, type Notification,
+  loadStudents, loadHalaqat, loadGrades,
+  loadTransfersForRole, type Notification,
 } from "@/lib/mock-data";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { studentReportPercentages } from "@/lib/semester-grading";
 import { getSessionName } from "@/lib/session-role";
-import { appendTransferAction } from "@/lib/transfer-actions";
+import { appendTransferAction, forwardTransferRecord } from "@/lib/transfer-actions";
 import { TransferActionForm } from "@/components/role-workspace/TransferActionForm";
 import { InboxItemActions } from "@/components/role-workspace/InboxItemActions";
 import { TransferPctStat } from "@/components/role-workspace/manager-inbox/TransferPctStat";
@@ -55,14 +55,12 @@ export function ManagerPendingTransfersPanel() {
     const student = students.find((x) => x.id === td.studentId);
     const halaqa = halaqat.find((x) => x.id === td.halaqaId);
     const managerName = getSessionName("المدير");
-    const patch = { transferStatus: status, read: true } as const;
 
     setProcessingId(n.id);
     try {
-      updateNotification(n.id, patch);
       const targetRole = status === "to_secretary" ? "secretary" : "supervisor";
       const targetLabel = status === "to_secretary" ? "السكرتير" : "المشرف العلمي";
-      pushNotification({
+      forwardTransferRecord(n, status, {
         message: `تحويل من المدير: الطالب ${student?.name || "—"} (${halaqa?.name || "—"}) → ${targetLabel} — ${td.reason}`,
         type: "transfer",
         targetRole,
@@ -74,7 +72,7 @@ export function ManagerPendingTransfersPanel() {
           rootTransferId: n.id,
         },
       });
-      toast.success(TRANSFER_TOAST[status]);
+      toast.success(`${TRANSFER_TOAST[status]} — محفوظ على هذا الجهاز؛ لم يُرسل إلى الأجهزة الأخرى`);
       reload();
     } catch (e) {
       reload();
@@ -94,9 +92,8 @@ export function ManagerPendingTransfersPanel() {
         byName: managerName,
         text: actionText,
         at: new Date().toISOString(),
-      });
-      updateNotification(n.id, { transferStatus: "struggling", read: true });
-      toast.success("تم تسجيل الإجراء ونقل الطالب للمتعثرين");
+      }, { transferStatus: "struggling", read: true });
+      toast.success("تم تسجيل الإجراء ونقل الحالة للمتعثرين على هذا الجهاز");
       setStrugglingPromptId(null);
       reload();
     } catch (e) {
