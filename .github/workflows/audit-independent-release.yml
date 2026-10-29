@@ -43,6 +43,7 @@ jobs:
           php tests/backend-independent-import.php
           php tests/backend-plan-safeguards.php
           php tests/backend-evaluation-reference.php
+          php tests/backend-readonly-grade-context.php
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
       - name: Isolated package and backup/verification fixtures (no SSH or production credentials)
@@ -59,6 +60,15 @@ jobs:
         with:
           name: record-confirmation-compatible-rollback
           path: dist/record-confirmation-compatible-rollback/frontend.zip
+          retention-days: 30
+      - name: Build read-only refresh compatible rollback (no data restore)
+        if: github.head_ref == 'fix/audit-safe-portal-refresh'
+        run: python3 scripts/prepare-portal-refresh-rollback.py
+      - uses: actions/upload-artifact@v4
+        if: github.head_ref == 'fix/audit-safe-portal-refresh'
+        with:
+          name: portal-refresh-compatible-rollback
+          path: dist/portal-refresh-compatible-rollback/
           retention-days: 30
   database-concurrency:
     if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-')

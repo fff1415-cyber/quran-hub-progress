@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useReadOnlyGrades } from "@/hooks/use-readonly-grades";
+import { ReadOnlyGradeStatus } from "@/components/ReadOnlyGradeStatus";
 import { loadGrades, loadHalaqat, loadStudents } from "@/lib/mock-data";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import {
@@ -43,10 +45,8 @@ export function SupervisorHifzTrackingPanel() {
 
   const halaqat = useMemo(() => loadHalaqat().filter((h) => !h.isTalqeen), []);
   const students = useMemo(() => loadStudents(), []);
-  const grades = useMemo(() => {
-    void refreshKey;
-    return loadGrades();
-  }, [refreshKey]);
+  const [grades,setGrades] = useState(loadGrades);
+  const gradeRefresh = useReadOnlyGrades(setGrades, !!calendar, calendar?.semester ? String(calendar.semester.id) : null);
 
   useEffect(() => {
     let cancelled = false;
@@ -81,6 +81,7 @@ export function SupervisorHifzTrackingPanel() {
 
   return (
     <section className="space-y-4">
+      <ReadOnlyGradeStatus {...gradeRefresh} />
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2 className="text-lg font-bold text-primary flex items-center gap-2">
@@ -91,7 +92,7 @@ export function SupervisorHifzTrackingPanel() {
             {weekLabel(calendar.currentWeekNumber)} · احتساب من بداية الترم · {rows.length} طالب
           </p>
         </div>
-        <Button variant="outline" size="sm" className="gap-1" onClick={() => setRefreshKey((k) => k + 1)}>
+        <Button variant="outline" size="sm" className="gap-1" onClick={() => { void gradeRefresh.refresh(); setRefreshKey((k) => k + 1); }}>
           <RefreshCw className="w-4 h-4" /> تحديث
         </Button>
       </div>

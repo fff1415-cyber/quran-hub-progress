@@ -1,0 +1,23 @@
+const assert=require('node:assert/strict');
+const {load,hooks,storage,deferred,flush}=require('./independent-test-support.cjs');
+global.window=new EventTarget();global.document=new EventTarget();document.hidden=false;global.localStorage=storage();global.sessionStorage=storage();
+const originalSetInterval=global.setInterval,originalClearInterval=global.clearInterval;const timers=new Map();let sequence=0;
+global.setInterval=(fn,ms)=>{assert.equal(ms,10000);timers.set(++sequence,fn);return sequence;};global.clearInterval=id=>timers.delete(id);
+let token='fixture-A',cid=1,calls=0,gate=deferred(),valuesA=[],valuesB=[];
+const runtime=hooks();const hook=load('src/hooks/use-readonly-grades.ts',{'react':runtime.react,'@/lib/auth-session':{getToken:()=>token},'@/lib/tenant':{getActiveComplexId:()=>cid},'@/lib/secure-data.functions':{secureListAppState:async({data})=>{assert.deepEqual(data,{token,key:'grades'});calls++;return gate.promise;}}});
+const row=(value,complex=1,semester='1')=>[{key:'grades',value,context_complex_id:complex,calendar_context:{known:true,active_semester_id:semester}}];
+const grades={S:{1:{days:{sun:{hifz:'one',compensationFaces:0,custom:{score:'0',unknown:null}}}}}};
+let enabled=true;const render=()=>runtime.render(()=>[hook.useReadOnlyGrades(value=>valuesA.push(value),enabled),hook.useReadOnlyGrades(value=>valuesB.push(value),enabled)]);
+(async()=>{
+ render();runtime.effects();assert.equal(calls,1,'two visible panels coalesce into one existing grade GET');assert.equal(timers.size,2);gate.resolve(row(grades));await flush();assert.deepEqual(valuesA[0],grades);assert.deepEqual(valuesB[0],grades);valuesA[0].S[1].days.sun.hifz='two';assert.equal(valuesB[0].S[1].days.sun.hifz,'one','view state is not shared by mutable reference');assert.equal(localStorage.data.size,0,'read-only refresh must never overwrite a teacher draft or cache');
+ render();runtime.effects();assert.equal(timers.size,2,'rerendering does not recreate background polling');
+ gate=deferred();[...timers.values()][0]();assert.equal(calls,2);gate.reject(Error('fixture offline'));await flush();let state=render();assert.match(state[0].error,/offline/);assert.equal(valuesA.length,1,'failure retains the last confirmed display');
+ gate=deferred();const retry=state[0].refresh();gate.resolve(row(grades));await retry;assert.equal(valuesA.length,2,'manual retry reapplies confirmed data');assert.equal(render()[0].error,undefined);
+ gate=deferred();document.hidden=true;for(const tick of timers.values())tick();window.dispatchEvent(new Event('focus'));assert.equal(calls,3,'hidden tabs do not poll');
+ document.hidden=false;document.dispatchEvent(new Event('visibilitychange'));assert.equal(calls,4);token='fixture-B';cid=2;gate.resolve(row(grades));await flush();assert.equal(valuesA.length,2,'old session response cannot update the new context');
+ gate=deferred();const mismatch=render()[0].refresh();gate.resolve(row(grades,1));await mismatch;assert.match(render()[0].error,/سياق المجمع/);assert.equal(valuesA.length,2);
+ gate=deferred();const fresh=render()[0].refresh();gate.resolve(row({},2));await fresh;assert.deepEqual(valuesA.at(-1),{});assert.equal(localStorage.data.size,0);
+ gate=deferred();const changedPeriod=render()[0].refresh();gate.resolve(row(grades,2,'2'));await changedPeriod;assert.match(render()[0].error,/تغيّر الفصل/);assert.deepEqual(valuesA.at(-1),{},'new period values cannot be combined with a previous calendar frame');
+ gate=deferred();render()[0].refresh();const count=valuesA.length;runtime.cleanup();assert.equal(timers.size,0);gate.resolve(row(grades,2));await flush();assert.equal(valuesA.length,count,'unmounted panels ignore pending responses');
+ console.log('PASS: read-only cross-panel refresh, exact zero/null values, coalescing, no cache/write/API side effects, error/retry, stale session/context, visibility and cleanup');
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{global.setInterval=originalSetInterval;global.clearInterval=originalClearInterval;});

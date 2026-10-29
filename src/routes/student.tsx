@@ -1,4 +1,6 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
+import { useReadOnlyGrades } from "@/hooks/use-readonly-grades";
+import { ReadOnlyGradeStatus } from "@/components/ReadOnlyGradeStatus";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { loadHalaqat, loadStudents, loadGrades, type GradesStore } from "@/lib/mock-data";
 import { fetchActiveCalendar, getTodaySemesterDay, type AcademicCalendar } from "@/lib/academic-context";
@@ -66,6 +68,7 @@ export function StudentPage() {
   const [planData, setPlanData] = useState<StudentPlanSheetData | null>(null);
   const [planLoading, setPlanLoading] = useState(false);
   const [calendar, setCalendar] = useState<AcademicCalendar | null>(null);
+  const gradeRefresh = useReadOnlyGrades(setGrades, gradesReady && !!calendar, calendar?.semester ? String(calendar.semester.id) : null);
   const visibility = loadStudentPortalVisibility();
   const visitKey = useRef<string | null>(null);
 
@@ -254,6 +257,7 @@ export function StudentPage() {
       <Toaster position="top-center" richColors />
       <AppHeader title="لوحة أداء المجمع" subtitle={authMode === "student" ? "المجمع والطالب" : "اطلاع عام"} />
       <main className="max-w-6xl mx-auto px-4 py-8">
+        <ReadOnlyGradeStatus {...gradeRefresh} />
 
         <div className="flex items-center justify-between mb-6 gap-3 flex-wrap">
           <p className="text-sm text-muted-foreground">

@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
+import { useReadOnlyGrades } from "@/hooks/use-readonly-grades";
+import { ReadOnlyGradeStatus } from "@/components/ReadOnlyGradeStatus";
+import { useConfirmedSardAction } from "@/hooks/use-confirmed-sard-action";
 import {
   loadHalaqat, loadStudents, loadGrades, loadNotifications, DAYS,
   loadSardQueue, updateSardItem, pushNotification,
@@ -18,27 +21,30 @@ import { toast } from "sonner";
 export function AdminOverviewPanel() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
-  const grades = loadGrades();
+  const [grades,setGrades] = useState(loadGrades);
   const [tick, setTick] = useState(0);
   const [queue, setQueue] = useState(() => loadSardQueue());
   const [tab, setTab] = useState<"today" | "cumulative" | "progress" | "sard" | "alerts">("today");
   const [currentWeek, setCurrentWeek] = useState(1);
-  const reloadNotifs = () => setTick((n) => n + 1);
-  useInboxRefresh(reloadNotifs);
+  const [gradeSemester,setGradeSemester] = useState<string|null|undefined>(undefined);
+  const gradeRefresh = useReadOnlyGrades(setGrades, gradeSemester !== undefined, gradeSemester);
+  const action = useConfirmedSardAction(() => setQueue(loadSardQueue()));
+  const reloadNotifs = () => { setTick((n) => n + 1); setQueue(loadSardQueue()); };
+  useInboxRefresh(reloadNotifs, { sharedSard: true });
   const unread = loadNotifications().filter((n) => !n.read);
 
   useEffect(() => {
-    fetchActiveCalendar().then((cal) => setCurrentWeek(cal.currentWeekNumber)).catch(() => {});
+    fetchActiveCalendar().then((cal) => { setCurrentWeek(cal.currentWeekNumber); setGradeSemester(cal.semester ? String(cal.semester.id) : null); }).catch(() => {});
   }, []);
 
   const todayKey = getCalendarDayKey();
   const scheduled = queue.filter((q) => q.status === "scheduled");
 
   const forceImmediate = (id: string, name: string) => {
-    updateSardItem(id, { status: "pending", scheduledAt: new Date().toISOString() });
-    pushNotification({ message: `سمح الإداري بإعادة سرد فوري للطالب ${name}`, type: "sard" });
-    toast.success("تم — يمكن للمسمّع البدء فوراً");
-    setQueue(loadSardQueue());
+    void action.run(() => updateSardItem(id, { status: "pending", scheduledAt: new Date().toISOString() }), () => {
+      pushNotification({ message: `سمح الإداري بإعادة سرد فوري للطالب ${name}`, type: "sard" });
+      toast.success("تم — يمكن للمسمّع البدء فوراً");
+    });
   };
 
   const todayAbsents = useMemo(() => {
@@ -78,6 +84,10 @@ export function AdminOverviewPanel() {
   }, [halaqat, students, grades]);
 
   return (
+    <>
+    <ReadOnlyGradeStatus {...gradeRefresh} />
+    {action.saving && <p role="status" className="text-sm text-muted-foreground">جارٍ تأكيد حفظ إجراء السرد...</p>}
+    {action.error && <p role="alert" className="text-sm text-destructive">{action.error}</p>}
     <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} dir="rtl">
       <TabsList className="w-full h-auto flex flex-wrap gap-1 p-1.5 bg-secondary/50 border border-border rounded-xl mb-4">
         <TabsTrigger value="today" className="gap-1.5 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground">
@@ -192,7 +202,7 @@ export function AdminOverviewPanel() {
                       <div className="font-bold">{s.name}</div>
                       <div className="text-xs text-muted-foreground mt-1">{h.name} · {weekLabel(q.week)}</div>
                     </div>
-                    <button onClick={() => forceImmediate(q.id, s.name)}
+                    <button disabled={action.saving} onClick={() => forceImmediate(q.id, s.name)}
                       className="flex items-center gap-2 px-3 py-2 rounded-lg bg-warning/20 text-warning border border-warning/30 font-bold text-sm">
                       <Zap className="w-4 h-4" /> الإعادة الآن
                     </button>
@@ -234,5 +244,6 @@ export function AdminOverviewPanel() {
         </div>
       </TabsContent>
     </Tabs>
+    </>
   );
 }

@@ -104,3 +104,18 @@ $pdo->exec("ALTER TABLE student_plan_assignments ADD CONSTRAINT fixture_reject_f
 $GLOBALS['input']=['student_id'=>'rollback-S','assignment_id'=>'R','status'=>'frozen'];
 try{handle_patch_assignment();throw new RuntimeException('freeze failure was hidden');}catch(RuntimeException $e){check(str_contains($e->getMessage(),'fixture_reject_frozen'),'actual freeze constraint failure is surfaced');}
 check($pdo->query("SELECT status FROM student_plan_assignments WHERE id='R'")->fetchColumn()==='active','failed freeze rolls back its existing row on the actual engine');
+
+// F17: prove the extra grade metadata and the empty-store path are genuinely read-only.
+$pdo->exec('CREATE TABLE semesters(id INT PRIMARY KEY,complex_id INT,is_active INT); INSERT INTO semesters VALUES(1,1,1),(2,1,0),(3,2,1)');
+$GLOBALS['auth']=['role'=>'student','studentId'=>'fixture-S','complexId'=>1];
+$gradeFixture=['fixture-S'=>[1=>['days'=>['sun'=>['hifz'=>'one','compensationFaces'=>0,'unknown'=>null]]]]];
+app_state_upsert($pdo,'grades',$gradeFixture,1);
+$gradeRaw=$pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn();
+$rowCount=(int)$pdo->query('SELECT COUNT(*) FROM app_state')->fetchColumn();
+$_GET=['key'=>'grades'];$pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();handle_list_app_state();$pdo->rollBack();
+check($GLOBALS['response'][0]['value']===$gradeFixture&&$GLOBALS['response'][0]['calendar_context']===['known'=>true,'active_semester_id'=>'1'],'actual read-only grade GET retains zero/null and confirms the request calendar');
+$GLOBALS['auth']['complexId']=2;$pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();handle_list_app_state();$pdo->rollBack();
+check($GLOBALS['response'][0]['context_complex_id']===2&&$GLOBALS['response'][0]['calendar_context']['active_semester_id']==='3'&&(array)$GLOBALS['response'][0]['value']===[],'actual empty grade GET uses the existing complex filter without inserting defaults');
+check($pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn()===$gradeRaw&&(int)$pdo->query('SELECT COUNT(*) FROM app_state')->fetchColumn()===$rowCount,'read-only grade polling does not rewrite or classify historical records');
+$GLOBALS['auth']['complexId']=1;$pdo->exec('UPDATE semesters SET is_active=1 WHERE id=2');handle_list_app_state();check($GLOBALS['response'][0]['calendar_context']['known']===false,'actual ambiguous active calendar is reported rather than guessed');
+$pdo->exec('UPDATE semesters SET is_active=0 WHERE complex_id=1');handle_list_app_state();check($GLOBALS['response'][0]['calendar_context']===['known'=>true,'active_semester_id'=>null],'actual missing active calendar is explicit');

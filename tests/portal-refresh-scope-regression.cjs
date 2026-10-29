@@ -1,0 +1,11 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),cp=require('node:child_process');
+const base='9d843a4aac7282392ee4ee661c4f589488cbda49',original=p=>cp.execFileSync('git',['show',base+':'+p],{encoding:'utf8'});
+const student=fs.readFileSync('src/routes/student.tsx','utf8').replace('import { useReadOnlyGrades } from "@/hooks/use-readonly-grades";\n','').replace('import { ReadOnlyGradeStatus } from "@/components/ReadOnlyGradeStatus";\n','').replace('  const gradeRefresh = useReadOnlyGrades(setGrades, gradesReady && !!calendar, calendar?.semester ? String(calendar.semester.id) : null);\n','').replace('        <ReadOnlyGradeStatus {...gradeRefresh} />\n','');
+assert.equal(student,original('src/routes/student.tsx'),'student/parent login, identity, entry tracking, visibility, ownership, calculations and periods remain exact');
+assert.deepEqual(cp.execFileSync('git',['diff','--name-only',base,'--','api/'],{encoding:'utf8'}).trim().split('\n'),['api/routes/app_state.php'],'backend change is confined to read-time context metadata');
+assert.equal(cp.execFileSync('git',['diff',base,'--','database/','package.json','package-lock.json'],{encoding:'utf8'}),'','release cannot change schema or dependencies');
+const state=fs.readFileSync('api/routes/app_state.php','utf8'),start=state.indexOf('function app_state_read_calendar_context('),end=state.indexOf('\nfunction ',start+1);
+assert.doesNotMatch(state.slice(start,end),/\b(?:INSERT|UPDATE|DELETE|ALTER|CREATE)\b|->exec\(/,'calendar context must be genuinely read-only');
+for(const p of ['src/lib/auth-session.ts','src/lib/permissions.ts','src/lib/teacher-halaqa-access.ts','src/lib/student-portal-auth.ts','src/components/role-workspace/SupervisorPanels.tsx','src/lib/semester-grading.ts','src/lib/plan-daily-faces.ts','src/lib/halaqa-results.ts','src/lib/hifz-tracking.ts'])assert.equal(fs.readFileSync(p,'utf8'),original(p),p);
+const hook=fs.readFileSync('src/hooks/use-readonly-grades.ts','utf8');assert.match(hook,/key:"grades"/);assert.doesNotMatch(hook,/secureSet|saveGrades|setItem|fetchStudent|syncFromCloud|fetchActiveCalendar|recordStudent|pushNotification/,'polling must not invoke other workflows or persist data');
+console.log('PASS: student/parent/auth/entry behavior and calculation periods unchanged; grade GET plus read-only calendar metadata, no schema/ownership changes');
