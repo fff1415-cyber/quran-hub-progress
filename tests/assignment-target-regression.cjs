@@ -15,5 +15,9 @@ let gate=deferred(),done=false;global.fetch=async(path,options)=>{const body=JSO
 const pending=service.patchStudentAssignment('S','frozen','A').then(()=>done=true);await flush();assert.equal(done,false);gate.resolve();await pending;assert.equal(done,true);
 global.fetch=async()=>response({ok:true,assignment_id:'B',status:'frozen'});await assert.rejects(service.patchStudentAssignment('S','frozen','A'),/تعذّر تأكيد/);
 global.fetch=async()=>response({error:'fixture stale assignment'},false);await assert.rejects(service.patchStudentAssignment('S','active','A'),/stale assignment/);
+calls=[];global.fetch=async(path,options)=>{calls.push({path,body:JSON.parse(options.body)});return response({ok:true,assignment_id:'A'});};
+await assert.rejects(service.patchAssignmentFaceQuotas('S',{},''),/تحديد التعيين/);assert.equal(calls.length,0);
+await service.patchAssignmentFaceQuotas('S',{daily_hifz_faces:2},'A');assert.equal(calls[0].path,'/plans/assignment-quotas');assert.deepEqual(calls[0].body,{daily_hifz_faces:2,student_id:'S',assignment_id:'A'});
+global.fetch=async()=>response({ok:true,assignment_id:'B'});await assert.rejects(service.patchAssignmentFaceQuotas('S',{},'A'),/تعذّر تأكيد/);
 console.log('PASS: exact assignment targeting, explicit stale snapshots, invalid starts and server-confirmed freeze/resume');
 })().catch(error=>{console.error(error);process.exitCode=1;});

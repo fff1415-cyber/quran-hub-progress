@@ -119,3 +119,20 @@ check($GLOBALS['response'][0]['context_complex_id']===2&&$GLOBALS['response'][0]
 check($pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn()===$gradeRaw&&(int)$pdo->query('SELECT COUNT(*) FROM app_state')->fetchColumn()===$rowCount,'read-only grade polling does not rewrite or classify historical records');
 $GLOBALS['auth']['complexId']=1;$pdo->exec('UPDATE semesters SET is_active=1 WHERE id=2');handle_list_app_state();check($GLOBALS['response'][0]['calendar_context']['known']===false,'actual ambiguous active calendar is reported rather than guessed');
 $pdo->exec('UPDATE semesters SET is_active=0 WHERE complex_id=1');handle_list_app_state();check($GLOBALS['response'][0]['calendar_context']===['known'=>true,'active_semester_id'=>null],'actual missing active calendar is explicit');
+
+require __DIR__.'/assignment-quota-cases.php';quotaCases($pdo,'P');
+$pdo->exec("UPDATE student_plan_assignments SET daily_hifz_faces=9 WHERE id='quota-current'; ALTER TABLE student_plan_assignments ADD CONSTRAINT reject_quota CHECK(id<>'quota-current' OR daily_hifz_faces=9)");
+$quotaBefore=$pdo->query("SELECT * FROM student_plan_assignments WHERE student_id='quota-S' ORDER BY id")->fetchAll();
+quotaFailure(fn()=>handle_patch_assignment_quotas(),'reject_quota');check($pdo->query("SELECT * FROM student_plan_assignments WHERE student_id='quota-S' ORDER BY id")->fetchAll()===$quotaBefore,'actual quota constraint failure rolls back all target changes');
+$pdo->exec("INSERT INTO students(id,complex_id,phase_number,level) VALUES('quota-race-S',1,1,'1'); INSERT INTO student_plan_assignments(id,student_id,plan_id,start_segment_index,status) VALUES('quota-race-current','quota-race-S','P',1,'frozen')");
+// Race the exact quota mutation against replacement under the same existing student lock.
+$children=[];for($i=0;$i<2;$i++){
+ $pid=pcntl_fork();if($pid===-1)throw new RuntimeException('fork unavailable');
+ if($pid===0){$GLOBALS['pdo']=connectFixture();$GLOBALS['input']=$i===0?['student_id'=>'quota-race-S','assignment_id'=>'quota-race-current']:['student_id'=>'quota-race-S','plan_id'=>'Q','expected_assignment_id'=>'quota-race-current'];
+  try{if($i===0)handle_patch_assignment_quotas();else handle_assign_plan();exit(0);}catch(Throwable $e){exit(str_contains($e->getMessage(),'تغيّرت خطة الطالب')?0:1);}}
+ $children[]=$pid;
+}
+foreach($children as $pid){pcntl_waitpid($pid,$status);check(pcntl_wexitstatus($status)===0,'actual concurrent quota/replacement commits or reports a stale target');}
+$GLOBALS['pdo']=$pdo=connectFixture();$s=$pdo->query("SELECT id,plan_id FROM student_plan_assignments WHERE student_id='quota-race-S' AND status IN ('active','frozen')")->fetchAll();
+check(count($s)===1&&$s[0]['plan_id']==='Q','quota concurrency never updates or reactivates a replacement assignment');
+$GLOBALS['input']=['student_id'=>'quota-race-S','assignment_id'=>'quota-race-current'];quotaFailure(fn()=>handle_patch_assignment_quotas(),'تغيّرت خطة الطالب');

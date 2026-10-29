@@ -735,9 +735,13 @@ export function setTeacherScientificDayScore(
   field: ScientificGradeField,
   value: string,
 ): void {
-  setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
-  // Mark overridden even when clearing — prevents auto-backfill from refilling while retyping.
-  setScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, field);
+  const store = loadScientificGradesStore();
+  const data = halaqaDataRoot(store, halaqaId);
+  const changed = writeScientificDayScoreInPlace(data, studentId, weekNum, dayKey, field, value);
+  const overridden = isScientificScoreOverriddenInStore(store, halaqaId, studentId, weekNum, dayKey, field);
+  // Publish the value and override together: event listeners must never see a manual value without its guard.
+  setScientificScoreOverrideInStore(store, halaqaId, studentId, weekNum, dayKey, field);
+  if (changed || !overridden) saveScientificGradesStore(store);
 }
 
 /**
