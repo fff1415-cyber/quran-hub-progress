@@ -8,6 +8,16 @@ concurrency:
   group: independent-audit-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  deployment-package:
+    if: github.head_ref == 'fix/release-25-backup'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Isolated backup and deployment-baseline regressions (no SSH or production secrets)
+        run: python3 tests/hostinger-backup-regression.py && python3 tests/api-release-regression.py && python3 tests/hostinger-release-base-regression.py
   client-and-sqlite:
     if: github.head_ref == 'fix/audit-independent-release-2'
     runs-on: ubuntu-latest
