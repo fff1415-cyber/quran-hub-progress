@@ -673,6 +673,16 @@ function plans_next_hifz_segments_for_tap(
     return $next;
 }
 
+/** Caller has already checked access and locked the student's row. */
+function plans_locked_current_assignment(PDO $pdo, string $studentId): ?array
+{
+    $stmt = $pdo->prepare("SELECT a.*, p.track, p.title, p.level_number FROM student_plan_assignments a LEFT JOIN education_plans p ON p.id = a.plan_id WHERE a.student_id = ? AND a.status IN ('active', 'frozen') FOR UPDATE");
+    $stmt->execute([$studentId]);
+    $rows = $stmt->fetchAll();
+    if (count($rows) > 1) throw new RuntimeException('للطالب تعيينات حالية متعددة محفوظة — يلزم مراجعتها دون حذفها');
+    return $rows[0] ?? null;
+}
+
 function handle_assign_plan(): void
 {
     $auth = require_auth();
@@ -681,7 +691,8 @@ function handle_assign_plan(): void
     $input = json_input();
     $studentId = trim((string) ($input['student_id'] ?? ''));
     $planId = trim((string) ($input['plan_id'] ?? ''));
-    $startSegment = max(1, (int) ($input['start_segment_index'] ?? 1));
+    $startSegment = filter_var($input['start_segment_index'] ?? 1, FILTER_VALIDATE_INT);
+    if ($startSegment === false || $startSegment < 1) error_response('مقطع البداية يجب أن يكون عددًا صحيحًا موجبًا');
     $startMuraja = isset($input['start_muraja_segment']) ? max(1, (int) $input['start_muraja_segment']) : null;
     $planStartDate = trim((string) ($input['plan_start_date'] ?? ''));
     if ($studentId === '' || $planId === '') {
@@ -739,15 +750,17 @@ function handle_assign_plan(): void
             $existingLink->execute([$studentId]);
             if ($existingLink->fetch()) throw new RuntimeException('توجد خطة حالية للطالب — لم يُستبدل التعيين؛ حدّث الصفحة');
         }
-        $currentStmt = $pdo->prepare("SELECT a.id, a.assigned_at, a.plan_id, a.start_segment_index, p.track, p.title, p.level_number FROM student_plan_assignments a JOIN education_plans p ON p.id = a.plan_id WHERE a.student_id = ? AND a.status = 'active' FOR UPDATE");
-        $currentStmt->execute([$studentId]);
-        $current = $currentStmt->fetch();
+        $startStmt = $pdo->prepare('SELECT segment_index FROM plan_segments WHERE plan_id = ? AND segment_index = ? FOR UPDATE');
+        $startStmt->execute([$planId, $startSegment]);
+        if ($startStmt->fetchColumn() === false) throw new RuntimeException('مقطع البداية غير موجود في الخطة');
+        $current = plans_locked_current_assignment($pdo, $studentId);
         $expected = (string) ($input['expected_assignment_id'] ?? '');
-        if ($expected !== '' && (!$current || $current['id'] !== $expected)) {
+        if ((array_key_exists('expected_assignment_id', $input) && ($current['id'] ?? '') !== $expected)
+            || ($current && !array_key_exists('expected_assignment_id', $input))) {
             throw new RuntimeException('تغيّرت خطة الطالب — حدّث الصفحة قبل الاعتماد');
         }
         if (($auth['role'] ?? '') === 'musammi') {
-            if ($expected === '' || !$current || $current['track'] !== $planRow['track']) {
+            if ($expected === '' || !$current || $current['status'] !== 'active' || $current['track'] !== $planRow['track']) {
                 throw new RuntimeException('المسمّع مخوّل بترحيل الخطة الحالية فقط');
             }
             $complete = $pdo->prepare("SELECT COUNT(*) AS total, SUM(EXISTS(SELECT 1 FROM segment_completions c WHERE c.student_id = ? AND c.plan_id = s.plan_id AND c.segment_index = s.segment_index AND c.task_type = 'hifz' AND (c.assignment_id = ? OR (c.assignment_id IS NULL AND c.created_at >= ?)))) AS done FROM plan_segments s WHERE s.plan_id = ? AND s.segment_index >= ?");
@@ -768,7 +781,7 @@ function handle_assign_plan(): void
         }
 
         $pdo->prepare(
-            "UPDATE student_plan_assignments SET status = 'transferred', transferred_at = NOW() WHERE student_id = ? AND status = 'active'"
+            "UPDATE student_plan_assignments SET status = 'transferred', transferred_at = NOW() WHERE student_id = ? AND status IN ('active', 'frozen')"
         )->execute([$studentId]);
 
         $id = new_uuid();
@@ -876,20 +889,31 @@ function handle_patch_assignment(): void
     $input = json_input();
     $studentId = trim((string) ($input['student_id'] ?? ''));
     $status = trim((string) ($input['status'] ?? ''));
+    $assignmentId = trim((string) ($input['assignment_id'] ?? ''));
     if ($studentId === '' || !in_array($status, ['active', 'frozen', 'transferred'], true)) {
         error_response('بيانات غير صالحة');
     }
     $pdo = db();
     $tenants = plans_tenant_enabled($pdo);
     plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
-    $frozenAt = $status === 'frozen' ? date('Y-m-d H:i:s') : null;
-    $transferredAt = $status === 'transferred' ? date('Y-m-d H:i:s') : null;
-    $stmt = $pdo->prepare(
-        'UPDATE student_plan_assignments SET status = ?, frozen_at = ?, transferred_at = COALESCE(?, transferred_at)
-         WHERE student_id = ? AND status IN (\'active\', \'frozen\')'
-    );
-    $stmt->execute([$status, $frozenAt, $transferredAt, $studentId]);
-    json_response(['ok' => true, 'updated' => $stmt->rowCount()]);
+    if ($assignmentId === '') error_response('حدّث استمارة الطالب؛ معرّف التعيين مطلوب للتجميد أو الاستئناف', 409);
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare('SELECT id FROM students WHERE id = ? FOR UPDATE')->execute([$studentId]);
+        $current = plans_locked_current_assignment($pdo, $studentId);
+        if (!$current || $current['id'] !== $assignmentId) throw new RuntimeException('تغيّرت خطة الطالب — حدّث الاستمارة قبل التجميد أو الاستئناف');
+        $updated = 0;
+        if ($current['status'] !== $status) {
+            $stmt = $pdo->prepare('UPDATE student_plan_assignments SET status = ?, frozen_at = ?, transferred_at = COALESCE(?, transferred_at) WHERE id = ? AND student_id = ?');
+            $stmt->execute([$status, $status === 'frozen' ? date('Y-m-d H:i:s') : null, $status === 'transferred' ? date('Y-m-d H:i:s') : null, $assignmentId, $studentId]);
+            $updated = $stmt->rowCount();
+        }
+        $pdo->commit();
+        json_response(['ok' => true, 'updated' => $updated, 'assignment_id' => $assignmentId, 'status' => $status]);
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_response($e->getMessage(), $e instanceof PDOException ? 500 : 409);
+    }
 }
 
 /** @return array<string, mixed>|null */

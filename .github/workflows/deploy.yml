@@ -488,3 +488,7 @@ jobs:
           echo "::warning::msht.io deploy-sha not confirmed from GitHub — upload may still have succeeded."
           echo "Check manually: https://msht.io/deploy-sha.txt (expected ${EXPECTED:0:7}…)"
           exit 1
+
+      - name: Verify published static entry and assets without application calls
+        if: steps.sftp_frontend.outcome == 'success' || steps.rsync_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success'
+        run: python3 scripts/verify-published-static.py "${{ github.sha }}"

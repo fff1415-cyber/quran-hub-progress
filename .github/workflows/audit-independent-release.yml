@@ -19,7 +19,7 @@ jobs:
       - name: Isolated backup and deployment-baseline regressions (no SSH or production secrets)
         run: python3 tests/hostinger-backup-regression.py && python3 tests/api-release-regression.py && python3 tests/hostinger-release-base-regression.py
   client-and-sqlite:
-    if: github.head_ref == 'fix/audit-independent-release-2'
+    if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-')
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -41,12 +41,17 @@ jobs:
           find api tests -name '*.php' -print0 | xargs -0 -n1 php -l
           php tests/backend-independent-settings.php
           php tests/backend-independent-import.php
+          php tests/backend-plan-safeguards.php
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
       - name: Isolated package and backup/verification fixtures (no SSH or production credentials)
-        run: python3 tests/hostinger-backup-regression.py && python3 tests/api-release-regression.py
+        run: python3 tests/hostinger-backup-regression.py && python3 tests/api-release-regression.py && python3 tests/hostinger-release-base-regression.py && python3 tests/published-static-regression.py
+      - name: Read the previously published marker and static entry files only
+        env:
+          EXPECTED_PUBLISHED_SHA: ${{ github.event.pull_request.base.sha }}
+        run: python3 scripts/verify-published-static.py "$EXPECTED_PUBLISHED_SHA"
   database-concurrency:
-    if: github.head_ref == 'fix/audit-independent-release-2'
+    if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-')
     name: Isolated transactions (${{ matrix.engine }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
