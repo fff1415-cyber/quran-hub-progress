@@ -43,6 +43,7 @@ jobs:
           php tests/backend-independent-import.php
           php tests/backend-plan-safeguards.php
           php tests/backend-evaluation-reference.php
+          php tests/backend-grade-cells.php
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
       - name: Isolated package and backup/verification fixtures (no SSH or production credentials)
@@ -90,4 +91,4 @@ jobs:
       - name: Real row-lock contention and partial-failure rollback
         env:
           AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
-        run: php tests/backend-independent-mysql.php
+        run: php tests/backend-grade-cells-mysql.php

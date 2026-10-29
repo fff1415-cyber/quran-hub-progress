@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
+import { GradeCellSaveStatus } from "@/components/GradeCellSaveStatus";
 import React, { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { z } from "zod";
 import {
@@ -1398,6 +1399,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
   return (
     <div className={cn(useMobileBoard ? "space-y-0" : "glass-card rounded-2xl p-4")}>
+      <GradeCellSaveStatus />
       <div className={cn("flex justify-end px-2", useMobileBoard ? "pb-2" : "mb-3")}>
         {layoutToggle}
       </div>

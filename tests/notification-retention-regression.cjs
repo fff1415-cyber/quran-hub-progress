@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict');
 const {load,storage}=require('./independent-test-support.cjs');
 global.localStorage=storage();global.sessionStorage=storage();global.window=new EventTarget();
-const mock=load('src/lib/mock-data.ts',{'@/lib/auth-session':{hasAuthToken:()=>false}});
+const mock=load('src/lib/mock-data.ts',{'@/lib/grade-cell-sync':{captureGradeCellEdit:()=>{}},'@/lib/auth-session':{hasAuthToken:()=>false}});
 const rows=Array.from({length:651},(_,i)=>({id:'fixture-'+i,createdAt:new Date(1700000000000+i).toISOString(),read:false,type:'transfer',transferData:{studentId:'synthetic',actions:[{id:'action-'+i,status:'retained'}]}}));
 mock.saveNotifications(rows);const rawKey=[...localStorage.data.keys()].find(k=>JSON.parse(localStorage.getItem(k))?.length===651);
 assert.equal(mock.loadNotifications().length,651);mock.saveNotifications(rows);assert.equal(localStorage.getItem(rawKey+':before-history-repair'),JSON.stringify(rows));

@@ -163,7 +163,7 @@ export async function secureDeleteRoleAccount({ data }: { data: { token: string;
 // ---------- SHARED APP STATE ----------
 export async function secureListAppState({ data }: { data: { token: string; key?: string } }) {
   const q = data.key ? `?key=${encodeURIComponent(data.key)}` : "";
-  return apiFetch<{ key: string; value: unknown }[]>(`/app-state${q}`, {
+  return apiFetch<{ key: string; value: unknown; context_complex_id?: number; cell_sync?: unknown }[]>(`/app-state${q}`, {
     method: "GET",
     auth: data.token,
   });
@@ -175,6 +175,20 @@ export async function secureSetAppState({ data }: { data: { token: string; key: 
     auth: data.token,
     body: JSON.stringify({ key: data.key, value: data.value }),
   });
+}
+
+/** Grade-only transport exposes rejection status without changing login/API error behavior. */
+export async function securePatchGradeCells(data: {token: string; value: unknown}) {
+  const response = await fetch(apiUrl("/app-state"), {
+    method: "POST",
+    headers: {"Content-Type": "application/json", Authorization: `Bearer ${data.token}`},
+    body: JSON.stringify({key: "grades", value: data.value}),
+  });
+  let value: {ok: boolean; value?: unknown; context_complex_id?: number; cell_sync?: unknown; error?: string};
+  try { value = await response.json(); }
+  catch { throw Object.assign(new Error(`HTTP ${response.status} — تعذّر تأكيد حفظ الدرجة`), {status: response.status}); }
+  if (!response.ok) throw Object.assign(new Error(value.error ?? `HTTP ${response.status}`), {status: response.status});
+  return value;
 }
 
 export async function securePatchWeeklyTest({ data }: { data: { token: string; studentId: string; week: number; kind: "muraja" | "rabt"; index: number; result: "" | "pass" | "fail" } }) {

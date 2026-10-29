@@ -155,7 +155,9 @@ export function setWeeklyTestsSemesterId(id: string | null) {
 }
 
 export function resetWeeklyTestsForNewSemester(semesterId: string | null) {
-  saveWeeklyTests({});
+  const original = localStorage.getItem(KEY_STORE);
+  if (original !== null) localStorage.setItem(`${KEY_STORE}:before-semester-reset:${Date.now()}`, original);
+  saveWeeklyTests({}, { sync: false });
   setWeeklyTestsSemesterId(semesterId);
 }
 

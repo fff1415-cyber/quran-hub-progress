@@ -90,11 +90,111 @@ function handle_list_app_state(): void
     foreach ($rows as &$row) {
         $row['value'] = json_decode($row['value'] ?? '{}', true);
         $row['context_complex_id'] = $cid;
+        if (($row['key'] ?? '') === 'grades') $row['cell_sync'] = grade_cells_context($pdo, $cid);
         if (($row['key'] ?? '') === 'sard_queue' && is_array($row['value'])) {
             $row['value'] = sard_reconcile_queue($row['value'], sard_current_assignments($pdo, $cid));
         }
     }
+    if (!$rows && $keyFilter === 'grades') $rows[] = ['key'=>'grades','value'=>new stdClass(),'context_complex_id'=>$cid,'cell_sync'=>grade_cells_context($pdo,$cid)];
     json_response($rows);
+}
+
+/** Native grade data stays native; only future writes create a separate revision record. */
+function grade_cells_context(PDO $pdo, int $cid, bool $lockSemester = false): array
+{
+    $scoped = app_state_tenant_enabled($pdo);
+    $stmt = $pdo->prepare('SELECT value FROM app_state WHERE '.($scoped?'complex_id = ? AND ':'').'`key` = ?');
+    $stmt->execute($scoped?[$cid,'__qhp_grade_cell_versions_v1']:['__qhp_grade_cell_versions_v1']);
+    $raw = $stmt->fetchColumn();
+    $meta = $raw === false ? [] : json_decode((string)$raw,true);
+    if (!is_array($meta)) throw new RuntimeException('مرجع تعديلات الدرجات يحتاج مراجعة؛ لم تُغيّر البيانات');
+    $semester = null;
+    if (plans_table_exists($pdo,'semesters')) {
+        $tenants = table_column_exists($pdo,'semesters','complex_id');
+        $s = $pdo->prepare('SELECT id FROM semesters WHERE is_active = 1'.($tenants?' AND complex_id = ?':'').' ORDER BY id'.($lockSemester?' FOR UPDATE':''));
+        $s->execute($tenants?[$cid]:[]);$ids=$s->fetchAll(PDO::FETCH_COLUMN);
+        if (count($ids)>1) throw new RuntimeException('تعذّر تأكيد الفصل الحالي؛ توجد فصول نشطة متعددة');
+        if ($ids) $semester=(string)$ids[0];
+    }
+    return ['version'=>1,'semester_id'=>$semester,'versions'=>$meta['versions']??new stdClass()];
+}
+
+function grade_cells_lock(PDO $pdo, int $cid): array
+{
+    $scoped=app_state_tenant_enabled($pdo);
+    foreach(['grades','__qhp_grade_cell_versions_v1'] as $key){
+        $args=$scoped?[$cid,$key]:[$key];
+        $pdo->prepare($scoped?'INSERT IGNORE INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)':'INSERT IGNORE INTO app_state (`key`, value) VALUES (?, ?)')->execute([...$args,'{}']);
+        $s=$pdo->prepare('SELECT value FROM app_state WHERE '.($scoped?'complex_id = ? AND ':'').'`key` = ? FOR UPDATE');$s->execute($args);
+        $raw=$s->fetchColumn();$value=json_decode((string)$raw,true);
+        if ($raw===false || !is_array($value)) throw new RuntimeException('مخزن الدرجات أو مرجعه بصيغة تحتاج مراجعة؛ لم تُغيّر البيانات');
+        if ($key==='grades') $grades=$value; else $meta=$value;
+    }
+    return [$grades,$meta];
+}
+
+function grade_cell_value(array $store, array $path): array
+{
+    $value=$store;
+    foreach($path as $part){if(!is_array($value)||!array_key_exists($part,$value))return ['present'=>false];$value=$value[$part];}
+    return ['present'=>true,'value'=>$value];
+}
+function grade_cell_tokens(array $versions,array $path): array
+{
+    $tokens=[];
+    for($i=1;$i<=count($path);$i++){$key='d:'.grade_cell_path_key(array_slice($path,0,$i));$tokens[$key]=$versions[$key]??null;}
+    $key='a:'.grade_cell_path_key($path);$tokens[$key]=$versions[$key]??null;return $tokens;
+}
+function grade_cell_path_key(array $path): string {return (string)json_encode($path,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES);}
+function grade_cell_same(mixed $left,mixed $right): bool
+{
+    $canonical=function(mixed $value)use(&$canonical):mixed{if(is_array($value)){if(!app_state_history_is_list($value))ksort($value);foreach($value as &$item)$item=$canonical($item);unset($item);}return $value;};
+    return app_state_json_encode($canonical($left))===app_state_json_encode($canonical($right));
+}
+function grade_cell_unversioned_default(array $cell,array $path): bool
+{
+    if(!$cell['present'])return true;
+    $defaults=['attendance'=>'','hifz'=>'','rabt'=>'','muraja'=>'','wajib'=>false,'compensationFaces'=>0,'hifzPlanSegments'=>[]];
+    $field=end($path);return $path[2]==='days'&&count($path)===5&&array_key_exists($field,$defaults)&&grade_cell_same($cell['value']??null,$defaults[$field]);
+}
+function grade_cell_mark(array &$meta,array $path,string $id): void
+{
+    $meta['versions']['d:'.grade_cell_path_key($path)]=$id;
+    for($i=1;$i<=count($path);$i++)$meta['versions']['a:'.grade_cell_path_key(array_slice($path,0,$i))]=$id;
+}
+function grade_cell_put(array &$store,array $path,array $next): void
+{
+    $ref=&$store;$last=array_pop($path);
+    foreach($path as $part){if(!isset($ref[$part])||!is_array($ref[$part]))$ref[$part]=[];$ref=&$ref[$part];}
+    if($next['present'])$ref[$last]=$next['value']??null;else unset($ref[$last]);
+}
+
+function app_state_save_grade_cells(PDO $pdo,int $cid,mixed $input): array
+{
+    if(!is_array($input)||($input['protocol']??null)!=='grade_cells_v1'||!is_array($input['changes']??null))error_response('حدّث الصفحة؛ حفظ الدرجات يتطلب تعديلات الخلايا المحددة، ولم تُغيّر البيانات',409);
+    $id=(string)($input['operation_id']??'');
+    if(!preg_match('/^[A-Za-z0-9:_-]{8,128}$/',$id))error_response('طلب حفظ الدرجات غير صالح',400);
+    $pdo->beginTransaction();
+    try{
+        [$store,$meta]=grade_cells_lock($pdo,$cid);
+        $context=grade_cells_context($pdo,$cid,true);
+        if(!array_key_exists('semester_id',$input)||$input['semester_id']!==$context['semester_id'])throw new RuntimeException('تغيّر الفصل الدراسي؛ لم تُحفظ درجات التبويب القديم');
+        foreach($input['changes'] as $change){
+            $path=$change['path']??null;$base=$change['base']??null;$next=$change['next']??null;
+            if(!is_array($path)||count($path)<3||count($path)>12||!is_array($base)||!is_array($next)||!isset($base['present'],$next['present'])||!is_bool($base['present'])||!is_bool($next['present'])||!is_array($change['tokens']??null))throw new RuntimeException('خلية درجات غير صالحة');
+            foreach($path as $part)if(!is_string($part)||$part===''||in_array($part,['__proto__','prototype','constructor'],true))throw new RuntimeException('مسار درجة غير صالح');
+            if(!ctype_digit($path[1])||(int)$path[1]<1||($path[2]==='days'?count($path)<5:count($path)!==3))throw new RuntimeException('موضع الدرجة غير صالح');
+            $current=grade_cell_value($store,$path);$versions=$meta['versions']??[];$leaf='d:'.grade_cell_path_key($path);
+            if(($versions[$leaf]??null)===$id){if(!grade_cell_same($current,$next))throw new RuntimeException('معرّف الحفظ مستخدم لقيمة أخرى');continue;}
+            $actualTokens=grade_cell_tokens($versions,$path);
+            $emptyInitialization=!array_filter($actualTokens,static fn($v)=>$v!==null)&&grade_cell_unversioned_default($current,$path)&&grade_cell_unversioned_default($base,$path);
+            if(!grade_cell_same($actualTokens,$change['tokens'])||(!grade_cell_same($current,$base)&&!$emptyInitialization))throw new RuntimeException('تعارض تعديل الدرجة من جهاز آخر؛ احفظ نسخة المسودة وحدّث القيم قبل إعادة التعديل');
+            grade_cell_put($store,$path,$next);grade_cell_mark($meta,$path,$id);
+        }
+        $scoped=app_state_tenant_enabled($pdo);app_state_upsert($pdo,'grades',$store,$scoped?$cid:null);app_state_upsert($pdo,'__qhp_grade_cell_versions_v1',$meta,$scoped?$cid:null);
+        $context['versions']=$meta['versions']??new stdClass();$pdo->commit();
+        return ['ok'=>true,'value'=>$store?:new stdClass(),'cell_sync'=>$context,'context_complex_id'=>$cid];
+    }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();error_response($e->getMessage(),$e instanceof PDOException?500:409);}
 }
 
 /** Preserve obsolete requests as history while excluding them from actionable queues. */
@@ -296,6 +396,11 @@ function handle_set_app_state(): void
     }
 
     $pdo = db();
+    if ($key === '__qhp_grade_cell_versions_v1') error_response('معرّف مخزن داخلي؛ استخدم مسار حفظ خلايا الدرجات', 400);
+    if ($key === 'grades') {
+        json_response(app_state_save_grade_cells($pdo,$cid,$input['value']??null));
+        return;
+    }
     if ($key === 'sard_queue') {
         if (!empty($input['value']['removals']) && $role !== 'manager') error_response('المدير فقط يمكنه إزالة الطلب', 403);
         app_state_patch_sard($pdo, $cid, $input['value'] ?? null);
