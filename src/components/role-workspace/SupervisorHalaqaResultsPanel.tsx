@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
+import { useReadOnlyGrades } from "@/hooks/use-readonly-grades";
+import { ReadOnlyGradeStatus } from "@/components/ReadOnlyGradeStatus";
 import { loadGrades, loadHalaqat, loadStudents } from "@/lib/mock-data";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import {
@@ -30,7 +32,8 @@ export function SupervisorHalaqaResultsPanel() {
 
   const halaqat = loadHalaqat();
   const students = loadStudents();
-  const grades = loadGrades();
+  const [grades,setGrades] = useState(loadGrades);
+  const gradeRefresh = useReadOnlyGrades(setGrades, !!calendar, calendar?.semester ? String(calendar.semester.id) : null);
 
   useEffect(() => {
     let cancelled = false;
@@ -69,17 +72,18 @@ export function SupervisorHalaqaResultsPanel() {
 
   if (selected) {
     return (
-      <HalaqaDetailView
+      <><ReadOnlyGradeStatus {...gradeRefresh} /><HalaqaDetailView
         data={selected}
         weekNum={calendar.currentWeekNumber}
         onBack={() => setSelectedId(null)}
-        onRefresh={() => setRefreshKey((k) => k + 1)}
-      />
+        onRefresh={() => { void gradeRefresh.refresh(); setRefreshKey((k) => k + 1); }}
+      /></>
     );
   }
 
   return (
     <section className="space-y-4">
+      <ReadOnlyGradeStatus {...gradeRefresh} />
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h2 className="text-lg font-bold text-primary">نتائج الحلقات</h2>
@@ -87,7 +91,7 @@ export function SupervisorHalaqaResultsPanel() {
             {weekLabel(calendar.currentWeekNumber)} · اضغط على حلقة للتفاصيل
           </p>
         </div>
-        <Button variant="outline" size="sm" className="gap-1" onClick={() => setRefreshKey((k) => k + 1)}>
+        <Button variant="outline" size="sm" className="gap-1" onClick={() => { void gradeRefresh.refresh(); setRefreshKey((k) => k + 1); }}>
           <RefreshCw className="w-4 h-4" /> تحديث
         </Button>
       </div>

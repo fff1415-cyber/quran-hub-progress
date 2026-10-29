@@ -90,11 +90,24 @@ function handle_list_app_state(): void
     foreach ($rows as &$row) {
         $row['value'] = json_decode($row['value'] ?? '{}', true);
         $row['context_complex_id'] = $cid;
+        if (($row['key'] ?? '') === 'grades') $row['calendar_context'] = app_state_read_calendar_context($pdo, $cid);
         if (($row['key'] ?? '') === 'sard_queue' && is_array($row['value'])) {
             $row['value'] = sard_reconcile_queue($row['value'], sard_current_assignments($pdo, $cid));
         }
     }
+    if (!$rows && $keyFilter === 'grades') $rows[] = ['key'=>'grades','value'=>new stdClass(),'context_complex_id'=>$cid,'calendar_context'=>app_state_read_calendar_context($pdo,$cid)];
     json_response($rows);
+}
+
+/** Request-time calendar only; does not attribute historical grade values to a semester. */
+function app_state_read_calendar_context(PDO $pdo, int $cid): array
+{
+    if (!plans_table_exists($pdo,'semesters')) return ['known'=>false,'active_semester_id'=>null];
+    $scoped=table_column_exists($pdo,'semesters','complex_id');
+    $stmt=$pdo->prepare('SELECT id FROM semesters WHERE is_active = 1'.($scoped?' AND complex_id = ?':'').' ORDER BY id');
+    $stmt->execute($scoped?[$cid]:[]);$ids=$stmt->fetchAll(PDO::FETCH_COLUMN);
+    if(count($ids)>1)return ['known'=>false,'active_semester_id'=>null];
+    return ['known'=>true,'active_semester_id'=>$ids?(string)$ids[0]:null];
 }
 
 /** Preserve obsolete requests as history while excluding them from actionable queues. */
