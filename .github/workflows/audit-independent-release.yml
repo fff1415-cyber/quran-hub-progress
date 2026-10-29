@@ -80,6 +80,15 @@ jobs:
           name: targeted-writes-compatible-rollback
           path: dist/targeted-writes-compatible-rollback/
           retention-days: 30
+      - name: Build compatible local-transfer rollback (no data restore)
+        if: github.head_ref == 'fix/audit-safe-local-transfers'
+        run: python3 scripts/prepare-local-transfers-rollback.py
+      - uses: actions/upload-artifact@v4
+        if: github.head_ref == 'fix/audit-safe-local-transfers'
+        with:
+          name: local-transfers-compatible-rollback
+          path: dist/local-transfers-compatible-rollback/
+          retention-days: 30
   database-concurrency:
     if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-')
     name: Isolated transactions (${{ matrix.engine }})
