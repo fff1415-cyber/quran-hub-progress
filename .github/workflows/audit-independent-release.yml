@@ -48,6 +48,7 @@ jobs:
           php tests/backend-readonly-grade-context.php
           php tests/backend-targeted-writes.php
           php tests/backend-continuity.php
+          php tests/backend-calendar-continuity.php
       - name: TypeScript regression against the exact published source
         if: github.head_ref == 'fix/audit-safe-preserve-current-work'
         run: python3 tests/type-baseline-regression.py

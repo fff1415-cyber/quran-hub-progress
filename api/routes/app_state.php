@@ -282,7 +282,6 @@ function app_state_save_untruncated_history(PDO $pdo, int $cid, string $key, arr
             }
             $remaining[$keyForRow]--;
         }
-        if (!is_array($value) && $value !== null) throw new RuntimeException('الطلب ليس مخزن سجلات صالحًا؛ لم تُغيّر البيانات');
         app_state_upsert($pdo, $key, $value, $tenants ? $cid : null);
         $pdo->commit();
     } catch (Throwable $error) {
@@ -320,6 +319,7 @@ function app_state_save_without_reset(PDO $pdo, int $cid, string $key, mixed $va
         if (app_state_store_has_records($key, $previous) && !app_state_store_has_records($key, $value)) {
             throw new RuntimeException('رُفض الطلب لأنه سيصفّر السجلات الحالية؛ حدّث الصفحة. لم تتغير البيانات المحفوظة');
         }
+        if (!is_array($value) && $value !== null) throw new RuntimeException('الطلب ليس مخزن سجلات صالحًا؛ لم تُغيّر البيانات');
         app_state_upsert($pdo, $key, $value, $tenants ? $cid : null);
         $pdo->commit();
     } catch (Throwable $error) {

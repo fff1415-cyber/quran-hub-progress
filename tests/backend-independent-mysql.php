@@ -145,3 +145,5 @@ continuityFailure(fn()=>handle_set_app_state(),'fixture_continuity');check(json_
 $children=[];for($i=0;$i<2;$i++){$pid=pcntl_fork();if($pid===-1)throw new RuntimeException('fork unavailable');if($pid===0){$GLOBALS['pdo']=connectFixture();$GLOBALS['input']=['key'=>'grades','value'=>$i===0?[]:['S'=>['keep'=>'concurrent-new']]];try{handle_set_app_state();exit($i===0?1:0);}catch(Throwable $e){exit($i===0&&str_contains($e->getMessage(),'سيصفّر')?0:1);}}$children[]=$pid;}
 foreach($children as $pid){pcntl_waitpid($pid,$status);check(pcntl_wexitstatus($status)===0,'real concurrent reset/save rejects only the reset');}
 $GLOBALS['pdo']=$pdo=connectFixture();check(json_decode($pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn(),true)===['S'=>['keep'=>'concurrent-new']],'concurrent valid writing survives the late empty store request');
+
+require __DIR__.'/continuity-calendar-cases.php';continuityCalendarCases($pdo);
