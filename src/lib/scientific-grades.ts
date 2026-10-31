@@ -737,7 +737,16 @@ export function setTeacherScientificDayScore(
 ): void {
   const store = loadScientificGradesStore();
   const data = halaqaDataRoot(store, halaqaId);
-  const changed = writeScientificDayScoreInPlace(data, studentId, weekNum, dayKey, field, value);
+  let changed = writeScientificDayScoreInPlace(data, studentId, weekNum, dayKey, field, value);
+  if (value.trim() === "") {
+    // An explicit empty value survives merging with an older cloud value; absence cannot express a clear.
+    const week = data[studentId][weekNum];
+    const day = week[dayKey] ?? (week[dayKey] = {});
+    if (!Object.prototype.hasOwnProperty.call(day, field) || day[field] !== "") {
+      day[field] = "";
+      changed = true;
+    }
+  }
   const overridden = isScientificScoreOverriddenInStore(store, halaqaId, studentId, weekNum, dayKey, field);
   // Publish the value and override together: event listeners must never see a manual value without its guard.
   setScientificScoreOverrideInStore(store, halaqaId, studentId, weekNum, dayKey, field);
