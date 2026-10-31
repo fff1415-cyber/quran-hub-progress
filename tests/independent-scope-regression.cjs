@@ -1,3 +1,4 @@
+const {withoutPlanResponseClient}=require('./plan-response-scope-support.cjs');
 const assert=require('node:assert/strict'),fs=require('node:fs'),cp=require('node:child_process'),ts=require('typescript');
 const base='3511c25308393218a6a9d5db69efaa8011f8cebc';
 const original=path=>cp.execFileSync('git',['show',`${base}:${path}`],{encoding:'utf8'});
@@ -26,7 +27,7 @@ for(const [path,allowed] of [
  ['src/lib/mock-data.ts',['sameStoredGradeValue','retainUnrecognizedGradeFields','mergeDayEntries','mergeWeekRecords','resetGradesForNewSemester','ensureGradesSemester','persistShared','saveSardQueue','pushSardHistory','saveSardHistory','mergeNotifications','writeNotificationsLocal','pushNotification']],
  ['src/lib/plans-service.ts',['assignStudentPlan','patchStudentAssignment','patchAssignmentFaceQuotas']],
  ['src/components/role-workspace/RoleSections.tsx',['SecretarySardPanel','SupervisorPlanCompletedPanel','SupervisorApprovalsPanel','SupervisorForceRetryPanel','SupervisorPassedPanel']],
-]){const current=functions(fs.readFileSync(path,'utf8'));for(const [name,body] of functions(original(path)))if(!allowed.includes(name))assert.equal(current.get(name),body,`unrelated function changed: ${name}`);}
+]){const current=functions(withoutPlanResponseClient(fs.readFileSync(path,'utf8')));for(const [name,body] of functions(original(path)))if(!allowed.includes(name))assert.equal(current.get(name),body,`unrelated function changed: ${name}`);}
 assert.ok(!fs.readFileSync('src/lib/sard-queue-refresh.ts','utf8').includes('secureSetAppState'),'queue refresh cannot write shared state');
 const workflow=fs.readFileSync('.github/workflows/deploy.yml','utf8');
 assert.ok(workflow.indexOf('Verify existing API files before replacement')<workflow.indexOf('Sync PHP API (SFTP primary)'));

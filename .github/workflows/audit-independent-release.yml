@@ -51,7 +51,7 @@ jobs:
           php tests/backend-calendar-continuity.php
           php tests/backend-catalog-noop.php
       - name: TypeScript regression against the exact published source
-        if: github.head_ref == 'fix/audit-safe-preserve-current-work' || github.head_ref == 'fix/audit-safe-explicit-scientific-clear' || github.head_ref == 'fix/audit-safe-catalog-noop' || github.head_ref == 'fix/audit-safe-sard-confirmation'
+        if: github.head_ref == 'fix/audit-safe-preserve-current-work' || github.head_ref == 'fix/audit-safe-explicit-scientific-clear' || github.head_ref == 'fix/audit-safe-catalog-noop' || github.head_ref == 'fix/audit-safe-sard-confirmation' || github.head_ref == 'fix/audit-safe-plan-response-cache'
         run: python3 tests/type-baseline-regression.py
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
@@ -136,6 +136,17 @@ jobs:
         with:
           name: sard-confirmation-compatible-rollback
           path: dist/sard-confirmation-compatible-rollback/
+          retention-days: 30
+      - name: Verify data-compatible plan response rollback
+        if: github.head_ref == 'fix/audit-safe-plan-response-cache'
+        env:
+          AUDIT_FEATURE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/prepare-plan-response-rollback.py
+      - uses: actions/upload-artifact@v4
+        if: github.head_ref == 'fix/audit-safe-plan-response-cache'
+        with:
+          name: plan-response-compatible-rollback
+          path: dist/plan-response-compatible-rollback/
           retention-days: 30
   database-concurrency:
     if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-')
