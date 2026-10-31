@@ -39,7 +39,9 @@ function foundationRestore(PDO $pdo,string $dump,array $expected):void {
   $sql="SELECT COUNT(*) FROM `".$first['TABLE_NAME']."` c LEFT JOIN `".$first['REFERENCED_TABLE_NAME']."` p ON ".implode(' AND ',$join)." WHERE ".implode(' AND ',$nonnull)." AND p.`".$first['REFERENCED_COLUMN_NAME']."` IS NULL";
   check((int)$pdo->query($sql)->fetchColumn()===0,'restored FK validates: '.$first['CONSTRAINT_NAME']);
  }
- check(foundationFingerprint($pdo,array_keys($expected))===$expected,'native backup restores identical definitions, exact values, zero, null, unknown fields and all rows');
+ $actual=foundationFingerprint($pdo,array_keys($expected));
+ foreach($expected as $table=>$value)if($actual[$table]!==$value)echo 'RESTORE MISMATCH '.json_encode(['table'=>$table,'schema_equal'=>$actual[$table]['schema']===$value['schema'],'row_count_equal'=>$actual[$table]['rows']===$value['rows'],'data_equal'=>$actual[$table]['data']===$value['data']])."\n";
+ check($actual===$expected,'native backup restores identical definitions, exact values, zero, null, unknown fields and all rows');
 }
 $insert=$pdo->prepare("INSERT INTO segment_completions(id,student_id,plan_id,assignment_id,segment_index,task_type,completed_at) VALUES(?,?,'P',?,1,'hifz','2026-01-01')");
 $pdo->beginTransaction();
