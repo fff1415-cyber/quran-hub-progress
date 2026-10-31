@@ -49,8 +49,9 @@ jobs:
           php tests/backend-targeted-writes.php
           php tests/backend-continuity.php
           php tests/backend-calendar-continuity.php
+          php tests/backend-catalog-noop.php
       - name: TypeScript regression against the exact published source
-        if: github.head_ref == 'fix/audit-safe-preserve-current-work' || github.head_ref == 'fix/audit-safe-explicit-scientific-clear'
+        if: github.head_ref == 'fix/audit-safe-preserve-current-work' || github.head_ref == 'fix/audit-safe-explicit-scientific-clear' || github.head_ref == 'fix/audit-safe-catalog-noop'
         run: python3 tests/type-baseline-regression.py
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
@@ -115,6 +116,15 @@ jobs:
         with:
           name: scientific-clear-compatible-rollback
           path: dist/scientific-clear-compatible-rollback/
+          retention-days: 30
+      - name: Verify data-compatible single-file catalog rollback
+        if: github.head_ref == 'fix/audit-safe-catalog-noop'
+        run: python3 scripts/prepare-catalog-noop-rollback.py
+      - uses: actions/upload-artifact@v4
+        if: github.head_ref == 'fix/audit-safe-catalog-noop'
+        with:
+          name: catalog-noop-compatible-rollback
+          path: dist/catalog-noop-compatible-rollback/
           retention-days: 30
   database-concurrency:
     if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-')

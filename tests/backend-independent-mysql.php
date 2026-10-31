@@ -147,3 +147,14 @@ foreach($children as $pid){pcntl_waitpid($pid,$status);check(pcntl_wexitstatus($
 $GLOBALS['pdo']=$pdo=connectFixture();check(json_decode($pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn(),true)===['S'=>['keep'=>'concurrent-new']],'concurrent valid writing survives the late empty store request');
 
 require __DIR__.'/continuity-calendar-cases.php';continuityCalendarCases($pdo);
+
+// Identical catalog imports must preserve native identifiers on both actual InnoDB engines.
+require __DIR__.'/catalog-noop-cases.php';catalogNoopCases($pdo);
+$baseline=catalogSnapshot($pdo);catalogDeleteTrap($pdo,true);$children=[];
+for($i=0;$i<2;$i++){
+ $pid=pcntl_fork();if($pid===-1)throw new RuntimeException('fork unavailable');
+ if($pid===0){try{$GLOBALS['pdo']=connectFixture();$GLOBALS['auth']=['role'=>'supervisor','complexId'=>1,'name'=>'fixture'];$GLOBALS['input']=catalogNoopPayload();handle_import_plans();exit(0);}catch(Throwable $e){exit(1);}}
+ $children[]=$pid;
+}
+foreach($children as $pid){pcntl_waitpid($pid,$status);check(pcntl_wifexited($status)&&pcntl_wexitstatus($status)===0,'concurrent same-content import never deletes/recreates segments');}
+$GLOBALS['pdo']=$pdo=connectFixture();check(catalogSnapshot($pdo)===$baseline,'concurrent retry preserves ongoing work byte-for-byte at row values');catalogDeleteTrap($pdo,false);
