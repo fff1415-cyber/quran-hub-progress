@@ -13,11 +13,13 @@ function catalogNoopPayload(): array {
  ]]]];
 }
 function catalogDeleteTrap(PDO $pdo,bool $enabled):void {
- $pdo->exec('DROP TRIGGER IF EXISTS audit_catalog_no_delete');
+ $pdo->exec('DROP TABLE IF EXISTS audit_catalog_no_delete');
  if(!$enabled)return;
- $pdo->exec($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'
-  ?"CREATE TRIGGER audit_catalog_no_delete BEFORE DELETE ON plan_segments BEGIN SELECT RAISE(ABORT,'catalog no-op attempted delete'); END"
-  :"CREATE TRIGGER audit_catalog_no_delete BEFORE DELETE ON plan_segments FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT='catalog no-op attempted delete'");
+ // A fixture-only FK trap requires no elevated trigger/binlog privileges.
+ if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')$pdo->exec('PRAGMA foreign_keys=ON');
+ $tail=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'?'':' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci';
+ $pdo->exec('CREATE TABLE audit_catalog_no_delete(segment_id CHAR(36) PRIMARY KEY, FOREIGN KEY(segment_id) REFERENCES plan_segments(id) ON DELETE RESTRICT)'.$tail);
+ $pdo->exec("INSERT INTO audit_catalog_no_delete SELECT id FROM plan_segments WHERE plan_id='catalog-noop-P'");
 }
 function catalogSeed(PDO $pdo): void {
  $pdo->exec("INSERT INTO education_plans(id,complex_id,track,level_number,title,segment_count,created_at) VALUES('catalog-noop-P',1,'gold',88721,'خطة ثابتة',2,'2026-01-01 00:00:00');
@@ -34,7 +36,7 @@ function catalogNoopCases(PDO $pdo):void {
  handle_import_plans();check(catalogSnapshot($pdo)===$before,'retry after a lost response is a non-destructive no-op');
  $GLOBALS['input']['plans'][0]['segments'][0]['hifz_plan']='changed';
  try{handle_import_plans();throw new RuntimeException('Changed content incorrectly skipped');}
- catch(Throwable $e){check(str_contains($e->getMessage(),'catalog no-op attempted delete'),'real content difference still reaches the original update path and surfaces its failure');}
+ catch(Throwable $e){check((str_contains($e->getMessage(),'audit_catalog_no_delete')||str_contains($e->getMessage(),'FOREIGN KEY constraint failed')),'real content difference still reaches the original update path and surfaces its failure');}
  check(catalogSnapshot($pdo)===$before&&!$pdo->inTransaction(),'failed batch rolls back without changing any historical source');
  catalogDeleteTrap($pdo,false);
  foreach(['teacher','assistant','musammi','secretary','student','parent'] as $role){
