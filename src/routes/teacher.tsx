@@ -222,9 +222,9 @@ export function TeacherPage() {
         const reset = ensureGradesSemester(cal.semester?.id ?? null);
         const testsReset = ensureWeeklyTestsSemester(cal.semester?.id ?? null);
         const tarbawiReset = ensureTarbawiSemester(cal.semester?.id ?? null);
-        if (reset) toast.info("بدء فصل دراسي جديد — تم تصفير سجل التحضير");
-        if (testsReset) toast.info("بدء فصل دراسي جديد — تم تصفير الاختبارات الأسبوعية");
-        if (tarbawiReset) toast.info("بدء فصل دراسي جديد — تم تصفير البرنامج التربوي");
+        if (reset) toast.info("تغيّر التقويم — بقي سجل التحضير الحالي محفوظًا دون تصفير أو نقل");
+        if (testsReset) toast.info("تغيّر التقويم — بقيت الاختبارات الأسبوعية محفوظة دون تصفير أو نقل");
+        if (tarbawiReset) toast.info("تغيّر التقويم — بقيت الخطط التربوية وسجلاتها محفوظة");
         setCalendar(cal);
       })
       .finally(() => {

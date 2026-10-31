@@ -30,7 +30,7 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - run: npm ci --offline --ignore-scripts --no-audit --no-fund --legacy-peer-deps
       - name: Client and offline archive regressions (no production configuration)
         run: |
           set -e
@@ -45,6 +45,7 @@ jobs:
           php tests/backend-evaluation-reference.php
           php tests/backend-readonly-grade-context.php
           php tests/backend-targeted-writes.php
+          php tests/backend-continuity.php
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
       - name: Isolated package and backup/verification fixtures (no SSH or production credentials)

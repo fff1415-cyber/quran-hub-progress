@@ -511,22 +511,16 @@ export function setGradesSemesterId(id: string | null) {
   else localStorage.removeItem(KEY_GRADES_SEMESTER);
 }
 
-/** Clear grades when a new academic semester becomes active. */
+/** Compatibility entry point: calendar activation must not clear or relabel existing work. */
 export function resetGradesForNewSemester(semesterId: string | null) {
-  saveGrades({});
-  setGradesSemesterId(semesterId);
+  ensureGradesSemester(semesterId);
 }
 
-/** Returns true if grades were reset due to semester change. */
+/** Report a known calendar change without resetting records or guessing an unknown semester. */
 export function ensureGradesSemester(semesterId: string | null): boolean {
   if (!semesterId) return false;
   const current = getGradesSemesterId();
-  if (current && current !== semesterId) {
-    resetGradesForNewSemester(semesterId);
-    return true;
-  }
-  if (!current) setGradesSemesterId(semesterId);
-  return false;
+  return current !== null && current !== semesterId;
 }
 
 export type TransferActionRole = "manager" | "secretary" | "supervisor";

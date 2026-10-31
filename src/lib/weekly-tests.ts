@@ -154,20 +154,16 @@ export function setWeeklyTestsSemesterId(id: string | null) {
   else localStorage.removeItem(KEY_SEMESTER);
 }
 
+/** Kept for older callers; calendar activation preserves the current test records. */
 export function resetWeeklyTestsForNewSemester(semesterId: string | null) {
-  saveWeeklyTests({});
-  setWeeklyTestsSemesterId(semesterId);
+  ensureWeeklyTestsSemester(semesterId);
 }
 
+/** Read-only change detection; an unknown old semester remains unknown. */
 export function ensureWeeklyTestsSemester(semesterId: string | null): boolean {
   if (!semesterId) return false;
   const current = getWeeklyTestsSemesterId();
-  if (current && current !== semesterId) {
-    resetWeeklyTestsForNewSemester(semesterId);
-    return true;
-  }
-  if (!current) setWeeklyTestsSemesterId(semesterId);
-  return false;
+  return current !== null && current !== semesterId;
 }
 
 export function getStudentWeeklyTests(

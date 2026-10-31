@@ -195,16 +195,11 @@ export async function pushTarbawiStoreCloud(store: TarbawiStore): Promise<void> 
   }
 }
 
+/** Calendar changes do not erase plans belonging to any semester. */
 export function ensureTarbawiSemester(semesterId: string | null): boolean {
   if (typeof window === "undefined" || !semesterId) return false;
   const prev = localStorage.getItem(KEY_SEMESTER);
-  if (prev && prev !== semesterId) {
-    localStorage.setItem(KEY_SEMESTER, semesterId);
-    writeStore({ settingsBySemester: {}, plans: {} });
-    return true;
-  }
-  if (!prev) localStorage.setItem(KEY_SEMESTER, semesterId);
-  return false;
+  return prev !== null && prev !== semesterId;
 }
 
 export function saveTarbawiStore(store: TarbawiStore): void {
