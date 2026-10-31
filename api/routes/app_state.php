@@ -290,6 +290,45 @@ function app_state_save_untruncated_history(PDO $pdo, int $cid, string $key, arr
     }
 }
 
+/** A calendar change or an old tab must not erase an existing shared record store. */
+function app_state_store_has_records(string $key, mixed $value): bool
+{
+    if (!is_array($value)) return false;
+    if ($key === 'tarbawi_program') return count(array_diff(array_keys($value), ['settingsBySemester','plans'])) > 0 || !empty($value['settingsBySemester']) || !empty($value['plans']);
+    if ($key === 'scientific_grades') return count(array_diff(array_keys($value), ['configs','data','overrides'])) > 0 || !empty($value['configs']) || !empty($value['data']) || !empty($value['overrides']);
+    return count($value) > 0;
+}
+
+function app_state_save_without_reset(PDO $pdo, int $cid, string $key, mixed $value): void
+{
+    $tenants = app_state_tenant_enabled($pdo);
+    $pdo->beginTransaction();
+    try {
+        // The original unique key serializes first initialization as well as existing-row writes.
+        $insert = $tenants ? 'INSERT IGNORE INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)' : 'INSERT IGNORE INTO app_state (`key`, value) VALUES (?, ?)';
+        $params = $tenants ? [$cid, $key] : [$key];
+        $pdo->prepare($insert)->execute(array_merge($params, ['{}']));
+        $stmt = $pdo->prepare('SELECT value FROM app_state WHERE ' . ($tenants ? 'complex_id = ? AND ' : '') . '`key` = ? FOR UPDATE');
+        $stmt->execute($params);
+        $raw = $stmt->fetchColumn();
+        if ($raw === false) throw new RuntimeException('تعذّر تأكيد مخزن السجلات؛ لم يُحفظ التغيير');
+        $previous = json_decode((string) $raw, true);
+        if (json_last_error() !== JSON_ERROR_NONE || (!is_array($previous) && $previous !== null)) {
+            throw new RuntimeException('السجل الحالي محفوظ بصيغة تحتاج مراجعة؛ لم يُستبدل');
+        }
+        if (app_state_store_has_records($key, $previous) && !app_state_store_has_records($key, $value)) {
+            throw new RuntimeException('رُفض الطلب لأنه سيصفّر السجلات الحالية؛ حدّث الصفحة. لم تتغير البيانات المحفوظة');
+        }
+        if (!is_array($value) && $value !== null) throw new RuntimeException('الطلب ليس مخزن سجلات صالحًا؛ لم تُغيّر البيانات');
+        app_state_upsert($pdo, $key, $value, $tenants ? $cid : null);
+        $pdo->commit();
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($error instanceof PDOException) throw $error;
+        error_response($error->getMessage(), 409);
+    }
+}
+
 function handle_set_app_state(): void
 {
     $auth = require_auth();
@@ -316,6 +355,11 @@ function handle_set_app_state(): void
         return;
     }
     try {
+        if (in_array($key, ['grades', 'weekly_tests', 'scientific_grades', 'tarbawi_program'], true)) {
+            app_state_save_without_reset($pdo, $cid, $key, $input['value'] ?? null);
+            json_response(['ok' => true]);
+            return;
+        }
         if (in_array($key, ['sard_history', 'academic_records'], true) && is_array($input['value'] ?? null) && app_state_history_is_list($input['value'])) {
             app_state_save_untruncated_history($pdo, $cid, $key, $input['value']);
             json_response(['ok' => true]);

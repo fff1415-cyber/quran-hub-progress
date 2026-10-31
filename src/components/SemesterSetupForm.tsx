@@ -8,8 +8,6 @@ import {
 import { getToken } from "@/lib/cloud-sync";
 import { secureCreateSemester, secureGetActiveSemester } from "@/lib/secure-data.functions";
 import { clearCalendarCache, fetchActiveCalendar } from "@/lib/academic-context";
-import { resetGradesForNewSemester } from "@/lib/mock-data";
-import { resetWeeklyTestsForNewSemester } from "@/lib/weekly-tests";
 import {
   holidayDateStrings,
   serializeSemesterHolidays,
@@ -173,20 +171,12 @@ export function SemesterSetupForm() {
       });
 
       clearCalendarCache();
-      resetGradesForNewSemester(result.id);
-      resetWeeklyTestsForNewSemester(result.id);
       await fetchActiveCalendar(true);
-      try {
-        const { pushAppState } = await import("@/lib/cloud-sync");
-        await pushAppState("grades", {});
-        await pushAppState("weekly_tests", {});
-      } catch {
-        /* local reset applied */
-      }
+
 
       setPreview(weeks);
       setActiveSemester({ name: name.trim(), weeks_count: result.weeks_count });
-      toast.success(`تم اعتماد الفصل «${name.trim()}» — بدء فصل جديد (${result.weeks_count} أسبوعاً)`);
+      toast.success(`تم اعتماد تقويم «${name.trim()}» (${result.weeks_count} أسبوعاً) مع الاحتفاظ بالسجلات الحالية`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "فشل اعتماد الفصل الدراسي");
     } finally {
@@ -227,12 +217,12 @@ export function SemesterSetupForm() {
             نظام التقويم الأكاديمي — فصل جديد
           </CardTitle>
           <CardDescription>
-            إعداد فصل دراسي جديد — عند الاعتماد تُصفّر درجات جميع الطلاب تلقائياً
+            إعداد تقويم فصل دراسي جديد مع الاحتفاظ بالدرجات والسجلات الحالية
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-warning">
-            تنبيه: اعتماد فصل جديد يُلغي الفصل السابق ويصفّر جميع الدرجات — استخدم «تحرير الفصل الحالي» للتعديلات دون تصفير.
+            اعتماد التقويم لا يصفّر الدرجات أو ينقل السجلات الحالية إلى فصل جديد. فصل البيانات التاريخية يحتاج إجراءً معتمدًا مستقلًا.
             {activeSemester && (
               <span className="block mt-1 text-warning/90">
                 الفصل الحالي: «{activeSemester.name}» — سيُعرض خيار تصدير درجاته قبل الاعتماد.
@@ -318,7 +308,7 @@ export function SemesterSetupForm() {
             </Button>
             <Button type="button" onClick={handleSaveClick} disabled={saving || previewing} className="gold-gradient text-primary-foreground">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              اعتماد فصل جديد (تصفير الدرجات)
+              اعتماد التقويم الجديد
             </Button>
           </div>
 

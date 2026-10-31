@@ -288,7 +288,31 @@ export function mergeDayEntryPatch(base: DayEntry, patch: Partial<DayEntry>): Da
   };
 }
 
+/** Compare JSON records without treating object key order as a data change. */
+function sameStoredGradeValue(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (!a || !b || typeof a !== "object" || typeof b !== "object" || Array.isArray(a) !== Array.isArray(b)) return false;
+  const left = a as Record<string, unknown>, right = b as Record<string, unknown>;
+  const keys = Object.keys(left);
+  return keys.length === Object.keys(right).length && keys.every(key => Object.prototype.hasOwnProperty.call(right, key) && sameStoredGradeValue(left[key], right[key]));
+}
+
+/** Preserve unsupported fields; never select a historical linkage by guessing between conflicting copies. */
+function retainUnrecognizedGradeFields(a: object, b: object, known: readonly string[]): Record<string, unknown> {
+  const left = a as Record<string, unknown>, right = b as Record<string, unknown>, retained: Record<string, unknown> = {};
+  for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
+    if (known.includes(key)) continue;
+    const hasLeft = Object.prototype.hasOwnProperty.call(left, key), hasRight = Object.prototype.hasOwnProperty.call(right, key);
+    if (hasLeft && hasRight && !sameStoredGradeValue(left[key], right[key])) throw new Error("تعارضت بيانات محفوظة غير معروفة؛ بقيت النسختان دون استبدال أو ربط بالتخمين");
+    retained[key] = structuredClone(hasRight ? right[key] : left[key]);
+  }
+  return retained;
+}
+
 function mergeDayEntries(a: DayEntry | undefined, b: DayEntry | undefined): DayEntry {
+  if (!a && b) return structuredClone(b);
+  if (a && !b) return structuredClone(a);
+  if (a && b && sameStoredGradeValue(a, b)) return structuredClone(a);
   const left = a ?? emptyDayEntry();
   const right = b ?? emptyDayEntry();
   const pickHifzPlanSegments = (): number[] | undefined => {
@@ -333,6 +357,7 @@ function mergeDayEntries(a: DayEntry | undefined, b: DayEntry | undefined): DayE
     if (ts > 0) fieldTouchedAt[key] = ts;
   }
   return {
+    ...retainUnrecognizedGradeFields(left, right, [...DAY_GRADE_FIELDS, "hifzPlanSegments", "custom", "fieldTouchedAt", "touchedAt"]),
     attendance: pick("attendance") as DayEntry["attendance"],
     hifz: pick("hifz") as HifzValue,
     rabt: pick("rabt") as DayEntry["rabt"],
@@ -355,6 +380,9 @@ function weekMaxTouchedAt(w: WeekRecord): number {
 }
 
 function mergeWeekRecords(a: WeekRecord | undefined, b: WeekRecord | undefined): WeekRecord {
+  if (!a && b) return structuredClone(b);
+  if (a && !b) return structuredClone(a);
+  if (a && b && sameStoredGradeValue(a, b)) return structuredClone(a);
   const left = a ?? emptyWeek();
   const right = b ?? emptyWeek();
   const dayKeys = new Set([...Object.keys(left.days), ...Object.keys(right.days)]);
@@ -373,6 +401,7 @@ function mergeWeekRecords(a: WeekRecord | undefined, b: WeekRecord | undefined):
   const newerWeek = weekMaxTouchedAt(right) >= weekMaxTouchedAt(left) ? right : left;
   const segs = newerWeek.compensationPlanSegments ?? [];
   return {
+    ...retainUnrecognizedGradeFields(left, right, ["days", "testMuraja", "testRabt", "sard", "compensationFaces", "compensationMurajaFaces", "compensationPlanSegments"]),
     days,
     testMuraja: left.testMuraja || right.testMuraja,
     testRabt: left.testRabt || right.testRabt,
@@ -511,22 +540,16 @@ export function setGradesSemesterId(id: string | null) {
   else localStorage.removeItem(KEY_GRADES_SEMESTER);
 }
 
-/** Clear grades when a new academic semester becomes active. */
+/** Compatibility entry point: calendar activation must not clear or relabel existing work. */
 export function resetGradesForNewSemester(semesterId: string | null) {
-  saveGrades({});
-  setGradesSemesterId(semesterId);
+  ensureGradesSemester(semesterId);
 }
 
-/** Returns true if grades were reset due to semester change. */
+/** Report a known calendar change without resetting records or guessing an unknown semester. */
 export function ensureGradesSemester(semesterId: string | null): boolean {
   if (!semesterId) return false;
   const current = getGradesSemesterId();
-  if (current && current !== semesterId) {
-    resetGradesForNewSemester(semesterId);
-    return true;
-  }
-  if (!current) setGradesSemesterId(semesterId);
-  return false;
+  return current !== null && current !== semesterId;
 }
 
 export type TransferActionRole = "manager" | "secretary" | "supervisor";

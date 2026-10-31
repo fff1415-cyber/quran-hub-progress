@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),cp=require('node:child_process'),ts=require('typescript');
 const base='3511c25308393218a6a9d5db69efaa8011f8cebc';
 const original=path=>cp.execFileSync('git',['show',`${base}:${path}`],{encoding:'utf8'});
-for(const path of ['api/auth.php','api/tenant.php','api/routes/login.php','api/routes/students.php','api/routes/halaqat.php','api/routes/role_accounts.php','src/lib/auth-session.ts','src/lib/auth-redirect.ts','src/lib/tenant-session.ts','src/lib/tenant.ts','src/lib/permissions.ts','src/lib/teacher-halaqa-access.ts','src/lib/cloud-sync.ts','src/lib/semester-grading.ts','src/lib/evaluation-calculator.ts','package.json','package-lock.json','bun.lock'])assert.equal(fs.readFileSync(path,'utf8'),original(path),path);
+for(const path of ['api/auth.php','api/tenant.php','api/routes/login.php','api/routes/students.php','api/routes/halaqat.php','api/routes/role_accounts.php','src/lib/auth-session.ts','src/lib/auth-redirect.ts','src/lib/tenant-session.ts','src/lib/tenant.ts','src/lib/permissions.ts','src/lib/teacher-halaqa-access.ts','src/lib/semester-grading.ts','src/lib/evaluation-calculator.ts','package.json','package-lock.json','bun.lock'])assert.equal(fs.readFileSync(path,'utf8'),original(path),path);
 assert.deepEqual(cp.execFileSync('git',['diff','--name-only',base,'--','api'],{encoding:'utf8'}).trim().split('\n').sort(),['api/routes/app_state.php','api/routes/evaluation_settings.php','api/routes/plans.php'],'the API package cannot contain unrelated permission/login/ownership files');
 assert.equal(cp.execFileSync('git',['diff',base,'--','database'],{encoding:'utf8'}),'','release requires no schema migration');
 function functions(code){const sf=ts.createSourceFile('scope.tsx',code,ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);return new Map(sf.statements.filter(ts.isFunctionDeclaration).filter(n=>n.name).map(n=>[n.name.text,n.getText(sf)]));}
@@ -22,7 +22,8 @@ const readBefore=phpFunction(original('api/routes/app_state.php'),'handle_list_a
 const readGuards=code=>code.split('\n').filter(line=>/require_auth\(|require_complex_id\(|\$role|\$allowed|WHERE complex_id|\$tenants|\$stmt->execute/.test(line)).map(line=>line.trim());
 assert.deepEqual(readGuards(readAfter),readGuards(readBefore),'response context metadata cannot change existing read roles or tenant predicates');
 for(const [path,allowed] of [
- ['src/lib/mock-data.ts',['persistShared','saveSardQueue','pushSardHistory','saveSardHistory','mergeNotifications','writeNotificationsLocal','pushNotification']],
+ ['src/lib/cloud-sync.ts',['syncFromCloud']],
+ ['src/lib/mock-data.ts',['sameStoredGradeValue','retainUnrecognizedGradeFields','mergeDayEntries','mergeWeekRecords','resetGradesForNewSemester','ensureGradesSemester','persistShared','saveSardQueue','pushSardHistory','saveSardHistory','mergeNotifications','writeNotificationsLocal','pushNotification']],
  ['src/lib/plans-service.ts',['assignStudentPlan','patchStudentAssignment','patchAssignmentFaceQuotas']],
  ['src/components/role-workspace/RoleSections.tsx',['SecretarySardPanel','SupervisorPlanCompletedPanel','SupervisorApprovalsPanel','SupervisorForceRetryPanel','SupervisorPassedPanel']],
 ]){const current=functions(fs.readFileSync(path,'utf8'));for(const [name,body] of functions(original(path)))if(!allowed.includes(name))assert.equal(current.get(name),body,`unrelated function changed: ${name}`);}

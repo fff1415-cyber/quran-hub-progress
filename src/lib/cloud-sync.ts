@@ -13,9 +13,8 @@ import {
   loadHalaqat,
   loadGrades,
   mergeGradesStores,
-  ensureGradesSemester,
 } from "./mock-data";
-import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } from "./weekly-tests";
+import { saveWeeklyTestsSettings, saveWeeklyTests } from "./weekly-tests";
 import { saveStaffAttendanceSettings, saveStaffCheckIns } from "./staff-attendance";
 import { normalizeExtraAssistants } from "./halaqa-assistants";
 import { saveStudentPortalVisibility, type StudentPortalVisibility } from "./student-portal-settings";
@@ -28,7 +27,7 @@ import {
   type FinancialLedgerStore,
 } from "./financial-ledger";
 import { savePushNotificationSettings, type PushNotificationSettings } from "./push-notification-settings";
-import { saveTarbawiStore, type TarbawiStore, ensureTarbawiSemester, mergeTarbawiStores, loadTarbawiStore } from "./tarbawi-program";
+import { saveTarbawiStore, type TarbawiStore, mergeTarbawiStores, loadTarbawiStore } from "./tarbawi-program";
 import type { AcademicPhaseRecord } from "./academic-record";
 import { saveAcademicRecords } from "./academic-record";
 import type { HalaqaProgramsStore, HalaqaProgramGradesStore } from "./halaqa-programs";
@@ -305,20 +304,17 @@ export async function syncFromCloud(options?: {
 
     if (token) {
       try {
-        const calendar = await fetchActiveCalendar(!loadCachedCalendar());
-        const semesterReset = ensureGradesSemester(calendar.semester?.id ?? null);
-        const weeklyTestsReset = ensureWeeklyTestsSemester(calendar.semester?.id ?? null);
-        const tarbawiReset = ensureTarbawiSemester(calendar.semester?.id ?? null);
+        await fetchActiveCalendar(!loadCachedCalendar());
 
         const sardBeforePull = JSON.stringify(loadSardQueue());
         const stateRows = await secureListAppState({ data: { token } });
         const state = new Map(stateRows.map((row) => [row.key, row.value]));
         sessionStorage.setItem("qs_syncing", "1");
-        if (!semesterReset && state.has("grades")) {
+        if (state.has("grades")) {
           const cloud = state.get("grades") as GradesStore;
           saveGrades(mergeGradesStores(loadGrades(), cloud), { sync: false });
         }
-        if (!weeklyTestsReset && state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
+        if (state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
         if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
         if (state.has("staff_attendance_settings")) saveStaffAttendanceSettings(state.get("staff_attendance_settings") as import("./staff-attendance").StaffAttendanceSettings);
         if (state.has("staff_attendance")) {
@@ -378,7 +374,7 @@ export async function syncFromCloud(options?: {
             }
           }
         }
-        if (!tarbawiReset && state.has("tarbawi_program")) {
+        if (state.has("tarbawi_program")) {
           const cloud = state.get("tarbawi_program") as TarbawiStore;
           const local = loadTarbawiStore();
           const { merged, pushToCloud } = mergeTarbawiStores(local, cloud);
@@ -390,7 +386,7 @@ export async function syncFromCloud(options?: {
               /* local merge kept — will retry on next save */
             }
           }
-        } else if (!tarbawiReset && !state.has("tarbawi_program")) {
+        } else if (!state.has("tarbawi_program")) {
           const local = loadTarbawiStore();
           const hasLocal = Object.keys(local.settingsBySemester).length > 0 || Object.keys(local.plans).length > 0;
           if (hasLocal) {
@@ -403,21 +399,6 @@ export async function syncFromCloud(options?: {
         }
         sessionStorage.removeItem("qs_syncing");
 
-        if (semesterReset) {
-          try {
-            await secureSetAppState({ data: { token, key: "grades", value: {} } });
-            await secureSetAppState({ data: { token, key: "weekly_tests", value: {} } });
-          } catch {
-            /* local reset is enough */
-          }
-        }
-        if (tarbawiReset) {
-          try {
-            await secureSetAppState({ data: { token, key: "tarbawi_program", value: { settingsBySemester: {}, plans: {} } } });
-          } catch {
-            /* local reset is enough */
-          }
-        }
       } catch (stateErr) {
         sessionStorage.removeItem("qs_syncing");
         console.warn("Cloud app-state sync failed (roster kept):", stateErr);

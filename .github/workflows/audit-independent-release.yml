@@ -30,11 +30,13 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - run: npm ci --offline --ignore-scripts --no-audit --no-fund --legacy-peer-deps
       - name: Client and offline archive regressions (no production configuration)
         run: |
           set -e
-          for test in tests/*-regression.cjs tests/plan-server-confirmation.cjs; do node "$test"; done
+          failed=0
+          for test in tests/*-regression.cjs tests/plan-server-confirmation.cjs; do node "$test" || failed=1; done
+          exit "$failed"
       - name: Real PHP handlers with disposable SQLite fixtures
         run: |
           set -e
@@ -45,6 +47,11 @@ jobs:
           php tests/backend-evaluation-reference.php
           php tests/backend-readonly-grade-context.php
           php tests/backend-targeted-writes.php
+          php tests/backend-continuity.php
+          php tests/backend-calendar-continuity.php
+      - name: TypeScript regression against the exact published source
+        if: github.head_ref == 'fix/audit-safe-preserve-current-work'
+        run: python3 tests/type-baseline-regression.py
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
       - name: Isolated package and backup/verification fixtures (no SSH or production credentials)
@@ -88,6 +95,15 @@ jobs:
         with:
           name: local-transfers-compatible-rollback
           path: dist/local-transfers-compatible-rollback/
+          retention-days: 30
+      - name: Build no-reset compatible rollback without data restoration
+        if: github.head_ref == 'fix/audit-safe-preserve-current-work'
+        run: python3 scripts/prepare-continuity-rollback.py
+      - uses: actions/upload-artifact@v4
+        if: github.head_ref == 'fix/audit-safe-preserve-current-work'
+        with:
+          name: continuity-compatible-rollback
+          path: dist/continuity-compatible-rollback/
           retention-days: 30
   database-concurrency:
     if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-')
