@@ -1,7 +1,7 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),cp=require('node:child_process'),ts=require('typescript');
 const {load,storage}=require('./independent-test-support.cjs');
 global.window=new EventTarget();global.localStorage=storage();global.sessionStorage=storage();
-const sci=load('src/lib/scientific-grades.ts',{'@/lib/auth-session':{hasAuthToken:()=>false},'@/lib/grade-input-settings':{},'@/lib/scientific-grades-program':{}});
+const sci=load('src/lib/scientific-grades.ts',{'@/lib/auth-session':{hasAuthToken:()=>false},'@/lib/grade-input-settings':{},'@/lib/scientific-grades-program':{}},fs.readFileSync(process.argv[2]||'src/lib/scientific-grades.ts','utf8'));
 const key='qshatawi_scientific_grades_v1',config={visible:true,fields:{hifz:true,rabt:true},defaultScores:{hifz:'10',rabt:'0'}};
 const original={configs:{1:config},data:{1:{S:{1:{sun:{hifz:'7',rabt:'0'}},2:{sun:{hifz:'8'}}}}},overrides:{}};
 localStorage.setItem(key,JSON.stringify(original));let events=0,writes=0;const setItem=localStorage.setItem;
