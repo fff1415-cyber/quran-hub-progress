@@ -9,9 +9,20 @@ function foundationTables(PDO $pdo):array{return $pdo->query('SHOW TABLES')->fet
 function foundationRows(PDO $pdo,string $table):array {
  $rows=$pdo->query("SELECT * FROM `$table`")->fetchAll();usort($rows,fn($a,$b)=>strcmp(serialize($a),serialize($b)));return $rows;
 }
+function foundationDefinition(string $create):string {
+ // MySQL SHOW CREATE may add a redundant explicit charset after a dump restore.
+ // Keep every other token; column metadata is also compared independently.
+ return preg_replace('/ CHARACTER SET utf8mb4(?= COLLATE utf8mb4_unicode_ci)/','',$create);
+}
+function foundationComparable(array $fingerprint):array {
+ foreach($fingerprint as &$table)unset($table['schema']);
+ return $fingerprint;
+}
 function foundationFingerprint(PDO $pdo,array $tables):array {
  $out=[];sort($tables);
- foreach($tables as $table){$create=$pdo->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_NUM)[1];$rows=foundationRows($pdo,$table);$out[$table]=['schema'=>hash('sha256',$create),'rows'=>count($rows),'data'=>hash('sha256',serialize($rows))];}
+ foreach($tables as $table){$create=$pdo->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_NUM)[1];$rows=foundationRows($pdo,$table);
+ $columns=$pdo->prepare('SELECT COLUMN_NAME,ORDINAL_POSITION,COLUMN_DEFAULT,IS_NULLABLE,DATA_TYPE,COLUMN_TYPE,CHARACTER_MAXIMUM_LENGTH,CHARACTER_SET_NAME,COLLATION_NAME,EXTRA,GENERATION_EXPRESSION FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? ORDER BY ORDINAL_POSITION');$columns->execute([$table]);
+ $out[$table]=['schema'=>hash('sha256',$create),'definition'=>hash('sha256',foundationDefinition($create)),'columns'=>hash('sha256',serialize($columns->fetchAll())),'rows'=>count($rows),'data'=>hash('sha256',serialize($rows))];}
  return $out;
 }
 function foundationDump(PDO $pdo):string {
@@ -39,14 +50,10 @@ function foundationRestore(PDO $pdo,string $dump,array $expected):void {
   $sql="SELECT COUNT(*) FROM `".$first['TABLE_NAME']."` c LEFT JOIN `".$first['REFERENCED_TABLE_NAME']."` p ON ".implode(' AND ',$join)." WHERE ".implode(' AND ',$nonnull)." AND p.`".$first['REFERENCED_COLUMN_NAME']."` IS NULL";
   check((int)$pdo->query($sql)->fetchColumn()===0,'restored FK validates: '.$first['CONSTRAINT_NAME']);
  }
- $actual=foundationFingerprint($pdo,array_keys($expected));
- foreach($expected as $table=>$value)if($actual[$table]!==$value)echo 'RESTORE MISMATCH '.json_encode(['table'=>$table,'schema_equal'=>$actual[$table]['schema']===$value['schema'],'row_count_equal'=>$actual[$table]['rows']===$value['rows'],'data_equal'=>$actual[$table]['data']===$value['data']])."\n";
- foreach($expected as $table=>$value)if($actual[$table]['schema']!==$value['schema']){
-  $originalDdl=$GLOBALS['pdo']->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_NUM)[1];
-  $restoredDdl=$pdo->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_NUM)[1];
-  echo 'FIXTURE SCHEMA DIFF '.json_encode(['table'=>$table,'source'=>$originalDdl,'restored'=>$restoredDdl])."\n";
- }
- check($actual===$expected,'native backup restores identical definitions, exact values, zero, null, unknown fields and all rows');
+ $actual=foundationComparable(foundationFingerprint($pdo,array_keys($expected)));$comparison=foundationComparable($expected);
+ foreach($comparison as $table=>$value)if($actual[$table]!==$value)echo 'RESTORE MISMATCH '.json_encode(['table'=>$table,'definition_equal'=>$actual[$table]['definition']===$value['definition'],'columns_equal'=>$actual[$table]['columns']===$value['columns'],'row_count_equal'=>$actual[$table]['rows']===$value['rows'],'data_equal'=>$actual[$table]['data']===$value['data']])."\n";
+ check($actual===$comparison,'native backup restores equivalent exact definitions/column metadata and identical values, zero, null, unknown fields and all rows');
+
 }
 $insert=$pdo->prepare("INSERT INTO segment_completions(id,student_id,plan_id,assignment_id,segment_index,task_type,completed_at) VALUES(?,?,'P',?,1,'hifz','2026-01-01')");
 $pdo->beginTransaction();
