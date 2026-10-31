@@ -416,16 +416,49 @@ function handle_import_plans(): void
             $planId = new_uuid();
             if ($tenants) {
                 $exist = $pdo->prepare(
-                    'SELECT id FROM education_plans WHERE complex_id = ? AND track = ? AND level_number = ?'
+                    'SELECT id, title, segment_count FROM education_plans WHERE complex_id = ? AND track = ? AND level_number = ? FOR UPDATE'
                 );
                 $exist->execute([$cid, $track, $level]);
             } else {
-                $exist = $pdo->prepare('SELECT id FROM education_plans WHERE track = ? AND level_number = ?');
+                $exist = $pdo->prepare('SELECT id, title, segment_count FROM education_plans WHERE track = ? AND level_number = ? FOR UPDATE');
                 $exist->execute([$track, $level]);
             }
             $existing = $exist->fetch();
             if ($existing) {
                 $planId = $existing['id'];
+                // Preserve stable segment IDs and timestamps when this is the same catalog content.
+                // This is a no-op only; versioning genuinely changed historical content is separate.
+                $normalized = [];
+                $position = 0;
+                foreach ($segments as $seg) {
+                    if (!is_array($seg)) continue;
+                    $position++;
+                    $normalized[] = [
+                        'segment_index' => (int) ($seg['segment_index'] ?? $position),
+                        'hifz_plan' => trim((string) ($seg['hifz_plan'] ?? '')),
+                        'rabt_plan' => trim((string) ($seg['rabt_plan'] ?? '')),
+                        'muraja_plan' => trim((string) ($seg['muraja_plan'] ?? '')),
+                    ];
+                }
+                usort($normalized, static fn ($a, $b) => $a['segment_index'] <=> $b['segment_index']);
+                $stored = $pdo->prepare(
+                    'SELECT segment_index, hifz_plan, rabt_plan, muraja_plan
+                     FROM plan_segments WHERE plan_id = ? ORDER BY segment_index FOR UPDATE'
+                );
+                $stored->execute([$planId]);
+                $storedSegments = array_map(static fn ($seg) => [
+                    'segment_index' => (int) $seg['segment_index'],
+                    'hifz_plan' => (string) $seg['hifz_plan'],
+                    'rabt_plan' => (string) $seg['rabt_plan'],
+                    'muraja_plan' => (string) $seg['muraja_plan'],
+                ], $stored->fetchAll());
+                if ((string) $existing['title'] === $title
+                    && (int) $existing['segment_count'] === count($segments)
+                    && $storedSegments === $normalized) {
+                    $segmentsTotal += count($normalized);
+                    $imported++;
+                    continue;
+                }
                 if ($tenants) {
                     $upd = $pdo->prepare(
                         'UPDATE education_plans SET title = ?, segment_count = ? WHERE id = ? AND complex_id = ?'
