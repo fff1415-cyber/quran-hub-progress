@@ -19,7 +19,7 @@ jobs:
       - name: Isolated backup and deployment-baseline regressions (no SSH or production secrets)
         run: python3 tests/hostinger-backup-regression.py && python3 tests/api-release-regression.py && python3 tests/hostinger-release-base-regression.py
   client-and-sqlite:
-    if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-')
+    if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-') || github.head_ref == 'fix/audit-plan-history-in-place'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -50,8 +50,9 @@ jobs:
           php tests/backend-continuity.php
           php tests/backend-calendar-continuity.php
           php tests/backend-catalog-noop.php
+          php tests/backend-assignment-operation.php
       - name: TypeScript regression against the exact published source
-        if: github.head_ref == 'fix/audit-safe-preserve-current-work' || github.head_ref == 'fix/audit-safe-explicit-scientific-clear' || github.head_ref == 'fix/audit-safe-catalog-noop'
+        if: github.head_ref == 'fix/audit-safe-preserve-current-work' || github.head_ref == 'fix/audit-safe-explicit-scientific-clear' || github.head_ref == 'fix/audit-safe-catalog-noop' || github.head_ref == 'fix/audit-plan-history-in-place'
         run: python3 tests/type-baseline-regression.py
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
@@ -127,7 +128,7 @@ jobs:
           path: dist/catalog-noop-compatible-rollback/
           retention-days: 30
   database-concurrency:
-    if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-')
+    if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-') || github.head_ref == 'fix/audit-plan-history-in-place'
     name: Isolated transactions (${{ matrix.engine }})
     runs-on: ubuntu-latest
     timeout-minutes: 15

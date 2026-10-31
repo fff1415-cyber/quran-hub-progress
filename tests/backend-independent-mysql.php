@@ -158,3 +158,25 @@ for($i=0;$i<2;$i++){
 }
 foreach($children as $pid){pcntl_waitpid($pid,$status);check(pcntl_wifexited($status)&&pcntl_wexitstatus($status)===0,'concurrent same-content import never deletes/recreates segments');}
 $GLOBALS['pdo']=$pdo=connectFixture();check(catalogSnapshot($pdo)===$baseline,'concurrent retry preserves ongoing work byte-for-byte at row values');catalogDeleteTrap($pdo,false);
+
+// Optional assignment receipt protocol: native schema is created in this disposable DB only.
+require __DIR__.'/assignment-operation-cases.php';assignmentReceiptTable($pdo);
+$pdo->exec("INSERT INTO students(id,complex_id,phase_number,level) VALUES('receipt-S',1,1,'1'),('receipt-race-S',1,1,'1'),('receipt-fail-S',1,1,'1');
+ INSERT INTO student_plan_assignments(id,student_id,plan_id,status) VALUES('receipt-A','receipt-S','P','active'),('receipt-race-A','receipt-race-S','P','active'),('receipt-fail-A','receipt-fail-S','P','active');
+ INSERT INTO segment_completions(id,student_id,plan_id,assignment_id,segment_index,task_type,completed_at) VALUES('receipt-legacy','receipt-S','P',NULL,1,'hifz','2026-01-01');");
+assignmentOperationCases($pdo,['student_id'=>'receipt-S','plan_id'=>'Q','expected_assignment_id'=>'receipt-A','start_segment_index'=>1],'receipt-S');
+$GLOBALS['auth']=['role'=>'supervisor','complexId'=>1,'name'=>'fixture'];
+$raceInput=['student_id'=>'receipt-race-S','plan_id'=>'Q','expected_assignment_id'=>'receipt-race-A','start_segment_index'=>1,'operation_id'=>'fixture-race-operation'];$children=[];
+for($i=0;$i<2;$i++){
+ $pid=pcntl_fork();if($pid===-1)throw new RuntimeException('fork unavailable');
+ if($pid===0){try{$GLOBALS['pdo']=connectFixture();$GLOBALS['input']=$raceInput;handle_assign_plan();exit(($GLOBALS['response']['operation_applied']??false)?0:1);}catch(Throwable $e){exit(1);}}
+ $children[]=$pid;
+}
+foreach($children as $pid){pcntl_waitpid($pid,$status);check(pcntl_wifexited($status)&&pcntl_wexitstatus($status)===0,'concurrent same-operation requests both confirm the one committed result');}
+$GLOBALS['pdo']=$pdo=connectFixture();
+check((int)$pdo->query("SELECT COUNT(*) FROM student_plan_assignments WHERE student_id='receipt-race-S'")->fetchColumn()===2,'native duplicate request creates one new assignment and retains its predecessor');
+check((int)$pdo->query("SELECT COUNT(*) FROM plan_operation_receipts WHERE operation_id='fixture-race-operation'")->fetchColumn()===1,'native concurrent requests share one durable receipt');
+$pdo->exec("ALTER TABLE plan_operation_receipts ADD CONSTRAINT fixture_reject_receipt CHECK(operation_id<>'fixture-reject-receipt')");
+$GLOBALS['input']=['student_id'=>'receipt-fail-S','plan_id'=>'Q','expected_assignment_id'=>'receipt-fail-A','start_segment_index'=>1,'operation_id'=>'fixture-reject-receipt'];$before=assignmentOperationSnapshot($pdo,'receipt-fail-S');
+assignmentOperationFailure(fn()=>handle_assign_plan(),'fixture_reject_receipt');
+check(assignmentOperationSnapshot($pdo,'receipt-fail-S')===$before,'native receipt constraint failure rolls back assignment writes without changing old records');
