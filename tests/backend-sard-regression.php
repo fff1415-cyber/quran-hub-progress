@@ -34,7 +34,8 @@ function error_response(string $message, int $status = 400): never {throw new Ap
 function json_response(mixed $value): void {$GLOBALS['response'] = $value;}
 function new_uuid(): string {return 'assignment-' . (++$GLOBALS['uuid']);}
 function assert_row_belongs_to_complex(?int $row, int $cid): void {if ($row !== $cid) error_response('Forbidden tenant', 403);}
-require __DIR__ . '/../api/routes/app_state.php';
+// Alternate source is used only by the isolated compatible-rollback fixture.
+require getenv('AUDIT_APP_STATE_SOURCE') ?: __DIR__ . '/../api/routes/app_state.php';
 require __DIR__ . '/../api/routes/plans.php';
 require __DIR__ . '/../api/routes/staff_tasks.php';
 function check(bool $ok, string $name): void {if (!$ok) throw new RuntimeException('FAIL: ' . $name); echo "PASS: $name\n";}

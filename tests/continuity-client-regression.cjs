@@ -1,19 +1,23 @@
 const assert=require('node:assert/strict'),fs=require('node:fs');
 const {load,storage,hooks,jsx,find,text,deferred,flush}=require('./independent-test-support.cjs');
-global.window=new EventTarget();global.localStorage=storage();global.sessionStorage=storage();
-const mock=load('src/lib/mock-data.ts',{'@/lib/auth-session':{hasAuthToken:()=>false}});
-const weekly=load('src/lib/weekly-tests.ts',{'@/lib/auth-session':{hasAuthToken:()=>false}});
-const tarbawi=load('src/lib/tarbawi-program.ts',{'@/lib/auth-session':{hasAuthToken:()=>false},'@/lib/mock-data':mock});
+const root=process.argv[2]||'.',at=p=>require('node:path').join(root,p);global.window=new EventTarget();global.localStorage=storage();global.sessionStorage=storage();
+const mock=load(at('src/lib/mock-data.ts'),{'@/lib/auth-session':{hasAuthToken:()=>false}});
+const weekly=load(at('src/lib/weekly-tests.ts'),{'@/lib/auth-session':{hasAuthToken:()=>false}});
+const tarbawi=load(at('src/lib/tarbawi-program.ts'),{'@/lib/auth-session':{hasAuthToken:()=>false},'@/lib/mock-data':mock});
 const grades={S:{1:{days:{sun:{hifz:'one',attendance:'present',rabt:'pass',muraja:'',compensationFaces:0,unknown:null}},compensationPlanSegments:[2]},9:{days:{sun:{hifz:'half'}}}}};
 const tests={S:{1:{muraja:['pass','fail',''],rabt:['pass'],attribution:{unknown:null}}}};
 const programs={settingsBySemester:{A:{semesterId:'A',paragraphTypes:[],weeklyRequiredCount:1,halaqaSpans:{}}},plans:{'A:1':{halaqaId:1,semesterId:'A',status:'approved',items:[{id:'item',executed:true,beneficiaries:0}],updatedAt:'2026-10-01'}}};
 mock.saveGrades(grades,{sync:false});weekly.saveWeeklyTests(tests,{sync:false});localStorage.setItem('qshatawi_tarbawi_program_v1',JSON.stringify(programs));mock.setGradesSemesterId('A');weekly.setWeeklyTestsSemesterId('A');localStorage.setItem('qshatawi_tarbawi_semester_v1','A');
 const raw=new Map(localStorage.data);
+assert.deepEqual(mock.mergeGradesStores(grades,structuredClone(grades)),grades,'same historical source is not regenerated or recalculated');
+const other=structuredClone(grades);other.S[1].days.sun.rabt='fail';other.S[1].days.sun.fieldTouchedAt={rabt:10};other.S[1].days.sun.touchedAt=10;const retained=mock.mergeGradesStores(grades,other);assert.equal(retained.S[1].days.sun.unknown,null);assert.equal(retained.S[1].days.sun.rabt,'fail');
+const conflicting=structuredClone(grades);conflicting.S[1].days.sun.unknown='different';assert.throws(()=>mock.mergeGradesStores(grades,conflicting),/تعارضت بيانات/);assert.deepEqual(mock.loadGrades(),grades,'unknown conflicting linkages never overwrite the current source');
+
 for(const semester of ['A','B','B',null]){mock.ensureGradesSemester(semester);weekly.ensureWeeklyTestsSemester(semester);tarbawi.ensureTarbawiSemester(semester);}
 mock.resetGradesForNewSemester('B');weekly.resetWeeklyTestsForNewSemester('B');assert.deepEqual(localStorage.data,raw,'calendar change and compatibility calls must not reset, relabel, archive or copy source records');assert.deepEqual(mock.loadGrades(),grades);assert.deepEqual(weekly.loadWeeklyTests(),tests);
 mock.setGradesSemesterId(null);weekly.setWeeklyTestsSemesterId(null);const unknown=new Map(localStorage.data);mock.ensureGradesSemester('B');weekly.ensureWeeklyTestsSemester('B');assert.deepEqual(localStorage.data,unknown,'missing historical semester is not guessed from the active calendar');
 // Exercise the real calendar form callback, including failure and retained records.
-const path='src/components/SemesterSetupForm.tsx',source=fs.readFileSync(path,'utf8'),runtime=hooks();let gate=deferred(),requests=[],successes=[],errors=[];
+const path=at('src/components/SemesterSetupForm.tsx'),source=fs.readFileSync(path,'utf8'),runtime=hooks();let gate=deferred(),requests=[],successes=[],errors=[];
 const deps=Object.fromEntries([...source.matchAll(/from "([^"]+)"/g)].map(m=>[m[1],{}]));
 Object.assign(deps,{'react':runtime.react,'react/jsx-runtime':jsx,'@/lib/cloud-sync':{getToken:()=> 'fixture-token',pushAppState:()=>{throw Error('calendar creation must not post grade stores');}},'@/lib/secure-data.functions':{secureCreateSemester:async({data})=>{requests.push(data);return gate.promise;}},'@/lib/calendar-generator':{WEEKDAY_OPTIONS:[],generateAcademicWeeks:()=>[{weekNumber:1,startDate:'2026-11-01',endDate:'2026-11-05'}],formatDateArabic:String},'@/lib/semester-holidays':{serializeSemesterHolidays:()=>[],holidayDateStrings:()=>[]},'@/lib/academic-context':{clearCalendarCache:()=>{},fetchActiveCalendar:async()=>({})},'@/components/ui/input':{Input:'input'},'@/components/ui/button':{Button:'button'},'sonner':{toast:{success:m=>successes.push(m),error:m=>errors.push(m)}}});
 const form=load(path,deps);const render=()=>runtime.render(form.SemesterSetupForm);

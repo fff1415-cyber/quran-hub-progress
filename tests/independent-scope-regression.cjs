@@ -23,7 +23,7 @@ const readGuards=code=>code.split('\n').filter(line=>/require_auth\(|require_com
 assert.deepEqual(readGuards(readAfter),readGuards(readBefore),'response context metadata cannot change existing read roles or tenant predicates');
 for(const [path,allowed] of [
  ['src/lib/cloud-sync.ts',['syncFromCloud']],
- ['src/lib/mock-data.ts',['resetGradesForNewSemester','ensureGradesSemester','persistShared','saveSardQueue','pushSardHistory','saveSardHistory','mergeNotifications','writeNotificationsLocal','pushNotification']],
+ ['src/lib/mock-data.ts',['sameStoredGradeValue','retainUnrecognizedGradeFields','mergeDayEntries','mergeWeekRecords','resetGradesForNewSemester','ensureGradesSemester','persistShared','saveSardQueue','pushSardHistory','saveSardHistory','mergeNotifications','writeNotificationsLocal','pushNotification']],
  ['src/lib/plans-service.ts',['assignStudentPlan','patchStudentAssignment','patchAssignmentFaceQuotas']],
  ['src/components/role-workspace/RoleSections.tsx',['SecretarySardPanel','SupervisorPlanCompletedPanel','SupervisorApprovalsPanel','SupervisorForceRetryPanel','SupervisorPassedPanel']],
 ]){const current=functions(fs.readFileSync(path,'utf8'));for(const [name,body] of functions(original(path)))if(!allowed.includes(name))assert.equal(current.get(name),body,`unrelated function changed: ${name}`);}
