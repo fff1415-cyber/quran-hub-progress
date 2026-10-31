@@ -41,6 +41,11 @@ function foundationRestore(PDO $pdo,string $dump,array $expected):void {
  }
  $actual=foundationFingerprint($pdo,array_keys($expected));
  foreach($expected as $table=>$value)if($actual[$table]!==$value)echo 'RESTORE MISMATCH '.json_encode(['table'=>$table,'schema_equal'=>$actual[$table]['schema']===$value['schema'],'row_count_equal'=>$actual[$table]['rows']===$value['rows'],'data_equal'=>$actual[$table]['data']===$value['data']])."\n";
+ foreach($expected as $table=>$value)if($actual[$table]['schema']!==$value['schema']){
+  $originalDdl=$GLOBALS['pdo']->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_NUM)[1];
+  $restoredDdl=$pdo->query("SHOW CREATE TABLE `$table`")->fetch(PDO::FETCH_NUM)[1];
+  echo 'FIXTURE SCHEMA DIFF '.json_encode(['table'=>$table,'source'=>$originalDdl,'restored'=>$restoredDdl])."\n";
+ }
  check($actual===$expected,'native backup restores identical definitions, exact values, zero, null, unknown fields and all rows');
 }
 $insert=$pdo->prepare("INSERT INTO segment_completions(id,student_id,plan_id,assignment_id,segment_index,task_type,completed_at) VALUES(?,?,'P',?,1,'hifz','2026-01-01')");
