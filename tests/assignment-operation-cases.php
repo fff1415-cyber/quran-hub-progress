@@ -18,7 +18,7 @@ function assignmentOperationSnapshot(PDO $pdo, string $student): array {
     return $out;
 }
 function assignmentOperationFailure(callable $run, string $message): void {
-    try {$run();} catch (Throwable $e) {check(str_contains($e->getMessage(),$message),$message);return;}
+    try {$run();} catch (Throwable $e) {if(!str_contains($e->getMessage(),$message))throw new RuntimeException('Expected '.$message.'; actual isolated error: '.$e->getMessage(),0,$e);check(true,$message);return;}
     throw new RuntimeException('expected operation rejection: '.$message);
 }
 function assignmentOperationCases(PDO $pdo, array $request, string $student): void {
