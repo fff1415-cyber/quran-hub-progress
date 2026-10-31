@@ -7,7 +7,7 @@ function continuityCases(PDO $pdo):void{
  $fixtures=['grades'=>['S'=>[1=>['days'=>['sun'=>['hifz'=>'one','compensationFaces'=>0,'unknown'=>null]]]]], 'weekly_tests'=>['S'=>[1=>['muraja'=>['pass','fail',''],'rabt'=>['pass']]]], 'scientific_grades'=>['configs'=>[],'data'=>['1'=>['S'=>[1=>['sun'=>['hifz'=>'0']]]]],'overrides'=>[]], 'tarbawi_program'=>['settingsBySemester'=>['A'=>['semesterId'=>'A']],'plans'=>['A:1'=>['status'=>'approved','items'=>[['executed'=>true]]]]]];
  foreach($fixtures as $key=>$value){
   app_state_upsert($pdo,$key,$value,1);$s=$pdo->prepare('SELECT value FROM app_state WHERE complex_id=? AND `key`=?');$s->execute([1,$key]);$raw=$s->fetchColumn();
-  foreach([[],null,$key==='tarbawi_program'?['settingsBySemester'=>[],'plans'=>[]]:($key==='scientific_grades'?['configs'=>[],'data'=>[],'overrides'=>[]]:[])] as $empty){$GLOBALS['input']=['key'=>$key,'value'=>$empty];continuityFailure(fn()=>handle_set_app_state(),'سيصفّر');$s->execute([1,$key]);check($s->fetchColumn()===$raw,'old empty '.$key.' writer cannot replace exact stored bytes');}
+  foreach([[],null,false,0,'','invalid-scalar',$key==='tarbawi_program'?['settingsBySemester'=>[],'plans'=>[]]:($key==='scientific_grades'?['configs'=>[],'data'=>[],'overrides'=>[]]:[])] as $empty){$GLOBALS['input']=['key'=>$key,'value'=>$empty];continuityFailure(fn()=>handle_set_app_state(),'سيصفّر');$s->execute([1,$key]);check($s->fetchColumn()===$raw,'old empty '.$key.' writer cannot replace exact stored bytes');}
   $GLOBALS['input']=['key'=>$key,'value'=>$value];handle_set_app_state();check($GLOBALS['response']['ok']===true,'normal unchanged '.$key.' save remains supported');
  }
  // Clearing one score is still a legitimate edit, including the final assessed field.

@@ -48,6 +48,9 @@ jobs:
           php tests/backend-readonly-grade-context.php
           php tests/backend-targeted-writes.php
           php tests/backend-continuity.php
+      - name: TypeScript regression against the exact published source
+        if: github.head_ref == 'fix/audit-safe-preserve-current-work'
+        run: python3 tests/type-baseline-regression.py
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
       - name: Isolated package and backup/verification fixtures (no SSH or production credentials)
