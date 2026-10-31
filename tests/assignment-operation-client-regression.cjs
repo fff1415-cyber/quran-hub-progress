@@ -46,5 +46,8 @@ const options=()=>({
  const remove=localStorage.removeItem;localStorage.removeItem=key=>{if(key===duplicateKey)throw Error('fixture cleanup failure');remove(key);};const known=committed;
  await assert.rejects(transport.runPlanAssignmentRequest(options()),/cleanup failure/);assert.ok(localStorage.getItem(winnerKey),'partial cleanup retains the winning receipt identity');localStorage.removeItem=remove;
  await transport.runPlanAssignmentRequest(options());assert.equal(committed,known);assert.equal(localStorage.length,0,'cleanup recovery probes the original receipt and never reassigns');
+ const offline=options();offline.send=async()=>{throw Error('fixture offline before dispatch');};const beforeOffline=committed;
+ await assert.rejects(transport.runPlanAssignmentRequest(offline),/offline before dispatch/);assert.equal(committed,beforeOffline);
+ await transport.runPlanAssignmentRequest(options());assert.equal(committed,beforeOffline+1,'unknown receipt is probed, then exactly one original request is sent');
  console.log('PASS: lost-response/reload/relogin recovery, one double-click request, read-back retry, storage failure, account-switch isolation and retained ambiguous drafts');
 })().catch(error=>{console.error(error);process.exitCode=1;});

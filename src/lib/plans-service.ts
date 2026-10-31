@@ -145,7 +145,7 @@ export async function assignStudentPlan(
       const session = getToken() ?? "";
       const identity = decodeAuthTokenPayload(session);
       // Existing identity is used only to group transport drafts; API authorization is unchanged.
-      return { session, owner: JSON.stringify([getActiveComplexId() ?? null, identity?.role ?? null, identity?.accountId ?? session]) };
+      return { session, owner: JSON.stringify([getActiveComplexId() ?? null, identity?.role ?? null, identity?.accountId || session]) };
     },
     intent,
     prepare: async () => ({

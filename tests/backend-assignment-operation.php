@@ -15,5 +15,9 @@ $pdo->exec("CREATE TRIGGER fixture_queue_failure BEFORE INSERT ON app_state BEGI
 assignmentOperationFailure(fn()=>handle_assign_plan(),'fixture queue failure');
 check(assignmentOperationSnapshot($pdo,'student-1')===$before&&(int)$pdo->query('SELECT COUNT(*) FROM plan_operation_receipts')->fetchColumn()===0,'queue failure leaves no receipt or partial assignment');
 foreach (['bad',null,[],1] as $invalid) {$pdo=seed();assignmentReceiptTable($pdo);$GLOBALS['input']['operation_id']=$invalid;assignmentOperationFailure(fn()=>handle_assign_plan(),'معرّف طلب الخطة غير صالح');}
+$pdo=seed();assignmentReceiptTable($pdo);$GLOBALS['input']['operation_id']='fixture-incomplete-plan';$pdo->exec('DELETE FROM segment_completions WHERE segment_index=2');$before=assignmentOperationSnapshot($pdo,'student-1');assignmentOperationFailure(fn()=>handle_assign_plan(),'لم يكتمل حفظ');
+check(assignmentOperationSnapshot($pdo,'student-1')===$before&&(int)$pdo->query('SELECT COUNT(*) FROM plan_operation_receipts')->fetchColumn()===0,'new operation identity cannot bypass musammi completion criteria');
+$pdo=seed();assignmentReceiptTable($pdo);$GLOBALS['input']['operation_id']='fixture-frozen-plan';$pdo->exec("UPDATE student_plan_assignments SET status='frozen'");assignmentOperationFailure(fn()=>handle_assign_plan(),'المسمّع مخوّل');
+$pdo=seed();assignmentReceiptTable($pdo);$GLOBALS['input']['operation_id']='fixture-other-complex';$GLOBALS['auth']['complexId']=2;assignmentOperationFailure(fn()=>handle_assign_plan(),'Forbidden tenant');
 $pdo=seed();assignmentReceiptTable($pdo);$GLOBALS['input']['operation_id']='fixture-boolean-probe';$GLOBALS['input']['operation_probe']='false';assignmentOperationFailure(fn()=>handle_assign_plan(),'صيغة استعلام');
 echo "PASS: optional assignment receipts, probes, stable retries, original guards and real rollback without legacy mutations\n";

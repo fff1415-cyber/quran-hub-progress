@@ -180,3 +180,14 @@ $pdo->exec("ALTER TABLE plan_operation_receipts ADD CONSTRAINT fixture_reject_re
 $GLOBALS['input']=['student_id'=>'receipt-fail-S','plan_id'=>'Q','expected_assignment_id'=>'receipt-fail-A','start_segment_index'=>1,'operation_id'=>'fixture-reject-receipt'];$before=assignmentOperationSnapshot($pdo,'receipt-fail-S');
 assignmentOperationFailure(fn()=>handle_assign_plan(),'fixture_reject_receipt');
 check(assignmentOperationSnapshot($pdo,'receipt-fail-S')===$before,'native receipt constraint failure rolls back assignment writes without changing old records');
+
+// Native queue failure after plan writes must also roll back the pending receipt.
+$pdo->exec("INSERT INTO students(id,complex_id,phase_number,level) VALUES('receipt-sard-fail-S',1,1,'1');
+ INSERT INTO student_plan_assignments(id,student_id,plan_id,status) VALUES('receipt-sard-fail-A','receipt-sard-fail-S','P','active');
+ INSERT INTO segment_completions(id,student_id,plan_id,assignment_id,segment_index,task_type,completed_at) VALUES('receipt-sard-h1','receipt-sard-fail-S','P','receipt-sard-fail-A',1,'hifz','2026-10-01'),('receipt-sard-h2','receipt-sard-fail-S','P','receipt-sard-fail-A',2,'hifz','2026-10-02');");
+app_state_upsert($pdo,'sard_queue',[['id'=>'fixture-native-queue','studentId'=>'receipt-sard-fail-S','assignmentId'=>'receipt-sard-fail-A','status'=>'scheduled']],1);
+$pdo->exec("ALTER TABLE app_state ADD CONSTRAINT fixture_reject_queue CHECK(`key`<>'sard_queue' OR value NOT LIKE '%passed%')");
+$GLOBALS['auth']=['role'=>'musammi','accountId'=>'fixture','complexId'=>1,'name'=>'fixture'];
+$GLOBALS['input']=['student_id'=>'receipt-sard-fail-S','plan_id'=>'Q','expected_assignment_id'=>'receipt-sard-fail-A','start_segment_index'=>1,'operation_id'=>'fixture-native-queue-failure','sard_result'=>['id'=>'fixture-native-queue','percent'=>100,'phase'=>'full']];$before=assignmentOperationSnapshot($pdo,'receipt-sard-fail-S');
+assignmentOperationFailure(fn()=>handle_assign_plan(),'fixture_reject_queue');
+check(assignmentOperationSnapshot($pdo,'receipt-sard-fail-S')===$before&&(int)$pdo->query("SELECT COUNT(*) FROM plan_operation_receipts WHERE operation_id='fixture-native-queue-failure'")->fetchColumn()===0,'native sard queue failure rolls back closure, new plan and receipt together');

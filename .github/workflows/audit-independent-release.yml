@@ -127,6 +127,17 @@ jobs:
           name: catalog-noop-compatible-rollback
           path: dist/catalog-noop-compatible-rollback/
           retention-days: 30
+      - name: Build and verify compatible assignment API and pending-request readers
+        if: github.head_ref == 'fix/audit-plan-history-in-place'
+        env:
+          AUDIT_FEATURE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/prepare-assignment-operation-rollback.py
+      - uses: actions/upload-artifact@v4
+        if: github.head_ref == 'fix/audit-plan-history-in-place'
+        with:
+          name: assignment-operation-compatible-rollback
+          path: dist/assignment-operation-compatible-rollback/
+          retention-days: 30
   database-concurrency:
     if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-') || github.head_ref == 'fix/audit-plan-history-in-place'
     name: Isolated transactions (${{ matrix.engine }})
@@ -157,4 +168,8 @@ jobs:
       - name: Real row-lock contention and partial-failure rollback
         env:
           AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
-        run: php tests/backend-independent-mysql.php
+        run: |
+          php tests/backend-independent-mysql.php
+          python3 scripts/prepare-assignment-operation-rollback.py --api-only
+          php tests/assignment-operation-native-rollback.php dist/assignment-operation-compatible-rollback/plans.php write
+          php tests/assignment-operation-native-rollback.php api/routes/plans.php read
