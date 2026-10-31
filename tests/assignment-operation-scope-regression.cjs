@@ -1,6 +1,6 @@
 const assert=require('node:assert/strict'),fs=require('node:fs'),cp=require('node:child_process');
 const {withoutAssignmentReceipts,withoutAssignmentClient}=require('./assignment-operation-scope-support.cjs');
-const base='e6ec7b5b779260cd0839f0c2c599bf0fb3b5d443',read=p=>fs.readFileSync(p,'utf8'),old=p=>cp.execFileSync('git',['show',base+':'+p],{encoding:'utf8'});
+const base='26c16bfe3cea9df88e52ff76c1b2dc827ade2b0e',read=p=>fs.readFileSync(p,'utf8'),old=p=>cp.execFileSync('git',['show',base+':'+p],{encoding:'utf8'});
 assert.equal(withoutAssignmentReceipts(read('api/routes/plans.php')),old('api/routes/plans.php'),'all original authorization, student/plan guards, musammi criteria, assignment/sard transaction, completion and import/delete paths remain exact after removing only receipt hooks');
 assert.equal(withoutAssignmentClient(read('src/lib/plans-service.ts')),old('src/lib/plans-service.ts'),'all other client APIs, access and errors remain exact');
 assert.deepEqual(cp.execFileSync('git',['diff','--name-only',base,'--','api/','src/','database/','package.json','package-lock.json','bun.lock'],{encoding:'utf8'}).trim().split('\n'),['api/routes/plans.php','src/lib/plan-assignment-requests.ts','src/lib/plans-service.ts']);

@@ -2,7 +2,8 @@ const assert=require('node:assert/strict');
 const {load,storage,deferred,flush}=require('./independent-test-support.cjs');
 global.localStorage=storage();
 const deps={'@/lib/api-base':{buildRphpUrl:p=>p},'@/lib/cloud-sync':{getToken:()=> 'fixture'},'@/lib/plans-store':{localGetStudentSheet:()=>({assignment:null})},'@/lib/student-phase-promote':{syncStudentPhaseFromPlan:async()=>{}},'@/lib/plan-translator':{compensationHifzSegmentTarget:()=>0,compensationHifzTap:()=> 'one'}};
-Object.assign(deps,{'@/lib/auth-session':{decodeAuthTokenPayload:()=>({role:'supervisor',accountId:'fixture'})},'@/lib/tenant':{getActiveComplexId:()=>1},'@/lib/plan-assignment-requests':load('src/lib/plan-assignment-requests.ts',{})});
+deps['@/lib/plan-response-cache']=require('./independent-test-support.cjs').load('src/lib/plan-response-cache.ts',{'@/lib/cloud-sync':deps['@/lib/cloud-sync'],'@/lib/tenant':{getActiveComplexId:()=>1},'@/lib/mock-data':{hasPendingSardWrites:()=>false}});
+Object.assign(deps,{'@/lib/auth-session':{decodeAuthTokenPayload:()=>({role:'supervisor',accountId:'fixture'})},'@/lib/tenant':{getActiveComplexId:()=>1},'@/lib/plan-assignment-requests':require('./independent-test-support.cjs').load('src/lib/plan-assignment-requests.ts',{})});
 const service=load('src/lib/plans-service.ts',deps),response=(body,ok=true)=>({ok,status:ok?200:409,text:async()=>JSON.stringify(body)});
 (async()=>{
 let calls=[],current='A';

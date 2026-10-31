@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),cp=require('node:child_process'),ts=require('typescript');
-const base='e6ec7b5b779260cd0839f0c2c599bf0fb3b5d443';
+const base='26c16bfe3cea9df88e52ff76c1b2dc827ade2b0e';
 function withoutAssignmentReceipts(code){
  const start=code.indexOf('\nfunction plans_operation_payload('),end=code.indexOf('\nfunction handle_assign_plan()',start);
  if(start<0)return code;

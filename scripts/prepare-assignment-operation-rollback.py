@@ -11,7 +11,7 @@ import tarfile
 import tempfile
 import zipfile
 
-BASE='e6ec7b5b779260cd0839f0c2c599bf0fb3b5d443'
+BASE='26c16bfe3cea9df88e52ff76c1b2dc827ade2b0e'
 root=pathlib.Path.cwd();output=root/'dist/assignment-operation-compatible-rollback';output.mkdir(parents=True,exist_ok=True)
 source=(root/'api/routes/plans.php').read_text();start=source.index('function plans_operation_payload(');end=source.index('function handle_assign_plan()',start)
 routines=(root/'tests/fixtures/assignment-receipt-fallback.php').read_text().removeprefix('<?php\n')
