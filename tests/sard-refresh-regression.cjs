@@ -1,8 +1,9 @@
+const fs=require('node:fs');
 const assert=require('node:assert/strict');
 const {load,storage,deferred,flush,hooks}=require('./independent-test-support.cjs');
 global.window=new EventTarget();global.document={hidden:false};global.sessionStorage=storage();
 let token='fixture-A',complex=1,queue=[],pending=false,calls=0,gate=deferred(),cacheWrites=0;
-const refresh=load('src/lib/sard-queue-refresh.ts',{'@/lib/auth-session':{getToken:()=>token},'@/lib/tenant':{getActiveComplexId:()=>complex},'@/lib/secure-data.functions':{secureListAppState:async({data})=>{assert.equal(data.key,'sard_queue');calls++;return gate.promise;}},'@/lib/mock-data':{hasPendingSardWrites:()=>pending,loadSardQueue:()=>queue,saveSardQueue:value=>{assert.equal(sessionStorage.getItem('qs_syncing'),'1');queue=value;cacheWrites++;}}});
+const refresh=load('src/lib/sard-queue-refresh.ts',{'@/lib/auth-session':{getToken:()=>token},'@/lib/tenant':{getActiveComplexId:()=>complex},'@/lib/secure-data.functions':{secureListAppState:async({data})=>{assert.equal(data.key,'sard_queue');calls++;return gate.promise;}},'@/lib/mock-data':{hasPendingSardWrites:()=>pending,loadSardQueue:()=>queue,saveSardQueue:value=>{assert.equal(sessionStorage.getItem('qs_syncing'),'1');queue=value;cacheWrites++;}}},fs.readFileSync(process.argv[2]||'src/lib/sard-queue-refresh.ts','utf8'));
 const rows=(value,context_complex_id=complex)=>[{key:'sard_queue',value,context_complex_id}];
 (async()=>{
  const first=refresh.refreshSardQueueFromShared(),same=refresh.refreshSardQueueFromShared();assert.equal(calls,1);assert.equal(first,same);
@@ -13,6 +14,13 @@ const rows=(value,context_complex_id=complex)=>[{key:'sard_queue',value,context_
  gate=deferred();const fail=refresh.refreshSardQueueFromShared();gate.reject(Error('fixture refresh failure'));await assert.rejects(fail,/refresh failure/);assert.equal(refresh.getSardRefreshStatus().error,'fixture refresh failure');assert.equal(queue[0].status,'scheduled');
  gate=deferred();const retry=refresh.refreshSardQueueFromShared();gate.resolve(rows([{id:'retry',status:'pending'}]));await retry;assert.equal(refresh.getSardRefreshStatus().error,undefined);assert.equal(queue[0].id,'retry');
  gate=deferred();const wrongScope=refresh.refreshSardQueueFromShared();gate.resolve(rows([{id:'wrong-scope'}],99));await assert.rejects(wrongScope,/سياق المجمع/);assert.equal(queue[0].id,'retry');
+ if(!process.argv[2]) {
+ // Absence is not confirmation of an existing local queue. Preserve the ordinary view and expose retry.
+ gate=deferred();const cached=JSON.stringify(queue),writesBeforeMissing=cacheWrites,missing=refresh.refreshSardQueueFromShared();gate.resolve([]);await assert.rejects(missing,/لم يؤكد المصدر المشترك/);assert.equal(JSON.stringify(queue),cached);assert.equal(cacheWrites,writesBeforeMissing);assert.match(refresh.getSardRefreshStatus().error,/بقيت معروضة/);
+ gate=deferred();const restored=refresh.refreshSardQueueFromShared();gate.resolve(rows(JSON.parse(cached)));await restored;assert.equal(refresh.getSardRefreshStatus().error,undefined);
+ queue=[];gate=deferred();const empty=refresh.refreshSardQueueFromShared();gate.resolve([]);await empty;assert.equal(queue.length,0);assert.equal(refresh.getSardRefreshStatus().error,undefined,'a genuinely empty initial inbox remains valid');
+ gate=deferred();const staleMissing=refresh.refreshSardQueueFromShared();queue=[{id:'new-write',status:'pending'}];gate.resolve([]);await staleMissing;assert.equal(queue[0].id,'new-write');assert.equal(refresh.getSardRefreshStatus().error,undefined,'an older absent snapshot cannot invalidate a newer acknowledged write');
+ }
  // A mounted hook must recompute a deadline and release its timers/listeners.
  const runtime=hooks();let tick,cleared=false,updates=0,pulls=0;
  global.setInterval=fn=>{tick=fn;return 1;};global.clearInterval=()=>cleared=true;
