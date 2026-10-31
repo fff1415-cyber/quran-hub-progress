@@ -64,6 +64,10 @@ foreach(['grades'=>6,'weekly_tests'=>2,'scientific_grades'=>4] as $key=>$count)f
 $pdo->commit();
 $oldTables=foundationTables($pdo);$before=foundationFingerprint($pdo,$oldTables);$beforeDump=foundationDump($pdo);
 foundationRestore($restore,$beforeDump,$before);
+// Negative control: a real collation change must never pass the precise equivalence check.
+$restore->exec("ALTER TABLE app_state MODIFY value LONGTEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_bin");
+check(foundationComparable(foundationFingerprint($restore,$oldTables))!==foundationComparable($before),'negative control detects a real restored collation change');
+foundationRestore($restore,$beforeDump,$before);
 $path=__DIR__.'/../database/proposed-progress-foundation.sql';$ddl=file_get_contents($path);$plain=preg_replace('/^--.*$/m','',$ddl);
 $statements=array_values(array_filter(array_map('trim',explode(';',$plain))));
 check(count($statements)===8,'proposal contains exactly eight explicit new-table statements');
@@ -73,6 +77,11 @@ check(array_intersect($names,$oldTables)===[],'no proposed table collides with a
 $pdo->exec($statements[0]);$pdo->exec($ddl);$pdo->exec($ddl);
 check(foundationFingerprint($pdo,$oldTables)===$before,'partial DDL plus two runs leaves all 7,737 legacy fixture completions, native grades, assignments and current sources byte-identical');
 foreach($names as $name)check((int)$pdo->query("SELECT COUNT(*) FROM `$name`")->fetchColumn()===0,'new table remains empty: '.$name);
+$GLOBALS['auth']=['role'=>'manager','complexId'=>1,'name'=>'fixture'];$_GET=['student_id'=>'import-S'];
+$pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();handle_student_plan_sheet();$pdo->rollBack();
+check(($GLOBALS['response']['assignment']['student_id']??null)==='import-S'&&($GLOBALS['response']['plan']['id']??null)==='P','actual current student plan sheet keeps current work visible with new empty tables');
+$_GET=['key'=>'grades'];$pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();handle_list_app_state();$pdo->rollBack();
+check(foundationFingerprint($pdo,$oldTables)===$before,'current plan/grade readers remain read-only and preserve all ordinary sources after proposed DDL');
 $afterEmpty=foundationFingerprint($pdo,foundationTables($pdo));
 $pdo->beginTransaction();
 $pdo->exec("INSERT INTO plan_content_versions(id,plan_id,content_json,content_sha256,source_kind) VALUES('fixture-v1','P','{\"title\":\"new content\",\"segments\":[1,3],\"unknown\":null}','".hash('sha256','fixture-content')."','new_content');
