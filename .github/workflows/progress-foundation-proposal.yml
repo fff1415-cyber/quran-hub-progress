@@ -1,0 +1,62 @@
+name: Proposed empty progress foundation (isolated only)
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: progress-foundation-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  schema-restore:
+    if: github.head_ref == 'prepare/audit-progress-foundation'
+    name: Proposed schema and native restore (${{ matrix.engine }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - engine: mysql
+            image: mysql:8.0
+            health: mysqladmin ping -h 127.0.0.1
+          - engine: mariadb
+            image: mariadb:11.8
+            health: healthcheck.sh --connect --innodb_initialized
+    services:
+      source:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_DATABASE: audit_test
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: [3307:3306]
+        options: --health-cmd="${{ matrix.health }}" --health-interval=5s --health-timeout=5s --health-retries=12
+      restore:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_DATABASE: audit_restore
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: [3308:3306]
+        options: --health-cmd="${{ matrix.health }}" --health-interval=5s --health-timeout=5s --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Source and activation exclusion
+        run: |
+          git diff --exit-code e6ec7b5b779260cd0839f0c2c599bf0fb3b5d443 -- api/ src/ package.json package-lock.json bun.lock .github/workflows/deploy.yml
+          php -l tests/progress-foundation-mysql.php
+      - name: Current handlers, proposed DDL, interrupted retry, old-row identity and real backup/restore
+        env:
+          AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
+          AUDIT_RESTORE_DSN: mysql:host=127.0.0.1;port=3308;dbname=audit_restore;charset=utf8mb4
+        run: php tests/progress-foundation-mysql.php
+      - uses: actions/upload-artifact@v4
+        with:
+          name: proposed-foundation-${{ matrix.engine }}-evidence
+          path: dist/progress-foundation/report.json
+          retention-days: 30
