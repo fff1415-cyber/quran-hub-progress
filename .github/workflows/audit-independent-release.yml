@@ -34,7 +34,9 @@ jobs:
       - name: Client and offline archive regressions (no production configuration)
         run: |
           set -e
-          for test in tests/*-regression.cjs tests/plan-server-confirmation.cjs; do node "$test"; done
+          failed=0
+          for test in tests/*-regression.cjs tests/plan-server-confirmation.cjs; do node "$test" || failed=1; done
+          exit "$failed"
       - name: Real PHP handlers with disposable SQLite fixtures
         run: |
           set -e
