@@ -1,0 +1,12 @@
+const assert = require('node:assert/strict'), fs = require('node:fs'), cp = require('node:child_process');
+const { withoutCompletionReaderHooks } = require('./completion-readers-scope-support.cjs');
+const base = '67791fd6a12800e49a44421d5c38c121e3e13748';
+const old = path => cp.execFileSync('git', ['show', base + ':' + path], { encoding: 'utf8' });
+assert.equal(withoutCompletionReaderHooks(fs.readFileSync('api/routes/plans.php', 'utf8')), old('api/routes/plans.php'), 'all endpoint authorization, current-assignment checks, dates, writers, queue updates and completion policy remain literal');
+let helper = fs.readFileSync('api/lib/plan-completion-events.php', 'utf8');
+const start = helper.indexOf('/** Same eligible hifz range'), end = helper.indexOf('/** This function aborts', start);
+assert.ok(start > 0 && end > start);
+helper = helper.slice(0, start) + helper.slice(end);
+assert.equal(helper, old('api/lib/plan-completion-events.php'), 'all tested immutable data writers and legacy view semantics remain unchanged');
+assert.equal(cp.execFileSync('git', ['diff', base, '--', 'api/', ':!api/routes/plans.php', ':!api/lib/plan-completion-events.php', 'database/'], { encoding: 'utf8' }), '', 'no auth, tenant, schema or unrelated API change');
+console.log('PASS: sheet and two completion counts read exact assignment state; all original authorization, queue, completion thresholds and writers unchanged');
