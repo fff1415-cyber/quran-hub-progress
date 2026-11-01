@@ -16,7 +16,8 @@ root=pathlib.Path.cwd();output=root/'dist/assignment-operation-compatible-rollba
 source=(root/'api/routes/plans.php').read_text();start=source.index('function plans_operation_payload(');end=source.index('function handle_assign_plan()',start)
 routines=(root/'tests/fixtures/assignment-receipt-fallback.php').read_text().removeprefix('<?php\n')
 fallback=source[:start]+routines+'\n'+source[end:]
-target=output/'plans.php';target.write_text(fallback)
+target=output/'api/routes/plans.php';target.parent.mkdir(parents=True,exist_ok=True);target.write_text(fallback)
+module=(root/'api/lib/plan-completion-events.php').read_bytes();module_path=output/'api/lib/plan-completion-events.php';module_path.parent.mkdir(parents=True,exist_ok=True);module_path.write_bytes(module)
 subprocess.run(['php','-l',str(target)],check=True)
 environment=dict(os.environ,AUDIT_PLAN_SOURCE=str(target))
 subprocess.run(['php','tests/backend-assignment-operation.php'],env=environment,check=True,stdout=subprocess.DEVNULL)
@@ -25,7 +26,7 @@ if '--api-only' in sys.argv:raise SystemExit(0)
 with tempfile.TemporaryDirectory() as temporary:
     folder=pathlib.Path(temporary,'compatible');archive=subprocess.run(['git','archive',BASE],check=True,stdout=subprocess.PIPE).stdout
     with tarfile.open(fileobj=io.BytesIO(archive)) as bundle:bundle.extractall(folder,filter='data')
-    for name in ['src/lib/plans-service.ts','src/lib/plan-assignment-requests.ts']:
+    for name in ['src/lib/plans-service.ts','src/lib/plan-assignment-requests.ts','api/lib/plan-completion-events.php']:
         path=folder/name;path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes((root/name).read_bytes())
     (folder/'api/routes/plans.php').write_text(fallback)
     (folder/'node_modules').symlink_to((root/'node_modules').resolve(),target_is_directory=True)
@@ -38,9 +39,10 @@ with tempfile.TemporaryDirectory() as temporary:
     manifest={'base':BASE,'feature':feature,'variant':'assignment-receipts-independent-api','database_restore':False,'api_sha256':hashlib.sha256(fallback.encode()).hexdigest()}
     (folder/'dist/client/deploy-sha.txt').write_text(feature+'\n');(folder/'dist/client/compatibility-release.json').write_text(json.dumps(manifest,indent=2))
     shutil.make_archive(str(output/'frontend'),'zip',folder/'dist/client')
-    with zipfile.ZipFile(output/'api-only.zip','w') as package:package.writestr('api/routes/plans.php',fallback)
+    with zipfile.ZipFile(output/'api-only.zip','w') as package:
+        package.writestr('api/routes/plans.php',fallback);package.writestr('api/lib/plan-completion-events.php',module)
     for file in ['frontend.zip','api-only.zip']:
         with zipfile.ZipFile(output/file) as package:assert package.testzip() is None
-    with zipfile.ZipFile(output/'api-only.zip') as package:assert package.namelist()==['api/routes/plans.php'] and package.read('api/routes/plans.php').decode()==fallback
+    with zipfile.ZipFile(output/'api-only.zip') as package:assert set(package.namelist())=={'api/routes/plans.php','api/lib/plan-completion-events.php'} and package.read('api/routes/plans.php').decode()==fallback and package.read('api/lib/plan-completion-events.php')==module
     manifest['archives']={name:hashlib.sha256((output/name).read_bytes()).hexdigest() for name in ['frontend.zip','api-only.zip']};(output/'manifest.json').write_text(json.dumps(manifest,indent=2))
 print('PASS: compatible frontend keeps pending drafts/receipt readers and earlier no-reset/scientific-rule safeguards; API/archive identity checked without restoring any database.')

@@ -191,3 +191,5 @@ $GLOBALS['auth']=['role'=>'musammi','accountId'=>'fixture','complexId'=>1,'name'
 $GLOBALS['input']=['student_id'=>'receipt-sard-fail-S','plan_id'=>'Q','expected_assignment_id'=>'receipt-sard-fail-A','start_segment_index'=>1,'operation_id'=>'fixture-native-queue-failure','sard_result'=>['id'=>'fixture-native-queue','percent'=>100,'phase'=>'full']];$before=assignmentOperationSnapshot($pdo,'receipt-sard-fail-S');
 assignmentOperationFailure(fn()=>handle_assign_plan(),'fixture_reject_queue');
 check(assignmentOperationSnapshot($pdo,'receipt-sard-fail-S')===$before&&(int)$pdo->query("SELECT COUNT(*) FROM plan_operation_receipts WHERE operation_id='fixture-native-queue-failure'")->fetchColumn()===0,'native sard queue failure rolls back closure, new plan and receipt together');
+
+require __DIR__.'/completion-events-native-cases.php';completionNativeCases($pdo);

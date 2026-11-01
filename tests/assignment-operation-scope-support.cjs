@@ -1,6 +1,7 @@
 const assert=require('node:assert/strict'),cp=require('node:child_process'),ts=require('typescript');
 const base='26c16bfe3cea9df88e52ff76c1b2dc827ade2b0e';
 function withoutAssignmentReceipts(code){
+ if(code.includes("require_once __DIR__ . '/../lib/plan-completion-events.php';"))code=require('./completion-events-scope-support.cjs').withoutCompletionProtocolPhp(code);
  const start=code.indexOf('\nfunction plans_operation_payload('),end=code.indexOf('\nfunction handle_assign_plan()',start);
  if(start<0)return code;
  assert.ok(end>start);code=code.slice(0,start)+code.slice(end);

@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../lib/plan-completion-events.php';
+
 function plans_require_roles(array $auth, array $roles): void
 {
     $role = (string) ($auth['role'] ?? '');
@@ -901,6 +903,7 @@ function handle_assign_plan(): void
             $faces['faces_per_half'], $faces['faces_per_one'], $faces['faces_per_two'],
             $name,
         ]);
+        plan_events_register_assignment($pdo, $studentId, $id, $planId);
 
         $sardQueue = null;
         if (isset($input['sard_result'])) {

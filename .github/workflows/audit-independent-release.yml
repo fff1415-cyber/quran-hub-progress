@@ -51,8 +51,9 @@ jobs:
           php tests/backend-calendar-continuity.php
           php tests/backend-catalog-noop.php
           php tests/backend-assignment-operation.php
+          php tests/backend-completion-events.php
       - name: TypeScript regression against the exact published source
-        if: github.head_ref == 'fix/audit-safe-preserve-current-work' || github.head_ref == 'fix/audit-safe-explicit-scientific-clear' || github.head_ref == 'fix/audit-safe-catalog-noop' || github.head_ref == 'fix/audit-safe-sard-confirmation' || github.head_ref == 'fix/audit-safe-plan-response-cache' || github.head_ref == 'fix/audit-plan-history-in-place'
+        if: github.head_ref == 'fix/audit-safe-preserve-current-work' || github.head_ref == 'fix/audit-safe-explicit-scientific-clear' || github.head_ref == 'fix/audit-safe-catalog-noop' || github.head_ref == 'fix/audit-safe-sard-confirmation' || github.head_ref == 'fix/audit-safe-plan-response-cache' || github.head_ref == 'fix/audit-plan-history-in-place' || github.head_ref == 'fix/audit-safe-completion-events'
         run: python3 tests/type-baseline-regression.py
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
@@ -193,5 +194,5 @@ jobs:
         run: |
           php tests/backend-independent-mysql.php
           python3 scripts/prepare-assignment-operation-rollback.py --api-only
-          php tests/assignment-operation-native-rollback.php dist/assignment-operation-compatible-rollback/plans.php write
+          php tests/assignment-operation-native-rollback.php dist/assignment-operation-compatible-rollback/api/routes/plans.php write
           php tests/assignment-operation-native-rollback.php api/routes/plans.php read
