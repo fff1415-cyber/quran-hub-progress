@@ -5,9 +5,10 @@ let token='fixture-A',complex=1,pending=false,phaseCalls=0,posts=0;
 const cloud={getToken:()=>token},key='qshatawi_sard_queue_v2',response=value=>({ok:true,status:200,text:async()=>JSON.stringify(value)});
 const guard=load('src/lib/plan-response-cache.ts',{'@/lib/cloud-sync':cloud,'@/lib/tenant':{getActiveComplexId:()=>complex},'@/lib/mock-data':{hasPendingSardWrites:()=>pending}});
 const deps={'@/lib/api-base':{buildRphpUrl:p=>p},'@/lib/cloud-sync':cloud,'@/lib/plans-store':{localGetStudentSheet:()=>({assignment:null})},'@/lib/student-phase-promote':{syncStudentPhaseFromPlan:async()=>{phaseCalls++;}},'@/lib/plan-translator':{},'@/lib/plan-response-cache':guard};
+Object.assign(deps,{'@/lib/auth-session':{decodeAuthTokenPayload:()=>({role:'supervisor',accountId:'fixture'})},'@/lib/tenant':{getActiveComplexId:()=>complex},'@/lib/plan-assignment-requests':require('./independent-test-support.cjs').load('src/lib/plan-assignment-requests.ts',{})});
 const service=load('src/lib/plans-service.ts',deps),sheet={assignment:{id:'B'},plan:{id:'P',track:'gold',level_number:1001}},old=[{id:'old',status:'pending',unknown:null}],newer=[{id:'local-new',status:'scheduled',unknown:{keep:0}}];
 const assign=()=>service.assignStudentPlan('S','P',1,'fixture',{expected_assignment_id:'A'});
-async function race(run,result,edit){const entered=deferred(),release=deferred();global.fetch=async(path,options)=>{if(options?.method==='POST'){posts++;entered.resolve();await release.promise;return response(result);}return response(path.startsWith('/plans/student-sheet')?sheet:[]);};const task=run();await entered.promise;edit();release.resolve();return task;}
+async function race(run,result,edit){const entered=deferred(),release=deferred();global.fetch=async(path,options)=>{if(options?.method==='POST'){posts++;entered.resolve();await release.promise;const request=JSON.parse(options.body);return response(request.operation_id?{...result,ok:true,operation_id:request.operation_id,operation_applied:true}:result);}return response(path.startsWith('/plans/student-sheet')?sheet:[]);};const task=run();await entered.promise;edit();release.resolve();return task;}
 (async()=>{
  localStorage.setItem(key,JSON.stringify(old));
  await race(assign,{assignment_id:'B',sard_queue:[{id:'server-old'}]},()=>localStorage.setItem(key,JSON.stringify(newer)));
