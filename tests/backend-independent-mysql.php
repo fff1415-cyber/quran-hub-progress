@@ -21,8 +21,8 @@ require __DIR__.'/../api/routes/evaluation_settings.php';
 $GLOBALS['pdo']=$pdo=connectFixture();$GLOBALS['auth']=['role'=>'supervisor','complexId'=>1,'name'=>'fixture'];
 $pdo->exec(file_get_contents(__DIR__.'/../database/migrate-education-plans.sql'));
 $pdo->exec("ALTER TABLE education_plans ADD COLUMN complex_id INT DEFAULT 1;
- CREATE TABLE students(id VARCHAR(50) PRIMARY KEY,complex_id INT,phase_number INT,level VARCHAR(20));
- CREATE TABLE app_state(complex_id INT NOT NULL,`key` VARCHAR(100) NOT NULL,value LONGTEXT,UNIQUE KEY app_key(complex_id,`key`));
+ CREATE TABLE students(id VARCHAR(50) PRIMARY KEY,complex_id INT,phase_number INT,level VARCHAR(20)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+ CREATE TABLE app_state(complex_id INT NOT NULL,`key` VARCHAR(100) NOT NULL,value LONGTEXT,UNIQUE KEY app_key(complex_id,`key`)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
  INSERT INTO students VALUES('import-S',1,1,'1'),('frozen-S',1,1,'1');
  INSERT INTO education_plans(id,track,level_number,title,segment_count) VALUES('P','gold',1001,'fixture',2);
  INSERT INTO plan_segments(id,plan_id,segment_index,hifz_plan,rabt_plan,muraja_plan) VALUES('seg-1','P',1,'h','r','m'),('seg-2','P',2,'h','r','m');");
@@ -158,6 +158,47 @@ for($i=0;$i<2;$i++){
 }
 foreach($children as $pid){pcntl_waitpid($pid,$status);check(pcntl_wifexited($status)&&pcntl_wexitstatus($status)===0,'concurrent same-content import never deletes/recreates segments');}
 $GLOBALS['pdo']=$pdo=connectFixture();check(catalogSnapshot($pdo)===$baseline,'concurrent retry preserves ongoing work byte-for-byte at row values');catalogDeleteTrap($pdo,false);
+
+// Optional assignment receipt protocol: native schema is created in this disposable DB only.
+require __DIR__.'/assignment-operation-cases.php';assignmentReceiptTable($pdo);
+$pdo->exec("INSERT INTO students(id,complex_id,phase_number,level) VALUES('receipt-S',1,1,'1'),('receipt-race-S',1,1,'1'),('receipt-fail-S',1,1,'1');
+ INSERT INTO student_plan_assignments(id,student_id,plan_id,status) VALUES('receipt-A','receipt-S','P','active'),('receipt-race-A','receipt-race-S','P','active'),('receipt-fail-A','receipt-fail-S','P','active');
+ INSERT INTO segment_completions(id,student_id,plan_id,assignment_id,segment_index,task_type,completed_at) VALUES('receipt-legacy','receipt-S','P',NULL,1,'hifz','2026-01-01');");
+assignmentOperationCases($pdo,['student_id'=>'receipt-S','plan_id'=>'Q','expected_assignment_id'=>'receipt-A','start_segment_index'=>1],'receipt-S');
+$GLOBALS['auth']=['role'=>'supervisor','complexId'=>1,'name'=>'fixture'];
+$raceInput=['student_id'=>'receipt-race-S','plan_id'=>'Q','expected_assignment_id'=>'receipt-race-A','start_segment_index'=>1,'operation_id'=>'fixture-race-operation'];$children=[];
+for($i=0;$i<2;$i++){
+ $pid=pcntl_fork();if($pid===-1)throw new RuntimeException('fork unavailable');
+ if($pid===0){try{$GLOBALS['pdo']=connectFixture();$GLOBALS['input']=$raceInput;handle_assign_plan();exit(($GLOBALS['response']['operation_applied']??false)?0:1);}catch(Throwable $e){exit(1);}}
+ $children[]=$pid;
+}
+foreach($children as $pid){pcntl_waitpid($pid,$status);check(pcntl_wifexited($status)&&pcntl_wexitstatus($status)===0,'concurrent same-operation requests both confirm the one committed result');}
+$GLOBALS['pdo']=$pdo=connectFixture();
+check((int)$pdo->query("SELECT COUNT(*) FROM student_plan_assignments WHERE student_id='receipt-race-S'")->fetchColumn()===2,'native duplicate request creates one new assignment and retains its predecessor');
+check((int)$pdo->query("SELECT COUNT(*) FROM plan_operation_receipts WHERE operation_id='fixture-race-operation'")->fetchColumn()===1,'native concurrent requests share one durable receipt');
+$pdo->exec("ALTER TABLE plan_operation_receipts ADD CONSTRAINT fixture_reject_receipt CHECK(operation_id<>'fixture-reject-receipt')");
+$GLOBALS['input']=['student_id'=>'receipt-fail-S','plan_id'=>'Q','expected_assignment_id'=>'receipt-fail-A','start_segment_index'=>1,'operation_id'=>'fixture-reject-receipt'];$before=assignmentOperationSnapshot($pdo,'receipt-fail-S');
+assignmentOperationFailure(fn()=>handle_assign_plan(),'fixture_reject_receipt');
+check(assignmentOperationSnapshot($pdo,'receipt-fail-S')===$before,'native receipt constraint failure rolls back assignment writes without changing old records');
+
+// Native queue failure after plan writes must also roll back the pending receipt.
+$pdo->exec("INSERT INTO students(id,complex_id,phase_number,level) VALUES('receipt-sard-fail-S',1,1,'1');
+ INSERT INTO student_plan_assignments(id,student_id,plan_id,status) VALUES('receipt-sard-fail-A','receipt-sard-fail-S','P','active');
+ INSERT INTO segment_completions(id,student_id,plan_id,assignment_id,segment_index,task_type,completed_at) VALUES('receipt-sard-h1','receipt-sard-fail-S','P','receipt-sard-fail-A',1,'hifz','2026-10-01'),('receipt-sard-h2','receipt-sard-fail-S','P','receipt-sard-fail-A',2,'hifz','2026-10-02');");
+app_state_upsert($pdo,'sard_queue',[['id'=>'fixture-native-queue','studentId'=>'receipt-sard-fail-S','assignmentId'=>'receipt-sard-fail-A','status'=>'scheduled']],1);
+$pdo->exec("ALTER TABLE app_state ADD CONSTRAINT fixture_reject_queue CHECK(`key`<>'sard_queue' OR value NOT LIKE '%passed%')");
+$GLOBALS['auth']=['role'=>'musammi','accountId'=>'fixture','complexId'=>1,'name'=>'fixture'];
+$GLOBALS['input']=['student_id'=>'receipt-sard-fail-S','plan_id'=>'Q','expected_assignment_id'=>'receipt-sard-fail-A','start_segment_index'=>1,'operation_id'=>'fixture-native-queue-failure','sard_result'=>['id'=>'fixture-native-queue','percent'=>100,'phase'=>'full']];$before=assignmentOperationSnapshot($pdo,'receipt-sard-fail-S');
+assignmentOperationFailure(fn()=>handle_assign_plan(),'fixture_reject_queue');
+check(assignmentOperationSnapshot($pdo,'receipt-sard-fail-S')===$before&&(int)$pdo->query("SELECT COUNT(*) FROM plan_operation_receipts WHERE operation_id='fixture-native-queue-failure'")->fetchColumn()===0,'native sard queue failure rolls back closure, new plan and receipt together');
+
+require __DIR__.'/completion-events-native-cases.php';completionNativeCases($pdo);
+
+$GLOBALS['pdo']=$pdo=connectFixture();
+require __DIR__.'/grade-cell-native-cases.php';
+
+$GLOBALS['pdo']=$pdo=connectFixture();
+require __DIR__.'/grade-plan-native-cases.php';
 
 require __DIR__.'/existing-grade-lock-native-cases.php';
 

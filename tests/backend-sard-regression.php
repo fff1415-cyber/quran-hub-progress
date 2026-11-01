@@ -16,6 +16,7 @@ class TestDatabase extends PDO {
         $query = str_replace(' FOR UPDATE', '', $query);
         $query = str_replace('INSERT IGNORE', 'INSERT OR IGNORE', $query);
         $query = str_replace('ON DUPLICATE KEY UPDATE value = ?', 'ON CONFLICT DO UPDATE SET value = ?', $query);
+        $query = str_replace('ON DUPLICATE KEY UPDATE direct_version=?,subtree_version=?,updated_at=CURRENT_TIMESTAMP', 'ON CONFLICT(context_id,store_key,path_sha256) DO UPDATE SET direct_version=?,subtree_version=?,updated_at=CURRENT_TIMESTAMP', $query);
         return parent::prepare($query, $options);
     }
 }
@@ -36,7 +37,7 @@ function new_uuid(): string {return 'assignment-' . (++$GLOBALS['uuid']);}
 function assert_row_belongs_to_complex(?int $row, int $cid): void {if ($row !== $cid) error_response('Forbidden tenant', 403);}
 // Alternate source is used only by the isolated compatible-rollback fixture.
 require getenv('AUDIT_APP_STATE_SOURCE') ?: __DIR__ . '/../api/routes/app_state.php';
-require __DIR__ . '/../api/routes/plans.php';
+require getenv('AUDIT_PLAN_SOURCE') ?: __DIR__ . '/../api/routes/plans.php';
 require __DIR__ . '/../api/routes/staff_tasks.php';
 function check(bool $ok, string $name): void {if (!$ok) throw new RuntimeException('FAIL: ' . $name); echo "PASS: $name\n";}
 function expectFailure(callable $fn, string $contains): void {
@@ -44,7 +45,8 @@ function expectFailure(callable $fn, string $contains): void {
     throw new RuntimeException('Expected rejection: ' . $contains);
 }
 function seed(): TestDatabase {
-    $pdo = new TestDatabase();$GLOBALS['pdo'] = $pdo;$GLOBALS['uuid']=0;
+    $fixtureClass = $GLOBALS['completionDatabaseClass'] ?? TestDatabase::class;
+    $pdo = new $fixtureClass();$GLOBALS['pdo'] = $pdo;$GLOBALS['uuid']=0;
     $GLOBALS['auth']=['role'=>'musammi','accountId'=>'staff-1','complexId'=>1,'name'=>'test'];
     $GLOBALS['input']=['student_id'=>'student-1','plan_id'=>'next','expected_assignment_id'=>'old','plan_start_date'=>'2026-10-13','sard_result'=>['id'=>'sq-1','percent'=>90,'phase'=>'full']];
     $pdo->exec('CREATE TABLE students(id TEXT PRIMARY KEY, complex_id INTEGER, phase_number INTEGER, level TEXT); INSERT INTO students(id,complex_id,phase_number,level) VALUES ("student-1",1,1,"1")');
