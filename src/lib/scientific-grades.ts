@@ -132,6 +132,10 @@ function normalizeDefaultScores(raw: unknown): ScientificDefaultScores {
   return out;
 }
 
+function isRecordedScientificHifz(value: unknown): boolean {
+  return value === "half" || value === "one" || value === "two";
+}
+
 /** Resolve the manager-configured score for one field given the day's entry. */
 export function resolveScientificScore(
   config: ScientificGradesConfig,
@@ -147,7 +151,7 @@ export function resolveScientificScore(
       return config.defaultScores.attendance?.[att]?.trim() ?? "";
     }
     case "hifz":
-      return entry.hifz !== "" ? (config.defaultScores.hifz?.trim() ?? "") : "";
+      return isRecordedScientificHifz(entry.hifz) ? (config.defaultScores.hifz?.trim() ?? "") : "";
     case "rabt":
       return entry.rabt !== "" ? (config.defaultScores.rabt?.trim() ?? "") : "";
     case "muraja":
@@ -463,7 +467,7 @@ function clearScientificOverridesForPatchInStore(
   patch: Partial<DayEntry>,
 ): boolean {
   let changed = false;
-  if ("hifz" in patch) {
+  if ("hifz" in patch && (patch.hifz === "" || isRecordedScientificHifz(patch.hifz))) {
     changed =
       clearScientificScoreOverrideInStore(store, halaqaId, studentId, weekNum, dayKey, "hifz") ||
       changed;
@@ -515,6 +519,11 @@ function syncScientificFieldInStore(
       "",
     );
     return overrideChanged || dataChanged;
+  }
+  // Incomplete/corrupt prep is not an instruction to recalculate or erase a stored score.
+  // The explicit empty value still follows the existing user-clear behavior.
+  if (field === "hifz" && entry.hifz !== "" && !isRecordedScientificHifz(entry.hifz)) {
+    return false;
   }
   // Manual edits stay until the matching prep field changes (see clearScientificOverridesForPatchInStore).
   if (isScientificScoreOverriddenInStore(store, halaqaId, studentId, weekNum, dayKey, field)) {
