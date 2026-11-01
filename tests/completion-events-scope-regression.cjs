@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),cp=require('node:child_process');
+const {withoutCompletionProtocolPhp}=require('./completion-events-scope-support.cjs');
+const base='74c1a0d10d4adc428f96dbf68eb06dcea2187282',old=p=>cp.execFileSync('git',['show',base+':'+p],{encoding:'utf8'});
+assert.equal(withoutCompletionProtocolPhp(fs.readFileSync('api/routes/plans.php','utf8')),old('api/routes/plans.php'),'all original endpoint roles, ownership, phase/completion criteria and legacy data paths unchanged; only the new-assignment marker hook is connected');
+assert.deepEqual(cp.execFileSync('git',['diff','--name-only',base,'--','api/','src/','database/','package.json','package-lock.json','bun.lock'],{encoding:'utf8'}).trim().split('\n'),['api/lib/plan-completion-events.php','api/routes/plans.php']);
+const helper=fs.readFileSync('api/lib/plan-completion-events.php','utf8');
+assert.doesNotMatch(helper,/\b(?:ALTER|CREATE|DROP|TRUNCATE)\s+TABLE\b|\b(?:DELETE\s+FROM|INSERT\s+INTO|UPDATE)\s+segment_completions\b/i,'old completion rows and schema must be untouched');
+assert.doesNotMatch(helper,/require_auth\(|plans_require_roles\(|header\(|json_response\(|setcookie\(|\$_(?:GET|POST|REQUEST)|LIMIT\s+500|array_slice\(/,'data layer cannot change authentication, expose an endpoint or truncate history');
+const proposal=cp.execFileSync('git',['show','0b63be93032aee3d8476a11d1e15f8de6ea74a0e:database/proposed-progress-foundation.sql'],{encoding:'utf8'});
+const expected=['plan_completion_events','plan_completion_heads'].map(name=>proposal.match(new RegExp('CREATE TABLE IF NOT EXISTS '+name+' \\([\\s\\S]*?;'))[0]).join('\n')+'\n';
+assert.equal(fs.readFileSync('tests/fixtures/plan-completion-events.sql','utf8'),expected,'native fixture is the existing pending #36 schema, not a new production migration');
+console.log('PASS: completion-event data layer and fresh-assignment markers only; no permission/ownership/rules/schema/legacy-record changes or connected completion writer yet');

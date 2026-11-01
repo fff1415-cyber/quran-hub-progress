@@ -9,6 +9,9 @@ import type {
   DailyFaceQuotas,
 } from "@/lib/plan-types";
 import { getToken } from "@/lib/cloud-sync";
+import { runPlanAssignmentRequest, type AssignmentReceipt } from "@/lib/plan-assignment-requests";
+import { getActiveComplexId } from "@/lib/tenant";
+import { decodeAuthTokenPayload } from "@/lib/auth-session";
 import { capturePlanResponse, assertPlanResponseCurrent, applyPlanSardResponse } from "@/lib/plan-response-cache";
 import { localGetStudentSheet } from "@/lib/plans-store";
 import { syncStudentPhaseFromPlan } from "@/lib/student-phase-promote";
@@ -128,41 +131,57 @@ export async function assignStudentPlan(
 ): Promise<void> {
   if (!Number.isInteger(startSegment) || startSegment < 1) throw new Error("مقطع البداية يجب أن يكون عددًا صحيحًا موجبًا");
   const responseSnapshot = capturePlanResponse();
-  const expectedAssignment = options?.expected_assignment_id ?? (await fetchStudentPlanSheet(studentId)).assignment?.id ?? "";
-  assertPlanResponseCurrent(responseSnapshot);
-  const result = await planFetch<{ assignment_id: string; sard_queue?: unknown[] | null }>("/plans/assign", {
+  const intent = {
+    student_id: studentId,
+    expected_assignment_id: options?.expected_assignment_id,
+    only_if_unassigned: options?.only_if_unassigned,
+    sard_result: options?.sard_result,
+    plan_id: planId,
+    start_segment_index: startSegment,
+    plan_start_date: options?.plan_start_date,
+    start_muraja_segment: options?.start_muraja_segment,
+    ...options?.face_quotas,
+  };
+  await runPlanAssignmentRequest({
+    context: () => {
+      const session = getToken() ?? "";
+      const identity = decodeAuthTokenPayload(session);
+      // Existing identity is used only to group transport drafts; API authorization is unchanged.
+      return { session, owner: JSON.stringify([getActiveComplexId() ?? null, identity?.role ?? null, identity?.accountId || session]) };
+    },
+    intent,
+    prepare: async () => ({
+      ...intent,
+      expected_assignment_id: options?.expected_assignment_id ?? (await fetchStudentPlanSheet(studentId)).assignment?.id ?? "",
+    }),
+    send: body => planFetch<AssignmentReceipt>("/plans/assign", {
       method: "POST",
-      body: JSON.stringify({
-        student_id: studentId,
-        expected_assignment_id: expectedAssignment,
-        only_if_unassigned: options?.only_if_unassigned,
-        sard_result: options?.sard_result,
-        plan_id: planId,
-        start_segment_index: startSegment,
-        plan_start_date: options?.plan_start_date,
-        start_muraja_segment: options?.start_muraja_segment,
-        ...options?.face_quotas,
-      }),
-    });
-  applyPlanSardResponse(responseSnapshot, result.sard_queue);
-  let sheet: StudentPlanSheetData;
-  try {
-    sheet = await fetchStudentPlanSheet(studentId);
-  } catch {
-    throw new Error("استجاب الخادم لطلب الربط، لكن تعذّر التحقق من الخطة؛ افتح استمارة الطالب قبل إعادة المحاولة");
-  }
-  assertPlanResponseCurrent(responseSnapshot);
-  if (!result.assignment_id || sheet.assignment?.id !== result.assignment_id || sheet.plan?.id !== planId) {
-    throw new Error("تعذّر تأكيد الخطة المرتبطة من الخادم؛ افتح استمارة الطالب قبل إعادة المحاولة");
-  }
-  try {
-    const catalog = await fetchPlans(sheet.plan.track);
-    assertPlanResponseCurrent(responseSnapshot);
-    await syncStudentPhaseFromPlan(studentId, sheet.plan.track, sheet.plan.level_number, catalog);
-  } catch {
-    // The assignment is already confirmed on the server; avoid reporting a failed link.
-  }
-  assertPlanResponseCurrent(responseSnapshot);
+      body: JSON.stringify(body),
+    }),
+    verify: async (result, current) => {
+      current();
+      applyPlanSardResponse(responseSnapshot, result.sard_queue);
+      let sheet: StudentPlanSheetData;
+      try {
+        sheet = await fetchStudentPlanSheet(studentId);
+      } catch {
+        throw new Error("استجاب الخادم لطلب الربط، لكن تعذّر التحقق من الخطة؛ افتح استمارة الطالب قبل إعادة المحاولة");
+      }
+      current();
+      assertPlanResponseCurrent(responseSnapshot);
+      if (!result.assignment_id || sheet.assignment?.id !== result.assignment_id || sheet.plan?.id !== planId) {
+        throw new Error(result.replayed ? "نُفّذ هذا الطلب سابقًا ثم تغيّرت الخطة؛ افتح استمارة الطالب دون إعادة تعيينها" : "تعذّر تأكيد الخطة المرتبطة من الخادم؛ افتح استمارة الطالب قبل إعادة المحاولة");
+      }
+      try {
+        const catalog = await fetchPlans(sheet.plan.track);
+        current();
+        assertPlanResponseCurrent(responseSnapshot);
+        await syncStudentPhaseFromPlan(studentId, sheet.plan.track, sheet.plan.level_number, catalog);
+      } catch {
+        // The assignment is already confirmed on the server; avoid reporting a failed link.
+      }
+    },
+  });
 }
 
 /** Only the educational supervisor can change an individual hifz row. */
