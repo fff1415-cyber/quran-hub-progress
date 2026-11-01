@@ -201,3 +201,6 @@ $GLOBALS['pdo']=$pdo=connectFixture();
 require __DIR__.'/grade-plan-native-cases.php';
 
 require __DIR__.'/existing-grade-lock-native-cases.php';
+
+require __DIR__.'/grade-protocol-floor-cases.php';
+gradeProtocolFloorCases($pdo);

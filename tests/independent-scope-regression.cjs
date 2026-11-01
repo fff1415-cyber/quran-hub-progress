@@ -17,7 +17,7 @@ for(const name of ['handle_assign_plan','handle_patch_assignment'])assert.deepEq
 const oldEval=phpFunction(original('api/routes/evaluation_settings.php'),'handle_put_evaluation_settings'),newEval=phpFunction(fs.readFileSync('api/routes/evaluation_settings.php','utf8'),'handle_put_evaluation_settings');
 assert.equal(newEval.slice(0,newEval.indexOf('    $tenants =')),oldEval.slice(0,oldEval.indexOf('    $tenants =')),'settings roles and scope remain literal');
 for(const name of ['eval_settings_defaults','eval_settings_sanitize'])assert.equal(phpFunction(fs.readFileSync('api/routes/evaluation_settings.php','utf8'),name),phpFunction(original('api/routes/evaluation_settings.php'),name),'no threshold, weight, rounding or retry policy change');
-const oldState=phpFunction(original('api/routes/app_state.php'),'handle_set_app_state'),newState=phpFunction(fs.readFileSync('api/routes/app_state.php','utf8'),'handle_set_app_state');
+const oldState=phpFunction(original('api/routes/app_state.php'),'handle_set_app_state'),newState=phpFunction(require('./grade-protocol-floor-scope-support.cjs').withoutGradeProtocolFloor(fs.readFileSync('api/routes/app_state.php','utf8')),'handle_set_app_state');
 assert.equal(newState.slice(0,newState.indexOf('    $pdo = db();')),oldState.slice(0,oldState.indexOf('    $pdo = db();')),'shared-state authorization preamble remains literal');
 const readBefore=phpFunction(original('api/routes/app_state.php'),'handle_list_app_state'),readAfter=phpFunction(fs.readFileSync('api/routes/app_state.php','utf8'),'handle_list_app_state');
 const readGuards=code=>code.split('\n').filter(line=>/require_auth\(|require_complex_id\(|\$role|\$allowed|WHERE complex_id|\$tenants|\$stmt->execute/.test(line)).map(line=>line.trim());
@@ -27,7 +27,7 @@ for(const [path,allowed] of [
  ['src/lib/mock-data.ts',['sameStoredGradeValue','retainUnrecognizedGradeFields','mergeDayEntries','mergeWeekRecords','resetGradesForNewSemester','ensureGradesSemester','persistShared','saveSardQueue','pushSardHistory','saveSardHistory','mergeNotifications','writeNotificationsLocal','pushNotification']],
  ['src/lib/plans-service.ts',['assignStudentPlan','patchStudentAssignment','patchAssignmentFaceQuotas']],
  ['src/components/role-workspace/RoleSections.tsx',['SecretarySardPanel','SupervisorPlanCompletedPanel','SupervisorApprovalsPanel','SupervisorForceRetryPanel','SupervisorPassedPanel']],
-]){const current=functions(withoutPlanResponseClient(fs.readFileSync(path,'utf8')));for(const [name,body] of functions(original(path)))if(!allowed.includes(name))assert.equal(current.get(name),body,`unrelated function changed: ${name}`);}
+]){const current=functions(require('./scientific-response-scope-support.cjs').withoutScientificResponseGuard(withoutPlanResponseClient(fs.readFileSync(path,'utf8'))));for(const [name,body] of functions(original(path)))if(!allowed.includes(name))assert.equal(current.get(name),body,`unrelated function changed: ${name}`);}
 assert.ok(!fs.readFileSync('src/lib/sard-queue-refresh.ts','utf8').includes('secureSetAppState'),'queue refresh cannot write shared state');
 const workflow=fs.readFileSync('.github/workflows/deploy.yml','utf8');
 assert.ok(workflow.indexOf('Verify existing API files before replacement')<workflow.indexOf('Sync PHP API (SFTP primary)'));

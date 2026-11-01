@@ -28,3 +28,7 @@
 ## التراجع
 
 تُجهَّز حزمة checkpoint التابعة وفيها مسار الخطط ومكتبات البيانات الثلاث وتُختبر معاملة F05 مع روتين إيصالات تعيين بديل. حفظ المكتبات شرط لاستمرار فهم الإيصالات والربط الجديد. هذه حزمة توافق طبقة البيانات والتعيين؛ حزمة الرجوع النهائية لواجهة بروتوكول الدرجات لم تُعتمد بعد لأن توصيلها لم يكتمل. لا يجوز نشر هذه المرحلة وحدها أو إعادة كاتب لقطة درجات قديمة بعد تفعيل الإصدارات. لا تستعاد قاعدة أقدم فوق الكتابات الجديدة؛ العطل في طبقة يجب الاحتفاظ بها يتطلب إصلاحًا أماميًا.
+
+
+## Published prerequisite integration
+Includes published #46 existing-grade initializer, #47 unsupported transport floor (1bb0b54), and #48 newer scientific draft confirmation guard (f6d9d65), preserving their real acceptance tests. The current public API still rejects explicit modern grade packets; no modern writer is advertised or activated. This branch remains an isolated data/composition checkpoint awaiting coherent public/client cutover and specific production schema approval, not a deployment candidate.
