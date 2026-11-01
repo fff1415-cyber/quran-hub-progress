@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require_once __DIR__.'/completion-events-cases.php';
+require_once __DIR__.'/completion-edits-cases.php';
 function completionNativeSeed(PDO $pdo,string $tag,string $plan='P'):array
 {
     $student='ce-'.$tag.'-S';$old='ce-'.$tag.'-old';
@@ -17,6 +18,25 @@ function completionNativeCases(PDO $pdo):void
     $pdo->exec('ALTER TABLE students ADD COLUMN halaqa_id INT DEFAULT 7');
     [$student,$old]=completionNativeSeed($pdo,'main');completionEventCases($pdo,$student,'P',$old,'ce-main');
     [$student,$old]=completionNativeSeed($pdo,'legacy');completionLegacyCases($pdo,$student,$old,'ce-old');
+    [$student,$old]=completionNativeSeed($pdo,'edit');completionEditCases($pdo,$student,'P',$old,'ce-native-edit');
+    [$student,$old]=completionNativeSeed($pdo,'edit-race');$current=completionAssign($pdo,$student,'P',$old,'ce-edit-race-assign');$children=[];$results=[];
+    for($i=0;$i<2;$i++) {
+        $pid=pcntl_fork();if($pid===-1)throw new RuntimeException('fork unavailable');
+        if($pid===0) {
+            try {$GLOBALS['pdo']=connectFixture();plan_events_set_hifz($GLOBALS['pdo'],1,$student,$current['id'],'ce-edit-race-'.$i,1,'complete',$i===0?'2026-10-15':'2026-10-16',null,'fixture');exit(0);}
+            catch(Throwable $error) {exit(str_contains($error->getMessage(),'تغيّر مصدر الإنجاز')?2:1);}
+        }
+        $children[]=$pid;
+    }
+    foreach($children as $pid) {pcntl_waitpid($pid,$status);check(pcntl_wifexited($status),'manual edit race exits cleanly');$results[]=pcntl_wexitstatus($status);}
+    sort($results);$GLOBALS['pdo']=$pdo=connectFixture();
+    check($results===[0,2]&&count(plan_events_history($pdo,1,$current))===1&&count(completionRows($pdo,$current))===1,'two different same-cell manual requests yield one confirmed event and one explicit conflict without lost writes');
+    [$student,$old]=completionNativeSeed($pdo,'edit-failure');$current=completionAssign($pdo,$student,'P',$old,'ce-edit-failure-assign');
+    $pdo->exec('ALTER TABLE plan_completion_heads ADD CONSTRAINT fixture_manual_edit_head CHECK(assignment_id<>'.$pdo->quote($current['id']).')');
+    $grade=$pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn();
+    $pdo->beginTransaction();app_state_upsert($pdo,'grades',['fixture'=>['keep'=>99]],1);
+    completionFailure(fn()=>plan_events_set_hifz($pdo,1,$student,$current['id'],'ce-native-edit-failure',1,'complete','2026-10-15',null,'fixture'),'fixture_manual_edit_head');
+    check(!$pdo->inTransaction()&&$pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn()===$grade&&completionRows($pdo,$current)===[]&&(int)$pdo->query("SELECT COUNT(*) FROM plan_operation_receipts WHERE operation_id='ce-native-edit-failure'")->fetchColumn()===0,'native manual-edit head failure keeps grade bytes and leaves no event or provisional receipt');
     [$student,$old]=completionNativeSeed($pdo,'atomic');$current=completionAssign($pdo,$student,'P',$old,'ce-atomic-assignment');$raw=completionRaw($pdo,$student);
     $pdo->exec('ALTER TABLE plan_completion_heads ADD CONSTRAINT fixture_second_event_head CHECK(assignment_id<>'.$pdo->quote($current['id']).' OR segment_index<>2)');
     $grade=$pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn();

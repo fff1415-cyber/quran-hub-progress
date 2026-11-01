@@ -152,7 +152,7 @@ function plan_events_execute(PDO $pdo, int $contextId, string $studentId, string
     $owns = !$pdo->inTransaction();
     try {
         if ($owns) $pdo->beginTransaction();
-        if ($contextId < 0 || !in_array($kind,['completion_apply','completion_revoke'],true) || !preg_match('/^[A-Za-z0-9_-]{8,128}$/D', $operationId) || $studentId === '' || $assignmentId === '') throw new RuntimeException('هوية طلب الإنجاز غير مكتملة');
+        if ($contextId < 0 || !in_array($kind,['completion_apply','completion_revoke','completion_set'],true) || !preg_match('/^[A-Za-z0-9_-]{8,128}$/D', $operationId) || $studentId === '' || $assignmentId === '') throw new RuntimeException('هوية طلب الإنجاز غير مكتملة');
         if (!plan_events_tables_ready($pdo)) throw new RuntimeException('مسار حفظ تاريخ الإنجاز غير مهيأ؛ لم يُغيّر سجل الطالب');
         $lock = $pdo->prepare('SELECT id FROM students WHERE id = ? FOR UPDATE');$lock->execute([$studentId]);
         if (!$lock->fetch()) throw new RuntimeException('الطالب غير موجود؛ لم يُنقل الإنجاز إلى حساب آخر');
@@ -251,6 +251,47 @@ function plan_events_revoke(PDO $pdo, int $contextId, string $studentId, string 
         }
         return ['event_ids'=>$ids,'removed_segments'=>$removed,'removed'=>count($removed)];
     });
+}
+
+/** Explicit single-segment edit primitive, without adding a public route or any role effect. */
+function plan_events_set_hifz(PDO $pdo, int $contextId, string $studentId, string $assignmentId, string $operationId, int $segment, string $action, ?string $completedAt, ?array $expectedSource, string $recorder, mixed $source = null): array
+{
+    $payload = ['segment_index'=>$segment,'action'=>$action,'completed_at'=>$completedAt,'expected_source'=>$expectedSource,'source'=>$source];
+    return plan_events_execute($pdo,$contextId,$studentId,$assignmentId,$operationId,'completion_set',$payload,
+        function (array $assignment) use ($pdo,$contextId,$operationId,$segment,$action,$completedAt,$expectedSource,$recorder,$source): array {
+            if (!in_array($action,['complete','remove'],true) || $segment < (int)$assignment['start_segment_index']
+                || !in_array($segment,plan_events_segments($pdo,$assignment),true)) throw new RuntimeException('هذا اليوم خارج الخطة الحالية أو نوع التعديل غير صالح');
+            if ($action === 'complete') {
+                $date = DateTimeImmutable::createFromFormat('!Y-m-d', $completedAt ?? '');
+                if (!$date || $date->format('Y-m-d') !== $completedAt) throw new RuntimeException('تاريخ الإنجاز غير صالح');
+            } elseif ($completedAt !== null) {
+                throw new RuntimeException('إلغاء الإنجاز لا ينشئ تاريخ إكمال بديلًا');
+            }
+            if ($expectedSource !== null && (count($expectedSource) !== 1
+                || (!isset($expectedSource['event_id']) && !isset($expectedSource['legacy_id']))
+                || !is_string(reset($expectedSource)) || reset($expectedSource) === '')) throw new RuntimeException('مرجع تعديل الحفظ غير صالح');
+            $current = null;
+            foreach (plan_events_read($pdo,$contextId,$assignment) as $envelope) {
+                if ($envelope['completion']['task_type'] === 'hifz' && (int)$envelope['completion']['segment_index'] === $segment) {
+                    $current = $envelope;
+                    break;
+                }
+            }
+            if (($current['source']['kind'] ?? null) === 'legacy_unassigned') throw new RuntimeException('السجل القديم غير مربوط صراحة بهذا التعيين؛ بقي ظاهرًا دون تغييره أو تخمين مصدره');
+            $identity = $current === null ? null : (($current['source']['kind'] === 'event')
+                ? ['event_id'=>$current['source']['event_id']] : ['legacy_id'=>$current['source']['record_id']]);
+            if ($identity !== $expectedSource) throw new RuntimeException('تغيّر مصدر الإنجاز منذ عرضه؛ لم يُستبدل أو يُلغ إنجاز أحدث');
+            if (($action === 'remove' && $current === null)
+                || ($action === 'complete' && ($current['completion']['completed_at'] ?? null) === $completedAt)) {
+                return ['event_ids'=>[],'segment_index'=>$segment,'action'=>$action,'changed'=>false];
+            }
+            $eventId = $identity['event_id'] ?? null;
+            $legacyId = $identity['legacy_id'] ?? null;
+            $id = plan_events_append($pdo,$contextId,$assignment,$operationId,'hifz',$segment,
+                $action === 'complete' ? 'complete' : 'revoke',$completedAt,$recorder,$source,
+                $action === 'remove' ? $eventId : null,$legacyId);
+            return ['event_ids'=>[$id],'segment_index'=>$segment,'action'=>$action,'changed'=>true];
+        });
 }
 
 function plan_events_history(PDO $pdo, int $contextId, array $assignment): array

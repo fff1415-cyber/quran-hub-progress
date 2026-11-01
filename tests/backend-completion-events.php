@@ -3,6 +3,7 @@ declare(strict_types=1);
 require __DIR__.'/backend-sard-regression.php';
 require __DIR__.'/assignment-operation-cases.php';
 require __DIR__.'/completion-events-cases.php';
+require __DIR__.'/completion-edits-cases.php';
 function completionSeed():PDO {
     $pdo=seed();
     $pdo->exec('ALTER TABLE students ADD COLUMN halaqa_id INTEGER DEFAULT 7');
@@ -27,6 +28,14 @@ function completionSeed():PDO {
 }
 $pdo=completionSeed();completionEventCases($pdo,'student-1','current','old','ce-sqlite');
 $pdo=completionSeed();completionLegacyCases($pdo,'student-1','old','ce-legacy');
+$pdo=completionSeed();completionEditCases($pdo,'student-1','current','old','ce-edit');
+$pdo=completionSeed();$current=completionAssign($pdo,'student-1','current','old','ce-edit-failure-assign');
+app_state_upsert($pdo,'grades',['fixture'=>['keep'=>0,'unknown'=>null]],1);
+$beforeGrade=$pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn();
+$pdo->exec("CREATE TRIGGER fixture_edit_head BEFORE INSERT ON plan_completion_heads BEGIN SELECT RAISE(ABORT,'fixture manual head failure'); END");
+$pdo->beginTransaction();app_state_upsert($pdo,'grades',['fixture'=>['keep'=>99]],1);
+completionFailure(fn()=>plan_events_set_hifz($pdo,1,'student-1',$current['id'],'ce-edit-partial',1,'complete','2026-10-15',null,'fixture'),'fixture manual head failure');
+check(!$pdo->inTransaction()&&$pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn()===$beforeGrade&&(int)$pdo->query('SELECT COUNT(*) FROM plan_completion_events')->fetchColumn()===0,'manual-edit failure rolls back outer grade bytes and the provisional event/receipt');
 // The enclosing grade write must roll back when a later segment cannot save.
 $pdo=completionSeed();$pdo->exec("UPDATE education_plans SET track='silver' WHERE id='current'");
 $current=completionAssign($pdo,'student-1','current','old','ce-atomic-assign');$raw=completionRaw($pdo,'student-1');
