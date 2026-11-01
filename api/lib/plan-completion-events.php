@@ -148,7 +148,7 @@ function plan_events_sheet_rows(PDO $pdo, int $contextId, array $assignment, arr
 }
 
 /** This function aborts the whole caller transaction on failure, including a composed grade write. */
-function plan_events_execute(PDO $pdo, int $contextId, string $studentId, string $assignmentId, string $operationId, string $kind, array $payload, callable $write): array
+function plan_events_execute(PDO $pdo, int $contextId, string $studentId, string $assignmentId, string $operationId, string $kind, array $payload, callable $write, int $attempt = 0): array
 {
     $owns = !$pdo->inTransaction();
     try {
@@ -181,6 +181,15 @@ function plan_events_execute(PDO $pdo, int $contextId, string $studentId, string
         return $response;
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) { try {$pdo->rollBack();} catch (Throwable) {} }
+        $driverCode = $error instanceof PDOException ? (int) ($error->errorInfo[1] ?? 0) : 0;
+        if (in_array($driverCode, [1020, 1205, 1213], true)) {
+            // A composed grade transaction must be retried by its caller as a whole.
+            // Only this data-only transaction, after confirmed rollback, may replay here.
+            if ($owns && !$pdo->inTransaction() && $attempt < 2) {
+                return plan_events_execute($pdo,$contextId,$studentId,$assignmentId,$operationId,$kind,$payload,$write,$attempt+1);
+            }
+            throw new RuntimeException('تعارض أثناء قراءة مصدر الإنجاز؛ أُلغيت المعاملة كاملة دون حفظ جزئي. أعد المحاولة بنفس الطلب',409,$error);
+        }
         throw $error;
     }
 }

@@ -24,7 +24,19 @@ function completionNativeCases(PDO $pdo):void
     $stale->query('SELECT COUNT(*) FROM plan_completion_heads')->fetchColumn();
     $written=plan_events_set_hifz($pdo,1,$student,$current['id'],'ce-snapshot-first',1,'complete','2026-10-15',null,'fixture');
     check(plan_events_read($stale,1,$current)===[], 'negative control: an established repeatable-read snapshot misses a later committed completion');
-    check(count(plan_events_read($stale,1,$current,true))===1, 'current locked source read sees the confirmed event instead of the older snapshot');
+    try {
+        check(count(plan_events_read($stale,1,$current,true))===1, 'current locked source read sees the confirmed event instead of the older snapshot');
+    } catch (PDOException $error) {
+        if ((int)($error->errorInfo[1]??0)!==1020) throw $error;
+        check(true, 'engine rejects the stale snapshot with explicit 1020 rather than returning an obsolete writable source');
+    }
+    try {
+        plan_events_set_hifz($stale,1,$student,$current['id'],'ce-snapshot-stale',1,'complete','2026-10-16',null,'fixture');
+        throw new RuntimeException('stale source unexpectedly overwrote a newer event');
+    } catch (RuntimeException $error) {
+        if (!str_contains($error->getMessage(),'تغيّر مصدر الإنجاز') && !($error->getCode()===409 && $error->getPrevious() instanceof PDOException && (int)($error->getPrevious()->errorInfo[1]??0)===1020)) throw $error;
+        check(true, 'old outer snapshot returns an explicit stale-source or engine-retry conflict');
+    }
     completionFailure(fn()=>plan_events_set_hifz($stale,1,$student,$current['id'],'ce-snapshot-stale',1,'complete','2026-10-16',null,'fixture'),'تغيّر مصدر الإنجاز');
     check(!$stale->inTransaction()&&count(plan_events_history($pdo,1,$current))===1&&completionRows($pdo,$current)[0]['id']===$written['event_ids'][0], 'stale outer snapshot cannot overwrite a newer same-cell event or commit a second receipt');
     [$student,$old]=completionNativeSeed($pdo,'edit-race');$current=completionAssign($pdo,$student,'P',$old,'ce-edit-race-assign');$children=[];$results=[];
@@ -44,10 +56,17 @@ function completionNativeCases(PDO $pdo):void
         $pid=pcntl_fork();if($pid===-1)throw new RuntimeException('fork unavailable');
         if($pid===0) {
             try {
-                $child=connectFixture();$child->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');$child->beginTransaction();
-                $child->query('SELECT COUNT(*) FROM plan_completion_heads')->fetchColumn();
-                $result=plan_events_apply($child,1,$student,$current['id'],'ce-distinct-tap-'.$i,'hifz','one','2026-10-15','fixture');
-                $child->commit();exit(count($result['applied_segments'])===1?0:1);
+                for($attempt=0;$attempt<3;$attempt++) {
+                    $child=connectFixture();$child->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');$child->beginTransaction();
+                    $child->query('SELECT COUNT(*) FROM plan_completion_heads')->fetchColumn();
+                    try {
+                        $result=plan_events_apply($child,1,$student,$current['id'],'ce-distinct-tap-'.$i,'hifz','one','2026-10-15','fixture');
+                        $child->commit();exit(count($result['applied_segments'])===1?0:1);
+                    } catch(RuntimeException $error) {
+                        $previous=$error->getPrevious();
+                        if($attempt===2||$child->inTransaction()||$error->getCode()!==409||!($previous instanceof PDOException)||!in_array((int)($previous->errorInfo[1]??0),[1020,1205,1213],true))throw $error;
+                    }
+                }
             } catch(Throwable $error) {fwrite(STDERR,'Isolated tap race: '.get_class($error).' '.$error->getMessage()."\n");exit(1);}
         }
         $children[]=$pid;

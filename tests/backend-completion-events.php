@@ -36,6 +36,38 @@ $pdo->exec("CREATE TRIGGER fixture_edit_head BEFORE INSERT ON plan_completion_he
 $pdo->beginTransaction();app_state_upsert($pdo,'grades',['fixture'=>['keep'=>99]],1);
 completionFailure(fn()=>plan_events_set_hifz($pdo,1,'student-1',$current['id'],'ce-edit-partial',1,'complete','2026-10-15',null,'fixture'),'fixture manual head failure');
 check(!$pdo->inTransaction()&&$pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn()===$beforeGrade&&(int)$pdo->query('SELECT COUNT(*) FROM plan_completion_events')->fetchColumn()===0,'manual-edit failure rolls back outer grade bytes and the provisional event/receipt');
+class RetryCompletionDatabase extends TestDatabase {
+    public int $fixtureFailures=0;
+    public int $fixtureAttempts=0;
+    public int $fixtureCode=1020;
+    public function prepare(string $query,array $options=[]):PDOStatement|false {
+        if ($query==='SELECT id FROM students WHERE id = ? FOR UPDATE') {
+            $this->fixtureAttempts++;
+            if ($this->fixtureFailures>0) {
+                $this->fixtureFailures--;
+                $error=new PDOException('isolated completion read failure');$error->errorInfo=['HY000',$this->fixtureCode,'isolated completion read failure'];throw $error;
+            }
+        }
+        return parent::prepare($query,$options);
+    }
+}
+$GLOBALS['completionDatabaseClass']=RetryCompletionDatabase::class;
+$pdo=completionSeed();unset($GLOBALS['completionDatabaseClass']);$current=completionAssign($pdo,'student-1','current','old','ce-retry-assign');
+$pdo->fixtureFailures=1;$result=plan_events_set_hifz($pdo,1,'student-1',$current['id'],'ce-retry-once',1,'complete','2026-10-15',null,'fixture');
+check($pdo->fixtureAttempts===2&&count($result['event_ids'])===1&&count(plan_events_history($pdo,1,$current))===1,'owned data-only transaction retries one stale-read failure after full rollback with the same receipt identity');
+$beforeAttempts=$pdo->fixtureAttempts;$pdo->fixtureFailures=3;
+try {plan_events_set_hifz($pdo,1,'student-1',$current['id'],'ce-retry-bounded',2,'complete','2026-10-16',null,'fixture');throw new RuntimeException('retry cap not enforced');}
+catch(RuntimeException $error) {if($error->getCode()!==409||!($error->getPrevious() instanceof PDOException))throw $error;}
+check($pdo->fixtureAttempts-$beforeAttempts===3&&!$pdo->inTransaction()&&count(plan_events_history($pdo,1,$current))===1,'contention retries are bounded to three attempts and return a clear conflict without another event');
+app_state_upsert($pdo,'grades',['fixture'=>['zero'=>0,'unknown'=>null]],1);$beforeGrade=$pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn();
+$beforeAttempts=$pdo->fixtureAttempts;$pdo->fixtureFailures=1;$pdo->beginTransaction();app_state_upsert($pdo,'grades',['fixture'=>['zero'=>99]],1);
+try {plan_events_set_hifz($pdo,1,'student-1',$current['id'],'ce-retry-outer',2,'complete','2026-10-16',null,'fixture');throw new RuntimeException('outer transaction retried only its completion');}
+catch(RuntimeException $error) {if($error->getCode()!==409||!($error->getPrevious() instanceof PDOException))throw $error;}
+check($pdo->fixtureAttempts-$beforeAttempts===1&&!$pdo->inTransaction()&&$pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn()===$beforeGrade,'a composed grade transaction is rolled back entirely, never retried as a completion-only fragment');
+$beforeAttempts=$pdo->fixtureAttempts;$pdo->fixtureFailures=1;$pdo->fixtureCode=1452;
+try {plan_events_set_hifz($pdo,1,'student-1',$current['id'],'ce-no-retry-integrity',2,'complete','2026-10-16',null,'fixture');throw new RuntimeException('unrelated integrity error hidden');}
+catch(PDOException $error) {check((int)$error->errorInfo[1]===1452,'unrelated integrity failure remains explicit');}
+check($pdo->fixtureAttempts-$beforeAttempts===1&&!$pdo->inTransaction(),'unrelated SQL failures are never silently retried');
 // The enclosing grade write must roll back when a later segment cannot save.
 $pdo=completionSeed();$pdo->exec("UPDATE education_plans SET track='silver' WHERE id='current'");
 $current=completionAssign($pdo,'student-1','current','old','ce-atomic-assign');$raw=completionRaw($pdo,'student-1');

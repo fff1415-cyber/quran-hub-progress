@@ -77,5 +77,5 @@ const pairs=[
     "plan_events_hifz_counts($pdo, $cid, $assignment + ['student_id' => $studentId]);"
   ]
 ];
-function withoutCompletionCurrentReads(code){for(const [from,to] of pairs){if(!code.includes(from))continue;assert.equal(code.split(from).length,2,'only exact current-read hooks may be normalized');code=code.replace(from,to);}return code;}
+function withoutCompletionCurrentReads(code){code=require('./completion-retry-scope-support.cjs').withoutCompletionRetry(code);for(const [from,to] of pairs){if(!code.includes(from))continue;assert.equal(code.split(from).length,2,'only exact current-read hooks may be normalized');code=code.replace(from,to);}return code;}
 module.exports={withoutCompletionCurrentReads,pairs};

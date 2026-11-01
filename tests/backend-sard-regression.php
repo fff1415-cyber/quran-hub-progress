@@ -44,7 +44,8 @@ function expectFailure(callable $fn, string $contains): void {
     throw new RuntimeException('Expected rejection: ' . $contains);
 }
 function seed(): TestDatabase {
-    $pdo = new TestDatabase();$GLOBALS['pdo'] = $pdo;$GLOBALS['uuid']=0;
+    $fixtureClass = $GLOBALS['completionDatabaseClass'] ?? TestDatabase::class;
+    $pdo = new $fixtureClass();$GLOBALS['pdo'] = $pdo;$GLOBALS['uuid']=0;
     $GLOBALS['auth']=['role'=>'musammi','accountId'=>'staff-1','complexId'=>1,'name'=>'test'];
     $GLOBALS['input']=['student_id'=>'student-1','plan_id'=>'next','expected_assignment_id'=>'old','plan_start_date'=>'2026-10-13','sard_result'=>['id'=>'sq-1','percent'=>90,'phase'=>'full']];
     $pdo->exec('CREATE TABLE students(id TEXT PRIMARY KEY, complex_id INTEGER, phase_number INTEGER, level TEXT); INSERT INTO students(id,complex_id,phase_number,level) VALUES ("student-1",1,1,"1")');
