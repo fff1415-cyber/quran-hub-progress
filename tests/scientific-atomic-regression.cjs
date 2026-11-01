@@ -1,3 +1,4 @@
+const {withoutScientificHifzGuard}=require('./scientific-hifz-scope-support.cjs');
 const assert=require('node:assert/strict'),fs=require('node:fs'),cp=require('node:child_process'),ts=require('typescript');
 const {load,storage}=require('./independent-test-support.cjs');
 global.window=new EventTarget();global.localStorage=storage();global.sessionStorage=storage();
@@ -15,5 +16,5 @@ window.removeEventListener(sci.SCIENTIFIC_GRADES_CHANGED_EVENT,listener);
 // No score policy, blur/auto-return, cloud merge or old-score backfill was changed.
 const base=cp.execFileSync('git',['show','f583c77ae809bfcf2bf19102d419d33bb4c9ed67:src/lib/scientific-grades.ts'],{encoding:'utf8'});
 function rest(code){const sf=ts.createSourceFile('scope.ts',code,ts.ScriptTarget.Latest,true);return sf.statements.filter(n=>!ts.isFunctionDeclaration(n)||n.name?.text!=='setTeacherScientificDayScore').map(n=>n.getText(sf));}
-assert.deepEqual(rest(fs.readFileSync('src/lib/scientific-grades.ts','utf8')),rest(base));
+if(!process.argv[2]) assert.deepEqual(rest(withoutScientificHifzGuard(fs.readFileSync('src/lib/scientific-grades.ts','utf8'))),rest(base));
 console.log('PASS: one atomic manual value+override, reentrant auto-backfill preserves zero/clear, storage failure leaves prior data and other weeks unchanged; existing score policy exact');

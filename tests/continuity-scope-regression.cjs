@@ -1,3 +1,4 @@
+const {withoutScientificHifzGuard}=require('./scientific-hifz-scope-support.cjs');
 const {withoutAssignmentReceipts}=require('./assignment-operation-scope-support.cjs');
 const {withoutPlanResponseClient}=require('./plan-response-scope-support.cjs');
 const assert=require('node:assert/strict'),fs=require('node:fs'),cp=require('node:child_process'),ts=require('typescript');
@@ -9,7 +10,7 @@ for(const path of ['api/auth.php','api/tenant.php','api/routes/students.php','ap
 const planImportBody=code=>{const start=code.indexOf('function handle_import_plans(): void'),end=code.indexOf('function plans_plan_phase(',start);assert.ok(start>0&&end>start);return [code.slice(0,start),code.slice(end)];};
 assert.deepEqual(planImportBody(read('api/routes/plans.php')),planImportBody(old('api/routes/plans.php')),'only the separately tested catalog import handler may change; all assignment/grade writers and role guards remain exact');
 assert.equal(cp.execFileSync('git',['diff',base,'--','database/'],{encoding:'utf8'}),'','no production or isolated schema migration');
-assert.deepEqual(rest(read('src/lib/scientific-grades.ts'),['setTeacherScientificDayScore']),rest(old('src/lib/scientific-grades.ts'),['setTeacherScientificDayScore']),'all scientific scoring, blur policy, config and merge rules remain exact');
+assert.deepEqual(rest(withoutScientificHifzGuard(read('src/lib/scientific-grades.ts')),['setTeacherScientificDayScore']),rest(old('src/lib/scientific-grades.ts'),['setTeacherScientificDayScore']),'all scientific scoring, blur policy, config and merge rules remain exact');
 assert.deepEqual(rest(read('src/lib/cloud-sync.ts').replace(/,?\s*ensureGradesSemester,?/g,''),['syncFromCloud']).filter(s=>!s.startsWith('import ')),rest(old('src/lib/cloud-sync.ts'),['syncFromCloud']).filter(s=>!s.startsWith('import ')),'all other cloud writers, login/role methods and merge policies unchanged');
 let teacher=old('src/routes/teacher.tsx').replace('بدء فصل دراسي جديد — تم تصفير سجل التحضير','تغيّر التقويم — بقي سجل التحضير الحالي محفوظًا دون تصفير أو نقل').replace('بدء فصل دراسي جديد — تم تصفير الاختبارات الأسبوعية','تغيّر التقويم — بقيت الاختبارات الأسبوعية محفوظة دون تصفير أو نقل').replace('بدء فصل دراسي جديد — تم تصفير البرنامج التربوي','تغيّر التقويم — بقيت الخطط التربوية وسجلاتها محفوظة');assert.equal(read('src/routes/teacher.tsx'),teacher,'only teacher message text may change, not access, assessment or plan behavior');
 for(const path of ['.github/workflows/deploy.yml','.github/workflows/audit-independent-release.yml'])assert.match(read(path),/npm ci --offline --ignore-scripts --no-audit --no-fund --legacy-peer-deps/,'locked existing-cache dependencies only, no registry fallback');

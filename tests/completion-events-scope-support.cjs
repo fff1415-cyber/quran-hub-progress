@@ -1,5 +1,6 @@
 const assert=require('node:assert/strict');
 function withoutCompletionProtocolPhp(code){
+ code=require('./completion-readers-scope-support.cjs').withoutCompletionReaderHooks(code);
  const include="require_once __DIR__ . '/../lib/plan-completion-events.php';\n\n";
  if(!code.includes(include))return code;
  assert.equal(code.split(include).length-1,1);

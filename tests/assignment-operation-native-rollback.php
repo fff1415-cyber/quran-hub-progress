@@ -28,5 +28,10 @@ handle_assign_plan();check($GLOBALS['response']['assignment_id']===$result['assi
 
 if (plans_table_exists($pdo,'plan_completion_events')) {
  $case=$pdo->query("SELECT a.*,p.track,p.level_number,p.title FROM student_plan_assignments a JOIN education_plans p ON p.id=a.plan_id WHERE a.student_id='ce-race-S' AND a.status='active'")->fetch();
- if ($case) { $read=plan_events_read($pdo,1,$case);check(count($read)===1&&$read[0]['source']['kind']==='event','compatible API retains the assignment-event data reader and its real current source'); }
+ if ($case) {
+  $read=plan_events_read($pdo,1,$case);check(count($read)===1&&$read[0]['source']['kind']==='event','compatible API retains the assignment-event data reader and its real current source');
+  $_GET=['student_id'=>$case['student_id']];handle_student_plan_sheet();
+  $hifz=array_values(array_filter($GLOBALS['response']['completions'],static fn($row)=>$row['task_type']==='hifz'));
+  check(count($hifz)===1&&(int)$hifz[0]['segment_index']===1&&($hifz[0]['source']['kind']??null)==='event','candidate and compatible public sheet both display the new event instead of the old second-segment slot');
+ }
 }

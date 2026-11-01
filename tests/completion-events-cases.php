@@ -24,10 +24,34 @@ function completionAssign(PDO $pdo,string $student,string $plan,string $expected
     $GLOBALS['input']=['student_id'=>$student,'plan_id'=>$plan,'start_segment_index'=>$start,'expected_assignment_id'=>$expected,'operation_id'=>$operation];
     handle_assign_plan();return completionAssignment($pdo,$GLOBALS['response']['assignment_id']);
 }
+function completionSheetCases(PDO $pdo, array $assignment, array $indexes): void
+{
+    $GLOBALS['pdo'] = $pdo;
+    $before = completionRaw($pdo, $assignment['student_id']);
+    $original = $GLOBALS['auth'];
+    foreach (['teacher', 'assistant', 'student', 'parent', 'supervisor', 'manager', 'musammi', 'secretary'] as $role) {
+        $GLOBALS['auth'] = ['role'=>$role,'complexId'=>1,'studentId'=>$assignment['student_id'],'halaqaId'=>7,'name'=>'fixture'];
+        $_GET = ['student_id'=>$assignment['student_id']];
+        handle_student_plan_sheet();
+        $rows = array_values(array_filter($GLOBALS['response']['completions'], static fn ($row) => $row['task_type'] === 'hifz'));
+        check(array_map('intval', array_column($rows, 'segment_index')) === $indexes, 'actual '.$role.' sheet reads the same current-assignment hifz records');
+        foreach ($rows as $row) check(($row['source']['kind'] ?? null) === 'event' && isset($row['source']['event_id']) && !isset($row['source']['reference_json']), 'sheet exposes exact target identity without opaque grade/source payload');
+    }
+    $GLOBALS['auth'] = ['role'=>'parent','complexId'=>1,'studentId'=>'another-fixture-student'];
+    completionFailure(fn()=>handle_student_plan_sheet(), 'Forbidden');
+    $GLOBALS['auth'] = ['role'=>'teacher','complexId'=>1,'halaqaId'=>8];
+    completionFailure(fn()=>handle_student_plan_sheet(), 'حلقة أخرى');
+    $GLOBALS['auth'] = ['role'=>'supervisor','complexId'=>2];
+    completionFailure(fn()=>handle_student_plan_sheet(), 'Forbidden');
+    $GLOBALS['auth'] = $original;
+    check(completionRaw($pdo, $assignment['student_id']) === $before, 'actual sheet reads never rewrite legacy completion sources');
+}
 function completionEventCases(PDO $pdo,string $student,string $plan,string $oldId,string $prefix):void
 {
     $old=completionAssignment($pdo,$oldId);$initial=completionRaw($pdo,$student);
     check(count(completionRows($pdo,$old))===2&&!plan_events_strict_assignment($pdo,$old),'pre-cutover assignment keeps its exact existing progress and legacy mode');
+    check(plan_events_hifz_counts($pdo,1,$old)===['total'=>2,'done'=>2], 'existing assignment count retains its current legacy view without new links');
+    check(plan_events_hifz_counts($pdo,1,array_replace($old,['start_segment_index'=>999]))===['total'=>0,'done'=>0], 'a nonexistent start cannot count a complete plan, matching the existing frontend progress predicate');
     $legacy=plan_events_read($pdo,1,$old);check(count(array_filter($legacy,static fn($row)=>$row['source']['kind']==='legacy_unassigned'))===1,'unassigned legacy provenance stays explicit and is never silently rebound');
     $current=completionAssign($pdo,$student,$plan,$oldId,$prefix.'-assignment');
     $future=(new DateTimeImmutable((string)$current['assigned_at']))->modify('+1 day')->format('Y-m-d H:i:s');
@@ -41,6 +65,8 @@ function completionEventCases(PDO $pdo,string $student,string $plan,string $oldI
     $source=['semester_id'=>'fixture-semester','day_date'=>'2026-10-15','unknown_zero'=>0,'unknown_null'=>null];
     $first=plan_events_apply($pdo,1,$student,$current['id'],$prefix.'-first','hifz','one','2026-10-15','fixture',$source);
     check($first['applied_segments']===[1]&&count($first['event_ids'])===1,'gold one records exactly the first current-assignment segment');
+    check(plan_events_hifz_counts($pdo,1,$current)===['total'=>2,'done'=>1], 'shared completion counts use the actual new event, not the historical unique slot');
+    completionSheetCases($pdo,$current,[1]);
     $oldQuery=$pdo->prepare('SELECT segment_index FROM segment_completions WHERE student_id=? AND plan_id=? AND (assignment_id=? OR (assignment_id IS NULL AND created_at>=?))');
     $oldQuery->execute([$student,$plan,$current['id'],$current['assigned_at']]);
     check(array_map('intval',array_column($oldQuery->fetchAll(),'segment_index'))===[2]&&array_map('intval',array_column(completionRows($pdo,$current),'segment_index'))===[1],'negative control: the old reader identifies the wrong segment even when both percentages would be 50%; a future deployment must retain the event reader');
@@ -56,6 +82,8 @@ function completionEventCases(PDO $pdo,string $student,string $plan,string $oldI
     $cancel=[['segment_index'=>1,'event_id'=>$first['event_ids'][0]]];
     $removed=plan_events_revoke($pdo,1,$student,$current['id'],$prefix.'-cancel',$cancel,'fixture');
     check($removed['removed']===1&&count(completionRows($pdo,$current))===1&&count(completionRows($pdo,$current,'rabt'))===1,'cancellation reverses the exact hifz event without deleting independent rabt');
+    check(plan_events_hifz_counts($pdo,1,$current)===['total'=>2,'done'=>1], 'independent rabt completion cannot satisfy a missing hifz segment');
+    completionSheetCases($pdo,$current,[2]);
     $redo=plan_events_apply($pdo,1,$student,$current['id'],$prefix.'-redo','hifz','one','2026-10-17','fixture');
     completionFailure(fn()=>plan_events_revoke($pdo,1,$student,$current['id'],$prefix.'-stale-cancel',$cancel,'fixture'),'إنجاز أحدث');
     check(count(completionRows($pdo,$current))===2,'stale source identity cannot cancel the replacement event');
@@ -71,6 +99,8 @@ function completionEventCases(PDO $pdo,string $student,string $plan,string $oldI
     check(completionRows($pdo,$next)===[]&&count(completionRows($pdo,$current))===1,'a previous-assignment edit neither changes the new plan nor destroys its old history');
     $middle=plan_events_apply($pdo,1,$student,$next['id'],$prefix.'-middle','hifz','one','2026-10-18','fixture');
     check($middle['applied_segments']===[2],'a real middle start retains the existing segment-range policy');
+    check(plan_events_hifz_counts($pdo,1,$next)===['total'=>1,'done'=>1], 'middle-start completion denominator and numerator use the same assigned range');
+    completionSheetCases($pdo,$next,[2]);
     $replayed=plan_events_apply($pdo,1,$student,$current['id'],$prefix.'-first','hifz','one','2026-10-15','fixture',$source);
     check($replayed['event_ids']===$first['event_ids']&&count(completionRows($pdo,$next))===1,'known earlier-operation replay is read-only even after a new assignment');
     check(completionRaw($pdo,$student)===$raw,'same-plan repetition never rewrites a historical unique completion slot');

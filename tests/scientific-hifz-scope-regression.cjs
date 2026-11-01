@@ -1,0 +1,15 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const cp = require('node:child_process');
+const { withoutScientificHifzGuard } = require('./scientific-hifz-scope-support.cjs');
+const base = '26c16bfe3cea9df88e52ff76c1b2dc827ade2b0e';
+const path = 'src/lib/scientific-grades.ts';
+const old = cp.execFileSync('git', ['show', base + ':' + path], { encoding: 'utf8' });
+const current = fs.readFileSync(path, 'utf8');
+assert.notEqual(current, old);
+assert.equal(withoutScientificHifzGuard(current), old, 'only the exact validity/retention guards change; every other scientific calculation, stored format, merge, policy and writer remains literal');
+assert.deepEqual(cp.execFileSync('git', ['diff', '--name-only', base, '--', 'api/', 'src/', 'database/', 'package.json', 'package-lock.json', 'bun.lock'], { encoding: 'utf8' }).trim().split('\n'), ['api/lib/plan-completion-events.php','api/routes/plans.php','src/lib/plan-assignment-requests.ts','src/lib/plans-service.ts',path], 'only separately guarded assignment/event data helpers, no unrelated API, schema, permission, dependency, plan or unrelated application changes');
+assert.match(current, /return value === "half" \|\| value === "one" \|\| value === "two";/, 'accepted hifz values stay the current DayEntry enum');
+const workflow = fs.readFileSync('.github/workflows/audit-independent-release.yml', 'utf8');
+assert.match(workflow, /npm ci --offline --ignore-scripts --no-audit --no-fund --legacy-peer-deps/);
+console.log('PASS: exact scientific hifz validity and historical retention guards only; no new weights, thresholds, attempts, permissions or database changes');

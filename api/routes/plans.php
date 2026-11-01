@@ -868,6 +868,7 @@ function handle_assign_plan(): void
             $complete = $pdo->prepare("SELECT COUNT(*) AS total, SUM(EXISTS(SELECT 1 FROM segment_completions c WHERE c.student_id = ? AND c.plan_id = s.plan_id AND c.segment_index = s.segment_index AND c.task_type = 'hifz' AND (c.assignment_id = ? OR (c.assignment_id IS NULL AND c.created_at >= ?)))) AS done FROM plan_segments s WHERE s.plan_id = ? AND s.segment_index >= ?");
             $complete->execute([$studentId, $current['id'], $current['assigned_at'], $current['plan_id'], $current['start_segment_index']]);
             $counts = $complete->fetch();
+            if (plan_events_tables_ready($pdo)) $counts = plan_events_hifz_counts($pdo, $cid, $current);
             if ((int) $counts['total'] === 0 || (int) $counts['total'] !== (int) $counts['done']) {
                 throw new RuntimeException('لم يكتمل حفظ الخطة الحالية');
             }
@@ -1141,7 +1142,7 @@ function handle_student_plan_sheet(): void
             'assignment' => assignment_row($assignment),
             'plan' => $plan ? plan_row($plan) : null,
             'segments' => array_map('segment_row', $segStmt->fetchAll()),
-            'completions' => array_map('completion_row', $compStmt->fetchAll()),
+            'completions' => plan_events_sheet_rows($pdo, $cid, $assignment, $compStmt->fetchAll()),
         ]);
     } catch (PDOException $e) {
         plans_abort_with_sql_error($pdo, $e, 'ورقة خطة الطالب');
@@ -1522,6 +1523,7 @@ function handle_supervisor_plan_hifz(): void
         );
         $doneStmt->execute([$studentId, $assignmentId, $assignment['assigned_at'], $assignment['plan_id'], $assignment['start_segment_index']]);
         $counts = $doneStmt->fetch();
+        if (plan_events_tables_ready($pdo)) $counts = plan_events_hifz_counts($pdo, $cid, $assignment + ['student_id' => $studentId]);
         $isComplete = (int) ($counts['total'] ?? 0) > 0 && (int) $counts['total'] === (int) ($counts['done'] ?? 0);
         if (!$isComplete && $queueIndex !== null && ($queue[$queueIndex]['status'] ?? '') === 'plan_completed') {
             $queue[$queueIndex]['status'] = 'archived';

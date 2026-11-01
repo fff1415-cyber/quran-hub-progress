@@ -14,6 +14,7 @@ function completionNativeCases(PDO $pdo):void
 {
     $pdo->exec(file_get_contents(__DIR__.'/fixtures/plan-completion-events.sql'));
     $pdo->exec('ALTER TABLE segment_completions ADD COLUMN fixture_extra LONGTEXT NULL');
+    $pdo->exec('ALTER TABLE students ADD COLUMN halaqa_id INT DEFAULT 7');
     [$student,$old]=completionNativeSeed($pdo,'main');completionEventCases($pdo,$student,'P',$old,'ce-main');
     [$student,$old]=completionNativeSeed($pdo,'legacy');completionLegacyCases($pdo,$student,$old,'ce-old');
     [$student,$old]=completionNativeSeed($pdo,'atomic');$current=completionAssign($pdo,$student,'P',$old,'ce-atomic-assignment');$raw=completionRaw($pdo,$student);

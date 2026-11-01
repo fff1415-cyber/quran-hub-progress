@@ -5,6 +5,14 @@ require __DIR__.'/assignment-operation-cases.php';
 require __DIR__.'/completion-events-cases.php';
 function completionSeed():PDO {
     $pdo=seed();
+    $pdo->exec('ALTER TABLE students ADD COLUMN halaqa_id INTEGER DEFAULT 7');
+    $pdo->exec("ALTER TABLE education_plans ADD COLUMN segment_count INTEGER DEFAULT 2;
+      ALTER TABLE education_plans ADD COLUMN created_at TEXT DEFAULT '2026-10-01';
+      ALTER TABLE plan_segments ADD COLUMN id TEXT;
+      ALTER TABLE plan_segments ADD COLUMN hifz_plan TEXT DEFAULT 'h';
+      ALTER TABLE plan_segments ADD COLUMN rabt_plan TEXT DEFAULT 'r';
+      ALTER TABLE plan_segments ADD COLUMN muraja_plan TEXT DEFAULT 'm';
+      UPDATE plan_segments SET id='segment-'||rowid;");
     $pdo->exec("ALTER TABLE segment_completions ADD COLUMN id TEXT;
       ALTER TABLE segment_completions ADD COLUMN completed_at TEXT DEFAULT '2026-10-02';
       ALTER TABLE segment_completions ADD COLUMN recorded_by TEXT DEFAULT 'original';

@@ -120,6 +120,32 @@ function plan_events_segments(PDO $pdo, array $assignment): array
     return array_map('intval', array_column($query->fetchAll(), 'segment_index'));
 }
 
+/** Same eligible hifz range for the sheet and the two existing completion gates. */
+function plan_events_hifz_counts(PDO $pdo, int $contextId, array $assignment): array
+{
+    $segments = plan_events_segments($pdo, $assignment);
+    $start = (int) $assignment['start_segment_index'];
+    $eligible = in_array($start, $segments, true)
+        ? array_values(array_filter($segments, static fn (int $index): bool => $index >= $start)) : [];
+    $done = [];
+    foreach (plan_events_read($pdo, $contextId, $assignment) as $envelope) {
+        $row = $envelope['completion'];
+        if ($row['task_type'] === 'hifz') $done[(int) $row['segment_index']] = true;
+    }
+    return ['total' => count($eligible), 'done' => count(array_filter($eligible, static fn (int $index): bool => isset($done[$index])))];
+}
+
+/** Keep the existing wire fields; expose only identities needed to target a later exact edit. */
+function plan_events_sheet_rows(PDO $pdo, int $contextId, array $assignment, array $legacyRows): array
+{
+    if (!plan_events_tables_ready($pdo)) return array_map('completion_row', $legacyRows);
+    return array_map(static function (array $envelope): array {
+        return completion_row($envelope['completion']) + [
+            'source' => array_intersect_key($envelope['source'], array_flip(['kind', 'event_id', 'record_id', 'operation_id'])),
+        ];
+    }, plan_events_read($pdo, $contextId, $assignment));
+}
+
 /** This function aborts the whole caller transaction on failure, including a composed grade write. */
 function plan_events_execute(PDO $pdo, int $contextId, string $studentId, string $assignmentId, string $operationId, string $kind, array $payload, callable $write): array
 {

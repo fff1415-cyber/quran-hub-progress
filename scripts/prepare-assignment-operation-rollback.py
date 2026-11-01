@@ -11,7 +11,7 @@ import tarfile
 import tempfile
 import zipfile
 
-BASE='26c16bfe3cea9df88e52ff76c1b2dc827ade2b0e'
+BASE='ca3d341abc3d63e4c4110cef3c65bb51cf4c3c0e'
 root=pathlib.Path.cwd();output=root/'dist/assignment-operation-compatible-rollback';output.mkdir(parents=True,exist_ok=True)
 source=(root/'api/routes/plans.php').read_text();start=source.index('function plans_operation_payload(');end=source.index('function handle_assign_plan()',start)
 routines=(root/'tests/fixtures/assignment-receipt-fallback.php').read_text().removeprefix('<?php\n')
@@ -32,6 +32,7 @@ with tempfile.TemporaryDirectory() as temporary:
     (folder/'node_modules').symlink_to((root/'node_modules').resolve(),target_is_directory=True)
     for name in ['assignment-operation-client-regression.cjs','plan-server-confirmation.cjs']:
         subprocess.run(['node',str(root/'tests'/name)],cwd=folder,check=True)
+    subprocess.run(['node',str(root/'tests/scientific-hifz-regression.cjs'),str(folder/'src/lib/scientific-grades.ts')],cwd=root,check=True)
     with tempfile.TemporaryFile(mode='w+') as log:
         result=subprocess.run(['npm','run','build:hostinger'],cwd=folder,stdout=log,stderr=subprocess.STDOUT)
         if result.returncode:log.seek(0);print(log.read()[-4000:]);raise SystemExit('Compatible assignment package build failed')
