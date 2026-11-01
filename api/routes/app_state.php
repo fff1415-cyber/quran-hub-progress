@@ -362,6 +362,11 @@ function handle_set_app_state(): void
         error_response('Missing key');
     }
 
+    if (array_key_exists('grade_write_protocol', $input)
+        && in_array($key, ['grades', 'weekly_tests', 'scientific_grades'], true)) {
+        error_response('نسخة الخادم لا تدعم طريقة حفظ الدرجات المطلوبة؛ لم تتغير السجلات. حدّث الصفحة قبل إعادة المحاولة.', 503);
+    }
+
     $pdo = db();
     if ($key === 'sard_queue') {
         if (!empty($input['value']['removals']) && $role !== 'manager') error_response('المدير فقط يمكنه إزالة الطلب', 403);
