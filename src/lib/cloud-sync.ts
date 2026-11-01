@@ -584,16 +584,19 @@ let scientificPushQueue: Promise<import("./scientific-grades").ScientificGradesS
 export async function pushMergedScientificGrades(
   local: import("./scientific-grades").ScientificGradesStore,
 ): Promise<import("./scientific-grades").ScientificGradesStore> {
+  const submitted = JSON.stringify(local);
   const run = async (): Promise<import("./scientific-grades").ScientificGradesStore> => {
-    const { mergeScientificGradesStores, saveScientificGradesStore } = await import("./scientific-grades");
+    const { mergeScientificGradesStores, saveScientificGradesStore, loadScientificGradesStore } = await import("./scientific-grades");
     let cloud: import("./scientific-grades").ScientificGradesStore = { configs: {}, data: {}, overrides: {} };
     try {
       cloud = await fetchCloudScientificGrades();
     } catch {
       cloud = { configs: {}, data: {}, overrides: {} };
     }
-    const merged = mergeScientificGradesStores(cloud, local);
+    const merged = mergeScientificGradesStores(cloud, JSON.parse(submitted) as typeof local);
     await secureSetAppState({ data: { token: tokenOrThrow(), key: "scientific_grades", value: merged } });
+    // A later local edit is still in progress; this ACK belongs only to the submitted snapshot.
+    if (JSON.stringify(loadScientificGradesStore()) !== submitted) return merged;
     const prev = sessionStorage.getItem("qs_syncing");
     sessionStorage.setItem("qs_syncing", "1");
     try {
