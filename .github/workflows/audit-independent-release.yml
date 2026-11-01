@@ -54,7 +54,7 @@ jobs:
           php tests/backend-grade-protocol-floor.php
           python3 tests/grade-protocol-floor-negative.py
       - name: TypeScript regression against the exact published source
-        if: github.head_ref == 'fix/audit-safe-preserve-current-work' || github.head_ref == 'fix/audit-safe-explicit-scientific-clear' || github.head_ref == 'fix/audit-safe-catalog-noop' || github.head_ref == 'fix/audit-safe-sard-confirmation' || github.head_ref == 'fix/audit-safe-plan-response-cache' || github.head_ref == 'fix/audit-safe-scientific-hifz' || github.head_ref == 'fix/audit-safe-existing-grade-lock' || github.head_ref == 'fix/audit-safe-grade-protocol-floor'
+        if: github.head_ref == 'fix/audit-safe-preserve-current-work' || github.head_ref == 'fix/audit-safe-explicit-scientific-clear' || github.head_ref == 'fix/audit-safe-catalog-noop' || github.head_ref == 'fix/audit-safe-sard-confirmation' || github.head_ref == 'fix/audit-safe-plan-response-cache' || github.head_ref == 'fix/audit-safe-scientific-hifz' || github.head_ref == 'fix/audit-safe-existing-grade-lock' || github.head_ref == 'fix/audit-safe-grade-protocol-floor' || github.head_ref == 'fix/audit-safe-scientific-response'
         run: python3 tests/type-baseline-regression.py
       - name: Actual Hostinger package build without deployment
         run: npm run build:hostinger
@@ -183,6 +183,17 @@ jobs:
         with:
           name: grade-protocol-floor-compatible-rollback
           path: dist/grade-protocol-floor-compatible-rollback/
+          retention-days: 30
+      - name: Verify compatible frontend that retains newer scientific drafts
+        if: github.head_ref == 'fix/audit-safe-scientific-response'
+        env:
+          AUDIT_FEATURE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: python3 scripts/prepare-scientific-response-rollback.py
+      - uses: actions/upload-artifact@v4
+        if: github.head_ref == 'fix/audit-safe-scientific-response'
+        with:
+          name: scientific-response-compatible-rollback
+          path: dist/scientific-response-compatible-rollback/
           retention-days: 30
   database-concurrency:
     if: github.head_ref == 'fix/audit-independent-release-2' || github.head_ref == 'fix/audit-plan-safeguards' || startsWith(github.head_ref, 'fix/audit-safe-')
