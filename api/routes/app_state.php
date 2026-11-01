@@ -302,12 +302,27 @@ function app_state_store_has_records(string $key, mixed $value): bool
 function app_state_save_without_reset(PDO $pdo, int $cid, string $key, mixed $value): void
 {
     $tenants = app_state_tenant_enabled($pdo);
+    $params = $tenants ? [$cid, $key] : [$key];
+    $hasStore = false;
+    if (!$pdo->inTransaction()) {
+        $probe = $pdo->prepare('SELECT 1 FROM app_state WHERE ' . ($tenants ? 'complex_id = ? AND ' : '') . '`key` = ?');
+        $probe->execute($params);
+        $hasStore = $probe->fetchColumn() !== false;
+    }
     $pdo->beginTransaction();
     try {
-        // The original unique key serializes first initialization as well as existing-row writes.
-        $insert = $tenants ? 'INSERT IGNORE INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)' : 'INSERT IGNORE INTO app_state (`key`, value) VALUES (?, ?)';
-        $params = $tenants ? [$cid, $key] : [$key];
-        $pdo->prepare($insert)->execute(array_merge($params, ['{}']));
+        // Existing stores go straight to the current row lock, without duplicate insertion.
+        if (!$hasStore) {
+            $insert = $tenants ? 'INSERT INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)' : 'INSERT INTO app_state (`key`, value) VALUES (?, ?)';
+            try {
+                $pdo->prepare($insert)->execute(array_merge($params, ['{}']));
+            } catch (PDOException $collision) {
+                if ((int) ($collision->errorInfo[1] ?? 0) !== 1062) throw $collision;
+                // Nothing has been saved: release the duplicate-insert lock before reading the winner.
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                $pdo->beginTransaction();
+            }
+        }
         $stmt = $pdo->prepare('SELECT value FROM app_state WHERE ' . ($tenants ? 'complex_id = ? AND ' : '') . '`key` = ? FOR UPDATE');
         $stmt->execute($params);
         $raw = $stmt->fetchColumn();

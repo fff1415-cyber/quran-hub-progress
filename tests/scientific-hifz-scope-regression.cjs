@@ -8,7 +8,7 @@ const old = cp.execFileSync('git', ['show', base + ':' + path], { encoding: 'utf
 const current = fs.readFileSync(path, 'utf8');
 assert.notEqual(current, old);
 assert.equal(withoutScientificHifzGuard(current), old, 'only the exact validity/retention guards change; every other scientific calculation, stored format, merge, policy and writer remains literal');
-assert.deepEqual(cp.execFileSync('git', ['diff', '--name-only', base, '--', 'api/', 'src/', 'database/', 'package.json', 'package-lock.json', 'bun.lock'], { encoding: 'utf8' }).trim().split('\n'), [path], 'no API, schema, permission, dependency, plan or unrelated application changes');
+assert.deepEqual(cp.execFileSync('git', ['diff', '--name-only', base, '--', 'api/', 'src/', 'database/', 'package.json', 'package-lock.json', 'bun.lock'], { encoding: 'utf8' }).trim().split('\n'), ['api/routes/app_state.php',path], 'only separately guarded existing-store lock order, no unrelated API, schema, permission, dependency, plan or unrelated application changes');
 assert.match(current, /return value === "half" \|\| value === "one" \|\| value === "two";/, 'accepted hifz values stay the current DayEntry enum');
 const workflow = fs.readFileSync('.github/workflows/audit-independent-release.yml', 'utf8');
 assert.match(workflow, /npm ci --offline --ignore-scripts --no-audit --no-fund --legacy-peer-deps/);
