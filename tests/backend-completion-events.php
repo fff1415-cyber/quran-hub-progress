@@ -40,9 +40,11 @@ class RetryCompletionDatabase extends TestDatabase {
     public int $fixtureFailures=0;
     public int $fixtureAttempts=0;
     public int $fixtureCode=1020;
+    public bool $fixtureExpire=false;
     public function prepare(string $query,array $options=[]):PDOStatement|false {
         if ($query==='SELECT id FROM students WHERE id = ? FOR UPDATE') {
             $this->fixtureAttempts++;
+            if ($this->fixtureExpire) {$this->fixtureExpire=false;$this->rollBack();}
             if ($this->fixtureFailures>0) {
                 $this->fixtureFailures--;
                 $error=new PDOException('isolated completion read failure');$error->errorInfo=['HY000',$this->fixtureCode,'isolated completion read failure'];throw $error;
@@ -68,6 +70,9 @@ $beforeAttempts=$pdo->fixtureAttempts;$pdo->fixtureFailures=1;$pdo->fixtureCode=
 try {plan_events_set_hifz($pdo,1,'student-1',$current['id'],'ce-no-retry-integrity',2,'complete','2026-10-16',null,'fixture');throw new RuntimeException('unrelated integrity error hidden');}
 catch(PDOException $error) {check((int)$error->errorInfo[1]===1452,'unrelated integrity failure remains explicit');}
 check($pdo->fixtureAttempts-$beforeAttempts===1&&!$pdo->inTransaction(),'unrelated SQL failures are never silently retried');
+$pdo->fixtureFailures=0;$pdo->fixtureExpire=true;
+completionFailure(fn()=>plan_events_set_hifz($pdo,1,'student-1',$current['id'],'ce-expired-transaction',2,'complete','2026-10-16',null,'fixture'),'انتهت معاملة الحفظ');
+check((int)$pdo->query("SELECT COUNT(*) FROM plan_operation_receipts WHERE operation_id='ce-expired-transaction'")->fetchColumn()===0&&count(plan_events_history($pdo,1,$current))===1,'an expired transaction cannot commit a provisional receipt in autocommit mode');
 // The enclosing grade write must roll back when a later segment cannot save.
 $pdo=completionSeed();$pdo->exec("UPDATE education_plans SET track='silver' WHERE id='current'");
 $current=completionAssign($pdo,'student-1','current','old','ce-atomic-assign');$raw=completionRaw($pdo,'student-1');

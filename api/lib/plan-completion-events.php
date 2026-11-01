@@ -157,6 +157,7 @@ function plan_events_execute(PDO $pdo, int $contextId, string $studentId, string
         if (!plan_events_tables_ready($pdo)) throw new RuntimeException('مسار حفظ تاريخ الإنجاز غير مهيأ؛ لم يُغيّر سجل الطالب');
         $lock = $pdo->prepare('SELECT id FROM students WHERE id = ? FOR UPDATE');$lock->execute([$studentId]);
         if (!$lock->fetch()) throw new RuntimeException('الطالب غير موجود؛ لم يُنقل الإنجاز إلى حساب آخر');
+        if (!$pdo->inTransaction()) throw new RuntimeException('انتهت معاملة الحفظ قبل تثبيت الطلب؛ لم يُحفظ جزء منه. أعد المحاولة بالعملية كاملة',409);
         $hash = hash('sha256', json_encode(plans_operation_payload(['protocol' => 1, 'student_id' => $studentId, 'assignment_id' => $assignmentId, 'kind' => $kind, 'payload' => $payload]), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
         $query = $pdo->prepare('SELECT student_id, operation_kind, input_sha256, response_json FROM plan_operation_receipts WHERE context_id = ? AND operation_id = ? FOR UPDATE');
         $query->execute([$contextId, $operationId]);$existing = $query->fetch();

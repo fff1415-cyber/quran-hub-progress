@@ -24,17 +24,14 @@ function completionNativeCases(PDO $pdo):void
     $stale->query('SELECT COUNT(*) FROM plan_completion_heads')->fetchColumn();
     $written=plan_events_set_hifz($pdo,1,$student,$current['id'],'ce-snapshot-first',1,'complete','2026-10-15',null,'fixture');
     check(plan_events_read($stale,1,$current)===[], 'negative control: an established repeatable-read snapshot misses a later committed completion');
-    try {
-        check(count(plan_events_read($stale,1,$current,true))===1, 'current locked source read sees the confirmed event instead of the older snapshot');
-    } catch (PDOException $error) {
-        if ((int)($error->errorInfo[1]??0)!==1020) throw $error;
-        check(true, 'engine rejects the stale snapshot with explicit 1020 rather than returning an obsolete writable source');
-    }
+    // Exercise the locked read inside the kernel, which owns full rollback on 1020.
+    // A diagnostic statement that already aborted a transaction must not be reused as if it were intact.
     try {
         plan_events_set_hifz($stale,1,$student,$current['id'],'ce-snapshot-stale',1,'complete','2026-10-16',null,'fixture');
         throw new RuntimeException('stale source unexpectedly overwrote a newer event');
     } catch (RuntimeException $error) {
         if (!str_contains($error->getMessage(),'تغيّر مصدر الإنجاز') && !($error->getCode()===409 && $error->getPrevious() instanceof PDOException && (int)($error->getPrevious()->errorInfo[1]??0)===1020)) throw $error;
+        if ($error->getPrevious() instanceof PDOException) check((int)$error->getPrevious()->errorInfo[1]===1020, 'engine stale-snapshot refusal remains explicit and is rolled back inside the operation');
         check(true, 'old outer snapshot returns an explicit stale-source or engine-retry conflict');
     }
     completionFailure(fn()=>plan_events_set_hifz($stale,1,$student,$current['id'],'ce-snapshot-stale',1,'complete','2026-10-16',null,'fixture'),'تغيّر مصدر الإنجاز');
