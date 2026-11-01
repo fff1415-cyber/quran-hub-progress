@@ -1,5 +1,6 @@
 const assert = require('node:assert/strict');
 function withoutCompletionReaderHooks(code) {
+  code = require('./completion-current-reads-scope-support.cjs').withoutCompletionCurrentReads(code);
   const sheet = "            'completions' => plan_events_sheet_rows($pdo, $cid, $assignment, $compStmt->fetchAll()),";
   if (!code.includes(sheet)) return code;
   for (const [from, to] of [

@@ -29,9 +29,9 @@ function plan_events_register_assignment(PDO $pdo, string $studentId, string $as
 }
 
 /** Constant-time primary-key lookup. No dates, last assignments, names, or legacy rebindings. */
-function plan_events_strict_assignment(PDO $pdo, array $assignment): bool
+function plan_events_strict_assignment(PDO $pdo, array $assignment, bool $lock = false): bool
 {
-    $query=$pdo->prepare('SELECT student_id,operation_kind,input_sha256,response_json FROM plan_operation_receipts WHERE context_id=0 AND operation_id=?');
+    $query=$pdo->prepare('SELECT student_id,operation_kind,input_sha256,response_json FROM plan_operation_receipts WHERE context_id=0 AND operation_id=?'.($lock?' FOR UPDATE':''));
     $query->execute(['assignment-protocol:'.$assignment['id']]);$row=$query->fetch();
     if(!$row)return false;
     $response=json_decode((string)$row['response_json'],true,512,JSON_THROW_ON_ERROR);
@@ -69,10 +69,11 @@ function plan_events_head(PDO $pdo, int $contextId, array $assignment, string $t
 }
 
 /** Envelopes preserve original columns; legacy unassigned rows stay explicitly unassigned. */
-function plan_events_read(PDO $pdo, int $contextId, array $assignment): array
+function plan_events_read(PDO $pdo, int $contextId, array $assignment, bool $lock = false): array
 {
+    if ($lock && !$pdo->inTransaction()) throw new RuntimeException('قراءة مصدر التعديل تتطلب معاملة الحفظ نفسها');
     if (!plan_events_tables_ready($pdo)) throw new RuntimeException('مسار حفظ تاريخ الإنجاز غير مهيأ؛ لم يُصفّر تقدم الطالب');
-    $strict = plan_events_strict_assignment($pdo, $assignment);
+    $strict = plan_events_strict_assignment($pdo, $assignment, $lock);
     $sql = 'SELECT * FROM segment_completions WHERE student_id = ? AND plan_id = ? AND (assignment_id = ?';
     $parameters = [$assignment['student_id'], $assignment['plan_id'], $assignment['id']];
     if (!$strict) {
@@ -80,7 +81,7 @@ function plan_events_read(PDO $pdo, int $contextId, array $assignment): array
         $sql .= ' OR (assignment_id IS NULL AND created_at >= ?)';
         $parameters[] = $assignment['assigned_at'];
     }
-    $query = $pdo->prepare($sql . ') ORDER BY segment_index, task_type, id');
+    $query = $pdo->prepare($sql . ') ORDER BY segment_index, task_type, id'.($lock?' FOR UPDATE':''));
     $query->execute($parameters);
     $effective = [];
     foreach ($query->fetchAll() as $row) {
@@ -93,7 +94,7 @@ function plan_events_read(PDO $pdo, int $contextId, array $assignment): array
     }
     $query = $pdo->prepare('SELECT h.assignment_id AS head_assignment,h.task_type AS head_task,h.segment_index AS head_segment,
         h.is_completed AS head_completed,h.current_event_id,e.* FROM plan_completion_heads h
-        LEFT JOIN plan_completion_events e ON e.id=h.current_event_id WHERE h.assignment_id=? ORDER BY h.segment_index,h.task_type');
+        LEFT JOIN plan_completion_events e ON e.id=h.current_event_id WHERE h.assignment_id=? ORDER BY h.segment_index,h.task_type'.($lock?' FOR UPDATE':''));
     $query->execute([$assignment['id']]);
     foreach ($query->fetchAll() as $keyRow) {
         $task = (string) $keyRow['head_task'];$segment = (int) $keyRow['head_segment'];
@@ -113,22 +114,22 @@ function plan_events_read(PDO $pdo, int $contextId, array $assignment): array
     return array_values($effective);
 }
 
-function plan_events_segments(PDO $pdo, array $assignment): array
+function plan_events_segments(PDO $pdo, array $assignment, bool $lock = false): array
 {
-    $query = $pdo->prepare('SELECT segment_index FROM plan_segments WHERE plan_id = ? ORDER BY segment_index');
+    $query = $pdo->prepare('SELECT segment_index FROM plan_segments WHERE plan_id = ? ORDER BY segment_index'.($lock?' FOR UPDATE':''));
     $query->execute([$assignment['plan_id']]);
     return array_map('intval', array_column($query->fetchAll(), 'segment_index'));
 }
 
 /** Same eligible hifz range for the sheet and the two existing completion gates. */
-function plan_events_hifz_counts(PDO $pdo, int $contextId, array $assignment): array
+function plan_events_hifz_counts(PDO $pdo, int $contextId, array $assignment, bool $lock = false): array
 {
-    $segments = plan_events_segments($pdo, $assignment);
+    $segments = plan_events_segments($pdo, $assignment, $lock);
     $start = (int) $assignment['start_segment_index'];
     $eligible = in_array($start, $segments, true)
         ? array_values(array_filter($segments, static fn (int $index): bool => $index >= $start)) : [];
     $done = [];
-    foreach (plan_events_read($pdo, $contextId, $assignment) as $envelope) {
+    foreach (plan_events_read($pdo, $contextId, $assignment, $lock) as $envelope) {
         $row = $envelope['completion'];
         if ($row['task_type'] === 'hifz') $done[(int) $row['segment_index']] = true;
     }
@@ -210,7 +211,7 @@ function plan_events_apply(PDO $pdo, int $contextId, string $studentId, string $
     return plan_events_execute($pdo,$contextId,$studentId,$assignmentId,$operationId,'completion_apply',$payload,function(array $assignment) use($pdo,$contextId,$operationId,$task,$tap,$completedAt,$recorder,$source):array {
         $date = DateTimeImmutable::createFromFormat('!Y-m-d', $completedAt);
         if (!in_array($task,['hifz','rabt','muraja'],true) || !in_array($tap,['half','one','two'],true) || !$date || $date->format('Y-m-d') !== $completedAt) throw new RuntimeException('بيانات الإنجاز أو تاريخه غير صالحة');
-        $all = plan_events_segments($pdo,$assignment);$rows = array_column(plan_events_read($pdo,$contextId,$assignment),'completion');
+        $all = plan_events_segments($pdo,$assignment,true);$rows = array_column(plan_events_read($pdo,$contextId,$assignment,true),'completion');
         $done = static fn(string $type):array => array_map('intval',array_column(array_filter($rows,static fn($row)=>$row['task_type']===$type),'segment_index'));
         if ($task === 'hifz') {
             if(plans_segments_for_tap((string)$assignment['track'],$tap)<1)throw new RuntimeException('هذا الإدخال غير متاح لمسار الطالب');
@@ -230,7 +231,7 @@ function plan_events_apply(PDO $pdo, int $contextId, string $studentId, string $
 function plan_events_revoke(PDO $pdo, int $contextId, string $studentId, string $assignmentId, string $operationId, array $targets, string $recorder, mixed $source = null): array
 {
     return plan_events_execute($pdo,$contextId,$studentId,$assignmentId,$operationId,'completion_revoke',['targets'=>$targets,'source'=>$source],function(array $assignment) use($pdo,$contextId,$operationId,$targets,$recorder,$source):array {
-        $segments=plan_events_segments($pdo,$assignment);$ids=[];$removed=[];$seen=[];
+        $segments=plan_events_segments($pdo,$assignment,true);$ids=[];$removed=[];$seen=[];
         foreach($targets as $target){
             if(!is_array($target))throw new RuntimeException('مرجع إلغاء الحفظ غير صالح');
             $segment=filter_var($target['segment_index']??null,FILTER_VALIDATE_INT);$task=$target['task_type']??'hifz';
@@ -243,7 +244,7 @@ function plan_events_revoke(PDO $pdo, int $contextId, string $studentId, string 
                 if($head&&(int)$head['head_completed']===0&&$head['reverses_event_id']===$event)continue;
                 if(!$head||(int)$head['head_completed']!==1||$head['id']!==$event)throw new RuntimeException('تغيّر الإنجاز المراد إلغاؤه؛ لم يُمس إنجاز أحدث');
             }else{
-                $query=$pdo->prepare('SELECT * FROM segment_completions WHERE id=? AND student_id=? AND plan_id=? AND segment_index=? AND task_type=?');$query->execute([$legacy,$assignment['student_id'],$assignment['plan_id'],$segment,$task]);$row=$query->fetch();
+                $query=$pdo->prepare('SELECT * FROM segment_completions WHERE id=? AND student_id=? AND plan_id=? AND segment_index=? AND task_type=? FOR UPDATE');$query->execute([$legacy,$assignment['student_id'],$assignment['plan_id'],$segment,$task]);$row=$query->fetch();
                 if(!$row||$row['assignment_id']!==$assignment['id'])throw new RuntimeException('السجل القديم غير مربوط صراحة بهذا التعيين؛ يلزم إثبات مصدره دون التخمين');
                 if($head){$reference=json_decode((string)$head['source_reference_json'],true,512,JSON_THROW_ON_ERROR);if((int)$head['head_completed']===0&&($reference['legacy_completion_id']??null)===$legacy)continue;throw new RuntimeException('تغيّر الإنجاز المراد إلغاؤه؛ لم يُمس إنجاز أحدث');}
             }
@@ -260,7 +261,7 @@ function plan_events_set_hifz(PDO $pdo, int $contextId, string $studentId, strin
     return plan_events_execute($pdo,$contextId,$studentId,$assignmentId,$operationId,'completion_set',$payload,
         function (array $assignment) use ($pdo,$contextId,$operationId,$segment,$action,$completedAt,$expectedSource,$recorder,$source): array {
             if (!in_array($action,['complete','remove'],true) || $segment < (int)$assignment['start_segment_index']
-                || !in_array($segment,plan_events_segments($pdo,$assignment),true)) throw new RuntimeException('هذا اليوم خارج الخطة الحالية أو نوع التعديل غير صالح');
+                || !in_array($segment,plan_events_segments($pdo,$assignment,true),true)) throw new RuntimeException('هذا اليوم خارج الخطة الحالية أو نوع التعديل غير صالح');
             if ($action === 'complete') {
                 $date = DateTimeImmutable::createFromFormat('!Y-m-d', $completedAt ?? '');
                 if (!$date || $date->format('Y-m-d') !== $completedAt) throw new RuntimeException('تاريخ الإنجاز غير صالح');
@@ -271,7 +272,7 @@ function plan_events_set_hifz(PDO $pdo, int $contextId, string $studentId, strin
                 || (!isset($expectedSource['event_id']) && !isset($expectedSource['legacy_id']))
                 || !is_string(reset($expectedSource)) || reset($expectedSource) === '')) throw new RuntimeException('مرجع تعديل الحفظ غير صالح');
             $current = null;
-            foreach (plan_events_read($pdo,$contextId,$assignment) as $envelope) {
+            foreach (plan_events_read($pdo,$contextId,$assignment,true) as $envelope) {
                 if ($envelope['completion']['task_type'] === 'hifz' && (int)$envelope['completion']['segment_index'] === $segment) {
                     $current = $envelope;
                     break;

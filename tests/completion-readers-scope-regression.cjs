@@ -3,7 +3,7 @@ const { withoutCompletionReaderHooks } = require('./completion-readers-scope-sup
 const base = '67791fd6a12800e49a44421d5c38c121e3e13748';
 const old = path => cp.execFileSync('git', ['show', base + ':' + path], { encoding: 'utf8' });
 assert.equal(withoutCompletionReaderHooks(fs.readFileSync('api/routes/plans.php', 'utf8')), old('api/routes/plans.php'), 'all endpoint authorization, current-assignment checks, dates, writers, queue updates and completion policy remain literal');
-let helper = require('./completion-edits-scope-support.cjs').withoutCompletionEditData(fs.readFileSync('api/lib/plan-completion-events.php', 'utf8'));
+let helper = require('./completion-current-reads-scope-support.cjs').withoutCompletionCurrentReads(require('./completion-edits-scope-support.cjs').withoutCompletionEditData(fs.readFileSync('api/lib/plan-completion-events.php', 'utf8')));
 const start = helper.indexOf('/** Same eligible hifz range'), end = helper.indexOf('/** This function aborts', start);
 assert.ok(start > 0 && end > start);
 helper = helper.slice(0, start) + helper.slice(end);

@@ -19,18 +19,42 @@ function completionNativeCases(PDO $pdo):void
     [$student,$old]=completionNativeSeed($pdo,'main');completionEventCases($pdo,$student,'P',$old,'ce-main');
     [$student,$old]=completionNativeSeed($pdo,'legacy');completionLegacyCases($pdo,$student,$old,'ce-old');
     [$student,$old]=completionNativeSeed($pdo,'edit');completionEditCases($pdo,$student,'P',$old,'ce-native-edit');
+    [$student,$old]=completionNativeSeed($pdo,'snapshot');$current=completionAssign($pdo,$student,'P',$old,'ce-snapshot-assign');
+    $stale=connectFixture();$stale->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');$stale->beginTransaction();
+    $stale->query('SELECT COUNT(*) FROM plan_completion_heads')->fetchColumn();
+    $written=plan_events_set_hifz($pdo,1,$student,$current['id'],'ce-snapshot-first',1,'complete','2026-10-15',null,'fixture');
+    check(plan_events_read($stale,1,$current)===[], 'negative control: an established repeatable-read snapshot misses a later committed completion');
+    check(count(plan_events_read($stale,1,$current,true))===1, 'current locked source read sees the confirmed event instead of the older snapshot');
+    completionFailure(fn()=>plan_events_set_hifz($stale,1,$student,$current['id'],'ce-snapshot-stale',1,'complete','2026-10-16',null,'fixture'),'تغيّر مصدر الإنجاز');
+    check(!$stale->inTransaction()&&count(plan_events_history($pdo,1,$current))===1&&completionRows($pdo,$current)[0]['id']===$written['event_ids'][0], 'stale outer snapshot cannot overwrite a newer same-cell event or commit a second receipt');
     [$student,$old]=completionNativeSeed($pdo,'edit-race');$current=completionAssign($pdo,$student,'P',$old,'ce-edit-race-assign');$children=[];$results=[];
     for($i=0;$i<2;$i++) {
         $pid=pcntl_fork();if($pid===-1)throw new RuntimeException('fork unavailable');
         if($pid===0) {
             try {$GLOBALS['pdo']=connectFixture();plan_events_set_hifz($GLOBALS['pdo'],1,$student,$current['id'],'ce-edit-race-'.$i,1,'complete',$i===0?'2026-10-15':'2026-10-16',null,'fixture');exit(0);}
-            catch(Throwable $error) {exit(str_contains($error->getMessage(),'تغيّر مصدر الإنجاز')?2:1);}
+            catch(Throwable $error) {if(!str_contains($error->getMessage(),'تغيّر مصدر الإنجاز'))fwrite(STDERR,'Isolated manual race: '.get_class($error).' '.$error->getMessage()."\n");exit(str_contains($error->getMessage(),'تغيّر مصدر الإنجاز')?2:1);}
         }
         $children[]=$pid;
     }
     foreach($children as $pid) {pcntl_waitpid($pid,$status);check(pcntl_wifexited($status),'manual edit race exits cleanly');$results[]=pcntl_wexitstatus($status);}
     sort($results);$GLOBALS['pdo']=$pdo=connectFixture();
     check($results===[0,2]&&count(plan_events_history($pdo,1,$current))===1&&count(completionRows($pdo,$current))===1,'two different same-cell manual requests yield one confirmed event and one explicit conflict without lost writes');
+    [$student,$old]=completionNativeSeed($pdo,'apply-race');$current=completionAssign($pdo,$student,'P',$old,'ce-apply-race-assign');$children=[];
+    for($i=0;$i<2;$i++) {
+        $pid=pcntl_fork();if($pid===-1)throw new RuntimeException('fork unavailable');
+        if($pid===0) {
+            try {
+                $child=connectFixture();$child->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');$child->beginTransaction();
+                $child->query('SELECT COUNT(*) FROM plan_completion_heads')->fetchColumn();
+                $result=plan_events_apply($child,1,$student,$current['id'],'ce-distinct-tap-'.$i,'hifz','one','2026-10-15','fixture');
+                $child->commit();exit(count($result['applied_segments'])===1?0:1);
+            } catch(Throwable $error) {fwrite(STDERR,'Isolated tap race: '.get_class($error).' '.$error->getMessage()."\n");exit(1);}
+        }
+        $children[]=$pid;
+    }
+    foreach($children as $pid) {pcntl_waitpid($pid,$status);check(pcntl_wifexited($status)&&pcntl_wexitstatus($status)===0,'distinct concurrent taps commit from established outer snapshots');}
+    $GLOBALS['pdo']=$pdo=connectFixture();$segments=array_map('intval',array_column(plan_events_history($pdo,1,$current),'segment_index'));sort($segments);
+    check($segments===[1,2]&&count(completionRows($pdo,$current))===2,'current source reads select two different next segments instead of recording the first twice');
     [$student,$old]=completionNativeSeed($pdo,'edit-failure');$current=completionAssign($pdo,$student,'P',$old,'ce-edit-failure-assign');
     $pdo->exec('ALTER TABLE plan_completion_heads ADD CONSTRAINT fixture_manual_edit_head CHECK(assignment_id<>'.$pdo->quote($current['id']).')');
     $grade=$pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='grades'")->fetchColumn();
