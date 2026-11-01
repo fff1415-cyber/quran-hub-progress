@@ -304,13 +304,17 @@ function app_state_save_without_reset(PDO $pdo, int $cid, string $key, mixed $va
     $tenants = app_state_tenant_enabled($pdo);
     $pdo->beginTransaction();
     try {
-        // The original unique key serializes first initialization as well as existing-row writes.
-        $insert = $tenants ? 'INSERT IGNORE INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)' : 'INSERT IGNORE INTO app_state (`key`, value) VALUES (?, ?)';
+        // Lock an existing store before attempting any initialization.
         $params = $tenants ? [$cid, $key] : [$key];
-        $pdo->prepare($insert)->execute(array_merge($params, ['{}']));
         $stmt = $pdo->prepare('SELECT value FROM app_state WHERE ' . ($tenants ? 'complex_id = ? AND ' : '') . '`key` = ? FOR UPDATE');
         $stmt->execute($params);
         $raw = $stmt->fetchColumn();
+        if ($raw === false) {
+            $insert = $tenants ? 'INSERT IGNORE INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)' : 'INSERT IGNORE INTO app_state (`key`, value) VALUES (?, ?)';
+            $pdo->prepare($insert)->execute(array_merge($params, ['{}']));
+            $stmt->execute($params);
+            $raw = $stmt->fetchColumn();
+        }
         if ($raw === false) throw new RuntimeException('تعذّر تأكيد مخزن السجلات؛ لم يُحفظ التغيير');
         $previous = json_decode((string) $raw, true);
         if (json_last_error() !== JSON_ERROR_NONE || (!is_array($previous) && $previous !== null)) {
