@@ -302,19 +302,30 @@ function app_state_store_has_records(string $key, mixed $value): bool
 function app_state_save_without_reset(PDO $pdo, int $cid, string $key, mixed $value): void
 {
     $tenants = app_state_tenant_enabled($pdo);
+    $params = $tenants ? [$cid, $key] : [$key];
+    $hasStore = false;
+    if (!$pdo->inTransaction()) {
+        $probe = $pdo->prepare('SELECT 1 FROM app_state WHERE ' . ($tenants ? 'complex_id = ? AND ' : '') . '`key` = ?');
+        $probe->execute($params);
+        $hasStore = $probe->fetchColumn() !== false;
+    }
     $pdo->beginTransaction();
     try {
-        // Lock an existing store before attempting any initialization.
-        $params = $tenants ? [$cid, $key] : [$key];
+        // Existing stores go straight to the current row lock, without duplicate insertion.
+        if (!$hasStore) {
+            $insert = $tenants ? 'INSERT INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)' : 'INSERT INTO app_state (`key`, value) VALUES (?, ?)';
+            try {
+                $pdo->prepare($insert)->execute(array_merge($params, ['{}']));
+            } catch (PDOException $collision) {
+                if ((int) ($collision->errorInfo[1] ?? 0) !== 1062) throw $collision;
+                // Nothing has been saved: release the duplicate-insert lock before reading the winner.
+                if ($pdo->inTransaction()) $pdo->rollBack();
+                $pdo->beginTransaction();
+            }
+        }
         $stmt = $pdo->prepare('SELECT value FROM app_state WHERE ' . ($tenants ? 'complex_id = ? AND ' : '') . '`key` = ? FOR UPDATE');
         $stmt->execute($params);
         $raw = $stmt->fetchColumn();
-        if ($raw === false) {
-            $insert = $tenants ? 'INSERT IGNORE INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)' : 'INSERT IGNORE INTO app_state (`key`, value) VALUES (?, ?)';
-            $pdo->prepare($insert)->execute(array_merge($params, ['{}']));
-            $stmt->execute($params);
-            $raw = $stmt->fetchColumn();
-        }
         if ($raw === false) throw new RuntimeException('تعذّر تأكيد مخزن السجلات؛ لم يُحفظ التغيير');
         $previous = json_decode((string) $raw, true);
         if (json_last_error() !== JSON_ERROR_NONE || (!is_array($previous) && $previous !== null)) {

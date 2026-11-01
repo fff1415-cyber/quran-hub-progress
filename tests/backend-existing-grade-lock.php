@@ -17,3 +17,9 @@ check(!$pdo->inTransaction()&&$pdo->query("SELECT value FROM app_state WHERE com
 $GLOBALS['input']=['key'=>'weekly_tests','value'=>['S'=>['zero'=>0,'unknown'=>null]]];handle_set_app_state();
 check(json_decode($pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND key='weekly_tests'")->fetchColumn(),true)===$GLOBALS['input']['value'],'a genuinely missing store still initializes and saves through the same original path');
 echo "PASS: existing grade lock ordering, original reset protection and genuine initialization; no data migration or new save protocol\n";
+
+$pdo->beginTransaction();
+try {app_state_save_without_reset($pdo,1,'grades',['S'=>['new'=>'nested']]);throw new RuntimeException('nested save unexpectedly committed');}
+catch(PDOException $error) {check($pdo->inTransaction(),'an already active caller transaction is rejected without beginning a partial nested save');}
+$pdo->rollBack();
+check($pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND key='grades'")->fetchColumn()===$before,'rejected nested invocation preserves all original grade bytes');
