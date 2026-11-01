@@ -25,3 +25,8 @@ if($argv[2]==='read')$GLOBALS['input']['operation_probe']=true;
 handle_assign_plan();$result=$GLOBALS['response'];$before=assignmentOperationSnapshot($pdo,'receipt-race-S');
 check($result['operation_applied']===true&&$result['assignment_id']!==$first,'compatible writer receipt is readable by the selected API');
 handle_assign_plan();check($GLOBALS['response']['assignment_id']===$result['assignment_id']&&assignmentOperationSnapshot($pdo,'receipt-race-S')===$before,'cross-version retry cannot create a second assignment or discard newer data');
+
+if (plans_table_exists($pdo,'plan_completion_events')) {
+ $case=$pdo->query("SELECT a.*,p.track,p.level_number,p.title FROM student_plan_assignments a JOIN education_plans p ON p.id=a.plan_id WHERE a.student_id='ce-race-S' AND a.status='active'")->fetch();
+ if ($case) { $read=plan_events_read($pdo,1,$case);check(count($read)===1&&$read[0]['source']['kind']==='event','compatible API retains the assignment-event data reader and its real current source'); }
+}

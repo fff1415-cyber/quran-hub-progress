@@ -151,12 +151,12 @@ jobs:
           path: dist/plan-response-compatible-rollback/
           retention-days: 30
       - name: Build and verify compatible assignment API and pending-request readers
-        if: github.head_ref == 'fix/audit-plan-history-in-place'
+        if: github.head_ref == 'fix/audit-plan-history-in-place' || github.head_ref == 'fix/audit-safe-completion-events'
         env:
           AUDIT_FEATURE_SHA: ${{ github.event.pull_request.head.sha }}
         run: python3 scripts/prepare-assignment-operation-rollback.py
       - uses: actions/upload-artifact@v4
-        if: github.head_ref == 'fix/audit-plan-history-in-place'
+        if: github.head_ref == 'fix/audit-plan-history-in-place' || github.head_ref == 'fix/audit-safe-completion-events'
         with:
           name: assignment-operation-compatible-rollback
           path: dist/assignment-operation-compatible-rollback/
