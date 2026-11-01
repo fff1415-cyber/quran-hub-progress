@@ -16,6 +16,7 @@ class TestDatabase extends PDO {
         $query = str_replace(' FOR UPDATE', '', $query);
         $query = str_replace('INSERT IGNORE', 'INSERT OR IGNORE', $query);
         $query = str_replace('ON DUPLICATE KEY UPDATE value = ?', 'ON CONFLICT DO UPDATE SET value = ?', $query);
+        $query = str_replace('ON DUPLICATE KEY UPDATE direct_version=?,subtree_version=?,updated_at=CURRENT_TIMESTAMP', 'ON CONFLICT(context_id,store_key,path_sha256) DO UPDATE SET direct_version=?,subtree_version=?,updated_at=CURRENT_TIMESTAMP', $query);
         return parent::prepare($query, $options);
     }
 }

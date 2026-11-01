@@ -193,3 +193,9 @@ assignmentOperationFailure(fn()=>handle_assign_plan(),'fixture_reject_queue');
 check(assignmentOperationSnapshot($pdo,'receipt-sard-fail-S')===$before&&(int)$pdo->query("SELECT COUNT(*) FROM plan_operation_receipts WHERE operation_id='fixture-native-queue-failure'")->fetchColumn()===0,'native sard queue failure rolls back closure, new plan and receipt together');
 
 require __DIR__.'/completion-events-native-cases.php';completionNativeCases($pdo);
+
+$GLOBALS['pdo']=$pdo=connectFixture();
+require __DIR__.'/grade-cell-native-cases.php';
+
+$GLOBALS['pdo']=$pdo=connectFixture();
+require __DIR__.'/grade-plan-native-cases.php';

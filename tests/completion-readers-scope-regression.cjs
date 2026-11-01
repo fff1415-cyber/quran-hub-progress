@@ -8,5 +8,5 @@ const start = helper.indexOf('/** Same eligible hifz range'), end = helper.index
 assert.ok(start > 0 && end > start);
 helper = helper.slice(0, start) + helper.slice(end);
 assert.equal(helper, old('api/lib/plan-completion-events.php'), 'all tested immutable data writers and legacy view semantics remain unchanged');
-assert.equal(cp.execFileSync('git', ['diff', base, '--', 'api/', ':!api/routes/plans.php', ':!api/lib/plan-completion-events.php', 'database/'], { encoding: 'utf8' }), '', 'no auth, tenant, schema or unrelated API change');
+assert.equal(cp.execFileSync('git', ['diff', base, '--', 'api/', ':!api/routes/plans.php', ':!api/lib/plan-completion-events.php', ':!api/lib/grade-cell-operations.php', ':!api/lib/grade-plan-operations.php', 'database/'], { encoding: 'utf8' }), '', 'no auth, tenant, schema or unrelated API change');
 console.log('PASS: sheet and two completion counts read exact assignment state; all original authorization, queue, completion thresholds and writers unchanged');
