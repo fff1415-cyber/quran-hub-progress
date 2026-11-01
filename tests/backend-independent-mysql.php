@@ -160,3 +160,6 @@ foreach($children as $pid){pcntl_waitpid($pid,$status);check(pcntl_wifexited($st
 $GLOBALS['pdo']=$pdo=connectFixture();check(catalogSnapshot($pdo)===$baseline,'concurrent retry preserves ongoing work byte-for-byte at row values');catalogDeleteTrap($pdo,false);
 
 require __DIR__.'/existing-grade-lock-native-cases.php';
+
+require __DIR__.'/grade-protocol-floor-cases.php';
+gradeProtocolFloorCases($pdo);
