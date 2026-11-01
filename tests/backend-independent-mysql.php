@@ -158,3 +158,5 @@ for($i=0;$i<2;$i++){
 }
 foreach($children as $pid){pcntl_waitpid($pid,$status);check(pcntl_wifexited($status)&&pcntl_wexitstatus($status)===0,'concurrent same-content import never deletes/recreates segments');}
 $GLOBALS['pdo']=$pdo=connectFixture();check(catalogSnapshot($pdo)===$baseline,'concurrent retry preserves ongoing work byte-for-byte at row values');catalogDeleteTrap($pdo,false);
+
+require __DIR__.'/grade-cell-native-cases.php';
