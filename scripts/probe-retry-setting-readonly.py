@@ -1,8 +1,8 @@
 """One bounded metadata/SELECT probe over SSH; no application handlers or server writes."""
 import hashlib,json,os,pathlib,re,shlex,subprocess,tempfile,ipaddress
-user=os.environ['DEPLOY_USER'].split('@')[0];host=os.environ['DEPLOY_HOST'];ipaddress.IPv4Address(host)
+user=os.environ['DEPLOY_USER'].strip().split('@')[0];host=os.environ['DEPLOY_HOST'].strip();ipaddress.IPv4Address(host)
 assert re.fullmatch(r'[A-Za-z0-9_-]+',user)
-root='/'+os.environ['DEPLOY_API_PATH'].strip('/')
+root='/'+os.environ['DEPLOY_API_PATH'].strip().strip('/')
 if not root.startswith('/home/'):root='/home/'+user+root
 assert root.startswith('/home/'+user+'/') and '..' not in pathlib.PurePosixPath(root).parts
 code=r'''
