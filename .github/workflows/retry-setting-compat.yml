@@ -1,0 +1,76 @@
+name: Focused retry setting compatibility
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  focused:
+    if: github.head_ref == 'fix/retry-setting-compat'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci --offline --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - name: Focused missing-column reproduction and actual settings/retry handlers
+        run: |
+          set -e
+          php -l api/routes/evaluation_settings.php
+          git show f6d9d65d56618999b5aac2db38053ac701ab4b95:api/routes/evaluation_settings.php > /tmp/prior-evaluation-settings.php
+          AUDIT_EVAL_SOURCE=/tmp/prior-evaluation-settings.php php tests/backend-retry-setting-compat.php --negative
+          node tests/retry-setting-flow-regression.cjs
+          php tests/backend-independent-settings.php
+          php tests/backend-evaluation-reference.php
+          node tests/evaluation-reference-regression.cjs
+          python3 scripts/prepare-retry-setting-rollback.py
+          python3 tests/hostinger-backup-regression.py
+          python3 tests/api-release-regression.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: retry-setting-compatible-api
+          path: dist/retry-setting-compatible-api/
+      - name: Limited read-only production schema and published code verification
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: python3 scripts/probe-retry-setting-readonly.py
+  native:
+    if: github.head_ref == 'fix/retry-setting-compat'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: mysql:8.0
+            health: mysqladmin ping -h 127.0.0.1
+          - image: mariadb:11.8
+            health: healthcheck.sh --connect --innodb_initialized
+    services:
+      mysql:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_DATABASE: audit_test
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: [3307:3306]
+        options: --health-cmd="${{ matrix.health }}" --health-interval=5s --health-timeout=5s --health-retries=12
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Actual 1054 negative control and both supported schemas in isolated database
+        env:
+          AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
+        run: |
+          set -e
+          git show f6d9d65d56618999b5aac2db38053ac701ab4b95:api/routes/evaluation_settings.php > /tmp/prior-evaluation-settings.php
+          AUDIT_EVAL_SOURCE=/tmp/prior-evaluation-settings.php php tests/backend-retry-setting-compat.php --negative
+          php tests/backend-retry-setting-compat.php
+          python3 scripts/prepare-retry-setting-rollback.py

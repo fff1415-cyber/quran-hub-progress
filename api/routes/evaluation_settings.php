@@ -69,7 +69,11 @@ function eval_settings_fetch(PDO $pdo, int $complexId): array
         return eval_settings_defaults();
     }
 
-    $cols = implode(', ', eval_settings_columns());
+    $columns = eval_settings_columns();
+    if (!table_column_exists($pdo, 'evaluation_settings', 'retry_delay_days')) {
+        $columns = array_values(array_diff($columns, ['retry_delay_days']));
+    }
+    $cols = implode(', ', $columns);
     $tenants = eval_settings_tenant_enabled($pdo);
 
     if ($tenants) {
@@ -153,12 +157,17 @@ function handle_put_evaluation_settings(): void
         error_response('نفّذ migrate-evaluation-settings.sql على قاعدة البيانات أولاً', 503);
     }
 
+    $hasRetryDelay = table_column_exists($pdo, 'evaluation_settings', 'retry_delay_days');
+    if (!$hasRetryDelay && $settings['retry_delay_days'] !== eval_settings_defaults()['retry_delay_days']) {
+        error_response('تعذّر حفظ مدة الإعادة: مخطط الإعدادات الحالي يدعم المدة السابقة فقط (يومان). لم تتغير الإعدادات؛ تغيير المدة يحتاج ترحيلًا معتمدًا.', 503);
+    }
     $tenants = eval_settings_tenant_enabled($pdo);
     $pdo->beginTransaction();
     try {
     $sets = [];
     $params = [];
     foreach ($settings as $key => $val) {
+        if ($key === 'retry_delay_days' && !$hasRetryDelay) continue;
         $sets[] = "`$key` = ?";
         $params[] = $val;
     }

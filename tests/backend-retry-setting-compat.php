@@ -1,0 +1,25 @@
+<?php
+declare(strict_types=1);
+class RetryFixture extends PDO {
+ public function __construct(){ $dsn=getenv('AUDIT_MYSQL_DSN');if($dsn && $dsn!=='mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4')throw new RuntimeException('isolated only');parent::__construct($dsn?:'sqlite::memory:',$dsn?'audit':null,$dsn?'audit_only':null,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]); }
+ public function prepare(string $sql,array $options=[]):PDOStatement|false{if($this->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'){if(str_contains($sql,'information_schema.tables'))$sql="SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?";$sql=str_replace(['INSERT IGNORE',' FOR UPDATE'],['INSERT OR IGNORE',''],$sql);}return parent::prepare($sql,$options);}
+ public function exec(string $sql):int|false{return parent::exec($this->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'?str_replace('INSERT IGNORE','INSERT OR IGNORE',$sql):$sql);}
+}
+function table_column_exists(PDO $pdo,string $table,string $column):bool {if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'){foreach($pdo->query('PRAGMA table_info('.$table.')')->fetchAll() as $row)if($row['name']===$column)return true;return false;}$q=$pdo->prepare('SELECT COUNT(*) FROM information_schema.columns WHERE table_schema=DATABASE() AND table_name=? AND column_name=?');$q->execute([$table,$column]);return (bool)$q->fetchColumn();}
+function db():PDO{return $GLOBALS['pdo'];}function require_auth():array{return $GLOBALS['auth'];}function require_complex_id(array $a):int{return $a['complexId'];}function json_input():array{return $GLOBALS['input'];}function json_response(mixed $v):void{$GLOBALS['response']=$v;}function error_response(string $s,int $c=400):never{throw new RuntimeException($s,$c);}function check(bool $ok,string $s):void{if(!$ok)throw new LogicException($s);echo 'PASS: '.$s."\n";}
+require getenv('AUDIT_EVAL_SOURCE')?:__DIR__.'/../api/routes/evaluation_settings.php';
+$GLOBALS['pdo']=$pdo=new RetryFixture();$GLOBALS['auth']=['role'=>'manager','complexId'=>1];$fixtures=[];
+foreach([false,true] as $scoped)foreach([false,true] as $present){
+ $pdo->exec('DROP TABLE IF EXISTS evaluation_settings');$cols=[];foreach(eval_settings_defaults() as $k=>$v)if($present||$k!=='retry_delay_days')$cols[]="$k NUMERIC DEFAULT $v";
+ $identity=$scoped?'complex_id':'id';$pdo->exec('CREATE TABLE evaluation_settings('.$identity.' INTEGER PRIMARY KEY,'.implode(',',$cols).')');
+ if(($argv[1]??'')==='--negative'){try{handle_get_evaluation_settings();throw new LogicException('old SELECT did not fail');}catch(PDOException $e){check(str_contains($e->getMessage(),'retry_delay_days'),'old exact SELECT fails on missing retry_delay_days');exit;}}
+ $pdo->exec('INSERT INTO evaluation_settings('.$identity.',error_deduction'.($present?',retry_delay_days':'').') VALUES(1,4'.($present?',7':'').')');$raw=$pdo->query('SELECT * FROM evaluation_settings')->fetchAll();
+ if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')$pdo->exec('PRAGMA query_only=ON');else{$pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();}
+ handle_get_evaluation_settings();$settings=$GLOBALS['response']['settings'];if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')$pdo->exec('PRAGMA query_only=OFF');else $pdo->rollBack();
+ check($settings['retry_delay_days']===($present?7:2)&&$settings['error_deduction']===4,'GET uses stored duration when present; proven prior two days only when absent');check($pdo->query('SELECT * FROM evaluation_settings')->fetchAll()===$raw,'settings GET is read-only and preserves all stored settings');$fixtures[]=$settings;
+ $GLOBALS['input']=['settings'=>array_replace($settings,['error_deduction'=>0])];handle_put_evaluation_settings();check($GLOBALS['response']['ok']&&$GLOBALS['response']['settings']['error_deduction']===0,'explicit settings save works on both schemas with real confirmation');
+ if(!$present){$before=$pdo->query('SELECT * FROM evaluation_settings')->fetchAll();$GLOBALS['input']['settings']['retry_delay_days']=9;unset($GLOBALS['response']);try{handle_put_evaluation_settings();throw new LogicException('unsupported duration falsely saved');}catch(RuntimeException $e){check($e->getCode()===503,'unsupported duration change explicitly rejected before any save');}check(!isset($GLOBALS['response'])&&$pdo->query('SELECT * FROM evaluation_settings')->fetchAll()===$before,'failed duration save cannot partly modify other settings');}
+ else{$GLOBALS['input']['settings']['retry_delay_days']=9;handle_put_evaluation_settings();check($GLOBALS['response']['settings']['retry_delay_days']===9,'existing configurable duration is persisted without a new rule');}
+ $GLOBALS['auth']['role']='musammi';try{handle_put_evaluation_settings();throw new LogicException('role changed');}catch(RuntimeException $e){check($e->getCode()===403,'original write role guard unchanged');}$GLOBALS['auth']['role']='manager';
+}
+echo 'FIXTURES:'.json_encode($fixtures)."\n";
