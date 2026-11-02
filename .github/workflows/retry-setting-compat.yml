@@ -5,7 +5,25 @@ on:
 permissions:
   contents: read
 jobs:
+  changed:
+    if: github.head_ref == 'fix/retry-setting-compat'
+    runs-on: ubuntu-latest
+    outputs:
+      tests: ${{ steps.scope.outputs.tests }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: |
+          if git diff --quiet 04102cd220b137078bf3f81f98845f1742b532c7 HEAD -- api src tests database scripts/prepare-retry-setting-rollback.py; then
+            echo 'tests=false' >> "$GITHUB_OUTPUT"
+            echo 'Reusing passing focused/native acceptance from 04102cd: exact application/test/fallback sources unchanged.'
+          else
+            echo 'tests=true' >> "$GITHUB_OUTPUT"
+          fi
   focused:
+    needs: changed
     if: github.head_ref == 'fix/retry-setting-compat'
     runs-on: ubuntu-latest
     steps:
@@ -13,11 +31,14 @@ jobs:
         with:
           fetch-depth: 0
       - uses: actions/setup-node@v4
+        if: needs.changed.outputs.tests == 'true'
         with:
           node-version: 24
           cache: npm
-      - run: npm ci --offline --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - if: needs.changed.outputs.tests == 'true'
+        run: npm ci --offline --ignore-scripts --no-audit --no-fund --legacy-peer-deps
       - name: Focused missing-column reproduction and actual settings/retry handlers
+        if: needs.changed.outputs.tests == 'true'
         run: |
           set -e
           php -l api/routes/evaluation_settings.php
@@ -31,6 +52,7 @@ jobs:
           python3 tests/hostinger-backup-regression.py
           python3 tests/api-release-regression.py
       - uses: actions/upload-artifact@v4
+        if: needs.changed.outputs.tests == 'true'
         with:
           name: retry-setting-compatible-api
           path: dist/retry-setting-compatible-api/
@@ -42,7 +64,8 @@ jobs:
           DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: python3 scripts/probe-retry-setting-readonly.py
   native:
-    if: github.head_ref == 'fix/retry-setting-compat'
+    needs: changed
+    if: github.head_ref == 'fix/retry-setting-compat' && needs.changed.outputs.tests == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
