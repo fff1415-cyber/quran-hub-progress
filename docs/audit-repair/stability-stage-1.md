@@ -2,6 +2,8 @@
 
 Baseline verified 2026-11-04: main and the public msht.io deploy marker both resolve to `5ab482d8aa213c097e3b6c835b81ac2d439f0803`. This branch is a candidate, not a published fix. No production DDL or record writes are authorized by this document.
 
+Initial CI run `41895923426` passed native MySQL 8 and MariaDB 11.8 fixtures. The read-only production probe found all required columns present and all 16 SELECT LIMIT 0 contracts successful, with sufficient app-state value capacity. It found no exact unique key on `evaluation_settings(complex_id)` and no optional `retry_delay_days` column. Missing retry duration is already handled compatibly; the unique-key gap needs duplicate inspection and a separate additive migration, never deleting settings rows to force uniqueness. Main and the expected m1 API roots differ; the expected m2 filesystem path is absent and sibling config files were not available there, so database/vhost isolation is NOT established. A private code backup directory exists, but no real database restore was verified. These are publication blockers, not permission to infer or alter production data.
+
 ## Behavior
 
 - Health checks distinguish connection establishment from metadata/query failure. Complete current multi-tenant column and unique-key requirements and app-state capacity determine readiness. Missing optional retry duration retains existing two-day compatibility.
