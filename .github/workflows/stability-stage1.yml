@@ -66,7 +66,9 @@ jobs:
       - name: Repeatable additions and read-only runtime guards on real database
         env:
           AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
-        run: php tests/stage1-database.php
+        run: |
+          php tests/stage1-database.php
+          python3 tests/stage1-http.py
   production-readonly:
     if: github.head_ref == 'fix/stability-stage-1-database' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
