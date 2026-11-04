@@ -45,6 +45,13 @@ def main():
       $stage='settings_integrity';
       $settingsKeys=$pdo->query("SELECT INDEX_NAME, NON_UNIQUE, SEQ_IN_INDEX, COLUMN_NAME FROM information_schema.statistics WHERE table_schema=DATABASE() AND table_name='evaluation_settings' ORDER BY INDEX_NAME,SEQ_IN_INDEX")->fetchAll(PDO::FETCH_ASSOC);
       $duplicateSettingsGroups=(int)$pdo->query('SELECT COUNT(*) FROM (SELECT complex_id FROM evaluation_settings GROUP BY complex_id HAVING COUNT(*) > 1) AS duplicate_settings')->fetchColumn();
+      $stage='restore_capability';$globalCreate=false;
+      foreach($pdo->query('SHOW GRANTS FOR CURRENT_USER')->fetchAll(PDO::FETCH_COLUMN) as $grant){
+        if(preg_match('/^GRANT (.+) ON \\*\\.\\* TO /i',$grant,$match)){
+          $privileges=array_map('trim',explode(',',strtoupper($match[1])));
+          if(in_array('ALL PRIVILEGES',$privileges,true)||in_array('CREATE',$privileges,true))$globalCreate=true;
+        }
+      }
       $pdo->rollBack();
       $stage='isolation';$isolation=[];
       foreach(['m1','m2'] as $sub){
@@ -61,7 +68,7 @@ def main():
       $stage='storage_inventory';
       $private=$argv[2].'/.qhp-release-backups';
       $codeBackup=is_dir($private);
-      echo json_encode(['schema'=>$schema,'read_contracts'=>$selects,'settings_unique_key_metadata'=>$settingsKeys,'settings_duplicate_complex_groups'=>$duplicateSettingsGroups,'isolation'=>$isolation,'private_code_backup_directory_present'=>$codeBackup,'database_backup_restore_verified'=>false,'production_writes'=>false],JSON_UNESCAPED_UNICODE)."\n";
+      echo json_encode(['schema'=>$schema,'read_contracts'=>$selects,'settings_unique_key_metadata'=>$settingsKeys,'settings_duplicate_complex_groups'=>$duplicateSettingsGroups,'can_create_separate_database_via_current_user'=>$globalCreate,'isolation'=>$isolation,'private_code_backup_directory_present'=>$codeBackup,'database_backup_restore_verified'=>false,'production_writes'=>false],JSON_UNESCAPED_UNICODE)."\n";
     }catch(Throwable $e){if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();echo json_encode(['probe_failed_stage'=>$stage,'error_class'=>get_class($e),'errno'=>$e instanceof PDOException?(int)($e->errorInfo[1]??0):null])."\n";exit(1);}
     '''
     with tempfile.TemporaryDirectory() as folder:
@@ -83,3 +90,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+
