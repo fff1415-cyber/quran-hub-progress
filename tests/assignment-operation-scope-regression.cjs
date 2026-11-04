@@ -1,0 +1,12 @@
+const assert=require('node:assert/strict'),fs=require('node:fs'),cp=require('node:child_process');
+const {withoutAssignmentReceipts,withoutAssignmentClient}=require('./assignment-operation-scope-support.cjs');
+const base='26c16bfe3cea9df88e52ff76c1b2dc827ade2b0e',read=p=>fs.readFileSync(p,'utf8'),old=p=>cp.execFileSync('git',['show',base+':'+p],{encoding:'utf8'});
+assert.equal(withoutAssignmentReceipts(read('api/routes/plans.php')),old('api/routes/plans.php'),'all original authorization, student/plan guards, musammi criteria, assignment/sard transaction, completion and import/delete paths remain exact after removing only receipt hooks');
+assert.equal(withoutAssignmentClient(read('src/lib/plans-service.ts')),old('src/lib/plans-service.ts'),'all other client APIs, access and errors remain exact');
+assert.deepEqual(cp.execFileSync('git',['diff','--name-only',base,'--','api/','src/','database/','package.json','package-lock.json','bun.lock'],{encoding:'utf8'}).trim().split('\n'),['api/lib/grade-cell-operations.php','api/lib/grade-plan-operations.php','api/lib/plan-completion-events.php','api/routes/app_state.php','api/routes/plans.php','src/lib/cloud-sync.ts','src/lib/plan-assignment-requests.ts','src/lib/plans-service.ts','src/lib/scientific-grades.ts']);
+const proposal=cp.execFileSync('git',['show','0b63be93032aee3d8476a11d1e15f8de6ea74a0e:database/proposed-progress-foundation.sql'],{encoding:'utf8'}).match(/CREATE TABLE IF NOT EXISTS plan_operation_receipts \([\s\S]*?;/)[0]+'\n';
+assert.equal(read('tests/fixtures/plan-operation-receipts.sql'),proposal,'native fixture is the exact pending #36 schema, never a runtime migration');
+const helper=read('api/routes/plans.php').split('function plans_operation_payload(')[1].split('function handle_assign_plan()')[0];
+assert.doesNotMatch(helper,/\b(?:ALTER|CREATE|DELETE|UPDATE)\b(?!\s*')/,'receipt helper never migrates or rewrites old sources');
+assert.doesNotMatch(read('src/lib/plan-assignment-requests.ts'),/pushNotification|saveGrades|saveStudents|setToken|setAuthItem|clearAuth|ensureSessionFromToken|setCachedTenant/);
+console.log('PASS: assignment receipts only; original role/scope/transition rules and all old records paths remain exact; schema is fixture-only');

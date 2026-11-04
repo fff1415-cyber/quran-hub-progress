@@ -6,7 +6,7 @@ function load(path, deps, source = fs.readFileSync(path, 'utf8')) {
   new Function('require', 'exports', code)(name => { if (!(name in deps)) throw Error(`Unexpected dependency ${name}`); return deps[name]; }, exports);
   return exports;
 }
-function storage() { const data = new Map(); return {data,getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,String(value)),removeItem:key=>data.delete(key)}; }
+function storage() { const data = new Map(); return {data,get length(){return data.size;},key:i=>Array.from(data.keys())[i]??null,getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,String(value)),removeItem:key=>data.delete(key)}; }
 function deferred() { let resolve,reject; const promise=new Promise((yes,no)=>{resolve=yes;reject=no;}); return {promise,resolve,reject}; }
 const flush = async () => { for(let i=0;i<12;i++) await Promise.resolve(); };
 function hooks() {

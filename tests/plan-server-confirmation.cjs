@@ -4,6 +4,9 @@ const ts = require('typescript');
 
 const values = new Map();
 global.localStorage = {
+  get length() { return values.size; },
+  key: i => Array.from(values.keys())[i] ?? null,
+  removeItem: key => values.delete(key),
   getItem: key => values.get(key) ?? null,
   setItem: (key, value) => values.set(key, value),
 };
@@ -17,6 +20,7 @@ const deps = {
   '@/lib/plan-translator': { compensationHifzSegmentTarget: () => 0, compensationHifzTap: () => 'one' },
 };
 deps['@/lib/plan-response-cache']=require('./independent-test-support.cjs').load('src/lib/plan-response-cache.ts',{'@/lib/cloud-sync':deps['@/lib/cloud-sync'],'@/lib/tenant':{getActiveComplexId:()=>1},'@/lib/mock-data':{hasPendingSardWrites:()=>false}});
+Object.assign(deps,{'@/lib/auth-session':{decodeAuthTokenPayload:()=>({role:'supervisor',accountId:'fixture'})},'@/lib/tenant':{getActiveComplexId:()=>1},'@/lib/plan-assignment-requests':require('./independent-test-support.cjs').load('src/lib/plan-assignment-requests.ts',{})});
 const service = {};
 const code = ts.transpileModule(fs.readFileSync('src/lib/plans-service.ts', 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
@@ -41,12 +45,12 @@ const sheet = assignmentId => ({
   assert.equal(service.unconfirmedLocalPlanLink('student', sheet(null)).assignment.id, 'browser-only');
 
   global.fetch = async (_url, options) => options?.method === 'POST'
-    ? response(200, { assignment_id: 'server-id' })
+    ? response(200, { ok:true, operation_id:JSON.parse(options.body).operation_id, operation_applied:true, assignment_id:'server-id' })
     : response(200, sheet(null));
   await assert.rejects(service.assignStudentPlan('student', 'plan', 1, 'supervisor'), /تعذّر تأكيد/);
 
   global.fetch = async (_url, options) => options?.method === 'POST'
-    ? response(200, { assignment_id: 'server-id' })
+    ? response(200, { ok:true, operation_id:JSON.parse(options.body).operation_id, operation_applied:true, assignment_id:'server-id' })
     : response(200, sheet('server-id'));
   await service.assignStudentPlan('student', 'plan', 1, 'supervisor');
   assert.equal(service.unconfirmedLocalPlanLink('student', sheet('server-id')), null);

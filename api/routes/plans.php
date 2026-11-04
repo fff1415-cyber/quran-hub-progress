@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../lib/plan-completion-events.php';
+
 function plans_require_roles(array $auth, array $roles): void
 {
     $role = (string) ($auth['role'] ?? '');
@@ -716,6 +718,66 @@ function plans_locked_current_assignment(PDO $pdo, string $studentId): ?array
     return $rows[0] ?? null;
 }
 
+function plans_operation_payload(mixed $value): mixed
+{
+    if (!is_array($value)) return $value;
+    if (!array_is_list($value)) ksort($value, SORT_STRING);
+    foreach ($value as $key => $item) $value[$key] = plans_operation_payload($item);
+    return $value;
+}
+
+/** Optional request receipts. Never creates a table or changes an existing student record. */
+function plans_assignment_operation(PDO $pdo, int $cid, string $studentId, array $input): ?array
+{
+    if (!array_key_exists('operation_id', $input)) {
+        if (array_key_exists('operation_probe', $input)) throw new RuntimeException('معرّف طلب الخطة مطلوب للاستعلام');
+        return null;
+    }
+    $id = $input['operation_id'];
+    if (!is_string($id) || !preg_match('/^[A-Za-z0-9_-]{8,128}$/D', $id)) {
+        throw new RuntimeException('معرّف طلب الخطة غير صالح');
+    }
+    if (array_key_exists('operation_probe', $input) && !is_bool($input['operation_probe'])) {
+        throw new RuntimeException('صيغة استعلام طلب الخطة غير صالحة');
+    }
+    if (!plans_table_exists($pdo, 'plan_operation_receipts')) {
+        throw new RuntimeException('حفظ إيصالات طلبات الخطط غير مفعّل؛ لم يتغير تعيين الطالب');
+    }
+    $payload = $input;
+    unset($payload['operation_id'], $payload['operation_probe']);
+    $hash = hash('sha256', json_encode(plans_operation_payload($payload), JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES));
+    $stmt = $pdo->prepare('SELECT student_id, operation_kind, input_sha256, response_json FROM plan_operation_receipts WHERE context_id = ? AND operation_id = ? FOR UPDATE');
+    $stmt->execute([$cid, $id]);
+    $receipt = $stmt->fetch();
+    if ($receipt) {
+        if ($receipt['student_id'] !== $studentId || $receipt['operation_kind'] !== 'assign'
+            || !hash_equals((string) $receipt['input_sha256'], $hash)) {
+            throw new RuntimeException('معرّف الطلب مستخدم لبيانات مختلفة؛ لم يتغير تعيين الطالب');
+        }
+        $response = json_decode((string) $receipt['response_json'], true, 512, JSON_THROW_ON_ERROR);
+        if (!is_array($response) || ($response['ok'] ?? null) !== true
+            || !is_string($response['assignment_id'] ?? null) || $response['assignment_id'] === ''
+            || ($response['operation_id'] ?? null) !== $id) {
+            throw new RuntimeException('إيصال طلب الخطة غير مكتمل؛ يلزم التحقق من مصدره دون إعادة التعيين');
+        }
+        // A retry must never write an old queue snapshot over later work.
+        $response['sard_queue'] = null;
+        $response['operation_applied'] = true;
+        $response['replayed'] = true;
+        return ['id' => $id, 'hash' => $hash, 'response' => $response];
+    }
+    return ['id' => $id, 'hash' => $hash, 'response' => null];
+}
+
+function plans_save_assignment_operation(PDO $pdo, int $cid, string $studentId, ?array $operation, array $response): void
+{
+    if ($operation === null) return;
+    // Keep the receipt in the exact transaction that creates the assignment and updates sard.
+    unset($response['sard_queue']);
+    $stmt = $pdo->prepare('INSERT INTO plan_operation_receipts (context_id, operation_id, student_id, operation_kind, input_sha256, response_json) VALUES (?, ?, ?, ?, ?, ?)');
+    $stmt->execute([$cid, $operation['id'], $studentId, 'assign', $operation['hash'], json_encode($response, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)]);
+}
+
 function handle_assign_plan(): void
 {
     $auth = require_auth();
@@ -778,6 +840,13 @@ function handle_assign_plan(): void
         $studentStmt = $pdo->prepare('SELECT ' . implode(', ', $studentColumns) . ' FROM students WHERE id = ? FOR UPDATE');
         $studentStmt->execute([$studentId]);
         $studentRow = $studentStmt->fetch();
+        $operation = plans_assignment_operation($pdo, $cid, $studentId, $input);
+        if ($operation !== null && ($operation['response'] !== null || ($input['operation_probe'] ?? false))) {
+            $response = $operation['response'] ?? ['ok' => true, 'operation_id' => $operation['id'], 'operation_applied' => false];
+            $pdo->commit();
+            json_response($response);
+            return;
+        }
         if (!empty($input['only_if_unassigned'])) {
             $existingLink = $pdo->prepare("SELECT id FROM student_plan_assignments WHERE student_id = ? AND status IN ('active', 'frozen') FOR UPDATE");
             $existingLink->execute([$studentId]);
@@ -799,6 +868,7 @@ function handle_assign_plan(): void
             $complete = $pdo->prepare("SELECT COUNT(*) AS total, SUM(EXISTS(SELECT 1 FROM segment_completions c WHERE c.student_id = ? AND c.plan_id = s.plan_id AND c.segment_index = s.segment_index AND c.task_type = 'hifz' AND (c.assignment_id = ? OR (c.assignment_id IS NULL AND c.created_at >= ?)))) AS done FROM plan_segments s WHERE s.plan_id = ? AND s.segment_index >= ?");
             $complete->execute([$studentId, $current['id'], $current['assigned_at'], $current['plan_id'], $current['start_segment_index']]);
             $counts = $complete->fetch();
+            if (plan_events_tables_ready($pdo)) $counts = plan_events_hifz_counts($pdo, $cid, $current, true);
             if ((int) $counts['total'] === 0 || (int) $counts['total'] !== (int) $counts['done']) {
                 throw new RuntimeException('لم يكتمل حفظ الخطة الحالية');
             }
@@ -834,6 +904,7 @@ function handle_assign_plan(): void
             $faces['faces_per_half'], $faces['faces_per_one'], $faces['faces_per_two'],
             $name,
         ]);
+        plan_events_register_assignment($pdo, $studentId, $id, $planId);
 
         $sardQueue = null;
         if (isset($input['sard_result'])) {
@@ -865,8 +936,14 @@ function handle_assign_plan(): void
         } elseif (($auth['role'] ?? '') === 'musammi') {
             throw new RuntimeException('طلب الاجتياز مطلوب لترحيل الخطة');
         }
+        $response = ['ok' => true, 'assignment_id' => $id, 'sard_queue' => $sardQueue];
+        if ($operation !== null) {
+            $response['operation_id'] = $operation['id'];
+            $response['operation_applied'] = true;
+        }
+        plans_save_assignment_operation($pdo, $cid, $studentId, $operation, $response);
         $pdo->commit();
-        json_response(['ok' => true, 'assignment_id' => $id, 'sard_queue' => $sardQueue]);
+        json_response($response);
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         plans_abort_with_sql_error($pdo, $e, 'ربط الطالب بالخطة');
@@ -1065,7 +1142,7 @@ function handle_student_plan_sheet(): void
             'assignment' => assignment_row($assignment),
             'plan' => $plan ? plan_row($plan) : null,
             'segments' => array_map('segment_row', $segStmt->fetchAll()),
-            'completions' => array_map('completion_row', $compStmt->fetchAll()),
+            'completions' => plan_events_sheet_rows($pdo, $cid, $assignment, $compStmt->fetchAll()),
         ]);
     } catch (PDOException $e) {
         plans_abort_with_sql_error($pdo, $e, 'ورقة خطة الطالب');
@@ -1446,6 +1523,7 @@ function handle_supervisor_plan_hifz(): void
         );
         $doneStmt->execute([$studentId, $assignmentId, $assignment['assigned_at'], $assignment['plan_id'], $assignment['start_segment_index']]);
         $counts = $doneStmt->fetch();
+        if (plan_events_tables_ready($pdo)) $counts = plan_events_hifz_counts($pdo, $cid, $assignment + ['student_id' => $studentId], true);
         $isComplete = (int) ($counts['total'] ?? 0) > 0 && (int) $counts['total'] === (int) ($counts['done'] ?? 0);
         if (!$isComplete && $queueIndex !== null && ($queue[$queueIndex]['status'] ?? '') === 'plan_completed') {
             $queue[$queueIndex]['status'] = 'archived';

@@ -1,6 +1,7 @@
 const assert=require('node:assert/strict');
 const line='import { capturePlanResponse, assertPlanResponseCurrent, applyPlanSardResponse } from "@/lib/plan-response-cache";\n';
 function withoutPlanResponseClient(code){
+ if(code.includes('import { runPlanAssignmentRequest,'))code=require('./assignment-operation-scope-support.cjs').withoutAssignmentClient(code);
  if(!code.includes(line))return code;
  code=code.replace(line,'').replace(/^  const responseSnapshot = capturePlanResponse\(\);\n/gm,'').replace(/^ +assertPlanResponseCurrent\(responseSnapshot\);\n/gm,'');
  const call='  applyPlanSardResponse(responseSnapshot, result.sard_queue);';
