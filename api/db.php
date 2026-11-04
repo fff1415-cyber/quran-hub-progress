@@ -20,7 +20,8 @@ function db(): PDO
         try {
             $pdo->query('SELECT 1');
         } catch (PDOException $e) {
-            if (db_is_stale_connection($e)) {
+            // Never discard a transaction or retry a write whose outcome is unknown.
+            if (db_is_stale_connection($e) && !$pdo->inTransaction()) {
                 $pdo = null;
             } else {
                 throw $e;

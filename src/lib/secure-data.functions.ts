@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from "@/lib/request-timeout";
 // Client-side API layer — Hostinger PHP + MySQL backend
 
 import { buildRphpUrl } from "@/lib/api-base";
@@ -25,7 +26,7 @@ async function apiFetch<T>(
   options: RequestInit & { auth?: string } = {},
 ): Promise<T> {
   const { auth, headers, ...rest } = options;
-  const res = await fetch(apiUrl(path), {
+  const res = await fetchWithTimeout(apiUrl(path), {
     ...rest,
     headers: {
       "Content-Type": "application/json",

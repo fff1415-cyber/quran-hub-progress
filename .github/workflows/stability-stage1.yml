@@ -1,0 +1,82 @@
+name: Stability stage 1 database acceptance
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  isolated:
+    if: github.head_ref == 'fix/stability-stage-1-database'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, pdo_sqlite
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - name: PHP syntax and isolated acceptance
+        run: |
+          set -e
+          find api tests database scripts -name '*.php' -print0 | xargs -0 -n1 php -l > /tmp/stage1-php-syntax.txt
+          php tests/stage1-database.php
+          php tests/stage1-health.php
+          node tests/stage1-client.cjs
+          node tests/assignment-target-regression.cjs
+          node tests/plan-response-client-regression.cjs
+          node tests/scientific-response-regression.cjs
+          php tests/backend-retry-setting-compat.php
+      - name: No new TypeScript diagnostics
+        run: python3 tests/type-baseline-regression.py
+      - run: npm run build:hostinger
+  native:
+    if: github.head_ref == 'fix/stability-stage-1-database'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        include:
+          - image: mysql:8.0
+            health: mysqladmin ping -h 127.0.0.1
+          - image: mariadb:11.8
+            health: healthcheck.sh --connect --innodb_initialized
+    services:
+      mysql:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_DATABASE: audit_test
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: ['3307:3306']
+        options: --health-cmd="${{ matrix.health }}" --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql
+      - name: Repeatable additions and read-only runtime guards on real database
+        env:
+          AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
+        run: php tests/stage1-database.php
+  production-readonly:
+    if: github.head_ref == 'fix/stability-stage-1-database' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Metadata and main-site isolation only; no routes or writes
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: python3 scripts/probe-stage1-readonly.py

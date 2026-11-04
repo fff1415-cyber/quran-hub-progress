@@ -2,18 +2,17 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/schema.php';
+require_once __DIR__ . '/diagnostics.php';
+
 function api_register_error_handlers(): void
 {
     set_exception_handler(static function (Throwable $e): void {
         if (!headers_sent()) {
-            http_response_code(500);
+            http_response_code(api_database_error_status($e));
             header('Content-Type: application/json; charset=utf-8');
         }
-        $message = $e instanceof PDOException && function_exists('pdo_api_error_message')
-            ? pdo_api_error_message($e)
-            : ($e instanceof PDOException
-                ? ('خطأ SQL: ' . (function_exists('pdo_sql_error_detail') ? pdo_sql_error_detail($e) : $e->getMessage()))
-                : $e->getMessage());
+        $message = api_safe_failure_message($e, 'unhandled_request');
         echo json_encode(['error' => $message], JSON_UNESCAPED_UNICODE);
         exit;
     });

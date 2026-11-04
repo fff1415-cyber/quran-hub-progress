@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../schema.php';
+require_once __DIR__ . '/../diagnostics.php';
+
 function students_column_exists(PDO $pdo, string $column): bool
 {
     return table_column_exists($pdo, 'students', $column);
@@ -14,30 +17,7 @@ function students_tenant_enabled(PDO $pdo): bool
 
 function students_ensure_extended_columns(PDO $pdo): void
 {
-    if (!students_column_exists($pdo, 'student_phone')) {
-        $pdo->exec(
-            'ALTER TABLE `students`
-             ADD COLUMN `student_phone` VARCHAR(30) NOT NULL DEFAULT \'\' AFTER `parent_phone`'
-        );
-    }
-    if (!students_column_exists($pdo, 'institute_level')) {
-        $pdo->exec(
-            'ALTER TABLE `students`
-             ADD COLUMN `institute_level` VARCHAR(50) NULL DEFAULT NULL AFTER `level_type`'
-        );
-    }
-    if (!students_column_exists($pdo, 'phase_number')) {
-        $pdo->exec(
-            'ALTER TABLE `students`
-             ADD COLUMN `phase_number` INT UNSIGNED NULL DEFAULT NULL AFTER `institute_level`'
-        );
-    }
-    if (!students_column_exists($pdo, 'assigned_assistant_code')) {
-        $pdo->exec(
-            'ALTER TABLE `students`
-             ADD COLUMN `assigned_assistant_code` VARCHAR(50) NULL DEFAULT NULL AFTER `assigned_to`'
-        );
-    }
+    schema_require_columns($pdo, 'students', ['student_phone', 'institute_level', 'phase_number', 'assigned_assistant_code']);
 }
 
 function handle_list_students_public(): void

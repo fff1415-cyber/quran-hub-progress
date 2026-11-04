@@ -517,12 +517,7 @@ function gradesPayloadHash(g: GradesStore): string {
 /** Upload local grades after merging with the latest cloud copy (teacher + assistant). */
 export async function pushMergedGrades(local: GradesStore): Promise<GradesStore> {
   const run = async (): Promise<GradesStore> => {
-    let cloud: GradesStore = {};
-    try {
-      cloud = await fetchCloudGrades();
-    } catch {
-      cloud = {};
-    }
+    const cloud = await fetchCloudGrades();
     const merged = mergeGradesStores(cloud, local);
     await secureSetAppState({ data: { token: tokenOrThrow(), key: "grades", value: merged } });
     // A teacher can tap another field while this request is in flight.
@@ -587,12 +582,7 @@ export async function pushMergedScientificGrades(
   const submitted = JSON.stringify(local);
   const run = async (): Promise<import("./scientific-grades").ScientificGradesStore> => {
     const { mergeScientificGradesStores, saveScientificGradesStore, loadScientificGradesStore } = await import("./scientific-grades");
-    let cloud: import("./scientific-grades").ScientificGradesStore = { configs: {}, data: {}, overrides: {} };
-    try {
-      cloud = await fetchCloudScientificGrades();
-    } catch {
-      cloud = { configs: {}, data: {}, overrides: {} };
-    }
+    const cloud = await fetchCloudScientificGrades();
     const merged = mergeScientificGradesStores(cloud, JSON.parse(submitted) as typeof local);
     await secureSetAppState({ data: { token: tokenOrThrow(), key: "scientific_grades", value: merged } });
     // A later local edit is still in progress; this ACK belongs only to the submitted snapshot.
@@ -637,12 +627,7 @@ let financialLedgerPushQueue: Promise<FinancialLedgerStore> = Promise.resolve({ 
 /** Upload local financial ledger after merging with the latest cloud copy. */
 export async function pushMergedFinancialLedger(local: FinancialLedgerStore): Promise<FinancialLedgerStore> {
   const run = async (): Promise<FinancialLedgerStore> => {
-    let cloud: FinancialLedgerStore = { entries: [] };
-    try {
-      cloud = await fetchCloudFinancialLedger();
-    } catch {
-      cloud = { entries: [] };
-    }
+    const cloud = await fetchCloudFinancialLedger();
     const { merged } = mergeFinancialLedgerStores(cloud, local);
     await secureSetAppState({ data: { token: tokenOrThrow(), key: "financial_ledger", value: merged } });
     const prev = sessionStorage.getItem("qs_syncing");
@@ -668,12 +653,7 @@ export async function pushMergedStaffCheckIns(
 ): Promise<import("./staff-attendance").StaffCheckIn[]> {
   const run = async (): Promise<import("./staff-attendance").StaffCheckIn[]> => {
     const { mergeStaffCheckIns, saveStaffCheckIns } = await import("./staff-attendance");
-    let cloud: import("./staff-attendance").StaffCheckIn[] = [];
-    try {
-      cloud = await fetchCloudStaffCheckIns();
-    } catch {
-      cloud = [];
-    }
+    const cloud = await fetchCloudStaffCheckIns();
     const merged = mergeStaffCheckIns(cloud, local);
     await secureSetAppState({ data: { token: tokenOrThrow(), key: "staff_attendance", value: merged } });
     const prev = sessionStorage.getItem("qs_syncing");

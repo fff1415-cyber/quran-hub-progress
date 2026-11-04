@@ -1,3 +1,4 @@
+import { fetchWithTimeout } from "@/lib/request-timeout";
 import { buildRphpUrl } from "@/lib/api-base";
 import type {
   EducationPlan,
@@ -22,7 +23,7 @@ function apiUrl(path: string): string {
 async function planFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const token = getToken();
   if (!token) throw new Error("غير مسجل الدخول");
-  const res = await fetch(apiUrl(path), {
+  const res = await fetchWithTimeout(apiUrl(path), {
     ...options,
     headers: {
       "Content-Type": "application/json",

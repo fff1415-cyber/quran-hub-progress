@@ -2,6 +2,8 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../diagnostics.php';
+
 function app_state_tenant_enabled(PDO $pdo): bool
 {
     return table_column_exists($pdo, 'app_state', 'complex_id');
@@ -237,7 +239,7 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
         $pdo->commit();
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        error_response($e->getMessage(), 409);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 409);
     }
 }
 
@@ -340,7 +342,7 @@ function app_state_save_without_reset(PDO $pdo, int $cid, string $key, mixed $va
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         if ($error instanceof PDOException) throw $error;
-        error_response($error->getMessage(), 409);
+        error_response($error instanceof PDOException ? api_safe_failure_message($error) : $error->getMessage(), $error instanceof PDOException ? api_database_error_status($error) : 409);
     }
 }
 
@@ -392,7 +394,7 @@ function handle_set_app_state(): void
         }
     } catch (PDOException $e) {
         if (pdo_is_integrity_violation($e)) {
-            error_response(pdo_integrity_error_message($e) . ' | ' . pdo_sql_error_detail($e), 409);
+            error_response(api_safe_failure_message($e), 409);
         }
         throw $e;
     } catch (InvalidArgumentException $e) {

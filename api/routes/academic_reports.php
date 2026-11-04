@@ -2,20 +2,13 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../schema.php';
+require_once __DIR__ . '/../diagnostics.php';
+
 function academic_reports_ensure(PDO $pdo): void
 {
-    $pdo->exec('CREATE TABLE IF NOT EXISTS academic_report_notes (
-        complex_id INT UNSIGNED NOT NULL, student_id VARCHAR(50) NOT NULL,
-        note TEXT NOT NULL, updated_by VARCHAR(255) NOT NULL, updated_at DATETIME NOT NULL,
-        PRIMARY KEY (complex_id, student_id)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
-    $pdo->exec('CREATE TABLE IF NOT EXISTS academic_report_approvals (
-        complex_id INT UNSIGNED NOT NULL, fingerprint CHAR(64) NOT NULL,
-        scope VARCHAR(20) NOT NULL, period_from DATE NOT NULL, period_to DATE NOT NULL,
-        approved_by VARCHAR(255) NOT NULL, approved_at DATETIME NOT NULL,
-        snapshot_json LONGTEXT NOT NULL,
-        PRIMARY KEY (complex_id, fingerprint)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+    schema_require_columns($pdo, 'academic_report_notes', ['complex_id', 'student_id', 'note', 'updated_by', 'updated_at']);
+    schema_require_columns($pdo, 'academic_report_approvals', ['complex_id', 'fingerprint', 'scope', 'period_from', 'period_to', 'approved_by', 'approved_at', 'snapshot_json']);
 }
 
 function handle_list_academic_report_notes(): void
