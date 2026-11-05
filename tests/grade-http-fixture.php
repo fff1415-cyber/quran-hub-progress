@@ -26,6 +26,7 @@ function error_response(string $message,int $status=400):never{http_response_cod
 function json_response(mixed $value):never{header('Content-Type: application/json');echo json_encode($value,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);exit;}
 require __DIR__.'/../api/routes/app_state.php';require __DIR__.'/../api/routes/plans.php';
 require __DIR__.'/../api/routes/weekly_tests.php';
+require_once __DIR__.'/../api/routes/router.php';
 if(PHP_SAPI==='cli'){
  $pdo->exec('CREATE TABLE app_state(complex_id INTEGER NOT NULL,`key` TEXT NOT NULL,value TEXT,UNIQUE(complex_id,`key`));CREATE TABLE semesters(id INTEGER PRIMARY KEY,complex_id INTEGER,is_active INTEGER);INSERT INTO semesters VALUES(1,1,1);CREATE TABLE grade_cell_versions(context_id INTEGER,store_key TEXT,path_sha256 TEXT,path_json TEXT,direct_version TEXT,subtree_version TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(context_id,store_key,path_sha256));CREATE TABLE grade_operation_receipts(context_id INTEGER,store_key TEXT,operation_id TEXT,input_sha256 TEXT,PRIMARY KEY(context_id,store_key,operation_id))');
  app_state_upsert($pdo,'grades',json_decode('{"S":{"1":{"days":{"sun":{"hifz":"","muraja":"","attendance":""}}}},"historic":{"8":{"keep":0}}}'),1);
@@ -39,6 +40,5 @@ if(PHP_SAPI==='cli'){
 try{
  $path=parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH);
  if(QHP_SEMESTER_STORES_V1&&$path==='/fixture-switch-semester'){require_auth();$pdo->exec('UPDATE semesters SET is_active=CASE WHEN id=2 THEN 1 ELSE 0 END');json_response(['ok'=>true]);}
- if($path==='/weekly-tests/result')handle_patch_weekly_test();
- if($_SERVER['REQUEST_METHOD']==='GET')handle_list_app_state();else handle_set_app_state();
+ route_request($_SERVER['REQUEST_METHOD'],$path);
 }catch(Throwable $error){error_response($error->getMessage(),500);}

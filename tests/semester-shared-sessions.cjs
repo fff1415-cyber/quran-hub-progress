@@ -4,9 +4,12 @@ function storage(){const m=new Map();return {get length(){return m.size},key:i=>
 const php=process.env.PHP_CMD||'php',folder=fs.mkdtempSync(path.join(os.tmpdir(),'qhp-atomic-')),db=path.join(folder,'qhp-atomic-semesters.sqlite');
 const env={...process.env,QHP_FIXTURE_DB:db,QHP_FIXTURE_SEMESTERS:'1'};cp.execFileSync(php,['tests/grade-http-fixture.php'],{env,stdio:'pipe'});
 let server,base,sequence=0;const id=()=>`semester-fixture-operation-${++sequence}`;
+const client=load('src/lib/secure-data.functions.ts',{'@/lib/api-base':{buildRphpUrl:path=>base+path},'@/lib/tenant':{getActiveComplexId:()=>1}});
 async function request(role,key,packet,extra=''){
+ if(packet)return client.secureGradeOperation('fixture-'+role,packet);
+ if(!extra)return client.secureGradeSnapshot('fixture-'+role,undefined,key);
  const weekly=packet&&key==='weekly_tests',slot=packet?.changes[0],p=slot?.path;
- const response=await fetch(base+(weekly?'/weekly-tests/result':'/app-state')+(packet?'':`?key=${key}&grade_protocol=1${extra}`),{method:packet?(weekly?'PATCH':'POST'):'GET',headers:{Authorization:'Bearer fixture-'+role,'Content-Type':'application/json'},body:packet?JSON.stringify(weekly?{studentId:p[0],week:Number(p[1]),kind:p[2],index:Number(p[3]),result:slot.next.value,grade_write_protocol:1,value:packet}:{key,grade_write_protocol:1,value:packet}):undefined});
+ const response=await fetch(base+(weekly?'/weekly-tests/result':'/app-state')+(packet?'':`?key=${key}&grade_protocol=1${extra}`),{method:packet?'POST':'GET',headers:{Authorization:'Bearer fixture-'+role,'Content-Type':'application/json'},body:packet?JSON.stringify(weekly?{studentId:p[0],week:Number(p[1]),kind:p[2],index:Number(p[3]),result:slot.next.value,grade_write_protocol:1,value:packet}:{key,grade_write_protocol:1,value:packet}):undefined});
  const value=await response.json();if(!response.ok)throw Object.assign(Error(value.error),{status:response.status});return value;
 }
 function box(role,key){return new GradeOutbox(storage(),role,id,()=>{},key);}
