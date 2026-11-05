@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+if (!function_exists('qhp_load_private_test_config')) require_once __DIR__ . '/private-test-config.php';
 
 // Executed only through CLI on the server. No HTTP entry point or production writes.
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
@@ -26,8 +27,9 @@ try {
         }
         $checks['private_config_secured'] = (fileperms($privateConfig) & 0077) === 0;
         if (!$checks['private_config_secured']) throw new RuntimeException('Private test config remains insecure');
-        ob_start();
-        try { $settings = require $privateConfig; } finally { ob_end_clean(); }
+        $privateContents = file_get_contents($privateConfig);
+        if ($privateContents === false) throw new RuntimeException('Cannot read private test configuration');
+        $settings = qhp_load_private_test_config($privateContents);
         $source = 'private_server_file';
     }
     $checks['private_config_array'] = is_array($settings);
@@ -38,6 +40,22 @@ try {
     $stage = 'test_connection';
     $test = new PDO('mysql:host=' . $settings['host'] . ';dbname=' . $testName . ';charset=utf8mb4', $settings['user'], $settings['password'], $options);
     if ($test->query('SELECT DATABASE()')->fetchColumn() !== $testName) throw new RuntimeException('Unexpected test connection');
+    // Preserve the original private file and normalize only after its credentials prove the exact test identity.
+    if (isset($privateContents)) {
+        $canonical = "<?php\nreturn " . var_export($settings, true) . ";\n";
+        if (trim($privateContents) !== trim($canonical)) {
+            if (!hash_equals(hash('sha256', $privateContents), (string) hash_file('sha256', $privateConfig))) throw new RuntimeException('Private configuration changed during verification');
+            $suffix = bin2hex(random_bytes(6));
+            $backupFile = $privateConfig . '.before-normalize-' . $suffix;
+            $temporaryFile = $privateConfig . '.normalized-' . $suffix;
+            $previousMask = umask(0077);
+            try {
+                if (file_put_contents($backupFile, $privateContents, LOCK_EX) === false || file_put_contents($temporaryFile, $canonical, LOCK_EX) === false) throw new RuntimeException('Cannot preserve private configuration');
+                if (!rename($temporaryFile, $privateConfig)) throw new RuntimeException('Cannot normalize private configuration');
+            } finally { umask($previousMask); }
+            $checks['private_config_normalized'] = true;
+        }
+    }
     $stage = 'production_connection';
     $production = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=' . DB_CHARSET, DB_USER, DB_PASS, $options);
     foreach ([$production, $test] as $pdo) {
