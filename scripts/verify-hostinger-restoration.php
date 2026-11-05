@@ -106,6 +106,14 @@ try {
     }
     echo json_encode(['status'=>'verified_readonly','test_credential_source'=>$source,'schema_matches_current_production'=>$productionMetadata===$testMetadata,'table_sets_match'=>$tables===$testTables,'tables'=>$report,'isolation'=>$isolation,'subdomain_sync_variable_enabled'=>getenv('SEPARATE_SUBDOMAINS')==='true','production_writes'=>false,'test_writes'=>false],JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n";
 } catch (Throwable $error) {
+    // Only classify our own fixed messages; never expose PDO, token values or parser diagnostics.
+    $knownConfigurationErrors = [
+        'Private test configuration too large'=>'too_large',
+        'Ambiguous private configuration'=>'ambiguous',
+        'Private configuration needs literal connection fields'=>'missing_literal_fields',
+        'Private configuration names an unexpected database'=>'unexpected_database',
+    ];
+    if ($stage === 'configuration') $checks['private_config_problem'] = $knownConfigurationErrors[$error->getMessage()] ?? ($error instanceof ParseError ? 'php_syntax' : 'unclassified');
     foreach (['production','test'] as $name) if (isset($$name) && $$name instanceof PDO && $$name->inTransaction()) $$name->rollBack();
     echo json_encode(['status'=>'incomplete','checks'=>$checks,'failed_stage'=>$stage,'errno'=>$error instanceof PDOException?(int)($error->errorInfo[1]??0):null,'private_test_config_required'=>$stage==='test_connection','production_writes'=>false,'test_writes'=>false])."\n";
     exit(1);
