@@ -633,14 +633,16 @@ function mergeNotificationPair(a: Notification, b: Notification): Notification {
   const secondary = rankA >= rankB ? b : a;
   const tdP = primary.transferData;
   const tdS = secondary.transferData;
+  const transferData = tdP ?? tdS;
   return {
     ...secondary,
     ...primary,
     read: a.read || b.read,
     transferStatus: primary.transferStatus ?? secondary.transferStatus,
     targetRole: primary.targetRole ?? secondary.targetRole,
-    transferData: tdP || tdS
+    transferData: transferData
       ? {
+          ...transferData,
           ...(tdS ?? {}),
           ...(tdP ?? {}),
           actions: mergeTransferActions(tdS?.actions, tdP?.actions),
@@ -775,6 +777,7 @@ export interface AttendanceArchiveItem {
   type: "absent" | "late" | "excused";
   date: string;            // ISO yyyy-mm-dd
   dayKey: string;          // sun/mon/..
+  week?: number;          // optional in historical rows; never inferred from another semester
   acknowledgedAt: string;
   acknowledgedBy: string;
 }

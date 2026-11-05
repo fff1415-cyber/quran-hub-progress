@@ -10,6 +10,7 @@ global.localStorage = {
 
 let localAssignments = 0;
 const deps = {
+  '@/lib/request-timeout': { fetchWithTimeout: (...args) => global.fetch(...args) },
   '@/lib/api-base': { buildRphpUrl: path => `https://example.test${path}` },
   '@/lib/cloud-sync': { getToken: () => 'token' },
   '@/lib/plans-store': { localGetStudentSheet: () => ({ assignment: localAssignments ? { id: 'browser-only' } : null, plan: { title: 'محلية' } }) },
