@@ -1,0 +1,7 @@
+# Stage 4 independent profile/assignment transaction candidate
+
+Confirmed defect: the existing assignment endpoint committed the new plan/queue before the browser separately patched student phase/level. A missing response, closed tab or failed PATCH left different devices seeing a new plan with an old profile. The endpoint now derives the same established catalog phase and institute level under its existing transaction/student lock, updates the profile before commit, and returns those confirmed fields. The client updates its cache after existing assignment read-back, without an independent late profile PATCH. Existing progression rules, hifz pass criteria, roles, catalog conventions and historical completions remain unchanged.
+
+Isolated SQLite actual-handler acceptance covers phase 1 -> 2, preserved completion rows, duplicate stale approval, legacy gold numbering and an injected final profile failure rolling back the assignment/queue/profile together. Native MySQL/MariaDB driver tests the same stored behavior with a final CHECK failure. The original historical-baseline harness gains a support-only switch for the new driver; ordinary execution remains unchanged.
+
+This is not a transactional academic-record writer or an end-to-end transition receipt recovery release. Academic record/notification delivery, catalog-specific unresolved real cases, full browser acceptance and publication/restore/isolation gates remain. Stacked on #55; no production data or schema change.

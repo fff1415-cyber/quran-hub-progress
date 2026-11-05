@@ -131,7 +131,7 @@ export async function assignStudentPlan(
   const responseSnapshot = capturePlanResponse();
   const expectedAssignment = options?.expected_assignment_id ?? (await fetchStudentPlanSheet(studentId)).assignment?.id ?? "";
   assertPlanResponseCurrent(responseSnapshot);
-  const result = await planFetch<{ assignment_id: string; sard_queue?: unknown[] | null }>("/plans/assign", {
+  const result = await planFetch<{ assignment_id: string; sard_queue?: unknown[] | null; student_phase?: { phase_number: number; level: string; institute_level: string } }>("/plans/assign", {
       method: "POST",
       body: JSON.stringify({
         student_id: studentId,
@@ -156,12 +156,15 @@ export async function assignStudentPlan(
   if (!result.assignment_id || sheet.assignment?.id !== result.assignment_id || sheet.plan?.id !== planId) {
     throw new Error("تعذّر تأكيد الخطة المرتبطة من الخادم؛ افتح استمارة الطالب قبل إعادة المحاولة");
   }
-  try {
-    const catalog = await fetchPlans(sheet.plan.track);
+  if (result.student_phase) {
+    const { loadStudents, saveStudents } = await import("@/lib/mock-data");
     assertPlanResponseCurrent(responseSnapshot);
-    await syncStudentPhaseFromPlan(studentId, sheet.plan.track, sheet.plan.level_number, catalog);
-  } catch {
-    // The assignment is already confirmed on the server; avoid reporting a failed link.
+    const profile = result.student_phase;
+    try {
+      saveStudents(loadStudents().map(student => student.id === studentId ? { ...student, phaseNumber: profile.phase_number, level: profile.level, instituteLevel: profile.institute_level } : student));
+    } catch {
+      throw new Error("ثُبّت التعيين والمرحلة على الخادم؛ تعذّر تحديث ذاكرة هذا الجهاز. أعد تحميل البيانات بدل تكرار الانتقال");
+    }
   }
   assertPlanResponseCurrent(responseSnapshot);
 }
