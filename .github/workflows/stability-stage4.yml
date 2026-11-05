@@ -4,7 +4,33 @@ on:
 permissions:
   contents: read
 jobs:
+  changes:
+    if: github.head_ref == 'fix/stability-stage-4-transition-profile'
+    runs-on: ubuntu-latest
+    outputs:
+      source: ${{ steps.scope.outputs.source }}
+      php: ${{ steps.scope.outputs.php }}
+      native: ${{ steps.scope.outputs.native }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: |
+          candidate='${{ github.event.pull_request.head.sha }}'
+          changed() {
+            name="$1"; shift
+            if git diff --quiet "$candidate^" "$candidate" -- "$@"; then
+              echo "$name=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "$name=true" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          changed source src tests/stage2-atomic-local.cjs package.json package-lock.json
+          changed php api tests/stage4-profile.php tests/backend-sard-regression.php
+          changed native api/lib/plan-profile.php api/routes/plans.php api/diagnostics.php tests/stage4-native.php
   client-sqlite:
+    needs: changes
     if: github.head_ref == 'fix/stability-stage-4-transition-profile'
     runs-on: ubuntu-latest
     steps:
@@ -19,10 +45,16 @@ jobs:
           extensions: pdo_sqlite
       - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
       - run: php tests/stage4-profile.php
+        if: needs.changes.outputs.php == 'true'
+      - run: node tests/stage2-atomic-local.cjs
+        if: needs.changes.outputs.source == 'true'
       - run: npx tsc --noEmit
+        if: needs.changes.outputs.source == 'true'
       - run: npm run build:hostinger
+        if: needs.changes.outputs.source == 'true'
   native:
-    if: github.head_ref == 'fix/stability-stage-4-transition-profile'
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
     runs-on: ubuntu-latest
     strategy:
       matrix:
