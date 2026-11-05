@@ -13,7 +13,7 @@ function stage1_error(int $errno, string $state = 'HY000'): PDOException {
     $error->errorInfo = [$state, $errno, $error->getMessage()];
     return $error;
 }
-foreach ([2002=>'connection',2013=>'connection',1045=>'permission',1142=>'permission',1054=>'schema',1146=>'schema',1064=>'sql',1205=>'timeout',1213=>'conflict',1062=>'integrity'] as $errno=>$category) {
+foreach ([2002=>'connection',2013=>'connection',1045=>'permission',1142=>'permission',1054=>'schema',1146=>'schema',1064=>'sql',1205=>'timeout',1213=>'conflict',1062=>'integrity',3819=>'integrity'] as $errno=>$category) {
     $error = stage1_error($errno, $errno===1062?'23000':'HY000');
     stage1_check(api_database_error_category($error)===$category, 'distinct database category '.$errno);
     $message=api_safe_failure_message($error, 'isolated_test');
