@@ -6,7 +6,7 @@ function academicNativeSeed(string $student):void {
  foreach($queue as&$row)if($row['studentId']===$student){$row['week']=3;$row['halaqaId']=7;}unset($row);app_state_upsert($pdo,'sard_queue',$queue,1);
  $GLOBALS['input']['sard_result']['academic_record']=['hifzScore'=>0,'reviewScore'=>18];
 }
-academicNativeSeed('AC');handle_assign_plan();$original=$GLOBALS['response'];handle_assign_plan();check($GLOBALS['response']===$original&&$original['academic_record']['assignmentId']==='old-AC','native duplicate approval replays original confirmed academic transition');
+academicNativeSeed('AC');handle_assign_plan();$original=$GLOBALS['response'];handle_assign_plan();check(json_encode($GLOBALS['response'],JSON_THROW_ON_ERROR)===json_encode($original,JSON_THROW_ON_ERROR)&&$original['academic_record']['assignmentId']==='old-AC','native duplicate approval replays identical HTTP JSON, including zero scores, from confirmed academic transition');
 check((int)$pdo->query("SELECT COUNT(*) FROM student_plan_assignments WHERE student_id='AC'")->fetchColumn()===2,'native receipt prevents duplicate assignment');
 academicNativeSeed('ACRACE');$children=[];
 for($i=0;$i<2;$i++){$pid=pcntl_fork();if($pid<0)throw new RuntimeException('fork failed');if($pid===0){try{$GLOBALS['pdo']=new PDO(getenv('AUDIT_MYSQL_DSN'),'audit','audit_only',[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);handle_assign_plan();exit(0);}catch(Throwable $e){fwrite(STDERR,$e->getMessage());exit(1);}}$children[]=$pid;}

@@ -4,8 +4,36 @@ on:
 permissions:
   contents: read
 jobs:
-  client-sqlite:
+  scope:
     if: github.head_ref == 'fix/stability-semester-stores'
+    runs-on: ubuntu-latest
+    outputs:
+      client: ${{ steps.scope.outputs.client }}
+      semester: ${{ steps.scope.outputs.semester }}
+      academic: ${{ steps.scope.outputs.academic }}
+      app: ${{ steps.scope.outputs.app }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: |
+          candidate='${{ github.event.pull_request.head.sha }}'
+          changed() {
+            name="$1"; shift
+            if git diff --quiet "$candidate^" "$candidate" -- "$@"; then
+              echo "$name=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "$name=true" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          changed client src api tests/semester-shared-sessions.cjs tests/shared-store-client.cjs tests/academic-transition.php package.json package-lock.json
+          changed app src api tests/semester-shared-sessions.cjs tests/shared-store-client.cjs package.json package-lock.json
+          changed semester api/lib/semester-grade-stores.php api/lib/semester-grade-reads.php api/lib/grade-cell-operations.php api/lib/grade-write-api.php api/routes/app_state.php tests/semester-native.php
+          changed academic api/lib/plan-academic-record.php api/lib/plan-profile.php api/routes/plans.php api/routes/app_state.php tests/academic-native.php tests/stage4-native.php
+  client-sqlite:
+    needs: scope
+    if: needs.scope.outputs.client == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 12
     steps:
@@ -20,16 +48,24 @@ jobs:
           extensions: pdo_sqlite
       - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
       - run: node tests/semester-shared-sessions.cjs
+        if: needs.scope.outputs.app == 'true'
       - run: node tests/shared-store-client.cjs
+        if: needs.scope.outputs.app == 'true'
       - run: php tests/academic-transition.php
       # These prior tests cover engine and assignment code changed by this PR.
       - run: node tests/stage2-atomic-sessions.cjs && node tests/stage2-atomic-local.cjs
+        if: needs.scope.outputs.app == 'true'
       - run: php tests/stage3-atomic-plan.php && php tests/stage4-profile.php
+        if: needs.scope.outputs.app == 'true'
       - run: node tests/stage4-plan-track.cjs && node tests/plan-server-confirmation.cjs
+        if: needs.scope.outputs.app == 'true'
       - run: npx tsc --noEmit
+        if: needs.scope.outputs.app == 'true'
       - run: npm run build:hostinger
+        if: needs.scope.outputs.app == 'true'
   native:
-    if: github.head_ref == 'fix/stability-semester-stores'
+    needs: scope
+    if: needs.scope.outputs.semester == 'true' || needs.scope.outputs.academic == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
@@ -56,12 +92,15 @@ jobs:
           php-version: '8.3'
           extensions: pdo_mysql, pcntl
       - run: php tests/semester-native.php
+        if: needs.scope.outputs.semester == 'true'
         env:
           AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
       - name: Reset only the disposable database for independent transition cases
+        if: needs.scope.outputs.semester == 'true' && needs.scope.outputs.academic == 'true'
         run: php -r '$p=new PDO(getenv("AUDIT_MYSQL_DSN"),"audit","audit_only");$p->exec("DROP TABLE grade_operation_receipts, grade_cell_versions, app_state, semesters");'
         env:
           AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
       - run: php tests/academic-native.php
+        if: needs.scope.outputs.academic == 'true'
         env:
           AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4

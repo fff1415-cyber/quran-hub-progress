@@ -7,10 +7,10 @@ function academicSeed():PDO {
  $GLOBALS['input']['sard_result']['academic_record']=['hifzScore'=>0,'reviewScore'=>18];return $pdo;
 }
 function academicRows(PDO $pdo):array{$q=$pdo->query("SELECT value FROM app_state WHERE complex_id=1 AND `key`='academic_records'");return json_decode((string)$q->fetchColumn(),true);}
-$pdo=academicSeed();$old=$pdo->query('SELECT * FROM segment_completions')->fetchAll();handle_assign_plan();$response=$GLOBALS['response'];$record=$response['academic_record'];
+$pdo=academicSeed();$old=$pdo->query('SELECT * FROM segment_completions')->fetchAll();handle_assign_plan();$firstResponse=$GLOBALS['response'];$record=$firstResponse['academic_record'];
 check($record['id']==='ar-assignment-old'&&$record['assignmentId']==='old'&&$record['planId']==='current'&&$record['planTitle']==='current plan'&&$record['levelNumber']===1001&&$record['hifzScore']===0.0&&$record['week']===3&&$record['halaqaId']===7,'server binds academic record to observed old assignment/plan and saved queue, preserving assessed zero');
 check(activePlan($pdo)==='next'&&queue($pdo)[0]['status']==='passed'&&count(academicRows($pdo))===2&&academicRows($pdo)[1]['unknown']['keep']===null&&$pdo->query('SELECT * FROM segment_completions')->fetchAll()===$old,'assignment/profile/pass/academic record commit together with all historical values unchanged');
-handle_assign_plan();check($GLOBALS['response']===$response&&count(academicRows($pdo))===2&&(int)$pdo->query('SELECT COUNT(*) FROM student_plan_assignments')->fetchColumn()===2,'lost-response retry returns immutable transition receipt, with no duplicate assignment/record');
+handle_assign_plan();check(json_encode($GLOBALS['response'],JSON_THROW_ON_ERROR)===json_encode($firstResponse,JSON_THROW_ON_ERROR)&&count(academicRows($pdo))===2&&(int)$pdo->query('SELECT COUNT(*) FROM student_plan_assignments')->fetchColumn()===2,'lost-response retry returns identical HTTP JSON from immutable transition receipt, with no duplicate assignment/record');
 $stale=academicRows($pdo);$stale[0]['percent']=0;expectFailure(fn()=>app_state_save_untruncated_history($pdo,1,'academic_records',$stale),'سجل الاجتياز مؤكد');check(academicRows($pdo)[0]['percent']===90,'legacy whole-history client cannot overwrite confirmed transition record');
 $GLOBALS['input']['sard_result']['academic_record']['hifzScore']=1;expectFailure(fn()=>handle_assign_plan(),'محتوى مختلف');check(count(academicRows($pdo))===2,'receipt cannot be reused for different results');
 foreach(['academic_records','grade_plan_transition:']as$target){
