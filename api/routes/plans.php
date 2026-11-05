@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../schema.php';
+require_once __DIR__ . '/../diagnostics.php';
+
 function plans_require_roles(array $auth, array $roles): void
 {
     $role = (string) ($auth['role'] ?? '');
@@ -100,23 +103,13 @@ function plans_abort_with_sql_error(PDO $pdo, PDOException $e, string $context):
             /* ignore rollback failure */
         }
     }
-    error_response(plans_pdo_diagnostic_message($e, $context), 500);
+    error_response(plans_pdo_diagnostic_message($e, $context), api_database_error_status($e));
 }
 
 /** Human hint + raw MySQL message (table/column/FK names). */
 function plans_pdo_diagnostic_message(PDOException $e, string $context): string
 {
-    if (function_exists('pdo_is_connection_error') && pdo_is_connection_error($e)) {
-        $detail = function_exists('pdo_sql_error_detail') ? pdo_sql_error_detail($e) : $e->getMessage();
-        return "[$context] تعذّر الاتصال بقاعدة البيانات — راجع api/config.php (DB_NAME, DB_USER, DB_PASS) | $detail";
-    }
-
-    if (function_exists('pdo_api_error_message')) {
-        return "[$context] " . pdo_api_error_message($e);
-    }
-
-    $detail = function_exists('pdo_sql_error_detail') ? pdo_sql_error_detail($e) : $e->getMessage();
-    return "[$context] خطأ SQL | $detail";
+    return api_safe_failure_message($e, $context);
 }
 
 function plans_assert_import_schema(PDO $pdo): void
@@ -138,72 +131,20 @@ function plans_assert_import_schema(PDO $pdo): void
 /** Add plan_start_date / start_muraja_segment when table predates migrate-plan-assignments-v2.sql */
 function plans_ensure_assignment_v2_columns(PDO $pdo): void
 {
-    if (!plans_table_exists($pdo, 'student_plan_assignments')) {
-        return;
-    }
-    if (!plans_column_exists($pdo, 'student_plan_assignments', 'plan_start_date')) {
-        $pdo->exec(
-            'ALTER TABLE `student_plan_assignments`
-             ADD COLUMN `plan_start_date` DATE NULL DEFAULT NULL AFTER `start_segment_index`'
-        );
-    }
-    if (!plans_column_exists($pdo, 'student_plan_assignments', 'start_muraja_segment')) {
-        $pdo->exec(
-            'ALTER TABLE `student_plan_assignments`
-             ADD COLUMN `start_muraja_segment` INT NULL DEFAULT NULL AFTER `plan_start_date`'
-        );
-    }
-    if (!plans_column_exists($pdo, 'student_plan_assignments', 'transferred_at')) {
-        $pdo->exec(
-            'ALTER TABLE `student_plan_assignments`
-             ADD COLUMN `transferred_at` TIMESTAMP NULL DEFAULT NULL AFTER `frozen_at`'
-        );
-    }
+    schema_require_columns($pdo, 'student_plan_assignments', ['plan_start_date', 'start_muraja_segment', 'transferred_at']);
 }
 
 function plans_ensure_daily_faces_columns(PDO $pdo): void
 {
-    $planCols = [
-        'daily_hifz_faces' => 'TINYINT UNSIGNED NOT NULL DEFAULT 2',
-        'daily_rabt_faces' => 'TINYINT UNSIGNED NOT NULL DEFAULT 2',
-        'daily_muraja_faces' => 'TINYINT UNSIGNED NOT NULL DEFAULT 2',
-        'faces_per_half' => 'TINYINT UNSIGNED NOT NULL DEFAULT 1',
-        'faces_per_one' => 'TINYINT UNSIGNED NOT NULL DEFAULT 2',
-        'faces_per_two' => 'TINYINT UNSIGNED NOT NULL DEFAULT 4',
-    ];
-    if (plans_table_exists($pdo, 'education_plans')) {
-        $after = 'segment_count';
-        foreach ($planCols as $col => $def) {
-            if (!plans_column_exists($pdo, 'education_plans', $col)) {
-                $pdo->exec("ALTER TABLE `education_plans` ADD COLUMN `$col` $def AFTER `$after`");
-            }
-            $after = $col;
-        }
-    }
-    if (plans_table_exists($pdo, 'student_plan_assignments')) {
-        $after = 'start_muraja_segment';
-        if (!plans_column_exists($pdo, 'student_plan_assignments', 'start_muraja_segment')) {
-            if (plans_column_exists($pdo, 'student_plan_assignments', 'plan_start_date')) {
-                $after = 'plan_start_date';
-            } else {
-                $after = 'start_segment_index';
-            }
-        }
-        foreach ($planCols as $col => $def) {
-            if (!plans_column_exists($pdo, 'student_plan_assignments', $col)) {
-                $pdo->exec("ALTER TABLE `student_plan_assignments` ADD COLUMN `$col` $def AFTER `$after`");
-            }
-            $after = $col;
-        }
-    }
+    $columns = ['daily_hifz_faces', 'daily_rabt_faces', 'daily_muraja_faces', 'faces_per_half', 'faces_per_one', 'faces_per_two'];
+    schema_require_columns($pdo, 'education_plans', $columns);
+    schema_require_columns($pdo, 'student_plan_assignments', $columns);
 }
 
 /** Completion rows must belong to the current assignment, not a previous use of the plan. */
 function plans_ensure_completion_assignment_column(PDO $pdo): void
 {
-    if (!plans_column_exists($pdo, 'segment_completions', 'assignment_id')) {
-        $pdo->exec('ALTER TABLE segment_completions ADD COLUMN assignment_id CHAR(36) NULL DEFAULT NULL');
-    }
+    schema_require_columns($pdo, 'segment_completions', ['assignment_id']);
 }
 
 function plans_track_face_quotas(string $track): array
@@ -328,7 +269,7 @@ function handle_list_plans(): void
     } catch (PDOException $e) {
         plans_abort_with_sql_error($pdo, $e, 'تحميل قائمة الخطط');
     } catch (Throwable $e) {
-        error_response('فشل تحميل الخطط: ' . $e->getMessage(), 500);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'فشل تحميل الخطط: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 500);
     }
 }
 
@@ -516,7 +457,7 @@ function handle_import_plans(): void
                 /* ignore */
             }
         }
-        error_response('فشل استيراد الخطط: ' . $e->getMessage(), 500);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'فشل استيراد الخطط: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 500);
     }
 
     json_response(['ok' => true, 'plans_imported' => $imported, 'segments_imported' => $segmentsTotal]);
@@ -872,7 +813,7 @@ function handle_assign_plan(): void
         plans_abort_with_sql_error($pdo, $e, 'ربط الطالب بالخطة');
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        error_response('فشل ربط الطالب: ' . $e->getMessage(), 500);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'فشل ربط الطالب: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 500);
     }
 }
 
@@ -919,7 +860,7 @@ function handle_patch_assignment_quotas(): void
         json_response(['ok' => true, 'updated' => $updated, 'assignment_id' => $assignmentId]);
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        error_response($e->getMessage(), $e instanceof PDOException ? 500 : 409);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 409);
     }
 }
 
@@ -954,7 +895,7 @@ function handle_patch_assignment(): void
         json_response(['ok' => true, 'updated' => $updated, 'assignment_id' => $assignmentId, 'status' => $status]);
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        error_response($e->getMessage(), $e instanceof PDOException ? 500 : 409);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 409);
     }
 }
 
@@ -1070,7 +1011,7 @@ function handle_student_plan_sheet(): void
     } catch (PDOException $e) {
         plans_abort_with_sql_error($pdo, $e, 'ورقة خطة الطالب');
     } catch (Throwable $e) {
-        error_response('فشل تحميل ورقة الخطة: ' . $e->getMessage(), 500);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'فشل تحميل ورقة الخطة: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 500);
     }
 }
 
@@ -1146,7 +1087,7 @@ function handle_halaqa_plan_status(): void
     } catch (PDOException $e) {
         plans_abort_with_sql_error($pdo, $e, 'حالة خطط الحلقة');
     } catch (Throwable $e) {
-        error_response('فشل تحميل حالة الخطط: ' . $e->getMessage(), 500);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'فشل تحميل حالة الخطط: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 500);
     }
 }
 
@@ -1185,7 +1126,7 @@ function handle_apply_plan_input(): void
         plans_ensure_assignment_v2_columns($pdo);
         plans_ensure_completion_assignment_column($pdo);
     } catch (Throwable $e) {
-        error_response('جداول الربط تحتاج تحديثاً: ' . $e->getMessage(), 500);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'جداول الربط تحتاج تحديثاً: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 500);
     }
 
     $assignStmt = $pdo->prepare(
@@ -1477,7 +1418,7 @@ function handle_supervisor_plan_hifz(): void
         json_response(['ok' => true, 'sard_queue' => $queue]);
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        error_response('تعذّر تعديل حفظ الخطة: ' . $e->getMessage(), $e instanceof PDOException ? 500 : 409);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'تعذّر تعديل حفظ الخطة: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 409);
     }
 }
 
@@ -1545,6 +1486,6 @@ function handle_delete_plan(): void
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        error_response('فشل حذف الخطة: ' . $e->getMessage(), 500);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'فشل حذف الخطة: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 500);
     }
 }

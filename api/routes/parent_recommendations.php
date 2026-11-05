@@ -2,17 +2,12 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../schema.php';
+require_once __DIR__ . '/../diagnostics.php';
+
 function parent_recommendations_ensure_table(PDO $pdo): void
 {
-    $pdo->exec('CREATE TABLE IF NOT EXISTS parent_recommendations (
-        id CHAR(36) NOT NULL PRIMARY KEY,
-        complex_id INT UNSIGNED NOT NULL,
-        student_id VARCHAR(50) NOT NULL,
-        teacher_name VARCHAR(255) NOT NULL,
-        recommendation TEXT NOT NULL,
-        created_at DATETIME NOT NULL,
-        KEY idx_parent_recommendations_student (complex_id, student_id, created_at)
-    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
+    schema_require_columns($pdo, 'parent_recommendations', ['id', 'complex_id', 'student_id', 'teacher_name', 'recommendation', 'created_at']);
 }
 
 function handle_list_parent_recommendations(): void

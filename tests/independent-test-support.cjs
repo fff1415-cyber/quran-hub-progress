@@ -3,7 +3,8 @@ const ts = require('typescript');
 function load(path, deps, source = fs.readFileSync(path, 'utf8')) {
   const exports = {};
   const code = ts.transpileModule(source, {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
-  new Function('require', 'exports', code)(name => { if (!(name in deps)) throw Error(`Unexpected dependency ${name}`); return deps[name]; }, exports);
+  // Transport timing has dedicated stage1-client coverage; preserve existing deferred domain fixtures and Proxy dependencies.
+  new Function('require', 'exports', code)(name => { if (name === '@/lib/request-timeout') return { fetchWithTimeout: (...args) => global.fetch(...args) }; if (!(name in deps)) throw Error(`Unexpected dependency ${name}`); return deps[name]; }, exports);
   return exports;
 }
 function storage() { const data = new Map(); return {data,getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,String(value)),removeItem:key=>data.delete(key)}; }

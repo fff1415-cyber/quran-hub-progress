@@ -1,0 +1,193 @@
+name: Stability stage 1 database acceptance
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  application-changes:
+    if: github.head_ref == 'fix/stability-stage-1-database'
+    runs-on: ubuntu-latest
+    outputs:
+      retest: ${{ steps.scope.outputs.retest }}
+      restore: ${{ steps.scope.outputs.restore }}
+      scope: ${{ steps.scope.outputs.scope }}
+      backup: ${{ steps.scope.outputs.backup }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: |
+          if git diff --quiet 8c45d1b038fe515437bff28aad0200be2ff6f53a HEAD -- api src database tests; then
+            echo 'retest=false' >> "$GITHUB_OUTPUT"
+            echo 'Application/schema/test sources match passing run 41896924376; reuse its results.'
+          else
+            echo 'retest=true' >> "$GITHUB_OUTPUT"
+          fi
+          candidate='${{ github.event.pull_request.head.sha }}'
+          if git diff --quiet "$candidate^" "$candidate" -- scripts/verify-hostinger-restoration.php scripts/verify-hostinger-restoration.py; then
+            echo 'restore=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'restore=true' >> "$GITHUB_OUTPUT"
+          fi
+          if git diff --quiet "$candidate^" "$candidate" -- scripts/verify-main-root-scope.py; then
+            echo 'scope=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'scope=true' >> "$GITHUB_OUTPUT"
+          fi
+          if git diff --quiet "$candidate^" "$candidate" -- scripts/create-private-db-backup.php scripts/create-private-db-backup.py; then
+            echo 'backup=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'backup=true' >> "$GITHUB_OUTPUT"
+          fi
+  isolated:
+    needs: application-changes
+    if: needs.application-changes.outputs.retest == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, pdo_sqlite
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - name: PHP syntax and isolated acceptance
+        run: |
+          set -e
+          find api tests database scripts -name '*.php' -print0 | xargs -0 -n1 php -l > /tmp/stage1-php-syntax.txt
+          php tests/stage1-database.php
+          php tests/stage1-health.php
+          node tests/stage1-client.cjs
+          node tests/assignment-target-regression.cjs
+          node tests/plan-response-client-regression.cjs
+          node tests/scientific-response-regression.cjs
+          php tests/backend-retry-setting-compat.php
+      - name: No new TypeScript diagnostics
+        run: python3 tests/type-baseline-regression.py
+      - run: npm run build:hostinger
+  native:
+    needs: application-changes
+    if: needs.application-changes.outputs.retest == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      matrix:
+        include:
+          - image: mysql:8.0
+            health: mysqladmin ping -h 127.0.0.1
+          - image: mariadb:11.8
+            health: healthcheck.sh --connect --innodb_initialized
+    services:
+      mysql:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_DATABASE: audit_test
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: ['3307:3306']
+        options: --health-cmd="${{ matrix.health }}" --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql
+      - name: Repeatable additions and read-only runtime guards on real database
+        env:
+          AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
+        run: |
+          php tests/stage1-database.php
+          python3 tests/stage1-http.py
+  production-readonly:
+    needs: application-changes
+    if: needs.application-changes.outputs.retest == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Metadata and main-site isolation only; no routes or writes
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: python3 scripts/probe-stage1-readonly.py
+  restoration-readonly:
+    needs: application-changes
+    if: needs.application-changes.outputs.restore == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Read-only restored database comparison and main-root check
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          SEPARATE_SUBDOMAINS: ${{ vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS }}
+        run: python3 scripts/verify-hostinger-restoration.py
+  main-root-readonly:
+    needs: application-changes
+    if: needs.application-changes.outputs.scope == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Main and excluded root provenance; no database or file writes
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+          DEPLOY_FRONTEND: ${{ secrets.FTP_SERVER_DIR }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          SEPARATE_SUBDOMAINS: ${{ vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS }}
+        run: python3 scripts/verify-main-root-scope.py
+  backup-fixture:
+    needs: application-changes
+    if: needs.application-changes.outputs.backup == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_DATABASE: audit_test
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: ['3307:3306']
+        options: --health-cmd="mysqladmin ping -h 127.0.0.1" --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql
+      - name: Actual backup and restore of disposable synthetic fixture
+        env:
+          QHP_BACKUP_FIXTURE: '1'
+        run: php scripts/tests/private-db-backup.php
+  private-database-backup:
+    needs: [application-changes, backup-fixture]
+    if: needs.application-changes.outputs.backup == 'true' && needs.backup-fixture.result == 'success' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create and validate private server archive; no production record writes
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: python3 scripts/create-private-db-backup.py
