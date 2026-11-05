@@ -12,7 +12,7 @@ load('src/lib/attach-api-auth.ts',{'@tanstack/react-start':{createMiddleware:()=
 let nextOptions;middleware({next:opts=>{nextOptions=opts;}});assert.equal(nextOptions.headers.Authorization,'Bearer persistent-test-token');
 const ledger=load('src/lib/financial-ledger.ts',{'@/lib/auth-session':{hasAuthToken:()=>false},'@/lib/tenant':{getActiveComplexId:()=>1}});
 assert.deepEqual(ledger.parseFinancialLedgerRaw({entries:[],deletedIds:['delete-1',123,null]}).deletedIds,['delete-1']);
-const mock=load('src/lib/mock-data.ts',{'@/lib/auth-session':{hasAuthToken:()=>false}});
+const mock=load('src/lib/mock-data.ts',{'@/lib/auth-session':{hasAuthToken:()=>false},'./grade-sync':{gradeView:v=>v,currentGradeOutbox:()=>null,recordGradeEdit:()=>false}});
 const transfer={studentId:'fixture',halaqaId:1,week:2,reason:'fixture',fromName:'fixture',actions:[{at:'1',role:'teacher',text:'sent'}]};
 const merged=mock.mergeNotifications([{id:'T',transferData:transfer,transferStatus:'pending'}],[{id:'T',transferStatus:'closed',read:true}]);
 assert.equal(merged[0].transferData.studentId,'fixture');assert.equal(merged[0].read,true);assert.equal(merged[0].transferData.actions.length,1);

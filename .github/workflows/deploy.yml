@@ -154,7 +154,7 @@ jobs:
           DEPLOY_FRONTEND: ${{ steps.paths.outputs.frontend }}
           DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           DEPLOY_SHA: ${{ github.sha }}
-          SEPARATE_SUBDOMAINS: ${{ vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS }}
+          SEPARATE_SUBDOMAINS: 'false'
         run: python3 scripts/backup-hostinger-frontend.py
 
       - name: Prepare changed API files from the approved commit
@@ -172,7 +172,7 @@ jobs:
           DEPLOY_API_PATH: ${{ steps.paths.outputs.api }}
           DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           API_VERIFY_PHASE: before
-          SEPARATE_SUBDOMAINS: ${{ vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS }}
+          SEPARATE_SUBDOMAINS: 'false'
         run: python3 scripts/verify-hostinger-api.py
 
       - name: Back up API code before upload
@@ -185,7 +185,7 @@ jobs:
           DEPLOY_SHA: ${{ github.sha }}
           DEPLOY_PACKAGE: dist/api-release
           DEPLOY_BACKUP_KIND: api
-          SEPARATE_SUBDOMAINS: ${{ vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS }}
+          SEPARATE_SUBDOMAINS: 'false'
         run: python3 scripts/backup-hostinger-frontend.py
 
       - name: Sync PHP API (SFTP primary)
@@ -251,38 +251,6 @@ jobs:
           echo "::error::API deploy failed. Same FTP secrets as frontend — see Ensure frontend deployed step."
           exit 1
 
-      - name: Sync m1 subdomain API (SFTP)
-        id: sftp_m1_api
-        continue-on-error: true
-        if: steps.changes.outputs.api_changed == 'true' && (steps.sftp_api.outcome == 'success' || steps.rsync_api.outcome == 'success' || steps.ftps_api.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
-        with:
-          username: ${{ steps.paths.outputs.ssh_user }}
-          server: ${{ secrets.FTP_SERVER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ env.SSH_PORT }}
-          local_path: ./dist/api-release/
-          remote_path: ${{ steps.paths.outputs.m1_api }}
-          sftp_only: true
-          sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
-          rsyncArgs: "--exclude=config.php"
-
-      - name: Sync m2 subdomain API (SFTP)
-        id: sftp_m2_api
-        continue-on-error: true
-        if: steps.changes.outputs.api_changed == 'true' && (steps.sftp_api.outcome == 'success' || steps.rsync_api.outcome == 'success' || steps.ftps_api.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
-        with:
-          username: ${{ steps.paths.outputs.ssh_user }}
-          server: ${{ secrets.FTP_SERVER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ env.SSH_PORT }}
-          local_path: ./dist/api-release/
-          remote_path: ${{ steps.paths.outputs.m2_api }}
-          sftp_only: true
-          sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
-          rsyncArgs: "--exclude=config.php"
-
       - name: Verify changed API files before frontend upload
         if: steps.changes.outputs.api_changed == 'true'
         env:
@@ -290,7 +258,7 @@ jobs:
           DEPLOY_USER: ${{ steps.paths.outputs.ssh_user }}
           DEPLOY_API_PATH: ${{ steps.paths.outputs.api }}
           DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          SEPARATE_SUBDOMAINS: ${{ vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS }}
+          SEPARATE_SUBDOMAINS: 'false'
         run: python3 scripts/verify-hostinger-api.py
 
       # Hostinger: SFTP on port 65002 is more reliable than FTPS from GitHub Actions
@@ -362,80 +330,6 @@ jobs:
 
       # Subdomains: by default m1/m2 use the same docroot as msht.io (hPanel).
       # Only sync separate folders when HOSTINGER_SEPARATE_SUBDOMAIN_DIRS=true.
-      - name: Sync m1 subdomain frontend (SFTP)
-        id: sftp_m1_frontend
-        continue-on-error: true
-        if: (steps.sftp_frontend.outcome == 'success' || steps.rsync_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
-        with:
-          username: ${{ steps.paths.outputs.ssh_user }}
-          server: ${{ secrets.FTP_SERVER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ env.SSH_PORT }}
-          local_path: ./dist/client/
-          remote_path: ${{ steps.paths.outputs.m1_frontend }}
-          sftp_only: true
-          sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
-          rsyncArgs: "--recursive"
-
-      - name: Remove default.php on m1 (SSH)
-        id: m1_remove_default
-        continue-on-error: true
-        if: (steps.sftp_m1_frontend.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
-        env:
-          FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-        run: |
-          sudo apt-get install -y sshpass >/dev/null
-          bash scripts/post-deploy-hostinger-subdomains.sh \
-            "${{ steps.paths.outputs.ssh_user }}" \
-            "${{ secrets.FTP_SERVER }}"
-
-      - name: Sync m2 subdomain frontend (SFTP)
-        id: sftp_m2_frontend
-        continue-on-error: true
-        if: (steps.sftp_frontend.outcome == 'success' || steps.rsync_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success') && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true'
-        uses: wlixcc/SFTP-Deploy-Action@v1.2.5
-        with:
-          username: ${{ steps.paths.outputs.ssh_user }}
-          server: ${{ secrets.FTP_SERVER }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          port: ${{ env.SSH_PORT }}
-          local_path: ./dist/client/
-          remote_path: ${{ steps.paths.outputs.m2_frontend }}
-          sftp_only: true
-          sftpArgs: "-o ConnectTimeout=90 -o StrictHostKeyChecking=no -o ServerAliveInterval=30"
-          rsyncArgs: "--recursive"
-
-      - name: Ensure m1 subdomain deployed
-        if: always() && vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS == 'true' && (steps.sftp_frontend.outcome == 'success' || steps.rsync_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success')
-        run: |
-          echo "m1 frontend: ${{ steps.sftp_m1_frontend.outcome || 'skipped' }}"
-          echo "m1 api: ${{ steps.sftp_m1_api.outcome || 'skipped' }}"
-          echo "m2 frontend: ${{ steps.sftp_m2_frontend.outcome || 'skipped' }}"
-          echo "m2 api: ${{ steps.sftp_m2_api.outcome || 'skipped' }}"
-          if [ "${{ steps.sftp_m1_frontend.outcome }}" = "failure" ] || [ "${{ steps.sftp_m1_api.outcome }}" = "failure" ]; then
-            echo "::error::m1.msht.io SFTP deploy failed."
-            echo "Either fix path /home/USER/domains/m1.msht.io/public_html/ or use unified docroot:"
-            echo "  hPanel → Subdomains → m1 → Document root = /home/USER/domains/msht.io/public_html/"
-            echo "  Then remove HOSTINGER_SEPARATE_SUBDOMAIN_DIRS (default skips separate sync)."
-            exit 1
-          fi
-
-      - name: Subdomain deploy summary
-        if: always()
-        continue-on-error: true
-        run: |
-          echo "m1 frontend: ${{ steps.sftp_m1_frontend.outcome || 'skipped' }}"
-          echo "m1 api: ${{ steps.sftp_m1_api.outcome || 'skipped' }}"
-          echo "m1 default.php removed: ${{ steps.m1_remove_default.outcome || 'skipped' }}"
-          echo "m2 frontend: ${{ steps.sftp_m2_frontend.outcome || 'skipped' }}"
-          echo "m2 api: ${{ steps.sftp_m2_api.outcome || 'skipped' }}"
-          if [ "${{ vars.HOSTINGER_SEPARATE_SUBDOMAIN_DIRS }}" = "true" ]; then
-            echo "HOSTINGER_SEPARATE_SUBDOMAIN_DIRS=true — syncing to /domains/m1.msht.io/ and m2 folders"
-          else
-            echo "Default: m1/m2 served from main public_html (unified docroot in hPanel)"
-          fi
-
       - name: Verify live deploy
         if: steps.sftp_frontend.outcome == 'success' || steps.rsync_frontend.outcome == 'success' || steps.ftps_frontend.outcome == 'success'
         run: |

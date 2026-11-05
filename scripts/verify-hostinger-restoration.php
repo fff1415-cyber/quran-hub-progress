@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+if (!function_exists('qhp_load_private_test_config')) require_once __DIR__ . '/private-test-config.php';
 
 // Executed only through CLI on the server. No HTTP entry point or production writes.
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
@@ -14,8 +15,8 @@ try {
     if (DB_NAME !== 'u112851217_msht_io') throw new RuntimeException('Unexpected production identity');
     $testName = 'u112851217_msht_test';
     $privateConfig = $home . '/.qhp-private/msht-test.php';
-    $settings = ['host' => DB_HOST, 'database' => $testName, 'user' => DB_USER, 'password' => DB_PASS];
-    $source = 'existing_server_credentials';
+    $settings = null;
+    $source = 'private_server_file';
     $checks['private_config_present'] = is_file($privateConfig);
     if (is_file($privateConfig)) {
         $realConfig = realpath($privateConfig);
@@ -26,10 +27,13 @@ try {
         }
         $checks['private_config_secured'] = (fileperms($privateConfig) & 0077) === 0;
         if (!$checks['private_config_secured']) throw new RuntimeException('Private test config remains insecure');
-        ob_start();
-        try { $settings = require $privateConfig; } finally { ob_end_clean(); }
+        $privateContents = file_get_contents($privateConfig);
+        if ($privateContents === false) throw new RuntimeException('Cannot read private test configuration');
+        $settings = qhp_load_private_test_config($privateContents);
         $source = 'private_server_file';
     }
+    if ($settings === null) throw new RuntimeException('Private configuration needs literal connection fields');
+    if (($settings['user'] ?? null) === DB_USER) throw new RuntimeException('Production credentials cannot be used for test verification');
     $checks['private_config_array'] = is_array($settings);
     $checks['test_identity_matches'] = is_array($settings) && ($settings['database'] ?? '') === $testName;
     if (!is_array($settings) || ($settings['database'] ?? '') !== $testName) throw new RuntimeException('Test identity must be explicit');
@@ -38,6 +42,22 @@ try {
     $stage = 'test_connection';
     $test = new PDO('mysql:host=' . $settings['host'] . ';dbname=' . $testName . ';charset=utf8mb4', $settings['user'], $settings['password'], $options);
     if ($test->query('SELECT DATABASE()')->fetchColumn() !== $testName) throw new RuntimeException('Unexpected test connection');
+    // Preserve the original private file and normalize only after its credentials prove the exact test identity.
+    if (isset($privateContents)) {
+        $canonical = "<?php\nreturn " . var_export($settings, true) . ";\n";
+        if (trim($privateContents) !== trim($canonical)) {
+            if (!hash_equals(hash('sha256', $privateContents), (string) hash_file('sha256', $privateConfig))) throw new RuntimeException('Private configuration changed during verification');
+            $suffix = bin2hex(random_bytes(6));
+            $backupFile = $privateConfig . '.before-normalize-' . $suffix;
+            $temporaryFile = $privateConfig . '.normalized-' . $suffix;
+            $previousMask = umask(0077);
+            try {
+                if (file_put_contents($backupFile, $privateContents, LOCK_EX) === false || file_put_contents($temporaryFile, $canonical, LOCK_EX) === false) throw new RuntimeException('Cannot preserve private configuration');
+                if (!rename($temporaryFile, $privateConfig)) throw new RuntimeException('Cannot normalize private configuration');
+            } finally { umask($previousMask); }
+            $checks['private_config_normalized'] = true;
+        }
+    }
     $stage = 'production_connection';
     $production = new PDO('mysql:host=' . DB_HOST . ';dbname=' . DB_NAME . ';charset=' . DB_CHARSET, DB_USER, DB_PASS, $options);
     foreach ([$production, $test] as $pdo) {
@@ -88,6 +108,14 @@ try {
     }
     echo json_encode(['status'=>'verified_readonly','test_credential_source'=>$source,'schema_matches_current_production'=>$productionMetadata===$testMetadata,'table_sets_match'=>$tables===$testTables,'tables'=>$report,'isolation'=>$isolation,'subdomain_sync_variable_enabled'=>getenv('SEPARATE_SUBDOMAINS')==='true','production_writes'=>false,'test_writes'=>false],JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n";
 } catch (Throwable $error) {
+    // Only classify our own fixed messages; never expose PDO, token values or parser diagnostics.
+    $knownConfigurationErrors = [
+        'Private test configuration too large'=>'too_large',
+        'Ambiguous private configuration'=>'ambiguous',
+        'Private configuration needs literal connection fields'=>'missing_literal_fields',
+        'Private configuration names an unexpected database'=>'unexpected_database',
+    ];
+    if ($stage === 'configuration') $checks['private_config_problem'] = $knownConfigurationErrors[$error->getMessage()] ?? ($error instanceof ParseError ? 'php_syntax' : 'unclassified');
     foreach (['production','test'] as $name) if (isset($$name) && $$name instanceof PDO && $$name->inTransaction()) $$name->rollBack();
     echo json_encode(['status'=>'incomplete','checks'=>$checks,'failed_stage'=>$stage,'errno'=>$error instanceof PDOException?(int)($error->errorInfo[1]??0):null,'private_test_config_required'=>$stage==='test_connection','production_writes'=>false,'test_writes'=>false])."\n";
     exit(1);

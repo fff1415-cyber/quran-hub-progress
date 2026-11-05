@@ -1,5 +1,6 @@
 """Execute the read-only restore verifier over existing SSH, with no credentials in Git or output."""
 import ipaddress
+import base64
 import os
 import pathlib
 import re
@@ -15,6 +16,8 @@ root='/'+os.environ['DEPLOY_API_PATH'].strip().strip('/')
 if not root.startswith('/home/'): root='/home/'+user+root
 if not root.startswith('/home/'+user+'/') or '..' in pathlib.PurePosixPath(root).parts or any('/'+sub+'.msht.io/' in root for sub in ['m1','m2']): raise ValueError('Invalid main root')
 code=pathlib.Path('scripts/verify-hostinger-restoration.php').read_text().removeprefix('<?php').strip()
+helper=base64.b64encode(pathlib.Path('scripts/private-test-config.php').read_bytes()).decode()
+code=code.replace('declare(strict_types=1);',"declare(strict_types=1);\neval(substr(base64_decode('"+helper+"'),5));",1)
 with tempfile.TemporaryDirectory() as folder:
     ask=pathlib.Path(folder,'askpass')
     ask.write_text('#!/bin/sh\nprintf "%s\\n" "$DEPLOY_SSH_PASSWORD"\n')

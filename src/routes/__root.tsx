@@ -1,3 +1,4 @@
+import { GradeSaveStatus } from "@/components/GradeSaveStatus";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -87,6 +88,7 @@ function RootComponent() {
         <EvaluationSettingsProvider>
           <GradeInputSettingsProvider>
             <CloudSyncStatus />
+            <GradeSaveStatus />
             <Outlet />
           </GradeInputSettingsProvider>
         </EvaluationSettingsProvider>

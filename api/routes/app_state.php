@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../diagnostics.php';
+require_once __DIR__ . '/../lib/grade-write-api.php';
 
 function app_state_tenant_enabled(PDO $pdo): bool
 {
@@ -51,6 +52,7 @@ function handle_list_app_state(): void
     $pdo = db();
     $tenants = app_state_tenant_enabled($pdo);
     $keyFilter = (string) ($_GET['key'] ?? '');
+    if (str_starts_with($keyFilter, 'grade_plan_')) error_response('سجلات الحفظ الداخلية غير متاحة من مخزن التطبيق العام', 403);
     if ($keyFilter === 'staff_tasks_v1') error_response('اعرض المهام من الواجهة المخصصة', 403);
 
     if (in_array($role, ['test_member', 'test_chair'], true)) {
@@ -71,13 +73,19 @@ function handle_list_app_state(): void
         json_response($keyFilter === '' ? $rows : array_values(array_filter($rows, fn($row) => $row['key'] === $keyFilter)));
     }
 
+    if ($keyFilter === 'grades' && ($_GET['grade_protocol'] ?? '') === '1') {
+        if (!grade_writes_enabled()) error_response('الحفظ المؤكد غير مفعّل بعد؛ بقيت مسودتك محفوظة محليًا', 503);
+        json_response(grade_write_snapshot($pdo, $cid, (string) ($_GET['grade_cursor'] ?? '')));
+        return;
+    }
+
     if ($tenants) {
         if ($keyFilter !== '') {
             $stmt = $pdo->prepare('SELECT `key`, value FROM app_state WHERE complex_id = ? AND `key` = ?');
             $stmt->execute([$cid, $keyFilter]);
             $rows = $stmt->fetchAll();
         } else {
-            $stmt = $pdo->prepare('SELECT `key`, value FROM app_state WHERE complex_id = ?');
+            $stmt = $pdo->prepare("SELECT `key`, value FROM app_state WHERE complex_id = ? AND SUBSTR(`key`,1,11) <> 'grade_plan_'");
             $stmt->execute([$cid]);
             $rows = $stmt->fetchAll();
         }
@@ -86,9 +94,9 @@ function handle_list_app_state(): void
         $stmt->execute([$keyFilter]);
         $rows = $stmt->fetchAll();
     } else {
-        $rows = $pdo->query('SELECT `key`, value FROM app_state')->fetchAll();
+        $rows = $pdo->query("SELECT `key`, value FROM app_state WHERE SUBSTR(`key`,1,11) <> 'grade_plan_'")->fetchAll();
     }
-    $rows = array_values(array_filter($rows, static fn (array $row): bool => ($row['key'] ?? '') !== 'staff_tasks_v1'));
+    $rows = array_values(array_filter($rows, static fn (array $row): bool => ($row['key'] ?? '') !== 'staff_tasks_v1' && !str_starts_with((string)($row['key'] ?? ''), 'grade_plan_')));
     foreach ($rows as &$row) {
         $row['value'] = json_decode($row['value'] ?? '{}', true);
         $row['context_complex_id'] = $cid;
@@ -352,6 +360,7 @@ function handle_set_app_state(): void
     $cid = require_complex_id($auth);
     $input = json_input();
     $key = (string) ($input['key'] ?? '');
+    if (str_starts_with($key, 'grade_plan_')) error_response('سجلات الحفظ الداخلية لا تُستبدل من مخزن التطبيق العام', 403);
     if ($key === 'late_permissions') error_response('سجّل إذن الدخول من الواجهة المخصصة', 403);
     if ($key === 'staff_tasks_v1') error_response('حدّث المهام من الواجهة المخصصة', 403);
     $role = (string) ($auth['role'] ?? '');
@@ -366,8 +375,18 @@ function handle_set_app_state(): void
 
     if (array_key_exists('grade_write_protocol', $input)
         && in_array($key, ['grades', 'weekly_tests', 'scientific_grades'], true)) {
+        if ($key === 'grades' && $input['grade_write_protocol'] === 1 && grade_writes_enabled()) {
+            try {
+                $receipt = grade_write_request(db(), $cid, is_array($input['value'] ?? null) ? $input['value'] : [], $auth);
+                json_response(['ok'=>true] + $receipt);return;
+            } catch (Throwable $error) {
+                error_response($error instanceof PDOException ? api_safe_failure_message($error, 'grade_cells') : $error->getMessage(), $error instanceof PDOException ? api_database_error_status($error) : (in_array($error->getCode(), [400,409], true) ? $error->getCode() : 503));
+            }
+        }
         error_response('نسخة الخادم لا تدعم طريقة حفظ الدرجات المطلوبة؛ لم تتغير السجلات. حدّث الصفحة قبل إعادة المحاولة.', 503);
     }
+
+    if ($key === 'grades' && grade_writes_enabled()) error_response('طريقة الحفظ القديمة لا تؤكد الخلايا؛ حدّث الصفحة. لم تُستبدل أي درجات', 409);
 
     $pdo = db();
     if ($key === 'sard_queue') {
