@@ -50,16 +50,18 @@ export async function runPostPassAutomation(payload: SardPassPayload): Promise<P
     planStartDate: record.testDate.slice(0, 10),
     expectedAssignmentId: payload.assignmentId ?? sheet.assignment?.id,
     studentPhase: payload.studentPhase,
-    sardResult: payload.queueItemId ? { id: payload.queueItemId, percent: payload.percent, phase: payload.phase ?? "full" } : undefined,
+    sardResult: payload.queueItemId ? { id: payload.queueItemId, percent: payload.percent, phase: payload.phase ?? "full", academic_record: { hifzScore: payload.hifzScore, reviewScore: payload.reviewScore } } : undefined,
   });
-  pushAcademicRecord(record);
+  if (payload.queueItemId && advance.newPlanId && !advance.academicRecord) throw new Error("لم يؤكد الخادم السجل الأكاديمي؛ افتح سجل الطالب قبل إعادة الانتقال");
+  const confirmedRecord = advance.academicRecord ?? record;
+  pushAcademicRecord(confirmedRecord, { sync: !advance.academicRecord });
   // The server commits the profile phase with its assignment; no independent late PATCH can regress it.
-  if (advance.newPlanTitle)
+  if (advance.newPlanTitle && !advance.academicRecord)
     notifyTeacherHalaqa(
       payload.halaqaId,
       `بعد اجتياز السرد — انتقل الطالب إلى ${advance.newPlanTitle}`,
       "info",
     );
 
-  return { ...advance, record };
+  return { ...advance, record: confirmedRecord };
 }

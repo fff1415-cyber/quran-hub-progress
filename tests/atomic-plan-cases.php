@@ -3,7 +3,7 @@ declare(strict_types=1);
 if(!function_exists('require_complex_id')){function require_complex_id(array $auth):int{return (int)$auth['complexId'];}}
 if(!function_exists('error_response')){function error_response(string $message,int $status=400):never{throw new RuntimeException($message,$status);}}
 if(!function_exists('assert_row_belongs_to_complex')){function assert_row_belongs_to_complex(?int $actual,int $expected):void{if($actual!==$expected)error_response('Forbidden tenant',403);}}
-function atomicPlanCases(PDO $pdo):void {
+function seedAtomicPlanCases(PDO $pdo):void {
     $pdo->exec("CREATE TABLE students(id VARCHAR(50) PRIMARY KEY,complex_id INT,halaqa_id INT);INSERT INTO students VALUES('planned',1,1);
     CREATE TABLE education_plans(id VARCHAR(36) PRIMARY KEY,complex_id INT,track VARCHAR(10),level_number INT);INSERT INTO education_plans VALUES('plan',1,'gold',1001);
     CREATE TABLE student_plan_assignments(id VARCHAR(36) PRIMARY KEY,student_id VARCHAR(50),plan_id VARCHAR(36),status VARCHAR(20),start_segment_index INT,start_muraja_segment INT);INSERT INTO student_plan_assignments VALUES('assignment','planned','plan','active',1,NULL);
@@ -11,6 +11,10 @@ function atomicPlanCases(PDO $pdo):void {
     CREATE TABLE segment_completions(id VARCHAR(36) PRIMARY KEY,student_id VARCHAR(50),plan_id VARCHAR(36),segment_index INT,task_type VARCHAR(10),completed_at VARCHAR(10),recorded_by VARCHAR(50),assignment_id VARCHAR(36),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE(student_id,plan_id,segment_index,task_type));");
     $auth=['role'=>'teacher','complexId'=>1,'halaqaId'=>1,'name'=>'fixture'];
     $pdo->exec("ALTER TABLE semesters ADD COLUMN start_date VARCHAR(10);ALTER TABLE semesters ADD COLUMN weeks_count INT;ALTER TABLE semesters ADD COLUMN working_days TEXT;ALTER TABLE semesters ADD COLUMN excluded_dates TEXT;UPDATE semesters SET start_date='2026-10-04',weeks_count=4,working_days='[0,1,2,3,4]',excluded_dates='[]'");
+}
+function atomicPlanCases(PDO $pdo):void {
+    seedAtomicPlanCases($pdo);
+    $auth=['role'=>'teacher','complexId'=>1,'halaqaId'=>1,'name'=>'fixture'];
     $packet=static function(string $operation,string $day,string $task,string $value,string $action='record',string $assignment='assignment')use($pdo):array{
         $capture=grade_cells_capture($pdo,1,'grades',[['planned','1','days',$day,$task]]);
         return ['operation_id'=>$operation,'calendar_context'=>$capture['calendar_context'],'changes'=>[gradeCellChange($capture,0,$value)],'plan'=>['student_id'=>'planned','expected_assignment_id'=>$assignment,'task_type'=>$task,'action'=>$action,'tap'=>'one','completed_at'=>['sun'=>'2026-10-04','mon'=>'2026-10-05','tue'=>'2026-10-06','wed'=>'2026-10-07'][$day],'cell_path'=>['planned','1','days',$day,$task]]];

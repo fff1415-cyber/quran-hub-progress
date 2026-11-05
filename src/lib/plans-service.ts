@@ -1,3 +1,4 @@
+import type { AcademicPhaseRecord } from "./academic-record";
 import { fetchWithTimeout } from "@/lib/request-timeout";
 import { buildRphpUrl } from "@/lib/api-base";
 import type {
@@ -124,27 +125,24 @@ export async function assignStudentPlan(
     face_quotas?: Partial<DailyFaceQuotas>;
     expected_assignment_id?: string;
     only_if_unassigned?: boolean;
-    sard_result?: { id: string; percent: number; phase: string };
+    sard_result?: { id: string; percent: number; phase: string; academic_record?: { hifzScore: number; reviewScore: number } };
   },
-): Promise<void> {
+): Promise<{ academic_record?: AcademicPhaseRecord | null }> {
   if (!Number.isInteger(startSegment) || startSegment < 1) throw new Error("مقطع البداية يجب أن يكون عددًا صحيحًا موجبًا");
   const responseSnapshot = capturePlanResponse();
   const expectedAssignment = options?.expected_assignment_id ?? (await fetchStudentPlanSheet(studentId)).assignment?.id ?? "";
   assertPlanResponseCurrent(responseSnapshot);
-  const result = await planFetch<{ assignment_id: string; sard_queue?: unknown[] | null; student_phase?: { phase_number: number; level: string; institute_level: string } }>("/plans/assign", {
-      method: "POST",
-      body: JSON.stringify({
-        student_id: studentId,
-        expected_assignment_id: expectedAssignment,
-        only_if_unassigned: options?.only_if_unassigned,
-        sard_result: options?.sard_result,
-        plan_id: planId,
-        start_segment_index: startSegment,
-        plan_start_date: options?.plan_start_date,
-        start_muraja_segment: options?.start_muraja_segment,
-        ...options?.face_quotas,
-      }),
-    });
+  const request = { method: "POST", body: JSON.stringify({ student_id: studentId, expected_assignment_id: expectedAssignment, only_if_unassigned: options?.only_if_unassigned, sard_result: options?.sard_result, plan_id: planId, start_segment_index: startSegment, plan_start_date: options?.plan_start_date, start_muraja_segment: options?.start_muraja_segment, ...options?.face_quotas }) };
+  type AssignmentResult = { academic_record?: AcademicPhaseRecord | null; assignment_id: string; sard_queue?: unknown[] | null; student_phase?: { phase_number: number; level: string; institute_level: string } };
+  const send = () => planFetch<AssignmentResult>("/plans/assign", request);
+  let result: AssignmentResult;
+  try { result = await send(); }
+  catch (error) {
+    // Only packets carrying an academic result have a server-side immutable transition receipt.
+    if (!options?.sard_result?.academic_record) throw error;
+    assertPlanResponseCurrent(responseSnapshot);
+    result = await send();
+  }
   applyPlanSardResponse(responseSnapshot, result.sard_queue);
   let sheet: StudentPlanSheetData;
   try {
@@ -167,6 +165,7 @@ export async function assignStudentPlan(
     }
   }
   assertPlanResponseCurrent(responseSnapshot);
+  return { academic_record: result.academic_record };
 }
 
 /** Only the educational supervisor can change an individual hifz row. */

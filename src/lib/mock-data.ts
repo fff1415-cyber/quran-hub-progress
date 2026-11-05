@@ -1,5 +1,5 @@
 import type { PlanEffect } from "./grade-outbox";
-import { gradeView, recordGradeEdit, currentGradeOutbox } from "./grade-sync";
+import { gradeView, recordGradeEdit, currentGradeOutbox, assertSharedGradePeriod } from "./grade-sync";
 // Mock data + localStorage store for مجمع حلقات الشتيوي
 import { hasAuthToken } from "@/lib/auth-session";
 
@@ -440,8 +440,9 @@ export function mutateStudentWeek(
   studentId: string,
   weekNum: number,
   fn: (w: WeekRecord) => WeekRecord,
-  options?: { sync?: boolean | "immediate"; plan?: PlanEffect },
+  options?: { sync?: boolean | "immediate"; plan?: PlanEffect; semesterId?: string | null },
 ): GradesStore {
+  if (options?.sync !== false) assertSharedGradePeriod("grades", options?.semesterId);
   // Read at the moment of the tap, so each field patch starts with all prior taps.
   const latest = loadGrades();
   const mergedWeek = fn(latest[studentId]?.[weekNum] ?? emptyWeek());

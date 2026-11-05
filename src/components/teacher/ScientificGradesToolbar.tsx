@@ -1,3 +1,4 @@
+import { assertSharedGradePeriod } from "@/lib/grade-sync";
 import { useEffect, useState } from "react";
 import { ChevronDown, FlaskConical, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ import {
 } from "@/lib/scientific-grades";
 
 type Props = {
+  semesterId: string | null;
   halaqaId: number;
   onConfigChange: (config: ScientificGradesConfig, options?: { resetOverrides?: boolean }) => void;
 };
@@ -60,7 +62,7 @@ function scoreInputClassName() {
   return "w-full max-w-[80px] px-2 py-1.5 text-center text-xs rounded border border-border bg-input focus:border-primary focus:outline-none";
 }
 
-export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
+export function ScientificGradesToolbar({ halaqaId, onConfigChange, semesterId }: Props) {
   const [config, setConfig] = useState(() => loadScientificConfig(halaqaId));
   const [dialogOpen, setDialogOpen] = useState(false);
   const [disableOpen, setDisableOpen] = useState(false);
@@ -86,8 +88,9 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
   };
 
   const applyConfig = (next: ScientificGradesConfig, resetOverrides = false) => {
-    setConfig(next);
+    try { assertSharedGradePeriod("scientific_grades", semesterId); } catch (e) { toast.error(e instanceof Error ? e.message : "تغيّر الفصل"); return; }
     saveScientificConfig(halaqaId, next, resetOverrides ? { resetOverrides: true } : undefined);
+    setConfig(next);
     onConfigChange(next, resetOverrides ? { resetOverrides: true } : undefined);
   };
 
