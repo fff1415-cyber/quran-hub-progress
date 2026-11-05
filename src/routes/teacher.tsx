@@ -1,3 +1,5 @@
+import { createSharedTransfer } from "@/lib/shared-transfers";
+import { TeacherSharedTransfers } from "@/components/TeacherSharedTransfers";
 import { assertSharedGradePeriod } from "@/lib/grade-sync";
 import { confirmedGradePlanAssignment, rememberGradePlanAssignments, flushConfirmedGrades, currentGradeOutbox } from "@/lib/grade-sync";
 import type { PlanEffect } from "@/lib/grade-outbox";
@@ -368,6 +370,7 @@ export function TeacherPage() {
         </div>
 
         <HalaqaNotifications halaqaId={halaqa.id} />
+            <TeacherSharedTransfers halaqaId={halaqa.id} />
         <TeacherStudentFollowupAlerts halaqaId={halaqa.id} />
         {(role === "teacher" || role === "assistant") && <details className="glass-card rounded-xl p-4 mb-4">
           <summary className="cursor-pointer font-bold">مهامي {taskCount > 0 && <span className="rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-xs">{taskCount}</span>}</summary>
@@ -964,24 +967,15 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     col?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [isCurrentWeek, todayKey, weekNum, useMobileBoard]);
 
-  const submitTransfer = () => {
+  const submitTransfer = async () => {
+    if (sendBusy) return;
     const student = students.find((s) => s.id === transferStudentId);
     if (!student) { toast.error("اختر الطالب"); return; }
     const reason = transferReason.trim();
     if (!reason) { toast.error("اكتب سبب التحويل"); return; }
-    pushNotification({
-      message: `تحويل من ${senderName}: الطالب ${student.name} — ${reason}`,
-      type: "transfer",
-      actionTab: "transfers",
-      transferData: {
-        studentId: student.id,
-        halaqaId: student.halaqaId,
-        week: weekNum,
-        reason,
-        fromName: senderName,
-      },
-      transferStatus: "pending",
-    });
+    setSendBusy(true);
+    try {
+    await createSharedTransfer(student.id, weekNum, reason);
     void dispatchPushEvent({
       event: "teacher_transfer",
       title: "طلب تحويل طالب",
@@ -993,11 +987,13 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     setTransferOpen(false);
     setTransferStudentId("");
     setTransferReason("");
+    } catch (error) { toast.error(error instanceof Error ? error.message : "لم يتأكد إرسال التحويل؛ بقيت المسودة"); }
+    finally { setSendBusy(false); }
   };
 
   const submitSend = async () => {
     if (sendRecipient === "administration") {
-      if (canSendToAdministration) submitTransfer();
+      if (canSendToAdministration) await submitTransfer();
       return;
     }
     if (!canSendParentRecommendation || sendBusy) return;

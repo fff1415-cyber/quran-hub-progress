@@ -5,8 +5,11 @@ import {
   type TransferActionRecord,
   type TransferActionRole,
 } from "@/lib/mock-data";
+import { isSharedTransfer, changeSharedTransfer } from "./shared-transfers";
 
 export const TRANSFER_ACTION_ROLE_LABELS: Record<TransferActionRole, string> = {
+  teacher: "المعلم",
+  assistant: "المساعد",
   manager: "المدير",
   secretary: "السكرتير",
   supervisor: "المشرف العلمي",
@@ -14,6 +17,17 @@ export const TRANSFER_ACTION_ROLE_LABELS: Record<TransferActionRole, string> = {
 
 export function transferActionRoleLabel(role: TransferActionRole): string {
   return TRANSFER_ACTION_ROLE_LABELS[role];
+}
+
+export async function persistTransferAction(notification: string, action: TransferActionRecord, finalPatch?: Partial<Pick<Notification, "read" | "transferStatus">>): Promise<"shared" | "local"> {
+  if (!isSharedTransfer(notification)) { appendTransferAction(notification, action, finalPatch); return "local"; }
+  const status = finalPatch?.transferStatus;
+  if (status && !["closed", "struggling"].includes(status)) throw Error("حالة إجراء التحويل غير صالحة");
+  await changeSharedTransfer(notification, { type: "action", text: action.text, status: status === "closed" || status === "struggling" ? status : null }); return "shared";
+}
+export async function persistForwardTransfer(root: Notification, status: "to_secretary" | "to_supervisor", recipient: Omit<Notification, "id" | "createdAt" | "read">): Promise<"shared" | "local"> {
+  if (!isSharedTransfer(root.id)) { forwardTransferRecord(root, status, recipient); return "local"; }
+  await changeSharedTransfer(root.id, { type: "forward", target_role: status === "to_secretary" ? "secretary" : "supervisor" }); return "shared";
 }
 
 /** Append action to a notification and mirror it on the root teacher transfer when linked. */
