@@ -77,7 +77,7 @@ async function fetchHalaqaPlanStatusesLegacy(
         const sheet = await fetchStudentPlanSheet(studentId);
         const status = sheet.assignment?.status;
         if (status === "active" || status === "frozen") {
-          out.push({ student_id: studentId, status });
+          out.push({ student_id: studentId, status, assignment_id: sheet.assignment?.id });
         }
       }),
     );

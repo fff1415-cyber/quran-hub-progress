@@ -3,6 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/../diagnostics.php';
+require_once __DIR__ . '/../lib/grade-write-api.php';
 
 function app_state_tenant_enabled(PDO $pdo): bool
 {
@@ -69,6 +70,12 @@ function handle_list_app_state(): void
             $row['context_complex_id'] = $cid;
         }
         json_response($keyFilter === '' ? $rows : array_values(array_filter($rows, fn($row) => $row['key'] === $keyFilter)));
+    }
+
+    if ($keyFilter === 'grades' && ($_GET['grade_protocol'] ?? '') === '1') {
+        if (!grade_writes_enabled()) error_response('الحفظ المؤكد غير مفعّل بعد؛ بقيت مسودتك محفوظة محليًا', 503);
+        json_response(grade_write_snapshot($pdo, $cid, (string) ($_GET['grade_cursor'] ?? '')));
+        return;
     }
 
     if ($tenants) {
@@ -366,8 +373,18 @@ function handle_set_app_state(): void
 
     if (array_key_exists('grade_write_protocol', $input)
         && in_array($key, ['grades', 'weekly_tests', 'scientific_grades'], true)) {
+        if ($key === 'grades' && $input['grade_write_protocol'] === 1 && grade_writes_enabled()) {
+            try {
+                $receipt = grade_write_request(db(), $cid, is_array($input['value'] ?? null) ? $input['value'] : [], $auth);
+                json_response(['ok'=>true] + $receipt);return;
+            } catch (Throwable $error) {
+                error_response($error instanceof PDOException ? api_safe_failure_message($error, 'grade_cells') : $error->getMessage(), $error instanceof PDOException ? api_database_error_status($error) : (in_array($error->getCode(), [400,409], true) ? $error->getCode() : 503));
+            }
+        }
         error_response('نسخة الخادم لا تدعم طريقة حفظ الدرجات المطلوبة؛ لم تتغير السجلات. حدّث الصفحة قبل إعادة المحاولة.', 503);
     }
+
+    if ($key === 'grades' && grade_writes_enabled()) error_response('طريقة الحفظ القديمة لا تؤكد الخلايا؛ حدّث الصفحة. لم تُستبدل أي درجات', 409);
 
     $pdo = db();
     if ($key === 'sard_queue') {

@@ -1,3 +1,6 @@
+import { confirmedGradePlanAssignment, rememberGradePlanAssignments, flushConfirmedGrades, currentGradeOutbox } from "@/lib/grade-sync";
+import type { PlanEffect } from "@/lib/grade-outbox";
+import { planCompletionDate } from "@/lib/plan-completion-date";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState, lazy, Suspense } from "react";
 import { z } from "zod";
@@ -863,7 +866,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     const ids = students.map((s) => s.id);
     if (ids.length === 0) return;
     repairScientificHalaqaProgram(halaqaId);
-    syncScientificScoresFromPrepForHalaqa(halaqaId, loadGrades(), ids, cfg);
+    const box = currentGradeOutbox();
+    if (box && !box.snapshot()) return;
+    syncScientificScoresFromPrepForHalaqa(halaqaId, box?.snapshot()?.value ?? loadGrades(), ids, cfg);
     refreshSciData();
   }, [halaqaId, students, refreshSciData]);
 
@@ -1058,6 +1063,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         const rosterIds = studentIdsKey.split(",").filter(Boolean);
         const statuses = await fetchHalaqaPlanStatuses(halaqaId, rosterIds);
         if (cancelled) return;
+        rememberGradePlanAssignments(statuses);
         for (const row of statuses) {
           linked.add(row.student_id);
           if (row.status === "active") active.add(row.student_id);
@@ -1091,93 +1097,37 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }
   };
 
+  const refreshConfirmedPlan = async (s: Student) => {
+    try {
+      await flushConfirmedGrades();
+      if (planSheetStudent?.id === s.id) setPlanSheetData(await fetchStudentPlanSheet(s.id));
+      if (await checkAndHandlePlanCompletion(s, weekNum)) toast.info("اكتملت الخطة المؤكدة — بانتظار تحويل المشرف");
+    } catch (e) { toast.error(e instanceof Error ? e.message : "لم يتأكد الحفظ؛ بقيت العملية معلقة على الجهاز"); }
+  };
   const handlePlanHifz = async (s: Student, dayKey: string, checked: boolean) => {
-    const tap: TapValue = s.levelType === "gold" ? "one" : "half";
-    const store = loadGrades();
-    const w = ensureWeekDays(store[s.id]?.[weekNum] ?? emptyWeek(workingKeysList), workingKeysList);
-    const day = dayEntryFor(w, dayKey, workingKeysList);
-
-    if (!checked) {
-      // Keep UI immediate; plan undo is serialized so it cannot race a pending apply.
-      updateDay(s.id, dayKey, { hifz: "", hifzPlanSegments: [] });
-      if (!planStudentIds.has(s.id)) return;
-      void enqueuePlanApply(s.id, async () => {
-        try {
-          let toRemove = day.hifzPlanSegments ?? [];
-          if (toRemove.length === 0) {
-            toRemove = await lastCompletedHifzSegments(s.id, Math.max(1, segmentsForTap(s.levelType, tap)));
-          }
-          await removePlanHifzCompletions(s.id, toRemove);
-          updateDay(s.id, dayKey, { hifzPlanSegments: [] });
-          toast.success("أُلغي الحفظ من الجدول وورقة الخطة");
-          if (planSheetStudent?.id === s.id) {
-            setPlanSheetData(await fetchStudentPlanSheet(s.id));
-          }
-        } catch (e) {
-          toast.error(e instanceof Error ? e.message : "فشل إلغاء الحفظ من الخطة");
-        }
-      });
-      return;
-    }
-
-    const gradeVal = hifzCheckedValue(s.levelType);
-    updateDay(s.id, dayKey, { hifz: gradeVal });
-    void enqueuePlanApply(s.id, async () => {
-      try {
-        const segs = await applyPlanInputWithRetry(() =>
-          applyPlanInput(s.id, "hifz", tap, senderName),
-        );
-        // The teacher may have cleared the checkbox while the request was in flight.
-        // Record the segments for the queued undo without restoring the checkbox.
-        updateDay(s.id, dayKey, { hifzPlanSegments: segs });
-        toast.success(`تم تسجيل ${segs.length} مقطع — حفظ`);
-        if (planSheetStudent?.id === s.id) {
-          setPlanSheetData(await fetchStudentPlanSheet(s.id));
-        }
-        if (await checkAndHandlePlanCompletion(s, weekNum)) {
-          toast.info(`${s.name} أنهى الخطة — بانتظار تحويل المشرف للسرد`);
-        }
-      } catch (e) {
-        // Grade checkbox stays; only the plan sheet failed.
-        toast.error(e instanceof Error ? e.message : "فشل تحديث الخطة");
-      }
-    });
+    const completedAt = planCompletionDate(calendar, weekNum, dayKey);
+    if (!completedAt) { toast.error("تعذّر تحديد تاريخ اليوم الدراسي؛ أعد تحميل التقويم"); return; }
+    const day = loadGrades()[s.id]?.[weekNum]?.days[dayKey];
+    const expected = !checked && day?.hifzPlanAssignmentId ? day.hifzPlanAssignmentId : confirmedGradePlanAssignment(s.id);
+    const plan: PlanEffect = { student_id: s.id, expected_assignment_id: expected, task_type: "hifz", action: checked ? "record" : "undo", tap: s.levelType === "gold" ? "one" : "half", completed_at: completedAt, cell_path: [s.id, String(weekNum), "days", dayKey, "hifz"] };
+    updateDay(s.id, dayKey, { hifz: checked ? hifzCheckedValue(s.levelType) : "" }, plan);
+    void refreshConfirmedPlan(s);
+  };
+  const handlePlanPassFail = async (s: Student, dayKey: string, task: "rabt" | "muraja", value: "pass" | "fail" | "") => {
+    const completedAt = planCompletionDate(calendar, weekNum, dayKey);
+    if (!completedAt) { toast.error("تعذّر تحديد تاريخ اليوم الدراسي؛ أعد تحميل التقويم"); return; }
+    const previous = loadGrades()[s.id]?.[weekNum]?.days[dayKey]?.[task];
+    const plan: PlanEffect | undefined = value === "pass" || previous === "pass" ? { student_id: s.id, expected_assignment_id: confirmedGradePlanAssignment(s.id), task_type: task, action: value === "pass" ? "record" : "undo", tap: s.levelType === "gold" ? "one" : "half", completed_at: completedAt, cell_path: [s.id, String(weekNum), "days", dayKey, task] } : undefined;
+    updateDay(s.id, dayKey, { [task]: value }, plan);
+    void refreshConfirmedPlan(s);
   };
 
-  const handlePlanPassFail = async (
-    s: Student,
-    dayKey: string,
-    task: "rabt" | "muraja",
-    value: "pass" | "fail" | "",
-  ) => {
-    // Immediate grade cell for teacher + co-viewer; plan follows in order.
-    updateDay(s.id, dayKey, { [task]: value });
-    if (value !== "pass") return;
-    const tap: TapValue = s.levelType === "gold" ? "one" : "half";
-    void enqueuePlanApply(s.id, async () => {
-      try {
-        const segs = await applyPlanInputWithRetry(() =>
-          applyPlanInput(s.id, task, tap, senderName),
-        );
-        toast.success(`تم تسجيل ${segs.length} مقطع — ${task === "rabt" ? "ربط" : "مراجعة"}`);
-        if (planSheetStudent?.id === s.id) {
-          setPlanSheetData(await fetchStudentPlanSheet(s.id));
-        }
-        if (await checkAndHandlePlanCompletion(s, weekNum)) {
-          toast.info(`${s.name} أنهى الخطة — بانتظار تحويل المشرف للسرد`);
-        }
-      } catch (e) {
-        toast.error(e instanceof Error ? e.message : "فشل تحديث الخطة");
-      }
-    });
-  };
-
-  const update = (studentId: string, fn: (w: WeekRecord) => WeekRecord, sync?: boolean | "immediate") => {
+  const update = (studentId: string, fn: (w: WeekRecord) => WeekRecord, sync?: boolean | "immediate", plan?: PlanEffect) => {
     const next = mutateStudentWeek(
       studentId,
       weekNum,
       (w) => fn(ensureWeekDays(w, workingKeysList)),
-      sync === undefined ? undefined : { sync },
+      { sync, plan },
     );
     setGrades(next);
     if (sync !== false) flushGradesToCloudSoon();
@@ -1232,7 +1182,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }
   };
 
-  const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>) => {
+  const updateDay = (studentId: string, dayKey: string, patch: Partial<DayEntry>, plan?: PlanEffect) => {
     if (closedDayKeys.has(dayKey)) return;
     let mergedEntry!: DayEntry;
 
@@ -1246,9 +1196,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           [dayKey]: mergedEntry,
         },
       };
-    });
+    }, undefined, plan);
 
-    syncScientificScoresFromDayPatch(
+    if (!currentGradeOutbox()) syncScientificScoresFromDayPatch(
       halaqaId,
       studentId,
       weekNum,
@@ -1304,7 +1254,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         ...week,
         days: { ...week.days, [dayKey]: merged },
       };
-      syncScientificScoresFromDayPatch(
+      if (!currentGradeOutbox()) syncScientificScoresFromDayPatch(
         halaqaId,
         s.id,
         weekNum,
