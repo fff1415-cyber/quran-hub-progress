@@ -29,7 +29,7 @@ jobs:
           }
           changed client src api tests/semester-shared-sessions.cjs tests/shared-store-client.cjs tests/academic-transition.php package.json package-lock.json
           changed app src api tests/semester-shared-sessions.cjs tests/shared-store-client.cjs package.json package-lock.json
-          changed semester api/lib/semester-grade-stores.php api/lib/semester-grade-reads.php api/lib/grade-cell-operations.php api/lib/grade-write-api.php api/routes/app_state.php tests/semester-native.php
+          changed semester api/lib/semester-grade-stores.php api/lib/semester-grade-reads.php api/lib/grade-cell-operations.php api/lib/grade-write-api.php api/routes/app_state.php tests/semester-native.php tests/semester-plan-cases.php tests/atomic-plan-cases.php
           changed academic api/lib/plan-academic-record.php api/lib/plan-profile.php api/routes/plans.php api/routes/app_state.php tests/academic-native.php tests/stage4-native.php
   client-sqlite:
     needs: scope
@@ -52,6 +52,8 @@ jobs:
       - run: node tests/shared-store-client.cjs
         if: needs.scope.outputs.app == 'true'
       - run: php tests/academic-transition.php
+      - run: php tests/semester-plan.php
+        if: needs.scope.outputs.app == 'true'
       # These prior tests cover engine and assignment code changed by this PR.
       - run: node tests/stage2-atomic-sessions.cjs && node tests/stage2-atomic-local.cjs
         if: needs.scope.outputs.app == 'true'
@@ -97,7 +99,7 @@ jobs:
           AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
       - name: Reset only the disposable database for independent transition cases
         if: needs.scope.outputs.semester == 'true' && needs.scope.outputs.academic == 'true'
-        run: php -r '$p=new PDO(getenv("AUDIT_MYSQL_DSN"),"audit","audit_only");$p->exec("DROP TABLE grade_operation_receipts, grade_cell_versions, app_state, semesters");'
+        run: php -r '$p=new PDO(getenv("AUDIT_MYSQL_DSN"),"audit","audit_only");$p->exec("DROP TABLE segment_completions,plan_segments,student_plan_assignments,education_plans,students,grade_operation_receipts,grade_cell_versions,app_state,semesters");'
         env:
           AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
       - run: php tests/academic-native.php

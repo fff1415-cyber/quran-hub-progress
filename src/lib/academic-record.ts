@@ -64,9 +64,17 @@ export async function refreshConfirmedAcademicRecords(): Promise<void> {
   mergeConfirmedAcademicRecords(row.value as AcademicPhaseRecord[]);
 }
 export function mergeConfirmedAcademicRecords(cloud: AcademicPhaseRecord[]): void {
-  const byId = new Map(loadAcademicRecords().map(record => [record.id, record]));
-  for (const record of cloud) byId.set(record.id, record);
-  saveAcademicRecords([...byId.values()].sort((a, b) => b.testDate.localeCompare(a.testDate)), { sync: false });
+  const hasId = (record: AcademicPhaseRecord) => typeof record.id === "string" && record.id !== "";
+  const ids = new Set(cloud.filter(hasId).map(record => record.id)), anonymous = new Map<string, number>();
+  for (const record of cloud.filter(record => !hasId(record))) { const key = JSON.stringify(record); anonymous.set(key, (anonymous.get(key) ?? 0) + 1); }
+  const retained = loadAcademicRecords().filter(record => {
+    if (hasId(record)) return !ids.has(record.id);
+    const key = JSON.stringify(record), copies = anonymous.get(key) ?? 0;
+    if (copies > 0) { anonymous.set(key, copies - 1); return false; }
+    return true;
+  });
+  // Preserve every server row, including ambiguous duplicate IDs and anonymous legacy records.
+  saveAcademicRecords([...cloud, ...retained].sort((a, b) => String(b.testDate ?? "").localeCompare(String(a.testDate ?? ""))), { sync: false });
 }
 
 export function pushAcademicRecord(record: AcademicPhaseRecord, options?: { sync?: boolean }) {
