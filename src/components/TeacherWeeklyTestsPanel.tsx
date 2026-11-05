@@ -1,9 +1,9 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { loadHalaqat, type Student } from "@/lib/mock-data";
 import { gradeViewerSectionLabel, resolveAssistantCode, shouldShowGradeViewerDivider } from "@/lib/halaqa-assistants";
-import { getAuthItem, getToken } from "@/lib/auth-session";
+import { getToken } from "@/lib/auth-session";
 import { getSessionName } from "@/lib/session-role";
-import { secureListAppState, securePatchWeeklyTest } from "@/lib/secure-data.functions";
+import { flushSharedGrades, recordWeeklyResult } from "@/lib/grade-sync";
 import { toast } from "sonner";
 import { useGradeViewerStudents } from "@/hooks/use-grade-viewer-students";
 import {
@@ -13,7 +13,7 @@ import {
 } from "@/lib/academic-context";
 import {
   loadWeeklyTests,
-  saveWeeklyTests,
+  WEEKLY_TESTS_CHANGED,
   loadWeeklyTestsSettings,
   getStudentWeeklyTests,
   scoreWeeklyTests,
@@ -127,55 +127,30 @@ export function TeacherWeeklyTestsPanel({
     return { mur, murMax, rab, rabMax };
   }, [students, store, weekNum, settings]);
 
-  const updateTest = (
-    studentId: string,
-    patch: Partial<StudentWeeklyTests> | ((row: StudentWeeklyTests) => StudentWeeklyTests),
-  ) => {
-    const next: WeeklyTestsStore = { ...store };
-    if (!next[studentId]) next[studentId] = {};
-    const cur = getStudentWeeklyTests(store, studentId, weekNum, settings);
-    const updated = typeof patch === "function" ? patch(cur) : { ...cur, ...patch };
-    next[studentId] = { ...next[studentId], [weekNum]: updated };
-    setStore(next);
-    saveWeeklyTests(next, { sync: false });
-  };
+  useEffect(() => {
+    let cancelled = false, timer: ReturnType<typeof setTimeout>;
+    const local = () => setStore(loadWeeklyTests());
+    const tick = async () => {
+      try { if (!document.hidden && getToken()) { await flushSharedGrades<WeeklyTestsStore>("weekly_tests", {}); if (!cancelled) local(); } }
+      catch { /* Durable pending records remain visible in save status. */ }
+      finally { if (!cancelled) timer = setTimeout(tick, document.hidden ? 45000 : 3000); }
+    };
+    const resume = () => { clearTimeout(timer); void tick(); };
+    window.addEventListener(WEEKLY_TESTS_CHANGED, local); window.addEventListener("storage", local);
+    window.addEventListener("online", resume); window.addEventListener("focus", resume);
+    void tick();
+    return () => { cancelled = true; clearTimeout(timer); window.removeEventListener(WEEKLY_TESTS_CHANGED, local); window.removeEventListener("storage", local); window.removeEventListener("online", resume); window.removeEventListener("focus", resume); };
+  }, []);
 
-  const persistTest = (studentId: string, kind: "muraja" | "rabt", index: number, result: WeeklyTestResult) => {
-    const token = getToken();
-    if (!token) { toast.error("انتهت جلسة الدخول"); return; }
-    void securePatchWeeklyTest({ data: { token, studentId, week: weekNum, kind, index, result } }).catch(async (error) => {
-      toast.error(error instanceof Error ? error.message : "تعذّر حفظ الاختبار");
-      try {
-        const remote = (await secureListAppState({ data: { token, key: "weekly_tests" } })).find((row) => row.key === "weekly_tests")?.value;
-        if (remote && typeof remote === "object" && !Array.isArray(remote)) {
-          setStore(remote as WeeklyTestsStore);
-          saveWeeklyTests(remote as WeeklyTestsStore, { sync: false });
-        }
-      } catch { /* Keep the visible draft until connectivity returns. */ }
-    });
+  const persistTest = (studentId: string, kind: "muraja" | "rabt", index: number, value: WeeklyTestResult) => {
+    try {
+      recordWeeklyResult(studentId, weekNum, kind, index, value, calendar.semester?.id ?? null);
+      setStore(loadWeeklyTests());
+      void flushSharedGrades<WeeklyTestsStore>("weekly_tests", {}).catch(error => toast.error(error instanceof Error ? error.message : "لم يتأكد حفظ الاختبار؛ بقيت المسودة"));
+    } catch (error) { toast.error(error instanceof Error ? error.message : "لم تُحفظ المسودة"); }
   };
-
-  const setMuraja = (studentId: string, index: number, value: WeeklyTestResult) => {
-    updateTest(studentId, (row) => {
-      const muraja = [...row.muraja];
-      muraja[index] = value;
-      const attribution = { ...row.attribution, muraja: [...(row.attribution?.muraja ?? [])] };
-      attribution.muraja[index] = value ? { result: value, byName: getSessionName(), byId: getAuthItem("qs_account") ?? undefined, at: new Date().toISOString() } : null;
-      return { ...row, muraja, attribution };
-    });
-    persistTest(studentId, "muraja", index, value);
-  };
-
-  const setRabt = (studentId: string, index: number, value: WeeklyTestResult) => {
-    updateTest(studentId, (row) => {
-      const rabt = Array.isArray(row.rabt) ? [...row.rabt] : normalizeRabtArray(row.rabt, settings.rabt_slots);
-      rabt[index] = value;
-      const attribution = { ...row.attribution, rabt: [...(row.attribution?.rabt ?? [])] };
-      attribution.rabt[index] = value ? { result: value, byName: getSessionName(), byId: getAuthItem("qs_account") ?? undefined, at: new Date().toISOString() } : null;
-      return { ...row, rabt, attribution };
-    });
-    persistTest(studentId, "rabt", index, value);
-  };
+  const setMuraja = (studentId: string, index: number, value: WeeklyTestResult) => persistTest(studentId, "muraja", index, value);
+  const setRabt = (studentId: string, index: number, value: WeeklyTestResult) => persistTest(studentId, "rabt", index, value);
 
   const murajaHeaders = useMemo(
     () => Array.from({ length: settings.muraja_slots }, (_, i) => `مراجعة ${i + 1}`),

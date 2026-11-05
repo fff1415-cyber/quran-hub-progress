@@ -243,9 +243,15 @@ export async function secureUpdateActiveSemester({
   });
 }
 
-export async function secureGradeSnapshot(token: string, cursor?: string) {
-  return apiFetch<import("./grade-outbox").GradeSnapshotResult>("/app-state?key=grades&grade_protocol=1" + (cursor ? "&grade_cursor=" + encodeURIComponent(cursor) : ""), { auth: token });
+export async function secureGradeSnapshot<T extends object = import("./mock-data").GradesStore>(token: string, cursor?: string, key: import("./grade-outbox").GradeStoreKey = "grades") {
+  return apiFetch<import("./grade-outbox").GradeSnapshotResult<T>>("/app-state?key=" + key + "&grade_protocol=1" + (cursor ? "&grade_cursor=" + encodeURIComponent(cursor) : ""), { auth: token });
 }
 export async function secureGradeOperation(token: string, packet: import("./grade-outbox").GradePacket) {
-  return apiFetch<{ ok: boolean; operation_id: string; input_sha256: string; replayed: boolean }>("/app-state", { method: "POST", auth: token, body: JSON.stringify({ key: "grades", grade_write_protocol: 1, value: packet }) });
+  const key = packet.store_key ?? "grades", path = packet.changes[0]?.path;
+  const weekly = key === "weekly_tests";
+  return apiFetch<{ ok: boolean; operation_id: string; input_sha256: string; replayed: boolean }>(weekly ? "/weekly-tests/result" : "/app-state", { method: weekly ? "PATCH" : "POST", auth: token, body: JSON.stringify(weekly ? { studentId: path?.[0], week: Number(path?.[1]), kind: path?.[2], index: Number(path?.[3]), result: packet.changes[0]?.next.present ? packet.changes[0].next.value : "", grade_write_protocol: 1, value: packet } : { key, grade_write_protocol: 1, value: packet }) });
+}
+export type GradeHistoryRow = { key: import("./grade-outbox").GradeStoreKey; value: Record<string, unknown>; semester_id?: string; legacy_unknown_semester: boolean; read_only: true };
+export function secureGradeHistory(token: string, key: import("./grade-outbox").GradeStoreKey) {
+  return apiFetch<GradeHistoryRow[]>("/app-state?key=" + key + "&history=1", { auth: token });
 }

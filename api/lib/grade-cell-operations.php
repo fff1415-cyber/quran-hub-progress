@@ -1,5 +1,6 @@
 <?php
 declare(strict_types=1);
+require_once __DIR__.'/semester-grade-stores.php';
 
 /** Data-only optimistic writes. Existing routes must keep their current authorization. */
 function grade_cells_json(mixed $value): string
@@ -51,12 +52,18 @@ function grade_cells_calendar(PDO $pdo,int $cid,bool $lock): array
 
 function grade_cells_store(PDO $pdo,int $cid,string $key,bool $lock): stdClass
 {
-    if(!in_array($key,['grades','weekly_tests','scientific_grades'],true))throw new RuntimeException('مخزن الدرجات غير مدعوم');
+    grade_store_base_key($key);
     $scoped=app_state_tenant_enabled($pdo);
     $query=$pdo->prepare('SELECT value FROM app_state WHERE '.($scoped?'complex_id=? AND ':'').'`key`=?'.($lock?' FOR UPDATE':''));
     $query->execute($scoped?[$cid,$key]:[$key]);$raw=$query->fetchColumn();
     if($lock&&!$pdo->inTransaction())throw new RuntimeException('انتهت معاملة الدرجة؛ لم يُثبّت الطلب',409);
-    if($raw===false)return new stdClass();
+    if($raw===false){
+        if(str_starts_with($key,'term:')&&grade_store_base_key($key)==='scientific_grades'){
+            $legacy=grade_cells_store($pdo,$cid,'scientific_grades',false);
+            return (object)['configs'=>$legacy->configs??new stdClass(),'data'=>new stdClass(),'overrides'=>new stdClass()];
+        }
+        return grade_store_base_key($key)==='scientific_grades'?(object)['configs'=>new stdClass(),'data'=>new stdClass(),'overrides'=>new stdClass()]:new stdClass();
+    }
     $value=json_decode((string)$raw,false,512,JSON_THROW_ON_ERROR);
     if($value===null||$value===[])return new stdClass();
     if(!($value instanceof stdClass))throw new RuntimeException('صيغة مخزن الدرجات تحتاج مراجعة؛ لم تُستبدل أو تُصفّر');
@@ -111,11 +118,11 @@ function grade_cells_capture(PDO $pdo,int $cid,string $key,array $paths): array
     $owns=!$pdo->inTransaction();
     try {
         if($owns)$pdo->beginTransaction();
-        grade_cells_ready($pdo);$context=grade_cells_context($pdo,$cid);$store=grade_cells_store($pdo,$cid,$key,false);$cells=[];
+        grade_cells_ready($pdo);$calendar=grade_cells_calendar($pdo,$cid,false);$key=grade_store_key($pdo,$cid,$key,$calendar);$context=grade_cells_context($pdo,$cid);$store=grade_cells_store($pdo,$cid,$key,false);$cells=[];
         foreach($paths as $path) {
-            $path=grade_cells_path($path);$cells[]=['path'=>$path,'base'=>grade_cells_at($store,$path),'stamp'=>grade_cells_stamp($pdo,$context,$key,$path,false)];
+            $path=grade_cells_path($path);$cells[]=['path'=>$path,'base'=>grade_store_cell($key,$store,$path),'stamp'=>grade_cells_stamp($pdo,$context,$key,$path,false)];
         }
-        $result=['calendar_context'=>grade_cells_calendar($pdo,$cid,false),'cells'=>$cells];
+        $result=['calendar_context'=>$calendar,'cells'=>$cells];
         if($owns)$pdo->commit();
         return $result;
     } catch(Throwable $error) {
@@ -141,9 +148,9 @@ function grade_cells_apply(PDO $pdo,int $cid,string $key,string $operation,array
     try {
         if(!preg_match('/^[A-Za-z0-9_-]{8,128}$/D',$operation)||!$changes)throw new RuntimeException('هوية طلب الدرجة أو خلاياه غير مكتملة');
         if($owns)$pdo->beginTransaction();
-        grade_cells_ready($pdo);$context=grade_cells_context($pdo,$cid);
+        grade_cells_ready($pdo);$logicalKey=$key;$key=grade_store_key($pdo,$cid,$key,$calendar);$context=grade_cells_context($pdo,$cid);
         $store=grade_cells_store($pdo,$cid,$key,true);
-        $identity=['protocol'=>1,'key'=>$key,'calendar_context'=>$calendar,'changes'=>$changes];
+        $identity=['protocol'=>1,'key'=>$logicalKey,'calendar_context'=>$calendar,'changes'=>$changes];
         if($effectIdentity)$identity['effect']=$effectIdentity;
         $hash=hash('sha256',grade_cells_json($identity));
         $query=$pdo->prepare('SELECT input_sha256 FROM grade_operation_receipts WHERE context_id=? AND store_key=? AND operation_id=? FOR UPDATE');
@@ -161,13 +168,13 @@ function grade_cells_apply(PDO $pdo,int $cid,string $key,string $operation,array
             foreach(['base','next'] as $field)if(!is_array($change[$field]??null)||!is_bool($change[$field]['present']??null)||($change[$field]['present']&&!array_key_exists('value',$change[$field])))throw new RuntimeException('قيمة الدرجة غير مكتملة');
             foreach($paths as $other)if(array_slice($path,0,min(count($path),count($other)))===array_slice($other,0,min(count($path),count($other))))throw new RuntimeException('طلب الدرجة يحتوي مسارات متداخلة؛ لم يُطبق جزء منه');
             $paths[]=$path;
-            if(grade_cells_json(grade_cells_at($store,$path))!==grade_cells_json($change['base'])||grade_cells_json(grade_cells_stamp($pdo,$context,$key,$path,true))!==grade_cells_json($change['stamp']??null))throw new RuntimeException('عدّل مستخدم آخر الخلية أو بنيتها؛ بقيت مسودتك للمقارنة دون استبدال كتابته',409);
+            if(grade_cells_json(grade_store_cell($key,$store,$path))!==grade_cells_json($change['base'])||grade_cells_json(grade_cells_stamp($pdo,$context,$key,$path,true))!==grade_cells_json($change['stamp']??null))throw new RuntimeException('عدّل مستخدم آخر الخلية أو بنيتها؛ بقيت مسودتك للمقارنة دون استبدال كتابته',409);
         }
         foreach($changes as $i=>$change) {
-            grade_cells_set($store,$paths[$i],$change['next']);
+            grade_store_set($key,$store,$paths[$i],$change['next']);
             grade_cells_record_version($pdo,$context,$key,$paths[$i],$operation);
         }
-        if($effect)$effect($store);
+        if($effect)$effect($store,$key);
         if(!$pdo->inTransaction())throw new RuntimeException('انتهت معاملة الدرجة قبل تثبيتها؛ لم يكتمل الحفظ',409);
         app_state_upsert($pdo,$key,$store,app_state_tenant_enabled($pdo)?$cid:null);
         $pdo->prepare('INSERT INTO grade_operation_receipts(context_id,store_key,operation_id,input_sha256) VALUES(?,?,?,?)')->execute([$context,$key,$operation,$hash]);
@@ -177,7 +184,7 @@ function grade_cells_apply(PDO $pdo,int $cid,string $key,string $operation,array
         if($pdo->inTransaction()) {try {$pdo->rollBack();} catch(Throwable) {}}
         $code=$error instanceof PDOException?(int)($error->errorInfo[1]??0):0;
         if(in_array($code,[1020,1205,1213],true)) {
-            if($owns&&!$pdo->inTransaction()&&$attempt<2)return grade_cells_apply($pdo,$cid,$key,$operation,$calendar,$changes,$attempt+1,$effect,$effectIdentity);
+            if($owns&&!$pdo->inTransaction()&&$attempt<2)return grade_cells_apply($pdo,$cid,$logicalKey??$key,$operation,$calendar,$changes,$attempt+1,$effect,$effectIdentity);
             throw new RuntimeException('تعارض حفظ الدرجة؛ أُلغيت المعاملة كاملة. أعد المحاولة بنفس الطلب',409,$error);
         }
         throw $error;

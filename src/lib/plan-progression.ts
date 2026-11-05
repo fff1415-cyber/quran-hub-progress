@@ -1,3 +1,4 @@
+import type { AcademicPhaseRecord } from "./academic-record";
 import type { EducationPlan, PlanTrack } from "@/lib/plan-types";
 import {
   followingPlan,
@@ -11,6 +12,7 @@ import { normalizeTaskQuotas } from "@/lib/plan-daily-faces";
 import { fetchPlans, assignStudentPlan, fetchStudentPlanSheet } from "@/lib/plans-service";
 
 export interface PlanAdvanceResult {
+  academicRecord?: AcademicPhaseRecord;
   completedAssignmentId?: string;
   closedPlanTitle?: string;
   newPlanTitle?: string;
@@ -25,7 +27,7 @@ export async function completePlanAndAdvance(
   studentId: string,
   assignedBy: string,
   track: PlanTrack,
-  options?: { planStartDate?: string; expectedAssignmentId?: string; studentPhase?: number; sardResult?: { id: string; percent: number; phase: string } },
+  options?: { planStartDate?: string; expectedAssignmentId?: string; studentPhase?: number; sardResult?: { id: string; percent: number; phase: string; academic_record?: { hifzScore: number; reviewScore: number } } },
 ): Promise<PlanAdvanceResult> {
   const sheet = await fetchStudentPlanSheet(studentId);
   if (options?.expectedAssignmentId && sheet.assignment?.id !== options.expectedAssignmentId) {
@@ -59,7 +61,7 @@ export async function completePlanAndAdvance(
   const prevQuotas = sheet.assignment ? normalizeTaskQuotas(sheet.assignment) : undefined;
   const startDate = options?.planStartDate ?? new Date().toISOString().slice(0, 10);
 
-  await assignStudentPlan(studentId, next.id, 1, assignedBy, {
+  const transition = await assignStudentPlan(studentId, next.id, 1, assignedBy, {
     expected_assignment_id: sheet.assignment?.id,
     sard_result: options?.sardResult,
     plan_start_date: startDate,
@@ -67,6 +69,7 @@ export async function completePlanAndAdvance(
     face_quotas: prevQuotas,
   });
 
+  result.academicRecord = transition?.academic_record ?? undefined;
   const sheetAfter = await fetchStudentPlanSheet(studentId);
   if (sheetAfter.assignment) {
     result.newPlanStartDate = sheetAfter.assignment.plan_start_date ?? startDate;

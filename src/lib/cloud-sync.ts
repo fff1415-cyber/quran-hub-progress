@@ -1,3 +1,4 @@
+import { refreshSharedGrades, flushSharedGrades } from "./grade-sync";
 import { refreshConfirmedGrades, flushConfirmedGrades } from "./grade-sync";
 // Cloud sync layer — all data via Hostinger PHP API
 import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, SardHistoryItem, SardQueueItem, Student } from "./mock-data";
@@ -30,7 +31,7 @@ import {
 import { savePushNotificationSettings, type PushNotificationSettings } from "./push-notification-settings";
 import { saveTarbawiStore, type TarbawiStore, mergeTarbawiStores, loadTarbawiStore } from "./tarbawi-program";
 import type { AcademicPhaseRecord } from "./academic-record";
-import { saveAcademicRecords } from "./academic-record";
+import { mergeConfirmedAcademicRecords } from "./academic-record";
 import type { HalaqaProgramsStore, HalaqaProgramGradesStore } from "./halaqa-programs";
 import { saveAllHalaqaPrograms, saveAllProgramGrades } from "./halaqa-programs";
 import {
@@ -334,7 +335,7 @@ export async function syncFromCloud(options?: {
           await refreshConfirmedGrades();
           assertCurrent();
         }
-        if (state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
+        if (state.has("weekly_tests")) await refreshSharedGrades<import("./weekly-tests").WeeklyTestsStore>("weekly_tests", {});
         if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
         if (state.has("staff_attendance_settings")) saveStaffAttendanceSettings(state.get("staff_attendance_settings") as import("./staff-attendance").StaffAttendanceSettings);
         if (state.has("staff_attendance")) {
@@ -350,7 +351,7 @@ export async function syncFromCloud(options?: {
         }
         if (state.has("sard_queue") && JSON.stringify(loadSardQueue()) === sardBeforePull) saveSardQueue(state.get("sard_queue") as SardQueueItem[]);
         if (state.has("sard_history")) saveSardHistory(state.get("sard_history") as SardHistoryItem[]);
-        if (state.has("academic_records")) saveAcademicRecords(state.get("academic_records") as AcademicPhaseRecord[]);
+        if (state.has("academic_records")) mergeConfirmedAcademicRecords(state.get("academic_records") as AcademicPhaseRecord[]);
         if (state.has("halaqa_programs")) {
           const cloud = state.get("halaqa_programs") as HalaqaProgramsStore;
           const { loadAllHalaqaPrograms, mergeHalaqaProgramsStores, saveAllHalaqaPrograms } = await import(
@@ -361,17 +362,7 @@ export async function syncFromCloud(options?: {
           saveAllHalaqaPrograms(merged);
         }
         if (state.has("halaqa_program_grades")) saveAllProgramGrades(state.get("halaqa_program_grades") as HalaqaProgramGradesStore);
-        if (state.has("scientific_grades")) {
-          const {
-            loadScientificGradesStore,
-            mergeScientificGradesStores,
-            saveScientificGradesStore,
-          } = await import("./scientific-grades");
-          const cloud = state.get("scientific_grades") as import("./scientific-grades").ScientificGradesStore;
-          assertCurrent();
-          const merged = mergeScientificGradesStores(cloud, loadScientificGradesStore());
-          saveScientificGradesStore(merged);
-        }
+        if (state.has("scientific_grades")) await refreshSharedGrades("scientific_grades", { configs: {}, data: {}, overrides: {} });
         if (state.has(ABSENCE_ALERTS_APP_STATE_KEY)) {
           mergeAbsenceAlertRecordFromCloud(state.get(ABSENCE_ALERTS_APP_STATE_KEY));
         }
@@ -528,40 +519,9 @@ export async function fetchCloudScientificGrades(): Promise<import("./scientific
   return row.value as import("./scientific-grades").ScientificGradesStore;
 }
 
-let scientificPushQueue: Promise<import("./scientific-grades").ScientificGradesStore> = Promise.resolve({
-  configs: {},
-  data: {},
-  overrides: {},
-});
-
-/** Upload local scientific grades after merging with the latest cloud copy. */
-export async function pushMergedScientificGrades(
-  local: import("./scientific-grades").ScientificGradesStore,
-): Promise<import("./scientific-grades").ScientificGradesStore> {
-  const submitted = JSON.stringify(local);
-  const run = async (): Promise<import("./scientific-grades").ScientificGradesStore> => {
-    const { mergeScientificGradesStores, saveScientificGradesStore, loadScientificGradesStore } = await import("./scientific-grades");
-    const cloud = await fetchCloudScientificGrades();
-    const merged = mergeScientificGradesStores(cloud, JSON.parse(submitted) as typeof local);
-    await secureSetAppState({ data: { token: tokenOrThrow(), key: "scientific_grades", value: merged } });
-    // A later local edit is still in progress; this ACK belongs only to the submitted snapshot.
-    if (JSON.stringify(loadScientificGradesStore()) !== submitted) return merged;
-    const prev = sessionStorage.getItem("qs_syncing");
-    sessionStorage.setItem("qs_syncing", "1");
-    try {
-      saveScientificGradesStore(merged);
-    } finally {
-      if (prev) sessionStorage.setItem("qs_syncing", prev);
-      else sessionStorage.removeItem("qs_syncing");
-    }
-    return merged;
-  };
-  const next = scientificPushQueue.then(run, run);
-  scientificPushQueue = next.then(
-    (v) => v,
-    () => local,
-  );
-  return next;
+/** Send recorded immutable operations; never merge and replace a shared snapshot. */
+export async function pushMergedScientificGrades(_local: import("./scientific-grades").ScientificGradesStore): Promise<import("./scientific-grades").ScientificGradesStore> {
+ return flushSharedGrades("scientific_grades", { configs: {}, data: {}, overrides: {} });
 }
 
 export async function fetchCloudStaffCheckIns(): Promise<import("./staff-attendance").StaffCheckIn[]> {

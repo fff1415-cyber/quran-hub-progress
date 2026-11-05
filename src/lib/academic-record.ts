@@ -1,6 +1,6 @@
 import type { PlanTrack } from "@/lib/plan-types";
-import { hasAuthToken } from "@/lib/auth-session";
-import { loadSardHistory } from "@/lib/mock-data";
+import { hasAuthToken, getToken, decodeAuthTokenPayload } from "@/lib/auth-session";
+import { loadSardHistory, loadNotifications, saveNotifications, mergeNotifications } from "@/lib/mock-data";
 
 export interface AcademicPhaseRecord {
   id: string;
@@ -17,9 +17,17 @@ export interface AcademicPhaseRecord {
   planTitle?: string;
   levelNumber?: number;
   track?: PlanTrack;
+  assignmentId?: string;
+  newPlanTitle?: string;
 }
 
 const KEY = "qshatawi_academic_records_v1";
+function recordStorageKey(): string {
+  if (!hasAuthToken()) return KEY;
+  const auth = decodeAuthTokenPayload(getToken());
+  if (!auth?.complexId || !auth.role) throw new Error("تعذّر تثبيت هوية السجل الأكاديمي؛ أعد تسجيل الدخول");
+  return KEY + ":account:" + encodeURIComponent(JSON.stringify([auth.complexId, auth.role, auth.accountId ?? [auth.halaqaId, auth.name], auth.studentId]));
+}
 
 function persistShared(value: AcademicPhaseRecord[]) {
   if (typeof window === "undefined" || !hasAuthToken()) return;
@@ -31,23 +39,42 @@ function persistShared(value: AcademicPhaseRecord[]) {
 
 export function loadAcademicRecords(): AcademicPhaseRecord[] {
   if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(KEY);
+  const raw = localStorage.getItem(recordStorageKey());
   return raw ? JSON.parse(raw) : [];
 }
 
-export function saveAcademicRecords(list: AcademicPhaseRecord[]) {
-  const previous = localStorage.getItem(KEY);
-  if (previous && !localStorage.getItem(`${KEY}:before-history-repair`)) localStorage.setItem(`${KEY}:before-history-repair`, previous);
-  localStorage.setItem(KEY, JSON.stringify(list));
-  persistShared(list);
+export function saveAcademicRecords(list: AcademicPhaseRecord[], options?: { sync?: boolean }) {
+  const key = recordStorageKey(), previous = localStorage.getItem(key);
+  if (previous && !localStorage.getItem(`${key}:before-history-repair`)) localStorage.setItem(`${key}:before-history-repair`, previous);
+  localStorage.setItem(key, JSON.stringify(list));
+  const notices = list.filter(record => record.newPlanTitle && record.assignmentId).map(record => ({ id: `n-academic-${record.assignmentId}`, message: `بعد اجتياز السرد — انتقل الطالب إلى ${record.newPlanTitle}`, type: "info" as const, targetHalaqaId: record.halaqaId, createdAt: record.testDate, read: false }));
+  if (notices.length) saveNotifications(mergeNotifications(notices, loadNotifications()));
+  if (options?.sync !== false) persistShared(list);
 }
 
-export function pushAcademicRecord(record: AcademicPhaseRecord) {
+/** Refresh is read-only remotely and cannot re-upload an old device's history. */
+export async function refreshConfirmedAcademicRecords(): Promise<void> {
+  const token = getToken(), key = recordStorageKey(); if (!token) return;
+  const { secureListAppState } = await import("./secure-data.functions");
+  const rows = await secureListAppState({ data: { token, key: "academic_records" } });
+  if (getToken() !== token || recordStorageKey() !== key) return;
+  const row = rows.find(row => row.key === "academic_records");
+  if (!row) return;
+  if (!Array.isArray(row.value)) throw new Error("صيغة السجل الأكاديمي تحتاج مراجعة؛ بقيت نسخة الجهاز");
+  mergeConfirmedAcademicRecords(row.value as AcademicPhaseRecord[]);
+}
+export function mergeConfirmedAcademicRecords(cloud: AcademicPhaseRecord[]): void {
+  const byId = new Map(loadAcademicRecords().map(record => [record.id, record]));
+  for (const record of cloud) byId.set(record.id, record);
+  saveAcademicRecords([...byId.values()].sort((a, b) => b.testDate.localeCompare(a.testDate)), { sync: false });
+}
+
+export function pushAcademicRecord(record: AcademicPhaseRecord, options?: { sync?: boolean }) {
   const list = loadAcademicRecords();
   const existing = list.findIndex(item => item.id === record.id);
   if (existing !== -1) list.splice(existing, 1);
   list.unshift(record);
-  saveAcademicRecords(list);
+  saveAcademicRecords(list, options);
 }
 
 export function studentAcademicRecords(studentId: string): AcademicPhaseRecord[] {
