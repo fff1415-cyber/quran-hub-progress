@@ -9,7 +9,7 @@ import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-conte
 import { studentReportPercentages, formatOverallPercent } from "@/lib/semester-grading";
 import type { TransferTargetRole } from "@/lib/mock-data";
 import { getSessionName } from "@/lib/session-role";
-import { appendTransferAction, transferActionRoleLabel } from "@/lib/transfer-actions";
+import { persistTransferAction, transferActionRoleLabel } from "@/lib/transfer-actions";
 import { TransferActionForm } from "@/components/role-workspace/TransferActionForm";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
@@ -61,20 +61,20 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
   useEffect(refresh, [refresh]);
   useInboxRefresh(refresh);
 
-  const submitAction = (n: Notification, actionText: string) => {
+  const submitAction = async (n: Notification, actionText: string) => {
     if (!n.transferData || busyId) return;
     setBusyId(n.id);
     const actorName = getSessionName(transferActionRoleLabel(role));
 
     try {
-      appendTransferAction(n.id, {
+      const saved = await persistTransferAction(n.id, {
         role,
         byName: actorName,
         text: actionText,
         at: new Date().toISOString(),
       }, { read: true, transferStatus: "closed" });
       refresh();
-      toast.success("تم تسجيل الإجراء وإغلاق الحالة على هذا الجهاز");
+      toast.success(saved === "shared" ? "أكد الخادم تسجيل الإجراء وإغلاق الحالة" : "تم تسجيل الإجراء وإغلاق الحالة على هذا الجهاز");
     } catch (e) {
       refresh();
       toast.error(e instanceof Error ? e.message : "فشل التحديث");

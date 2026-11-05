@@ -1,0 +1,84 @@
+name: Shared transfer acceptance
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  scope:
+    if: github.head_ref == 'fix/stability-shared-transfers'
+    runs-on: ubuntu-latest
+    outputs:
+      client: ${{ steps.scope.outputs.client }}
+      native: ${{ steps.scope.outputs.native }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: |
+          candidate='${{ github.event.pull_request.head.sha }}'
+          changed() {
+            name="$1"; shift
+            if git diff --quiet "$candidate^" "$candidate" -- "$@"; then
+              echo "$name=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "$name=true" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          changed client src api tests/transfer-client.cjs tests/transfer-sessions.cjs tests/grade-http-fixture.php tests/independent-test-support.cjs tests/local-transfer-regression.cjs tests/local-transfer-rollback.cjs package.json package-lock.json
+          changed native api/lib/shared-transfers.php api/routes/transfers.php api/routes/app_state.php api/lib/semester-grade-stores.php database/migrate-shared-transfers.sql tests/transfers-native.php
+  client-sqlite:
+    needs: scope
+    if: needs.scope.outputs.client == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - run: node tests/transfer-sessions.cjs
+      - run: node tests/transfer-client.cjs
+      - run: node tests/local-transfer-regression.cjs && node tests/local-transfer-rollback.cjs
+      # Shared router, app-state guards and mock-data imports changed; verify their affected integrations.
+      - run: node tests/semester-shared-sessions.cjs && node tests/stage2-atomic-sessions.cjs
+      - run: node tests/stage2-atomic-local.cjs && node tests/shared-store-client.cjs
+      - run: npx tsc --noEmit
+      - run: npm run build:hostinger
+  native:
+    needs: scope
+    if: needs.scope.outputs.native == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        include:
+          - image: mysql:8.0
+            health: mysqladmin ping -h 127.0.0.1
+          - image: mariadb:11.8
+            health: healthcheck.sh --connect --innodb_initialized
+    services:
+      mysql:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_DATABASE: audit_test
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: ['3307:3306']
+        options: --health-cmd="${{ matrix.health }}" --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, pcntl
+      - run: php tests/transfers-native.php
+        env:
+          AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4

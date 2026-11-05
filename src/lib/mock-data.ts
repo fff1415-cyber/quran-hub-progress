@@ -1,5 +1,6 @@
 import type { PlanEffect } from "./grade-outbox";
 import { gradeView, recordGradeEdit, currentGradeOutbox, assertSharedGradePeriod } from "./grade-sync";
+import { sharedTransferNotifications, saveSharedTransferLocalMarks } from "./shared-transfers";
 // Mock data + localStorage store for مجمع حلقات الشتيوي
 import { hasAuthToken } from "@/lib/auth-session";
 
@@ -560,7 +561,7 @@ export function ensureGradesSemester(semesterId: string | null): boolean {
   return current !== null && current !== semesterId;
 }
 
-export type TransferActionRole = "manager" | "secretary" | "supervisor";
+export type TransferActionRole = "manager" | "secretary" | "supervisor" | "teacher" | "assistant";
 
 export interface TransferActionRecord {
   role: TransferActionRole;
@@ -570,6 +571,7 @@ export interface TransferActionRecord {
 }
 
 export interface Notification {
+  sharedTransferId?: string;
   id: string;
   message: string;
   type: "sard" | "absence" | "late" | "info" | "transfer";
@@ -680,14 +682,17 @@ function writeNotificationsLocal(list: Notification[]) {
     const original = localStorage.getItem(KEY_NOTIFICATIONS);
     if (original !== null) localStorage.setItem(backupKey, original);
   }
-  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list));
+  saveSharedTransferLocalMarks(list);
+  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.filter(n => !n.sharedTransferId)));
   window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
 }
 
 export function loadNotifications(): Notification[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY_NOTIFICATIONS);
-  return raw ? JSON.parse(raw) : [];
+  const legacy: Notification[] = raw ? JSON.parse(raw) : [];
+  const shared = sharedTransferNotifications(), retained = legacy.filter(n => !n.sharedTransferId);
+  return shared.length ? mergeNotifications(shared, retained) : retained;
 }
 
 export function pushNotification(n: Omit<Notification, "id" | "createdAt" | "read">) {

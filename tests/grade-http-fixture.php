@@ -6,11 +6,13 @@ if(!$fixture || !str_starts_with(basename($fixture),'qhp-atomic-') || !is_dir(di
 define('QHP_GRADE_WRITES_V1',true);
 define('QHP_SHARED_GRADE_WRITES_V1',getenv('QHP_FIXTURE_SEMESTERS')==='1');
 define('QHP_SEMESTER_STORES_V1',getenv('QHP_FIXTURE_SEMESTERS')==='1');
+define('QHP_TRANSFER_WRITES_V1',getenv('QHP_FIXTURE_TRANSFERS')==='1');
 class HttpFixtureDatabase extends PDO {
  public function __construct(string $file){parent::__construct('sqlite:'.$file);$this->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$this->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);}
  public function prepare(string $query,array $options=[]):PDOStatement|false{
   if(str_contains($query,'information_schema.tables'))$query="SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?";
   $query=str_replace(' FOR UPDATE','',$query);
+  $query=str_replace('INSERT IGNORE','INSERT OR IGNORE',$query);
   $query=str_replace('ON DUPLICATE KEY UPDATE value = ?','ON CONFLICT DO UPDATE SET value = ?',$query);
   $query=str_replace('ON DUPLICATE KEY UPDATE direct_version=?,subtree_version=?,updated_at=CURRENT_TIMESTAMP','ON CONFLICT(context_id,store_key,path_sha256) DO UPDATE SET direct_version=?,subtree_version=?,updated_at=CURRENT_TIMESTAMP',$query);
   return parent::prepare($query,$options);
@@ -19,8 +21,13 @@ class HttpFixtureDatabase extends PDO {
 $pdo=new HttpFixtureDatabase($fixture);
 function db():PDO{return $GLOBALS['pdo'];}
 function table_column_exists(PDO $pdo,string $table,string $column):bool{foreach($pdo->query('PRAGMA table_info('.$table.')')->fetchAll()as$row)if($row['name']===$column)return true;return false;}
-function require_auth():array{$token=$_SERVER['HTTP_AUTHORIZATION']??'';$role=substr($token,15);if(!in_array($role,['teacher','assistant','test_member'],true))error_response('Unauthenticated',401);return ['role'=>$role,'name'=>$role,'accountId'=>$role,'complexId'=>1,'halaqaId'=>1];}
-function require_complex_id(array $auth):int{return 1;}
+function require_auth():array{
+ $token=$_SERVER['HTTP_AUTHORIZATION']??'';$actor=substr($token,15);$claims=[];
+ foreach(['teacher','assistant','manager','secretary','supervisor','test_member','student','parent','musammi','program_supervisor']as$role)$claims[$role]=['role'=>$role,'name'=>$role,'accountId'=>$role,'complexId'=>1,'halaqaId'=>1];
+ $claims['teacher-foreign']=['role'=>'teacher','name'=>'foreign','accountId'=>'foreign','complexId'=>1,'halaqaId'=>2];$claims['teacher-othercid']=['role'=>'teacher','name'=>'othercid','accountId'=>'othercid','complexId'=>2,'halaqaId'=>9];
+ if(!isset($claims[$actor]))error_response('Unauthenticated',401);return $claims[$actor];
+}
+function require_complex_id(array $auth):int{return (int)$auth['complexId'];}
 function json_input():array{return json_decode(file_get_contents('php://input'),true,512,JSON_THROW_ON_ERROR);}
 function error_response(string $message,int $status=400):never{http_response_code($status);json_response(['error'=>$message]);}
 function json_response(mixed $value):never{header('Content-Type: application/json');echo json_encode($value,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);exit;}
@@ -35,10 +42,17 @@ if(PHP_SAPI==='cli'){
   $pdo->exec("INSERT INTO semesters VALUES(2,1,0);CREATE TABLE students(id TEXT PRIMARY KEY,halaqa_id INTEGER,complex_id INTEGER);INSERT INTO students VALUES('S',1,1),('foreign',2,1)");
   app_state_upsert($pdo,'scientific_grades',json_decode('{"configs":{"1":{"visible":true}},"data":{"1":{"old":{"1":{"sun":{"hifz":"9"}}}}},"overrides":{}}'),1);
   app_state_upsert($pdo,'weekly_tests',json_decode('{"historic":{"1":{"muraja":["pass"]}}}'),1);
- }exit;
+ }
+ if(QHP_TRANSFER_WRITES_V1){$pdo->exec("CREATE TABLE students(id TEXT PRIMARY KEY,name TEXT,halaqa_id INT,complex_id INT);INSERT INTO students VALUES('S','fixture-student',1,1),('foreign','foreign-student',2,1),('S2','other-complex',9,2);CREATE TABLE transfer_threads(complex_id INT,id TEXT,halaqa_id INT,target_role TEXT,version TEXT,value TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(complex_id,id));CREATE TABLE transfer_receipts(complex_id INT,operation_id TEXT,actor_sha256 TEXT,input_sha256 TEXT,value TEXT,applied_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(complex_id,operation_id))");}
+ exit;
 }
 try{
  $path=parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH);
  if(QHP_SEMESTER_STORES_V1&&$path==='/fixture-switch-semester'){require_auth();$pdo->exec('UPDATE semesters SET is_active=CASE WHEN id=2 THEN 1 ELSE 0 END');json_response(['ok'=>true]);}
+ if(QHP_TRANSFER_WRITES_V1&&$path==='/fixture-fail-transfer'){
+  if(require_auth()['role']!=='manager')error_response('Forbidden',403);
+  if((json_input()['enabled']??false)===true)$pdo->exec("CREATE TRIGGER fail_transfer_receipt BEFORE INSERT ON transfer_receipts BEGIN SELECT RAISE(ABORT,'fixture late transfer receipt');END");
+  else $pdo->exec('DROP TRIGGER fail_transfer_receipt');json_response(['ok'=>true]);
+ }
  route_request($_SERVER['REQUEST_METHOD'],$path);
 }catch(Throwable $error){error_response($error->getMessage(),500);}
