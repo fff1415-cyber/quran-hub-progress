@@ -183,4 +183,3 @@ function grade_cells_apply(PDO $pdo,int $cid,string $key,string $operation,array
         throw $error;
     }
 }
-

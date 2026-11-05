@@ -4,6 +4,23 @@ on:
 permissions:
   contents: read
 jobs:
+  changed-safety:
+    if: github.head_ref == 'fix/stability-stage-2-atomic'
+    runs-on: ubuntu-latest
+    outputs:
+      probe: ${{ steps.scope.outputs.probe }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: |
+          candidate='${{ github.event.pull_request.head.sha }}'
+          if git diff --quiet "$candidate^" "$candidate" -- scripts/inspect-safety-provenance.py; then
+            echo 'probe=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'probe=true' >> "$GITHUB_OUTPUT"
+          fi
   client:
     if: github.head_ref == 'fix/stability-stage-2-atomic'
     runs-on: ubuntu-latest
@@ -20,6 +37,7 @@ jobs:
           extensions: pdo_sqlite
       - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
       - run: node tests/stage2-atomic-sessions.cjs
+      - run: node tests/stage2-atomic-local.cjs
       - run: php tests/backend-grade-cell-operations.php
       - run: php tests/stage3-atomic-plan.php
       - run: npx tsc --noEmit
@@ -55,7 +73,8 @@ jobs:
         env:
           AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
   safety-provenance:
-    if: github.head_ref == 'fix/stability-stage-2-atomic' && github.event.pull_request.head.repo.full_name == github.repository
+    needs: changed-safety
+    if: needs.changed-safety.outputs.probe == 'true' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 3
     steps:

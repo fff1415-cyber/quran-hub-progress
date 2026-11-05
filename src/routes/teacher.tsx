@@ -1141,6 +1141,14 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       toast.error(`المتبقي للتعويض هذا الأسبوع: ${max}`);
       return;
     }
+    if (planStudentIds.has(s.id)) {
+      const completedAt = planCompletionDate(calendar, weekNum, dayKey);
+      if (!completedAt) { toast.error("تعذّر تحديد تاريخ التعويض؛ أعد تحميل التقويم"); return; }
+      const plan: PlanEffect = { student_id: s.id, expected_assignment_id: confirmedGradePlanAssignment(s.id), task_type: "hifz", action: "compensation", tap: s.levelType === "gold" ? "one" : "half", completed_at: completedAt, cell_path: [s.id, String(weekNum), "days", dayKey, "compensationFaces"] };
+      updateDay(s.id, dayKey, { compensationFaces: faces }, plan);
+      void refreshConfirmedPlan(s);
+      return;
+    }
     const days = { ...w.days };
     days[dayKey] = mergeDayEntryPatch(dayEntryFor(w, dayKey, workingKeysList), { compensationFaces: faces });
     let nextWeek: WeekRecord = { ...w, days };

@@ -4,6 +4,7 @@ import type { GradesStore } from "./mock-data";
 import { decodeAuthTokenPayload, getToken } from "./auth-session";
 import { secureGradeSnapshot, secureGradeOperation } from "./secure-data.functions";
 export const GRADE_SAVE_EVENT = "qhp-grade-save-status";
+let localSaveError: { scope: string; message: string } | null = null;
 function notify() { if (typeof window !== "undefined") { window.dispatchEvent(new Event(GRADE_SAVE_EVENT)); window.dispatchEvent(new Event("qs-grades-changed")); } }
 function identity(): { scope: string; cid: number; token: string } | null {
   const token = getToken(), auth = decodeAuthTokenPayload(token);
@@ -12,7 +13,12 @@ function identity(): { scope: string; cid: number; token: string } | null {
 }
 export function currentGradeOutbox(): GradeOutbox | null { const session = identity(); return session && typeof window !== "undefined" ? new GradeOutbox(localStorage, session.scope, () => crypto.randomUUID(), notify) : null; }
 export function gradeView(fallback: GradesStore): GradesStore { return currentGradeOutbox()?.view(fallback) ?? fallback; }
-export function recordGradeEdit(before: GradesStore, after: GradesStore, plan?: PlanEffect): boolean { const box = currentGradeOutbox(); if (!box) return false; box.edit(before, after, plan); return true; }
+export function gradeLocalSaveError(): string { return localSaveError !== null && localSaveError.scope === identity()?.scope ? localSaveError.message : ""; }
+export function recordGradeEdit(before: GradesStore, after: GradesStore, plan?: PlanEffect): boolean {
+  const box = currentGradeOutbox(); if (!box) return false;
+  try { box.edit(before, after, plan); localSaveError = null; return true; }
+  catch (error) { localSaveError = { scope: identity()!.scope, message: "تعذّر حفظ المسودة على هذا الجهاز؛ لم يُرسل التعديل. وفّر مساحة أو تحقق من تخزين المتصفح ثم أعد التسجيل." }; notify(); throw error; }
+}
 export function rememberGradePlanAssignments(rows: { student_id: string; assignment_id?: string }[]) {
   const box = currentGradeOutbox(); if (!box) return;
   localStorage.setItem(box.prefix + "plan_assignments", JSON.stringify(Object.fromEntries(rows.map(row => [row.student_id, row.assignment_id ?? ""]))));

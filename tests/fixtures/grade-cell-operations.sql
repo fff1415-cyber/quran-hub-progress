@@ -16,4 +16,3 @@ CREATE TABLE IF NOT EXISTS grade_operation_receipts (
  applied_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
  PRIMARY KEY(context_id,store_key,operation_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-

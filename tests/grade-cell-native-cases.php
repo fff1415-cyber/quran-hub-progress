@@ -29,4 +29,3 @@ gradeCellFailure(fn()=>grade_cells_apply($pdo,1,'grades','grade-native-failure',
 check(!$pdo->inTransaction()&&gradeCellRaw($pdo,1)===$before&&gradeCellRaw($pdo,1,'scientific_grades')===$scienceBefore,'native joined transaction failure preserves caller records and cannot commit only one part');
 $pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();grade_cells_capture($pdo,1,'grades',$paths);$pdo->rollBack();check(gradeCellRaw($pdo,1)===$before,'native metadata capture works in a genuinely read-only transaction without row initialization');
 echo "PASS: native independent grade-cell data engine, conflict detection and tombstone retention; public integration remains pending\n";
-

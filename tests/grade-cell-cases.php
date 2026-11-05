@@ -59,4 +59,3 @@ function gradeCellCases(PDO $pdo):void {
     $many=json_decode(gradeCellRaw($pdo,1,'weekly_tests'),false);check(count(get_object_vars($many))===651&&$many->{'fixture-0'}->zero===0&&$many->{'fixture-650'}->zero===1,'all 651 stored records remain; targeted editing has no 500-item data cap');
     check(!str_contains(gradeCellRaw($pdo,1),'semester_id'),'calendar fencing never stamps historical grade values with a guessed semester');
 }
-

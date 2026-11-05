@@ -36,7 +36,7 @@ function grade_write_request(PDO $pdo,int $cid,array $packet,array $auth=[]):arr
         $cell=null;foreach($changes as$change)if(($change['path']??null)===($effect['cell_path']??null))$cell=$change;
         if(!$cell||($cell['next']['present']??false)!==true)throw new RuntimeException('الدرجة والإنجاز لا يستهدفان الخلية نفسها',400);
         $value=$cell['next']['value'];$task=$effect['task_type']??'';
-        $valid=($effect['action']??'')==='record'?($task==='hifz'?$value===($effect['tap']??null):$value==='pass'):($task==='hifz'?$value==='':in_array($value,['','fail'],true));
+        $valid=($effect['action']??'')==='compensation'?is_numeric($value):(($effect['action']??'')==='record'?($task==='hifz'?$value===($effect['tap']??null):$value==='pass'):($task==='hifz'?$value==='':in_array($value,['','fail'],true)));
         if(!$valid)throw new RuntimeException('قيمة الدرجة لا تطابق إجراء الإنجاز',400);
     }
     $apply=static function(stdClass $store)use($pdo,$cid,$auth,$effect,$operation,$changes):void{

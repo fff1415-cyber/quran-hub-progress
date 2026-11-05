@@ -35,5 +35,3 @@ $path=['S','1','days','sun','hifz'];$one=grade_cells_capture($pdo,1,'grades',[$p
 gradeCellFailure(fn()=>grade_cells_apply($pdo,2,'grades','grade-global-stale',$two['calendar_context'],[gradeCellChange($two,0,'one')]),'عدّل مستخدم آخر');
 check(json_decode(gradeCellRaw($pdo,2),false)->S->{'1'}->days->sun->hifz==='two','legacy global physical key cannot hide a stale write behind a different logical complex revision domain');
 echo "PASS: isolated grade-cell engine; no public writer or browser integration is connected\n";
-
-
