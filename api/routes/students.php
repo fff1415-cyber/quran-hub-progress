@@ -118,6 +118,7 @@ function handle_upsert_students(): void
     }
     $stmt = $pdo->prepare($sql);
 
+    $preparedRows = [];
     foreach ($students as $s) {
         $phase = isset($s['phase_number']) ? (int) $s['phase_number'] : null;
         $params = [
@@ -141,7 +142,16 @@ function handle_upsert_students(): void
             }
             $params[':complex_id'] = $cid;
         }
-        $stmt->execute($params);
+        $preparedRows[] = $params;
+    }
+
+    try {
+        $pdo->beginTransaction();
+        foreach ($preparedRows as $params) $stmt->execute($params);
+        $pdo->commit();
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_response(api_safe_failure_message($error, 'students_batch'), api_database_error_status($error));
     }
 
     json_response(['ok' => true]);
