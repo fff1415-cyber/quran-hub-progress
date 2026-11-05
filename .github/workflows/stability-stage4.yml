@@ -9,6 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       source: ${{ steps.scope.outputs.source }}
+      grade: ${{ steps.scope.outputs.grade }}
       php: ${{ steps.scope.outputs.php }}
       native: ${{ steps.scope.outputs.native }}
     steps:
@@ -26,7 +27,8 @@ jobs:
               echo "$name=true" >> "$GITHUB_OUTPUT"
             fi
           }
-          changed source src tests/stage2-atomic-local.cjs package.json package-lock.json
+          changed source src tests/stage2-atomic-local.cjs tests/stage4-plan-track.cjs tests/fixtures/pre-stage4-plan-progression.ts.txt package.json package-lock.json
+          changed grade src/lib/grade-sync.ts src/lib/grade-outbox.ts src/lib/mock-data.ts src/components/GradeSaveStatus.tsx tests/stage2-atomic-local.cjs
           changed php api tests/stage4-profile.php tests/backend-sard-regression.php
           changed native api/lib/plan-profile.php api/routes/plans.php api/diagnostics.php tests/stage4-native.php
   client-sqlite:
@@ -47,6 +49,8 @@ jobs:
       - run: php tests/stage4-profile.php
         if: needs.changes.outputs.php == 'true'
       - run: node tests/stage2-atomic-local.cjs
+        if: needs.changes.outputs.grade == 'true'
+      - run: node tests/stage4-plan-track.cjs
         if: needs.changes.outputs.source == 'true'
       - run: npx tsc --noEmit
         if: needs.changes.outputs.source == 'true'
