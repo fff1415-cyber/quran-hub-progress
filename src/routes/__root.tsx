@@ -12,6 +12,7 @@ import { getAuthItem } from "@/lib/auth-session";
 import { EvaluationSettingsProvider } from "@/contexts/EvaluationSettingsContext";
 import { GradeInputSettingsProvider } from "@/contexts/GradeInputSettingsContext";
 import { TenantProvider } from "@/contexts/TenantContext";
+import { CloudSyncStatus } from "@/components/CloudSyncStatus";
 
 import appCss from "../styles.css?url";
 
@@ -85,6 +86,7 @@ function RootComponent() {
       <TenantProvider>
         <EvaluationSettingsProvider>
           <GradeInputSettingsProvider>
+            <CloudSyncStatus />
             <Outlet />
           </GradeInputSettingsProvider>
         </EvaluationSettingsProvider>
