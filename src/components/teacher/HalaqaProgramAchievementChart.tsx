@@ -80,7 +80,7 @@ function VerticalNameTick({
   y?: number;
   payload?: { value?: string };
 }) {
-  if (x == null || y == null || !payload?.value) return null;
+  if (x == null || y == null || !payload?.value) return <g />;
   const pivotY = y + 8;
   return (
     <text

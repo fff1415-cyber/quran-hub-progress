@@ -60,7 +60,7 @@ export function parseFinancialLedgerRaw(raw: unknown): FinancialLedgerStore {
     if (Array.isArray(obj.entries)) {
       return normalizeFinancialLedger({
         entries: obj.entries,
-        deletedIds: obj.deletedIds,
+        deletedIds: Array.isArray(obj.deletedIds) ? obj.deletedIds.filter((id): id is string => typeof id === "string") : [],
       });
     }
   }
