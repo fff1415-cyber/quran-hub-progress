@@ -5,6 +5,13 @@ ipaddress.IPv4Address(host)
 if not re.fullmatch(r'[A-Za-z0-9_-]+',user):raise ValueError('Invalid SSH identity')
 code=r'''
 $home=$argv[1];$private=$home.'/.qhp-private/msht-test.php';$out=['test_config'=>['exists'=>is_file($private)],'roots'=>[]];
+$out['alternative_test_configuration_candidates']=[];
+foreach(['msht-test.php.txt','msht_test.php','msht-test.json','msht-test.ini','msht-test.env','test-db.php']as$label){
+ $path=$home.'/.qhp-private/'.$label;
+ if(is_file($path)&&!is_link($path)&&filesize($path)<=65536){$text=file_get_contents($path);$out['alternative_test_configuration_candidates'][]=['label'=>$label,'nonempty'=>strlen(trim($text))>0,'secured'=>(fileperms($path)&0077)===0,'explicit_test_database'=>str_contains($text,'u112851217_msht_test')];}
+}
+$mysqlConfig=$home.'/.my.cnf';$out['dedicated_mysql_test_group_present']=false;
+if(is_file($mysqlConfig)&&!is_link($mysqlConfig)&&filesize($mysqlConfig)<=65536){$text=file_get_contents($mysqlConfig);$out['dedicated_mysql_test_group_present']=(bool)preg_match('/^\s*\[client_msht_test\]\s*$/m',$text);}
 if(is_file($private)&&!is_link($private)&&filesize($private)<=65536){
  $text=file_get_contents($private);$trim=trim($text);
  $out['test_config']+=['nonempty'=>strlen($trim)>0,'php_opening'=>str_starts_with($trim,'<?php'),'json_opening'=>str_starts_with($trim,'{'),'secured'=>(fileperms($private)&0077)===0,'contains_expected_test_database'=>str_contains($text,'u112851217_msht_test'),'contains_placeholder_marker'=>(bool)preg_match('/CHANGE_ME|YOUR_PASSWORD|YOUR_USER|PLACEHOLDER/i',$text)];
@@ -14,6 +21,8 @@ $main=realpath($home.'/domains/msht.io/public_html');
 foreach(['m1','m2']as$sub){foreach(['separate'=>$home.'/domains/'.$sub.'.msht.io/public_html','under_main'=>$home.'/domains/msht.io/public_html/'.$sub,'under_main_host'=>$home.'/domains/msht.io/public_html/'.$sub.'.msht.io']as$label=>$path){$real=realpath($path);$out['roots'][$sub][$label]=['exists'=>$real!==false,'same_as_main'=>$real!==false&&$real===$main,'symlink'=>is_link($path),'has_api_config'=>is_file($path.'/api/config.php')];}}
 foreach(['msht.io','m1.msht.io','m2.msht.io']as$domain){$path=$home.'/domains/'.$domain.'/public_html/.htaccess';if(is_file($path)&&filesize($path)<=65536){$text=file_get_contents($path);$out['htaccess'][$domain]=['mentions_m1'=>str_contains($text,'m1.msht.io'),'mentions_m2'=>str_contains($text,'m2.msht.io')];}}
 $out['production_writes']=false;$out['test_connection_attempted']=false;$out['vhost_isolation_proven']=false;
+$out['readable_target_vhost_files']=[];
+foreach(['apache'=>'/etc/apache2/sites-enabled/msht.io.conf','nginx'=>'/etc/nginx/sites-enabled/msht.io','litespeed'=>'/usr/local/lsws/conf/vhosts/msht.io/vhconf.conf']as$label=>$path){if(is_file($path)&&is_readable($path)&&filesize($path)<=65536){$text=file_get_contents($path);$out['readable_target_vhost_files'][]=['type'=>$label,'mentions_main_host'=>str_contains($text,'msht.io'),'mentions_m2_host'=>str_contains($text,'m2.msht.io')];}}
 echo json_encode($out,JSON_PRETTY_PRINT)."\n";
 '''
 with tempfile.TemporaryDirectory() as folder:
