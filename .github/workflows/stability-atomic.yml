@@ -9,6 +9,12 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       probe: ${{ steps.scope.outputs.probe }}
+      native: ${{ steps.scope.outputs.native }}
+      app: ${{ steps.scope.outputs.app }}
+      http: ${{ steps.scope.outputs.http }}
+      local: ${{ steps.scope.outputs.local }}
+      plan: ${{ steps.scope.outputs.plan }}
+      engine: ${{ steps.scope.outputs.engine }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -21,7 +27,22 @@ jobs:
           else
             echo 'probe=true' >> "$GITHUB_OUTPUT"
           fi
+          changed() {
+            name="$1"; shift
+            if git diff --quiet "$candidate^" "$candidate" -- "$@"; then
+              echo "$name=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "$name=true" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          changed native api/lib api/routes/plans.php api/routes/kiosk.php tests/atomic-native.php tests/atomic-plan-cases.php tests/grade-cell-native-cases.php tests/grade-cell-cases.php tests/fixtures
+          changed app src package.json package-lock.json vite.config.ts
+          changed http api/routes/app_state.php api/lib src/lib/grade-outbox.ts tests/grade-http-fixture.php tests/stage2-atomic-sessions.cjs
+          changed local src/lib/mock-data.ts src/lib/grade-sync.ts src/lib/grade-outbox.ts src/components/GradeSaveStatus.tsx tests/stage2-atomic-local.cjs
+          changed plan api/lib api/routes/plans.php tests/atomic-plan-cases.php tests/stage3-atomic-plan.php
+          changed engine api/lib/grade-cell-operations.php tests/backend-grade-cell-operations.php tests/grade-cell-cases.php
   client:
+    needs: changed-safety
     if: github.head_ref == 'fix/stability-stage-2-atomic'
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -37,13 +58,20 @@ jobs:
           extensions: pdo_sqlite
       - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
       - run: node tests/stage2-atomic-sessions.cjs
+        if: needs.changed-safety.outputs.http == 'true'
       - run: node tests/stage2-atomic-local.cjs
+        if: needs.changed-safety.outputs.local == 'true'
       - run: php tests/backend-grade-cell-operations.php
+        if: needs.changed-safety.outputs.engine == 'true'
       - run: php tests/stage3-atomic-plan.php
+        if: needs.changed-safety.outputs.plan == 'true'
       - run: npx tsc --noEmit
+        if: needs.changed-safety.outputs.app == 'true'
       - run: npm run build:hostinger
+        if: needs.changed-safety.outputs.app == 'true'
   native:
-    if: github.head_ref == 'fix/stability-stage-2-atomic'
+    needs: changed-safety
+    if: needs.changed-safety.outputs.native == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     strategy:
