@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../schema.php';
 require_once __DIR__ . '/../diagnostics.php';
+require_once __DIR__ . '/../lib/plan-profile.php';
 
 function plans_require_roles(array $auth, array $roles): void
 {
@@ -806,8 +807,9 @@ function handle_assign_plan(): void
         } elseif (($auth['role'] ?? '') === 'musammi') {
             throw new RuntimeException('طلب الاجتياز مطلوب لترحيل الخطة');
         }
+        $studentPhase = plans_commit_profile_phase($pdo, $cid, $studentId, $planRow, $tenants);
         $pdo->commit();
-        json_response(['ok' => true, 'assignment_id' => $id, 'sard_queue' => $sardQueue]);
+        json_response(['ok' => true, 'assignment_id' => $id, 'sard_queue' => $sardQueue, 'student_phase' => $studentPhase]);
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         plans_abort_with_sql_error($pdo, $e, 'ربط الطالب بالخطة');

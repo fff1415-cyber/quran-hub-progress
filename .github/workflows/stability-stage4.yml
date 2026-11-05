@@ -1,0 +1,88 @@
+name: Transition profile acceptance
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  changes:
+    if: github.head_ref == 'fix/stability-stage-4-transition-profile'
+    runs-on: ubuntu-latest
+    outputs:
+      source: ${{ steps.scope.outputs.source }}
+      grade: ${{ steps.scope.outputs.grade }}
+      php: ${{ steps.scope.outputs.php }}
+      native: ${{ steps.scope.outputs.native }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: |
+          candidate='${{ github.event.pull_request.head.sha }}'
+          changed() {
+            name="$1"; shift
+            if git diff --quiet "$candidate^" "$candidate" -- "$@"; then
+              echo "$name=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "$name=true" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          changed source src tests/stage2-atomic-local.cjs tests/stage4-plan-track.cjs tests/fixtures/pre-stage4-plan-progression.ts.txt package.json package-lock.json
+          changed grade src/lib/grade-sync.ts src/lib/grade-outbox.ts src/lib/mock-data.ts src/components/GradeSaveStatus.tsx tests/stage2-atomic-local.cjs
+          changed php api tests/stage4-profile.php tests/backend-sard-regression.php
+          changed native api/lib/plan-profile.php api/routes/plans.php api/diagnostics.php tests/stage4-native.php
+  client-sqlite:
+    needs: changes
+    if: github.head_ref == 'fix/stability-stage-4-transition-profile'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - run: php tests/stage4-profile.php
+        if: needs.changes.outputs.php == 'true'
+      - run: node tests/stage2-atomic-local.cjs
+        if: needs.changes.outputs.grade == 'true'
+      - run: node tests/stage4-plan-track.cjs
+        if: needs.changes.outputs.source == 'true'
+      - run: npx tsc --noEmit
+        if: needs.changes.outputs.source == 'true'
+      - run: npm run build:hostinger
+        if: needs.changes.outputs.source == 'true'
+  native:
+    needs: changes
+    if: needs.changes.outputs.native == 'true'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - image: mysql:8.0
+            health: mysqladmin ping -h 127.0.0.1
+          - image: mariadb:11.8
+            health: healthcheck.sh --connect --innodb_initialized
+    services:
+      mysql:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_DATABASE: audit_test
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: ['3307:3306']
+        options: --health-cmd="${{ matrix.health }}" --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql
+      - run: php tests/stage4-native.php
+        env:
+          AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4

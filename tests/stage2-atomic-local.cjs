@@ -17,5 +17,6 @@ assert.match(text(h.render(()=>Status())),/تعذّر حفظ المسودة/);lo
  await assert.rejects(box.flush(async()=>({ok:true,operation_id:'wrong-receipt',input_sha256:'a'.repeat(64)})),/لم يؤكد/);assert.equal(box.drafts()[0].status,'pending');
  const before=box.view({}),after=structuredClone(before);after.S[1].days.sun.rabt='pass';box.edit(before,after);
  const sibling=new outbox.GradeOutbox(localStorage,JSON.stringify([1,'teacher',[1,'fixture'],undefined]));assert.equal(sibling.drafts().length,2,'same-account tabs share independent persisted operation keys');
+ auth.decodeAuthTokenPayload=()=>null;assert.throws(()=>sync.recordGradeEdit({},{}),/هوية جلسة الحفظ/);assert.match(sync.gradeLocalSaveError(),/لم يُرسل/);assert.equal(sibling.drafts().length,2,'unidentified session cannot create a shared-cache fallback save');
  console.log('PASS: actual grade save/mutation wrappers preserve plan packet, ignore device clocks, retain prior data on storage failure, display local failure and refuse unmatched receipt; independent tab operations survive');
 })().catch(error=>{console.error(error);process.exitCode=1;});

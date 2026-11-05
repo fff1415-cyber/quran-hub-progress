@@ -14,7 +14,8 @@ function api_database_error_category(Throwable $error): string
     if (in_array($errno, [2002, 2003, 2005, 2006, 2013], true) || str_starts_with($state, '08')) return 'connection';
     if (in_array($errno, [1049, 1054, 1146], true) || in_array($state, ['42S02', '42S22'], true)) return 'schema';
     if ($errno === 1064) return 'sql';
-    if (str_starts_with($state, '23')) return 'integrity';
+    // MySQL 8 reports CHECK violations as HY000/3819 rather than SQLSTATE class 23.
+    if ($errno === 3819 || str_starts_with($state, '23')) return 'integrity';
     return 'sql';
 }
 

@@ -47,7 +47,7 @@ function seed(): TestDatabase {
     $pdo = new TestDatabase();$GLOBALS['pdo'] = $pdo;$GLOBALS['uuid']=0;
     $GLOBALS['auth']=['role'=>'musammi','accountId'=>'staff-1','complexId'=>1,'name'=>'test'];
     $GLOBALS['input']=['student_id'=>'student-1','plan_id'=>'next','expected_assignment_id'=>'old','plan_start_date'=>'2026-10-13','sard_result'=>['id'=>'sq-1','percent'=>90,'phase'=>'full']];
-    $pdo->exec('CREATE TABLE students(id TEXT PRIMARY KEY, complex_id INTEGER, phase_number INTEGER, level TEXT); INSERT INTO students(id,complex_id,phase_number,level) VALUES ("student-1",1,1,"1")');
+    $pdo->exec('CREATE TABLE students(id TEXT PRIMARY KEY, complex_id INTEGER, phase_number INTEGER, level TEXT,institute_level TEXT); INSERT INTO students(id,complex_id,phase_number,level,institute_level) VALUES ("student-1",1,1,"1","التأهيل")');
     $faces='daily_hifz_faces INTEGER DEFAULT 1, daily_rabt_faces INTEGER DEFAULT 1, daily_muraja_faces INTEGER DEFAULT 1, faces_per_half INTEGER DEFAULT 1, faces_per_one INTEGER DEFAULT 1, faces_per_two INTEGER DEFAULT 2';
     $pdo->exec('CREATE TABLE education_plans(id TEXT PRIMARY KEY, complex_id INTEGER, title TEXT, track TEXT, level_number INTEGER, '.$faces.'); INSERT INTO education_plans(id,complex_id,title,track,level_number) VALUES ("current",1,"current plan","gold",1001),("next",1,"next plan","gold",1002)');
     $pdo->exec('CREATE TABLE student_plan_assignments(id TEXT PRIMARY KEY, student_id TEXT, plan_id TEXT, start_segment_index INTEGER, plan_start_date TEXT, start_muraja_segment INTEGER, status TEXT, assigned_by TEXT, assigned_at TEXT DEFAULT "2026-10-01 00:00:00", transferred_at TEXT, frozen_at TEXT, '.$faces.'); INSERT INTO student_plan_assignments(id,student_id,plan_id,start_segment_index,status) VALUES ("old","student-1","current",1,"active")');
@@ -58,6 +58,7 @@ function seed(): TestDatabase {
 }
 function activePlan(PDO $pdo): string {return (string)$pdo->query("SELECT plan_id FROM student_plan_assignments WHERE status='active'")->fetchColumn();}
 function queue(PDO $pdo): array {return json_decode((string)$pdo->query("SELECT value FROM app_state WHERE `key`='sard_queue'")->fetchColumn(),true);}
+if(defined('QHP_FIXTURE_SUPPORT_ONLY') && QHP_FIXTURE_SUPPORT_ONLY === true)return;
 $pdo=seed();handle_assign_plan();check(activePlan($pdo)==='next' && queue($pdo)[0]['status']==='passed','failed attempt then pass commits next plan and result together with hifz alone');
 expectFailure(fn()=>handle_assign_plan(),'تغيّرت خطة الطالب');check((int)$pdo->query('SELECT COUNT(*) FROM student_plan_assignments')->fetchColumn()===2,'repeat approval does not create another assignment');
 $pdo=seed();$pdo->exec("CREATE TRIGGER fail_insert BEFORE INSERT ON student_plan_assignments BEGIN SELECT RAISE(ABORT,'simulated insert failure'); END");expectFailure(fn()=>handle_assign_plan(),'simulated insert failure');check(activePlan($pdo)==='current' && queue($pdo)[0]['status']==='scheduled','assignment insert failure rolls back plan closure');

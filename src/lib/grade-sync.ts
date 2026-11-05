@@ -13,9 +13,14 @@ function identity(): { scope: string; cid: number; token: string } | null {
 }
 export function currentGradeOutbox(): GradeOutbox | null { const session = identity(); return session && typeof window !== "undefined" ? new GradeOutbox(localStorage, session.scope, () => crypto.randomUUID(), notify) : null; }
 export function gradeView(fallback: GradesStore): GradesStore { return currentGradeOutbox()?.view(fallback) ?? fallback; }
-export function gradeLocalSaveError(): string { return localSaveError !== null && localSaveError.scope === identity()?.scope ? localSaveError.message : ""; }
+export function gradeLocalSaveError(): string { return localSaveError !== null && localSaveError.scope === (identity()?.scope ?? "unavailable") ? localSaveError.message : ""; }
 export function recordGradeEdit(before: GradesStore, after: GradesStore, plan?: PlanEffect): boolean {
-  const box = currentGradeOutbox(); if (!box) return false;
+  const box = currentGradeOutbox();
+  if (!box) {
+    if (!getToken()) return false;
+    const message = "تعذّر تأكيد هوية جلسة الحفظ؛ أعد تسجيل الدخول قبل تعديل الدرجات. لم يُرسل التعديل.";
+    localSaveError = { scope: "unavailable", message }; notify(); throw Error(message);
+  }
   try { box.edit(before, after, plan); localSaveError = null; return true; }
   catch (error) { localSaveError = { scope: identity()!.scope, message: "تعذّر حفظ المسودة على هذا الجهاز؛ لم يُرسل التعديل. وفّر مساحة أو تحقق من تخزين المتصفح ثم أعد التسجيل." }; notify(); throw error; }
 }
