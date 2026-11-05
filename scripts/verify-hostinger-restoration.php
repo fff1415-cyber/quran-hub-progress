@@ -4,23 +4,34 @@ declare(strict_types=1);
 // Executed only through CLI on the server. No HTTP entry point or production writes.
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 $stage = 'configuration';
+$checks = [];
 try {
     $root = realpath($argv[1] ?? '');
     $home = realpath($argv[2] ?? '');
     if (!$root || !$home || !str_starts_with($root . '/', $home . '/')) throw new RuntimeException('Invalid main root');
     require $root . '/config.php';
+    $checks['production_identity_matches'] = DB_NAME === 'u112851217_msht_io';
     if (DB_NAME !== 'u112851217_msht_io') throw new RuntimeException('Unexpected production identity');
     $testName = 'u112851217_msht_test';
     $privateConfig = $home . '/.qhp-private/msht-test.php';
     $settings = ['host' => DB_HOST, 'database' => $testName, 'user' => DB_USER, 'password' => DB_PASS];
     $source = 'existing_server_credentials';
+    $checks['private_config_present'] = is_file($privateConfig);
     if (is_file($privateConfig)) {
         $realConfig = realpath($privateConfig);
         if (!$realConfig || is_link($privateConfig) || !str_starts_with($realConfig, $home . '/.qhp-private/')) throw new RuntimeException('Invalid private test config');
-        if ((fileperms($privateConfig) & 0077) !== 0) throw new RuntimeException('Private test config must use mode 0600');
-        $settings = require $privateConfig;
+        if ((fileperms($privateConfig) & 0077) !== 0) {
+            if (!chmod($privateConfig, 0600)) throw new RuntimeException('Cannot secure private test config');
+            clearstatcache(true, $privateConfig);
+        }
+        $checks['private_config_secured'] = (fileperms($privateConfig) & 0077) === 0;
+        if (!$checks['private_config_secured']) throw new RuntimeException('Private test config remains insecure');
+        ob_start();
+        try { $settings = require $privateConfig; } finally { ob_end_clean(); }
         $source = 'private_server_file';
     }
+    $checks['private_config_array'] = is_array($settings);
+    $checks['test_identity_matches'] = is_array($settings) && ($settings['database'] ?? '') === $testName;
     if (!is_array($settings) || ($settings['database'] ?? '') !== $testName) throw new RuntimeException('Test identity must be explicit');
     foreach (['host', 'user', 'password'] as $key) if (!is_string($settings[$key] ?? null) || $settings[$key] === '') throw new RuntimeException('Incomplete test config');
     $options = [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC];
@@ -78,6 +89,6 @@ try {
     echo json_encode(['status'=>'verified_readonly','test_credential_source'=>$source,'schema_matches_current_production'=>$productionMetadata===$testMetadata,'table_sets_match'=>$tables===$testTables,'tables'=>$report,'isolation'=>$isolation,'subdomain_sync_variable_enabled'=>getenv('SEPARATE_SUBDOMAINS')==='true','production_writes'=>false,'test_writes'=>false],JSON_UNESCAPED_UNICODE|JSON_PRETTY_PRINT)."\n";
 } catch (Throwable $error) {
     foreach (['production','test'] as $name) if (isset($$name) && $$name instanceof PDO && $$name->inTransaction()) $$name->rollBack();
-    echo json_encode(['status'=>'incomplete','failed_stage'=>$stage,'errno'=>$error instanceof PDOException?(int)($error->errorInfo[1]??0):null,'private_test_config_required'=>$stage==='test_connection','production_writes'=>false,'test_writes'=>false])."\n";
+    echo json_encode(['status'=>'incomplete','checks'=>$checks,'failed_stage'=>$stage,'errno'=>$error instanceof PDOException?(int)($error->errorInfo[1]??0):null,'private_test_config_required'=>$stage==='test_connection','production_writes'=>false,'test_writes'=>false])."\n";
     exit(1);
 }
