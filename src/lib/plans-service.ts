@@ -24,6 +24,7 @@ function apiUrl(path: string): string {
 }
 
 async function planFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
+  const before = capturePlanResponse();
   const token = getToken();
   if (!token) throw new Error("غير مسجل الدخول");
   const res = await fetchWithTimeout(apiUrl(path), {
@@ -35,6 +36,7 @@ async function planFetch<T>(path: string, options: RequestInit = {}): Promise<T>
     },
   });
   const text = await res.text();
+  assertPlanResponseCurrent(before);
   let body: unknown = {};
   if (text) {
     try {
@@ -224,13 +226,12 @@ export async function patchStudentAssignment(
   studentId: string,
   status: "active" | "frozen" | "transferred",
   assignmentId: string,
+  observed?: import("./assignment-state").AssignmentStateSnapshot,
 ): Promise<void> {
   if (!assignmentId) throw new Error("حدّث استمارة الطالب لتحديد التعيين");
-  const result = await planFetch<{ok: boolean; assignment_id: string; status: string}>("/plans/assignment", {
-      method: "PATCH",
-      body: JSON.stringify({ student_id: studentId, assignment_id: assignmentId, status }),
-    });
-  if (!result.ok || result.assignment_id !== assignmentId || result.status !== status) throw new Error("تعذّر تأكيد حالة التعيين من الخادم");
+  if (!observed) throw new Error("حدّث الاستمارة لتأكيد إصدار حالة التعيين؛ لم يبدأ طلب");
+  const { setAssignmentState } = await import("./assignment-state");
+  await setAssignmentState(studentId, assignmentId, status, observed);
 }
 
 export async function applyPlanInput(
