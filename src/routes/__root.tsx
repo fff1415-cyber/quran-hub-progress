@@ -2,6 +2,7 @@ import { GradeSaveStatus } from "@/components/GradeSaveStatus";
 import { GradeHistoryViewer } from "@/components/GradeHistoryViewer";
 import { TransferSaveStatus } from "@/components/TransferSaveStatus";
 import { PlanTransitionStatus } from "@/components/PlanTransitionStatus";
+import { SardAssessmentStatus } from "@/components/SardAssessmentStatus";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -94,6 +95,7 @@ function RootComponent() {
             <GradeSaveStatus />
             <TransferSaveStatus />
             <PlanTransitionStatus />
+            <SardAssessmentStatus />
             <GradeSaveStatus storeKey="scientific_grades" />
             <GradeSaveStatus storeKey="weekly_tests" />
             <GradeHistoryViewer storeKey="grades" />
