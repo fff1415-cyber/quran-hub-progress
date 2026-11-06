@@ -28,6 +28,7 @@ require_once __DIR__ . '/transfers.php';
 
 function route_request(string $method, string $path): void
 {
+    if ($path === '/sard/capabilities' && $method === 'GET') { handle_sard_assessment_capabilities(); return; }
     if ($path === '/plans/capabilities' && $method === 'GET') {
         handle_plan_transition_capabilities(); return;
     }

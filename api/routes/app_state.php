@@ -189,7 +189,53 @@ function sard_current_assignments(PDO $pdo, int $cid): array
 }
 
 /** Compare only modified items under a row lock; stale devices cannot erase other items. */
-function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
+function handle_sard_assessment_capabilities(): void
+{
+    $auth=require_auth();$cid=require_complex_id($auth);
+    if(in_array($auth['role']??'',['test_member','test_chair'],true))error_response('غير مصرح بتعديل هذه البيانات',403);
+    json_response(['context_complex_id'=>$cid,'sard_assessment_protocol'=>1,'atomic_history'=>true,'immutable_receipts'=>true]);
+}
+
+/** Existing app-state authority is retained; this protocol only couples an assessment to its queue CAS. */
+function sard_assessment_packet(mixed $value, ?array $auth): ?array
+{
+    if(!is_array($value)||!array_key_exists('sard_assessment_protocol',$value))return null;
+    if($value['sard_assessment_protocol']!==1||!preg_match('/^[a-zA-Z0-9_-]{16,80}$/D',(string)($value['operation_id']??''))||count($value['changes']??[])!==1||!empty($value['removals'])||!is_array($value['history_record']??null)||empty($auth['accountId']))throw new RuntimeException('طلب حفظ الاختبار غير مكتمل؛ لم تتغير البيانات',409);
+    return ['key'=>'grade_sard_receipt:'.hash('sha256',$value['operation_id']),'hash'=>hash('sha256',json_encode($value,JSON_THROW_ON_ERROR)),'actor'=>hash('sha256',json_encode([$auth['role'],$auth['accountId']],JSON_THROW_ON_ERROR))];
+}
+
+function sard_assessment_storage_ready(PDO $pdo):void
+{
+    if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='mysql')return;
+    $q=$pdo->prepare('SELECT ENGINE FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?');$q->execute(['app_state']);
+    if(strtolower((string)$q->fetchColumn())!=='innodb')error_response('الحفظ الذري للاختبار يحتاج InnoDB؛ لم تبدأ أي كتابة',503);
+    $q=$pdo->prepare('SELECT INDEX_NAME,COLUMN_NAME FROM information_schema.statistics WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND NON_UNIQUE=0 ORDER BY INDEX_NAME,SEQ_IN_INDEX');$q->execute(['app_state']);$indexes=[];
+    foreach($q->fetchAll(PDO::FETCH_ASSOC)as$row)$indexes[$row['INDEX_NAME']][]=$row['COLUMN_NAME'];
+    $expected=app_state_tenant_enabled($pdo)?['complex_id','key']:['key'];sort($expected);$found=false;
+    foreach($indexes as$columns){sort($columns);if($columns===$expected)$found=true;elseif(in_array('key',$columns,true))error_response('مفتاح عزل مخزن الاختبارات غير مطابق؛ لم تبدأ أي كتابة',503);}
+    if(!$found)error_response('مفتاح مخزن الاختبارات غير مهيأ؛ لم تبدأ أي كتابة',503);
+}
+
+function sard_assessment_history(PDO $pdo,int $cid,array $value,array $base,array $current):array
+{
+    if(empty($base['assignmentId'])||($base['assignmentId']??null)!==($current['assignmentId']??null))throw new RuntimeException('تعيين الاختبار غير مثبت؛ لم يُنسب بالتخمين',409);
+    plans_assert_sard_attempt_ready($base,['write_protocol'=>2,'phase'=>$base['phase']??'full']);
+    if(!in_array($current['status']??'',['scheduled','awaiting_supervisor','final_failed','awaiting_review'],true)||($current['studentId']??null)!==($base['studentId']??null)||($current['id']??null)!==($base['id']??null))throw new RuntimeException('نتيجة الاختبار لا تطابق الطلب؛ لم تتغير البيانات',409);
+    $record=$value['history_record'];
+    foreach(['hifzErrors','hifzWarnings']as$field){$v=$record[$field]??0;if(!is_int($v)||$v<0)throw new RuntimeException('عدادات الاختبار غير صالحة',409);$record[$field]=$v;}
+    foreach(['reviewErrors','reviewWarnings']as$field){$values=$record[$field]??[];if(!is_array($values)||!array_is_list($values))throw new RuntimeException('عدادات المراجعة غير صالحة',409);foreach($values as$v)if(!is_int($v)||$v<0)throw new RuntimeException('عدادات المراجعة غير صالحة',409);$record[$field]=$values;}
+    if(!is_numeric($record['percent']??null)||!is_finite((float)$record['percent'])||(float)$record['percent']<0||(float)$record['percent']>100||isset($record['evaluationRules'])&&!is_array($record['evaluationRules']))throw new RuntimeException('تفاصيل الاختبار غير صالحة',409);
+    foreach(['halaqaId','week','attempt']as$field)if((int)($base[$field]??0)<1)throw new RuntimeException('هوية الاختبار غير مكتملة',409);
+    $record=array_replace($record,['id'=>'sh-op-'.$value['operation_id'],'studentId'=>$base['studentId'],'assignmentId'=>$base['assignmentId'],'sourceQueueItemId'=>$base['id'],'assessmentConfirmed'=>true,'halaqaId'=>(int)$base['halaqaId'],'week'=>(int)$base['week'],'attempt'=>(int)$base['attempt'],'result'=>'failed','at'=>gmdate('c')]);
+    $tenants=app_state_tenant_enabled($pdo);$params=$tenants?[$cid,'sard_history']:['sard_history'];
+    $pdo->prepare($tenants?'INSERT IGNORE INTO app_state(complex_id,`key`,value)VALUES(?,?,?)':'INSERT IGNORE INTO app_state(`key`,value)VALUES(?,?)')->execute([...$params,'[]']);
+    $q=$pdo->prepare('SELECT value FROM app_state WHERE '.($tenants?'complex_id=? AND ':'').'`key`=? FOR UPDATE');$q->execute($params);$rows=json_decode((string)$q->fetchColumn(),true,512,JSON_THROW_ON_ERROR);
+    if(!is_array($rows)||!array_is_list($rows))throw new RuntimeException('تاريخ الاختبارات يحتاج مراجعة؛ لم يُستبدل',409);
+    foreach($rows as$prior)if(($prior['id']??null)===$record['id'])throw new RuntimeException('يوجد سجل للاختبار دون إيصال مطابق؛ لم يُكرر',409);
+    array_unshift($rows,$record);app_state_upsert($pdo,'sard_history',$rows,$tenants?$cid:null);return $record;
+}
+
+function app_state_patch_sard(PDO $pdo, int $cid, mixed $value, ?array $auth=null): ?array
 {
     if (!is_array($value) || !isset($value['changes']) || !is_array($value['changes'])) {
         error_response('نسخة الصفحة قديمة — حدّث الصفحة قبل تعديل السرد', 409);
@@ -198,21 +244,29 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
     $scope = $tenants ? 'complex_id = ? AND `key` = ?' : '`key` = ?';
     $params = $tenants ? [$cid, 'sard_queue'] : ['sard_queue'];
     plans_ensure_completion_assignment_column($pdo);
+    if(array_key_exists('sard_assessment_protocol',$value))sard_assessment_storage_ready($pdo);
     $pdo->beginTransaction();
     try {
         $sql = $tenants ? 'INSERT IGNORE INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)' : 'INSERT IGNORE INTO app_state (`key`, value) VALUES (?, ?)';
         $pdo->prepare($sql)->execute(array_merge($params, ['[]']));
         $stmt = $pdo->prepare('SELECT value FROM app_state WHERE ' . $scope . ' FOR UPDATE');
         $stmt->execute($params);
+        $rawQueue=json_decode((string)$stmt->fetchColumn(),true,512,JSON_THROW_ON_ERROR);
+        if(!is_array($rawQueue)||!array_is_list($rawQueue))throw new RuntimeException('قائمة السرد تحتاج مراجعة؛ لم تُستبدل');
+        $assessment=sard_assessment_packet($value,$auth);
+        if($assessment){
+            $receiptQuery=$pdo->prepare('SELECT value FROM app_state WHERE '.($tenants?'complex_id=? AND ':'').'`key`=? FOR UPDATE');$receiptQuery->execute($tenants?[$cid,$assessment['key']]:[$assessment['key']]);$rawReceipt=$receiptQuery->fetchColumn();
+            if($rawReceipt!==false){$receipt=json_decode((string)$rawReceipt,true,512,JSON_THROW_ON_ERROR);if(($receipt['input_sha256']??'')!==$assessment['hash']||($receipt['actor_sha256']??'')!==$assessment['actor'])throw new RuntimeException('إيصال الاختبار يخص طلبًا مختلفًا؛ لم تتغير البيانات');$pdo->commit();return $receipt;}
+        }
         $assignments = sard_current_assignments($pdo, $cid);
-        $queue = sard_reconcile_queue(json_decode((string) $stmt->fetchColumn(), true) ?: [], $assignments);
+        $queue = sard_reconcile_queue($rawQueue, $assignments);
         foreach ($value['changes'] as $change) {
             $item = $change['item'] ?? null;
             if (!is_array($item) || empty($item['id']) || empty($item['studentId'])) throw new RuntimeException('عنصر سرد غير صالح');
             $index = null;
             foreach ($queue as $i => $existing) if ($existing['id'] === $item['id']) { $index = $i; break; }
             $current = $index === null ? null : $queue[$index];
-            if ($current == $item) continue; // Idempotent retry.
+            if ($current == $item && !$assessment) continue; // Legacy idempotent retry.
             $restoreSupervisorHifz = $current
                 && ($current['status'] ?? '') === 'archived'
                 && ($current['archiveReason'] ?? '') === 'supervisor_hifz_removed'
@@ -230,6 +284,12 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
             }
             $validated = sard_reconcile_queue([$item], $assignments)[0];
             if (($validated['status'] ?? '') === 'archived' && ($item['status'] ?? '') !== 'archived') throw new RuntimeException('الطلب يخص خطة سابقة — حدّث الصفحة');
+            if($assessment){
+                $rawBase=null;foreach($rawQueue as$row)if(($row['id']??null)===$item['id']){$rawBase=$row;break;}
+                if(!$rawBase||empty($rawBase['assignmentId']))throw new RuntimeException('تعيين الاختبار غير مثبت؛ لم يُنسب بالتخمين');
+                $history=sard_assessment_history($pdo,$cid,$value,$rawBase,$validated);
+                $receipt=['operation_id'=>$value['operation_id'],'input_sha256'=>$assessment['hash'],'actor_sha256'=>$assessment['actor'],'context_complex_id'=>$cid,'item'=>$validated,'history_record'=>$history];
+            }
             if ($index === null) $queue[] = $validated;
             else $queue[$index] = $validated;
         }
@@ -245,7 +305,9 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
         }
         $queue = sard_reconcile_queue($queue, $assignments);
         app_state_upsert($pdo, 'sard_queue', $queue, $tenants ? $cid : null);
+        if($assessment)app_state_upsert($pdo,$assessment['key'],$receipt,$tenants?$cid:null);
         $pdo->commit();
+        return $assessment?$receipt:null;
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         error_response($e instanceof PDOException ? api_safe_failure_message($e) : $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 409);
@@ -287,7 +349,7 @@ function app_state_save_untruncated_history(PDO $pdo, int $cid, string $key, arr
         }
         foreach ($previous ?? [] as $record) {
             $keyForRow = app_state_history_retention_key($record);
-            if (!empty($record['assignmentId']) && ($key === 'academic_records' && (isset($record['newPlanTitle']) || ($record['transitionConfirmed'] ?? false) === true) || $key === 'sard_history' && ($record['transitionConfirmed'] ?? false) === true)) {
+            if (!empty($record['assignmentId']) && ($key === 'academic_records' && (isset($record['newPlanTitle']) || ($record['transitionConfirmed'] ?? false) === true) || $key === 'sard_history' && (($record['transitionConfirmed'] ?? false) === true || ($record['assessmentConfirmed'] ?? false) === true))) {
                 $same = array_values(array_filter($value, static fn($item) => is_array($item) && ($item['id'] ?? null) === ($record['id'] ?? null)));
                 if (count($same) !== 1 || $same[0] != $record) { $pdo->rollBack(); error_response('سجل الاجتياز مؤكد بمعاملة الانتقال؛ لم يُستبدل من نسخة جهاز قديمة', 409); }
             }
@@ -397,8 +459,8 @@ function handle_set_app_state(): void
     $pdo = db();
     if ($key === 'sard_queue') {
         if (!empty($input['value']['removals']) && $role !== 'manager') error_response('المدير فقط يمكنه إزالة الطلب', 403);
-        app_state_patch_sard($pdo, $cid, $input['value'] ?? null);
-        json_response(['ok' => true]);
+        $receipt=app_state_patch_sard($pdo, $cid, $input['value'] ?? null,$auth);
+        json_response(['ok' => true]+($receipt?['assessment_receipt'=>$receipt]:[]));
         return;
     }
     try {

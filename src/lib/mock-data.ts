@@ -1050,6 +1050,7 @@ export function notifyLateSard(students: Student[]) {
 }
 
 export interface SardHistoryItem {
+  assessmentConfirmed?: boolean;
   assignmentId?: string;
   sourceQueueItemId?: string;
   transitionConfirmed?: boolean;
