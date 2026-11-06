@@ -321,6 +321,19 @@ function handle_plan_detail(): void
     ]);
 }
 
+/** A catalog used by any historical/current assignment or completion is immutable in place. */
+function plans_assert_catalog_unused(PDO $pdo,string $planId,int $cid):void
+{
+    foreach(['student_plan_assignments','segment_completions']as$table){$q=$pdo->prepare('SELECT plan_id FROM '.$table.' WHERE plan_id=? LIMIT 1 FOR UPDATE');$q->execute([$planId]);if($q->fetchColumn()!==false)throw new RuntimeException('الخطة مرتبطة بتعيين أو إنجاز محفوظ؛ لا تُحذف أو يُستبدل محتواها التاريخي. يلزم إصدار مستقل للتعديل',409);}
+    $q=$pdo->prepare('SELECT value FROM app_state WHERE '.(app_state_tenant_enabled($pdo)?'complex_id=? AND ':'').'`key`=? FOR UPDATE');$q->execute(app_state_tenant_enabled($pdo)?[$cid,'academic_records']:['academic_records']);$raw=$q->fetchColumn();
+    if($raw!==false){$records=json_decode((string)$raw,true,512,JSON_THROW_ON_ERROR);if($records!==null&&(!is_array($records)||!array_is_list($records)))throw new RuntimeException('السجل الأكاديمي يحتاج مراجعة قبل تغيير دليل الخطط',409);foreach($records??[]as$record)if(($record['planId']??null)===$planId)throw new RuntimeException('الخطة مرجع لسجل أكاديمي محفوظ؛ يلزم إصدار مستقل للتعديل',409);}
+}
+function plans_catalog_storage_ready(PDO $pdo):void
+{
+    if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='mysql')return;
+    foreach(['education_plans','plan_segments','student_plan_assignments','segment_completions']as$table){$q=$pdo->prepare('SELECT ENGINE FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?');$q->execute([$table]);if(strtolower((string)$q->fetchColumn())!=='innodb')throw new RuntimeException('حماية دليل الخطط تحتاج جداول InnoDB؛ لم تبدأ أي كتابة',503);}
+}
+
 function handle_import_plans(): void
 {
     $auth = require_auth();
@@ -339,19 +352,23 @@ function handle_import_plans(): void
     try {
         plans_assert_import_schema($pdo);
         $tenants = plans_tenant_enabled($pdo);
+        plans_catalog_storage_ready($pdo);
 
         $pdo->beginTransaction();
         foreach ($plans as $p) {
             if (!is_array($p)) {
-                continue;
+                throw new RuntimeException('صف خطة غير صالح؛ لم يُستورد جزء من الملف',400);
             }
+            if(!in_array($p['track']??null,['gold','silver'],true))throw new RuntimeException('مسار خطة غير صالح؛ لم يُستورد جزء من الملف',400);
             $track = ($p['track'] ?? '') === 'silver' ? 'silver' : 'gold';
             $level = (int) ($p['level_number'] ?? 0);
             $title = trim((string) ($p['title'] ?? ''));
             $segments = $p['segments'] ?? [];
             if ($level < 1 || !is_array($segments) || count($segments) === 0) {
-                continue;
+                throw new RuntimeException('خطة الاستيراد أو مقاطعها غير مكتملة؛ لم يُستورد جزء من الملف',400);
             }
+            if(!is_numeric($p['level_number']??null)||(float)$p['level_number']!==floor((float)$p['level_number'])||!array_is_list($segments))throw new RuntimeException('ترقيم خطة غير صالح؛ لم يُستورد جزء من الملف',400);
+            $seen=[];foreach($segments as$i=>$seg){if(!is_array($seg))throw new RuntimeException('مقطع غير صالح؛ لم يُستورد جزء من الملف',400);$index=$seg['segment_index']??($i+1);if(!is_numeric($index)||(float)$index!==floor((float)$index)||(int)$index<1||isset($seen[(int)$index]))throw new RuntimeException('ترقيم المقاطع غير صالح أو مكرر؛ لم يُستورد جزء من الملف',400);$seen[(int)$index]=true;}
             if ($title === '') {
                 $title = $track === 'gold' ? "جزء $level" : "مرحلة $level";
             }
@@ -402,6 +419,7 @@ function handle_import_plans(): void
                     $imported++;
                     continue;
                 }
+                plans_assert_catalog_unused($pdo,$planId,$cid);
                 if ($tenants) {
                     $upd = $pdo->prepare(
                         'UPDATE education_plans SET title = ?, segment_count = ? WHERE id = ? AND complex_id = ?'
@@ -459,7 +477,7 @@ function handle_import_plans(): void
                 /* ignore */
             }
         }
-        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'فشل استيراد الخطط: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 500);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'فشل استيراد الخطط: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : (in_array($e->getCode(),[400,409,503],true)?$e->getCode():500));
     }
 
     json_response(['ok' => true, 'plans_imported' => $imported, 'segments_imported' => $segmentsTotal]);
@@ -725,6 +743,7 @@ function handle_assign_plan(): void
         $faces = plans_track_face_quotas($track);
 
         plans_ensure_completion_assignment_column($pdo);
+        plans_catalog_storage_ready($pdo);
         $pdo->beginTransaction();
         // Lock the student, including when no active assignment exists.
         $studentColumns = ['id'];
@@ -735,6 +754,11 @@ function handle_assign_plan(): void
         $studentRow = $studentStmt->fetch();
         $previousTransition = plans_transition_receipt($pdo, $cid, $input);
         if ($previousTransition !== null) { $pdo->commit(); json_response($previousTransition); return; }
+        // Import/delete takes this same catalog lock before checking references.
+        // Refresh metadata under the lock so a previously unused catalog cannot change during linking.
+        $catalog=$pdo->prepare('SELECT title,track,level_number,daily_hifz_faces,daily_rabt_faces,daily_muraja_faces,faces_per_half,faces_per_one,faces_per_two FROM education_plans WHERE id=?'.($tenants?' AND complex_id=?':'').' FOR UPDATE');$catalog->execute($tenants?[$planId,$cid]:[$planId]);$planRow=$catalog->fetch();
+        if(!$planRow)throw new RuntimeException('تغيّر دليل الخطط قبل الربط؛ حدّث الصفحة',409);
+        $track=($planRow['track']??'')==='silver'?'silver':'gold';$faces=plans_track_face_quotas($track);
         if (!empty($input['only_if_unassigned'])) {
             $existingLink = $pdo->prepare("SELECT id FROM student_plan_assignments WHERE student_id = ? AND status IN ('active', 'frozen') FOR UPDATE");
             $existingLink->execute([$studentId]);
@@ -1518,12 +1542,13 @@ function handle_delete_plan(): void
     }
 
     try {
+        plans_catalog_storage_ready($pdo);
         $pdo->beginTransaction();
 
-        $pdo->prepare('DELETE FROM segment_completions WHERE plan_id = ?')->execute([$planId]);
-        $unlinked = $pdo->prepare('DELETE FROM student_plan_assignments WHERE plan_id = ?');
-        $unlinked->execute([$planId]);
-        $assignmentsRemoved = $unlinked->rowCount();
+        $lock=$pdo->prepare('SELECT id FROM education_plans WHERE id=?'.($tenants?' AND complex_id=?':'').' FOR UPDATE');$lock->execute($tenants?[$planId,$cid]:[$planId]);
+        if(!$lock->fetch())throw new RuntimeException('الخطة غير موجودة',409);
+        plans_assert_catalog_unused($pdo,$planId,$cid);
+        $assignmentsRemoved = 0;
 
         $pdo->prepare('DELETE FROM plan_segments WHERE plan_id = ?')->execute([$planId]);
 
@@ -1549,6 +1574,6 @@ function handle_delete_plan(): void
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'فشل حذف الخطة: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 500);
+        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'فشل حذف الخطة: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : (in_array($e->getCode(),[409,503],true)?$e->getCode():500));
     }
 }
