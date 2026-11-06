@@ -28,6 +28,9 @@ require_once __DIR__ . '/transfers.php';
 
 function route_request(string $method, string $path): void
 {
+    if ($path === '/plans/capabilities' && $method === 'GET') {
+        handle_plan_transition_capabilities(); return;
+    }
     if ($path === '/transfers' && $method === 'GET') { handle_list_transfers(); return; }
     if ($path === '/transfers' && $method === 'POST') { handle_change_transfer(); return; }
     if ($path === '/staff-tasks' && $method === 'GET') { handle_list_staff_tasks(); return; }

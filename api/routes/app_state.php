@@ -287,7 +287,7 @@ function app_state_save_untruncated_history(PDO $pdo, int $cid, string $key, arr
         }
         foreach ($previous ?? [] as $record) {
             $keyForRow = app_state_history_retention_key($record);
-            if ($key === 'academic_records' && !empty($record['assignmentId']) && isset($record['newPlanTitle'])) {
+            if (!empty($record['assignmentId']) && ($key === 'academic_records' && (isset($record['newPlanTitle']) || ($record['transitionConfirmed'] ?? false) === true) || $key === 'sard_history' && ($record['transitionConfirmed'] ?? false) === true)) {
                 $same = array_values(array_filter($value, static fn($item) => is_array($item) && ($item['id'] ?? null) === ($record['id'] ?? null)));
                 if (count($same) !== 1 || $same[0] != $record) { $pdo->rollBack(); error_response('سجل الاجتياز مؤكد بمعاملة الانتقال؛ لم يُستبدل من نسخة جهاز قديمة', 409); }
             }

@@ -1,3 +1,5 @@
+import type { PlanTransitionDraft, PlanTransitionJournal, PlanTransitionReceipt } from "./plan-transition-journal";
+import type { SardHistoryItem } from "./mock-data";
 import type { AcademicPhaseRecord } from "./academic-record";
 import { fetchWithTimeout } from "@/lib/request-timeout";
 import { buildRphpUrl } from "@/lib/api-base";
@@ -42,7 +44,7 @@ async function planFetch<T>(path: string, options: RequestInit = {}): Promise<T>
     }
   }
   if (!res.ok) {
-    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+    throw Object.assign(new Error((body as { error?: string }).error ?? `HTTP ${res.status}`), { status: res.status });
   }
   return body as T;
 }
@@ -125,14 +127,22 @@ export async function assignStudentPlan(
     face_quotas?: Partial<DailyFaceQuotas>;
     expected_assignment_id?: string;
     only_if_unassigned?: boolean;
-    sard_result?: { id: string; percent: number; phase: string; academic_record?: { hifzScore: number; reviewScore: number } };
+    finalize_only?: boolean;
+    sard_result?: { id: string; percent: number; phase: string; academic_record?: { hifzScore: number; reviewScore: number }; write_protocol?: 2; history_record?: SardHistoryItem };
   },
-): Promise<{ academic_record?: AcademicPhaseRecord | null }> {
+): Promise<{ academic_record?: AcademicPhaseRecord | null; sard_history_record?: SardHistoryItem | null }> {
   if (!Number.isInteger(startSegment) || startSegment < 1) throw new Error("مقطع البداية يجب أن يكون عددًا صحيحًا موجبًا");
   const responseSnapshot = capturePlanResponse();
   const expectedAssignment = options?.expected_assignment_id ?? (await fetchStudentPlanSheet(studentId)).assignment?.id ?? "";
   assertPlanResponseCurrent(responseSnapshot);
-  const request = { method: "POST", body: JSON.stringify({ student_id: studentId, expected_assignment_id: expectedAssignment, only_if_unassigned: options?.only_if_unassigned, sard_result: options?.sard_result, plan_id: planId, start_segment_index: startSegment, plan_start_date: options?.plan_start_date, start_muraja_segment: options?.start_muraja_segment, ...options?.face_quotas }) };
+  const request = { method: "POST", body: JSON.stringify({ student_id: studentId, expected_assignment_id: expectedAssignment, only_if_unassigned: options?.only_if_unassigned, finalize_only: options?.finalize_only, sard_result: options?.sard_result, plan_id: planId, start_segment_index: startSegment, plan_start_date: options?.plan_start_date, start_muraja_segment: options?.start_muraja_segment, ...options?.face_quotas }) };
+  if (options?.sard_result?.write_protocol === 2 && options.sard_result.history_record) {
+    const { currentPlanTransitionJournal } = await import("./plan-transition-journal");
+    assertPlanResponseCurrent(responseSnapshot);
+    const journal = currentPlanTransitionJournal(); if (!journal) throw Error("تعذّر تثبيت هوية انتقال الخطة؛ لم يُرسل الطلب");
+    const entry = journal.begin(studentId, expectedAssignment, request.body);
+    return (await executePlanTransition(journal, entry)).receipt;
+  }
   type AssignmentResult = { academic_record?: AcademicPhaseRecord | null; assignment_id: string; sard_queue?: unknown[] | null; student_phase?: { phase_number: number; level: string; institute_level: string } };
   const send = () => planFetch<AssignmentResult>("/plans/assign", request);
   let result: AssignmentResult;
@@ -320,4 +330,75 @@ export async function fetchPlanDetail(planId: string) {
       plan: EducationPlan;
       segments: import("@/lib/plan-types").PlanSegment[];
     }>(`/plans/detail?plan_id=${encodeURIComponent(planId)}`);
+}
+
+/** Persisted requests are replayed verbatim; current sheet/profile/queue reads replace old receipt snapshots. */
+async function runPlanTransition(journal: PlanTransitionJournal, entry: PlanTransitionDraft) {
+  const before = capturePlanResponse();
+  const { currentPlanTransitionJournal } = await import("./plan-transition-journal");
+  const assertCurrent = () => { assertPlanResponseCurrent(before); if (currentPlanTransitionJournal()?.prefix !== journal.prefix) throw Error("تغيّرت هوية الانتقال؛ بقي طلب الحساب السابق محفوظًا"); };
+  assertCurrent();
+  if (entry.status === "conflict" || entry.status === "historical") throw Error(entry.message ?? "راجع ورقة الطالب قبل إعادة معالجة الطلب");
+  let receipt = entry.receipt;
+  if (!receipt) {
+    try {
+      const capability = await planFetch<{ context_complex_id: number; transition_write_protocol: number; immutable_receipts: boolean; academic_record: boolean; sard_history: boolean }>("/plans/capabilities");
+      assertCurrent();
+      if (capability.context_complex_id !== journal.cid || capability.transition_write_protocol !== 2 || capability.immutable_receipts !== true || capability.academic_record !== true || capability.sard_history !== true) throw Error("الخادم لا يؤكد بروتوكول الخطة وتفاصيل الاختبار؛ لم يُرسل الطلب");
+    } catch (error) { assertCurrent(); journal.update(entry, "pending", error instanceof Error ? error.message : "تعذّر تأكيد قدرة الخادم؛ لم يُرسل الطلب"); throw error; }
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        receipt = await planFetch<PlanTransitionReceipt>("/plans/assign", { method: "POST", body: entry.body });
+        assertCurrent(); journal.commit(entry, receipt); break;
+      } catch (error) {
+        assertCurrent(); const status = error && typeof error === "object" && "status" in error ? Number(error.status) : 0;
+        const conflict = [400, 403, 409].includes(status);
+        journal.update(entry, conflict ? "conflict" : "pending", error instanceof Error ? error.message : "لم يتأكد الانتقال");
+        if (conflict || attempt === 1) throw error;
+      }
+    }
+  }
+  if (!receipt) throw Error("لم يُثبت إيصال الانتقال؛ بقي الطلب محفوظًا");
+  try {
+    const sheet = await fetchStudentPlanSheet(entry.student); assertCurrent();
+    if (sheet.assignment?.id !== receipt.assignment_id || sheet.plan?.id !== entry.plan) {
+      const message = "يوجد إيصال انتقال مؤكد، لكن الخطة الحالية مختلفة؛ راجع السجل دون إعادة ربط خطة قديمة";
+      journal.update(entry, "historical", message, receipt); throw Error(message);
+    }
+    const { refreshSardQueueFromShared } = await import("./sard-queue-refresh");
+    const { hasPendingSardWrites, loadStudents, saveStudents, pushSardHistory } = await import("./mock-data");
+    assertCurrent(); if (hasPendingSardWrites()) throw Error("ثُبّت الانتقال؛ توجد تعديلات قائمة سرد معلقة يجب حسمها قبل تأكيد عرض النتيجة");
+    await refreshSardQueueFromShared(); assertCurrent();
+    const { secureListStudents } = await import("./secure-data.functions");
+    const students = await secureListStudents({ data: { token: before.token! } }); assertCurrent();
+    const row = students.find((item): item is Record<string, unknown> => !!item && typeof item === "object" && "id" in item && item.id === entry.student);
+    if (!row || row.complex_id !== undefined && Number(row.complex_id) !== journal.cid || !Number.isInteger(Number(row.phase_number)) || Number(row.phase_number) < 1 || typeof row.level !== "string" || typeof row.institute_level !== "string") throw Error("ثُبّت الانتقال؛ تعذّر تأكيد بيانات الطالب الحالية من الخادم");
+    if (!receipt.student_phase || Number(row.phase_number) !== receipt.student_phase.phase_number || row.level !== receipt.student_phase.level || row.institute_level !== receipt.student_phase.institute_level) throw Error("ثُبّت الانتقال، لكن بيانات المرحلة تغيّرت بعده؛ راجع الخطة الحالية دون إعادة كتابة ملف الطالب");
+    saveStudents(loadStudents().map(student => student.id === entry.student ? { ...student, phaseNumber: Number(row.phase_number), level: String(row.level), instituteLevel: String(row.institute_level) } : student));
+    const { pushAcademicRecord } = await import("./academic-record"); assertCurrent();
+    if (receipt.academic_record) pushAcademicRecord(receipt.academic_record, { sync: false });
+    if (receipt.sard_history_record) pushSardHistory(receipt.sard_history_record, { sync: false });
+    journal.update(entry, "verified", undefined, receipt); return { receipt, sheet };
+  } catch (error) {
+    assertCurrent();
+    if (journal.entries().find(e => e.id === entry.id)?.status !== "historical") journal.update(entry, "committed", error instanceof Error ? error.message : "ثُبّت الانتقال؛ تعذّر تحديث العرض", receipt);
+    throw error;
+  }
+}
+const transitionRuns = new Map<string, Promise<{ receipt: PlanTransitionReceipt; sheet: StudentPlanSheetData }>>();
+function executePlanTransition(journal: PlanTransitionJournal, entry: PlanTransitionDraft) {
+  const context = capturePlanResponse(), key = JSON.stringify([journal.prefix, entry.id, context.token, context.complex]);
+  const existing = transitionRuns.get(key); if (existing) return existing;
+  const pending = runPlanTransition(journal, entry).finally(() => { if (transitionRuns.get(key) === pending) transitionRuns.delete(key); });
+  transitionRuns.set(key, pending); return pending;
+}
+export async function resumePendingPlanTransition(student: string, expected?: string, offered?: unknown) {
+  const { currentPlanTransitionJournal } = await import("./plan-transition-journal");
+  const journal = currentPlanTransitionJournal(); if (!journal) return null;
+  const entry = journal.find(student, expected, offered); return entry ? executePlanTransition(journal, entry) : null;
+}
+export async function resumePlanTransitionById(id: string) {
+  const { currentPlanTransitionJournal } = await import("./plan-transition-journal");
+  const journal = currentPlanTransitionJournal(), entry = journal?.entries().find(e => e.id === id); if (!journal || !entry) throw Error("طلب الانتقال غير متاح للحساب الحالي");
+  return executePlanTransition(journal, entry);
 }
