@@ -49,6 +49,7 @@ export interface StudentPlanAssignment extends DailyFaceQuotas {
   assigned_by: string;
   assigned_at?: string;
   frozen_at?: string | null;
+  status_version?: string | null;
   transferred_at?: string | null;
 }
 

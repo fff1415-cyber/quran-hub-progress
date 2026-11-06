@@ -287,7 +287,8 @@ export function SupervisorPlansPanel() {
     assignmentBusy.current = true;
     setAssigning(true);
     try {
-      await patchStudentAssignment(selectedStudent.id, status, currentAssignment.id);
+      if (!currentAssignment.status_version || !["active", "frozen"].includes(currentAssignment.status)) throw Error("حدّث الاستمارة لتأكيد إصدار حالة الخطة");
+      await patchStudentAssignment(selectedStudent.id, status, currentAssignment.id, { status: currentAssignment.status as "active" | "frozen", version: currentAssignment.status_version });
       toast.success(status === "frozen" ? "تم تجميد الخطة" : "تم إلغاء التجميد — يمكن للمعلم التنفيذ");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "تعذّر تحديث التعيين");

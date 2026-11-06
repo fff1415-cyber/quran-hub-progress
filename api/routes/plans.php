@@ -557,6 +557,7 @@ function assignment_row(array $row): array
         'start_muraja_segment' => isset($row['start_muraja_segment']) && $row['start_muraja_segment'] !== null
             ? (int) $row['start_muraja_segment'] : null,
         'status' => $row['status'],
+        'status_version' => $row['status_version'] ?? null,
         'assigned_by' => $row['assigned_by'],
         'assigned_at' => $row['assigned_at'] ?? null,
         'frozen_at' => $row['frozen_at'] ?? null,
@@ -895,6 +896,18 @@ function handle_patch_assignment_quotas(): void
     }
 }
 
+function plans_assignment_state_key(string $id):string{return 'grade_assignment_status:'.hash('sha256',$id);}
+function plans_assignment_state(PDO $pdo,int $cid,array $assignment):string
+{
+    $q=$pdo->prepare('SELECT value FROM app_state WHERE '.(app_state_tenant_enabled($pdo)?'complex_id=? AND ':'').'`key`=?');$key=plans_assignment_state_key($assignment['id']);$q->execute(app_state_tenant_enabled($pdo)?[$cid,$key]:[$key]);$raw=$q->fetchColumn();
+    if($raw!==false){$state=json_decode((string)$raw,true,512,JSON_THROW_ON_ERROR);if(($state['assignment_id']??null)===$assignment['id']&&($state['status']??null)===$assignment['status']&&is_string($state['version']??null))return $state['version'];}
+    return 'legacy-'.hash('sha256',json_encode([$assignment['id'],$assignment['status'],$assignment['frozen_at']??null,$assignment['assigned_at']??null],JSON_THROW_ON_ERROR));
+}
+function handle_assignment_state_capabilities():void
+{
+    $auth=require_auth();$cid=require_complex_id($auth);plans_require_roles($auth,['supervisor']);json_response(['context_complex_id'=>$cid,'assignment_state_protocol'=>1,'immutable_receipts'=>true,'state_versions'=>true]);
+}
+
 function handle_patch_assignment(): void
 {
     $auth = require_auth();
@@ -911,19 +924,30 @@ function handle_patch_assignment(): void
     $tenants = plans_tenant_enabled($pdo);
     plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
     if ($assignmentId === '') error_response('حدّث استمارة الطالب؛ معرّف التعيين مطلوب للتجميد أو الاستئناف', 409);
+    if(($input['assignment_state_protocol']??null)!==1||!is_string($input['expected_status_version']??null)||!in_array($input['expected_status']??null,['active','frozen'],true)||!preg_match('/^[A-Za-z0-9_-]{16,80}$/D',(string)($input['operation_id']??''))||empty($auth['accountId']))error_response('حدّث الصفحة؛ يلزم تأكيد إصدار حالة التعيين قبل تغييره',409);
+    plans_transition_storage_ready($pdo);
+    $hash=hash('sha256',json_encode($input,JSON_THROW_ON_ERROR));$actor=hash('sha256',json_encode([$auth['role'],$auth['accountId']],JSON_THROW_ON_ERROR));$receiptKey='grade_assignment_status_receipt:'.hash('sha256',$input['operation_id']);$stateTenant=app_state_tenant_enabled($pdo);
     $pdo->beginTransaction();
     try {
         $pdo->prepare('SELECT id FROM students WHERE id = ? FOR UPDATE')->execute([$studentId]);
+        $q=$pdo->prepare('SELECT value FROM app_state WHERE '.($stateTenant?'complex_id=? AND ':'').'`key`=? FOR UPDATE');$q->execute($stateTenant?[$cid,$receiptKey]:[$receiptKey]);$raw=$q->fetchColumn();
+        if($raw!==false){$receipt=json_decode((string)$raw,true,512,JSON_THROW_ON_ERROR);if(($receipt['input_sha256']??null)!==$hash||($receipt['actor_sha256']??null)!==$actor)throw new RuntimeException('الإيصال يخص طلبًا مختلفًا؛ لم تتغير حالة التعيين');$pdo->commit();json_response($receipt['response']);return;}
         $current = plans_locked_current_assignment($pdo, $studentId);
         if (!$current || $current['id'] !== $assignmentId) throw new RuntimeException('تغيّرت خطة الطالب — حدّث الاستمارة قبل التجميد أو الاستئناف');
+        $version=plans_assignment_state($pdo,$cid,$current);
+        if($current['status']!==$input['expected_status']||$version!==$input['expected_status_version'])throw new RuntimeException('تغيّرت حالة التعيين من جهاز آخر؛ حدّث الاستمارة قبل إعادة المحاولة');
         $updated = 0;
         if ($current['status'] !== $status) {
             $stmt = $pdo->prepare('UPDATE student_plan_assignments SET status = ?, frozen_at = ?, transferred_at = COALESCE(?, transferred_at) WHERE id = ? AND student_id = ?');
             $stmt->execute([$status, $status === 'frozen' ? date('Y-m-d H:i:s') : null, $status === 'transferred' ? date('Y-m-d H:i:s') : null, $assignmentId, $studentId]);
             $updated = $stmt->rowCount();
+            $version='state-'.bin2hex(random_bytes(16));
         }
+        app_state_upsert($pdo,plans_assignment_state_key($assignmentId),['assignment_id'=>$assignmentId,'status'=>$status,'version'=>$version],$stateTenant?$cid:null);
+        $response=['ok'=>true,'updated'=>$updated,'assignment_id'=>$assignmentId,'status'=>$status,'status_version'=>$version,'operation_id'=>$input['operation_id'],'context_complex_id'=>$cid];
+        app_state_upsert($pdo,$receiptKey,['input_sha256'=>$hash,'actor_sha256'=>$actor,'response'=>$response],$stateTenant?$cid:null);
         $pdo->commit();
-        json_response(['ok' => true, 'updated' => $updated, 'assignment_id' => $assignmentId, 'status' => $status]);
+        json_response($response);
     } catch (Throwable $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         error_response($e instanceof PDOException ? api_safe_failure_message($e) : $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 409);
@@ -1017,6 +1041,7 @@ function handle_student_plan_sheet(): void
             return;
         }
 
+        $assignment['status_version']=plans_assignment_state($pdo,$cid,$assignment);
         $planId = $assignment['plan_id'];
         $plan = plans_fetch_education_plan($pdo, $planId, $cid, $tenants);
 
