@@ -301,7 +301,7 @@ export function SupervisorPlansPanel() {
 
   const removePlan = async (plan: EducationPlan) => {
     const ok = confirm(
-      `هل تريد حذف الخطة «${plan.title}»\n\nسيتم حذف الخطة وفك الربط الكامل عن جميع الطلاب المرتبطين بها.\n\nلا يمكن التراجع.`,
+      `هل تريد حذف الخطة «${plan.title}»؟\n\nيمكن حذف الخطة غير المستخدمة فقط. تبقى أي خطة لها تعيينات أو إنجازات محفوظة لحماية سجل الطلاب.`,
     );
     if (!ok) return;
     setDeletingId(plan.id);
