@@ -1050,6 +1050,9 @@ export function notifyLateSard(students: Student[]) {
 }
 
 export interface SardHistoryItem {
+  assignmentId?: string;
+  sourceQueueItemId?: string;
+  transitionConfirmed?: boolean;
   evaluationRules?: import("@/lib/evaluation-types").EvaluationRulesSnapshot;
   id: string;
   studentId: string;
@@ -1073,12 +1076,12 @@ function retainSardHistoryBeforeRepair() {
   const previous = localStorage.getItem(KEY_SARD_HISTORY);
   if (previous && !localStorage.getItem(`${KEY_SARD_HISTORY}:before-history-repair`)) localStorage.setItem(`${KEY_SARD_HISTORY}:before-history-repair`, previous);
 }
-export function pushSardHistory(h: SardHistoryItem) {
+export function pushSardHistory(h: SardHistoryItem, options?: { sync?: boolean }) {
   retainSardHistoryBeforeRepair();
   const list = loadSardHistory().filter(item => item.id !== h.id);
   list.unshift(h);
   localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list));
-  persistShared("sard_history", list);
+  if (options?.sync !== false) persistShared("sard_history", list);
 }
 export function saveSardHistory(list: SardHistoryItem[]) {
   retainSardHistoryBeforeRepair();

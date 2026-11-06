@@ -1,3 +1,4 @@
+import type { SardHistoryItem } from "@/lib/mock-data";
 import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { SardQueueRefreshStatus } from "@/components/SardQueueRefreshStatus";
 import { createFileRoute } from "@tanstack/react-router";
@@ -368,7 +369,7 @@ function SardEvaluatorFull({
     setSaving(true);
     const evaluationRules = snapshotEvaluationRules(settings);
     try {
-      await flushSardQueue();
+      if (hifz.failed || review.failed || !merged.passed) await flushSardQueue();
       const reviewErrors = reviewSegments.map((s) => s.errors);
       const reviewWarnings = reviewSegments.map((s) => s.warnings);
 
@@ -425,7 +426,17 @@ function SardEvaluatorFull({
       if (merged.passed) {
         try {
 
+          const historyRecord: SardHistoryItem = {
+            id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
+            evaluationRules,
+            week: item.week, attempt: item.attempt,
+            result: merged.passed ? "passed" : "failed",
+            percent: merged.percent,
+            hifzErrors, hifzWarnings, reviewErrors, reviewWarnings,
+            at: "",
+          };
           const advance = await runPostPassAutomation({
+            historyRecord,
             studentId: item.studentId,
             assignmentId: item.assignmentId,
             queueItemId: item.id,
@@ -441,8 +452,8 @@ function SardEvaluatorFull({
             assignedBy: "المسمّع",
           });
           const newLevel = advance.newGlobalPhase ?? level;
-          updateSardItem(item.id, passedSardPatch(advance, merged.percent, "full"));
-          pushSardHistory({
+          if (!advance.historyRecord) updateSardItem(item.id, passedSardPatch(advance, merged.percent, "full"));
+          if (!advance.historyRecord) { pushSardHistory({
             id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
             evaluationRules,
             week: item.week, attempt: item.attempt,
@@ -451,14 +462,16 @@ function SardEvaluatorFull({
             hifzErrors, hifzWarnings, reviewErrors, reviewWarnings,
             at: new Date().toISOString(),
           });
-          await flushSardQueue();
+          await flushSardQueue(); }
           const planMsg = advance.newPlanTitle
             ? ` — انتقل إلى ${advance.newPlanTitle}`
             : advance.closedPlanTitle
               ? ` — أُنجزت ${advance.closedPlanTitle}`
               : "";
-          notifyTeacherSard(item.halaqaId, `الطالب ${studentName} اجتاز السرد بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
+          if (!advance.historyRecord) notifyTeacherSard(item.halaqaId, `الطالب ${studentName} اجتاز السرد بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
           toast.success(`اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
+          onDone();
+          return;
         } catch (error) {
           toast.error(error instanceof Error ? error.message : "تعذّر تأكيد انتقال الخطة");
           return;
@@ -569,7 +582,7 @@ function SardEvaluatorReviewOnly({
     submitting.current = true;
     setSaving(true);
     try {
-      await flushSardQueue();
+      if (review.failed || !merged.passed) await flushSardQueue();
       const reviewErrors = reviewSegments.map((s) => s.errors);
       const reviewWarnings = reviewSegments.map((s) => s.warnings);
 
@@ -593,7 +606,19 @@ function SardEvaluatorReviewOnly({
       if (merged.passed) {
         try {
 
+          const historyRecord: SardHistoryItem = {
+            id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
+            evaluationRules: validRules ? item.evaluationRules : undefined,
+            week: item.week, attempt: item.attempt,
+            result: merged.passed ? "passed" : "failed",
+            percent: merged.percent,
+            hifzErrors: item.lockedHifzErrors ?? 0,
+            hifzWarnings: item.lockedHifzWarnings ?? 0,
+            reviewErrors, reviewWarnings,
+            at: "",
+          };
           const advance = await runPostPassAutomation({
+            historyRecord,
             studentId: item.studentId,
             assignmentId: item.assignmentId,
             queueItemId: item.id,
@@ -609,8 +634,8 @@ function SardEvaluatorReviewOnly({
             assignedBy: "المسمّع",
           });
           const newLevel = advance.newGlobalPhase ?? level;
-          updateSardItem(item.id, passedSardPatch(advance, merged.percent, "review_only"));
-          pushSardHistory({
+          if (!advance.historyRecord) updateSardItem(item.id, passedSardPatch(advance, merged.percent, "review_only"));
+          if (!advance.historyRecord) { pushSardHistory({
             id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
             evaluationRules: validRules ? item.evaluationRules : undefined,
             week: item.week, attempt: item.attempt,
@@ -621,14 +646,16 @@ function SardEvaluatorReviewOnly({
             reviewErrors, reviewWarnings,
             at: new Date().toISOString(),
           });
-          await flushSardQueue();
+          await flushSardQueue(); }
           const planMsg = advance.newPlanTitle
             ? ` — انتقل إلى ${advance.newPlanTitle}`
             : advance.closedPlanTitle
               ? ` — أُنجزت ${advance.closedPlanTitle}`
               : "";
-          notifyTeacherSard(item.halaqaId, `الطالب ${studentName} اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
+          if (!advance.historyRecord) notifyTeacherSard(item.halaqaId, `الطالب ${studentName} اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
           toast.success(`اجتاز بنسبة ${merged.percent}% — المستوى ${newLevel}${planMsg}`);
+          onDone();
+          return;
         } catch (error) {
           toast.error(error instanceof Error ? error.message : "تعذّر تأكيد انتقال الخطة");
           return;

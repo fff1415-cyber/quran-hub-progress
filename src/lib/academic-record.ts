@@ -19,6 +19,10 @@ export interface AcademicPhaseRecord {
   track?: PlanTrack;
   assignmentId?: string;
   newPlanTitle?: string;
+  sourceHistoryId?: string;
+  sourceQueueItemId?: string;
+  finalPlanCompleted?: boolean;
+  transitionConfirmed?: boolean;
 }
 
 const KEY = "qshatawi_academic_records_v1";
@@ -47,7 +51,7 @@ export function saveAcademicRecords(list: AcademicPhaseRecord[], options?: { syn
   const key = recordStorageKey(), previous = localStorage.getItem(key);
   if (previous && !localStorage.getItem(`${key}:before-history-repair`)) localStorage.setItem(`${key}:before-history-repair`, previous);
   localStorage.setItem(key, JSON.stringify(list));
-  const notices = list.filter(record => record.newPlanTitle && record.assignmentId).map(record => ({ id: `n-academic-${record.assignmentId}`, message: `بعد اجتياز السرد — انتقل الطالب إلى ${record.newPlanTitle}`, type: "info" as const, targetHalaqaId: record.halaqaId, createdAt: record.testDate, read: false }));
+  const notices = list.filter(record => (record.newPlanTitle || record.finalPlanCompleted) && record.assignmentId).map(record => ({ id: `n-academic-${record.assignmentId}`, message: record.finalPlanCompleted ? `اجتاز الطالب الخطة الختامية: ${record.planTitle ?? ""}` : `بعد اجتياز السرد — انتقل الطالب إلى ${record.newPlanTitle}`, type: "info" as const, targetHalaqaId: record.halaqaId, createdAt: record.testDate, read: false }));
   if (notices.length) saveNotifications(mergeNotifications(notices, loadNotifications()));
   if (options?.sync !== false) persistShared(list);
 }
@@ -92,9 +96,10 @@ export function studentAcademicRecords(studentId: string): AcademicPhaseRecord[]
 /** Includes passed sard history entries not yet migrated to academic records. */
 export function studentAcademicRecordsWithLegacy(studentId: string): AcademicPhaseRecord[] {
   const records = studentAcademicRecords(studentId);
-  const seen = new Set(records.map((r) => `${r.week}-${r.attempt}`));
+  const sources = new Set(records.map(r => r.sourceHistoryId).filter(Boolean));
+  const seen = new Set(records.filter(r => !r.sourceHistoryId).map((r) => `${r.week}-${r.attempt}`));
   const legacy = loadSardHistory()
-    .filter((h) => h.studentId === studentId && h.result === "passed" && !seen.has(`${h.week}-${h.attempt}`))
+    .filter((h) => h.studentId === studentId && h.result === "passed" && !sources.has(h.id) && !seen.has(`${h.week}-${h.attempt}`))
     .map((h): AcademicPhaseRecord => ({
       id: h.id,
       studentId: h.studentId,

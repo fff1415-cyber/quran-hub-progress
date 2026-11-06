@@ -8,7 +8,7 @@ define('QHP_SHARED_GRADE_WRITES_V1',getenv('QHP_FIXTURE_SEMESTERS')==='1');
 define('QHP_SEMESTER_STORES_V1',getenv('QHP_FIXTURE_SEMESTERS')==='1');
 define('QHP_TRANSFER_WRITES_V1',getenv('QHP_FIXTURE_TRANSFERS')==='1');
 class HttpFixtureDatabase extends PDO {
- public function __construct(string $file){parent::__construct('sqlite:'.$file);$this->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$this->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);}
+ public function __construct(string $file){parent::__construct('sqlite:'.$file);$this->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$this->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);$this->sqliteCreateFunction('NOW',fn()=>gmdate('Y-m-d H:i:s'));}
  public function prepare(string $query,array $options=[]):PDOStatement|false{
   if(str_contains($query,'information_schema.tables'))$query="SELECT COUNT(*) FROM sqlite_master WHERE type='table' AND name=?";
   $query=str_replace(' FOR UPDATE','',$query);
@@ -31,6 +31,8 @@ function require_complex_id(array $auth):int{return (int)$auth['complexId'];}
 function json_input():array{return json_decode(file_get_contents('php://input'),true,512,JSON_THROW_ON_ERROR);}
 function error_response(string $message,int $status=400):never{http_response_code($status);json_response(['error'=>$message]);}
 function json_response(mixed $value):never{header('Content-Type: application/json');echo json_encode($value,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);exit;}
+function new_uuid():string{return 'fixture-assignment-'.bin2hex(random_bytes(8));}
+function assert_row_belongs_to_complex(?int $actual,int $expected):void{if($actual!==$expected)error_response('Forbidden tenant',403);}
 require __DIR__.'/../api/routes/app_state.php';require __DIR__.'/../api/routes/plans.php';
 require __DIR__.'/../api/routes/weekly_tests.php';
 require_once __DIR__.'/../api/routes/router.php';
@@ -44,6 +46,12 @@ if(PHP_SAPI==='cli'){
   app_state_upsert($pdo,'weekly_tests',json_decode('{"historic":{"1":{"muraja":["pass"]}}}'),1);
  }
  if(QHP_TRANSFER_WRITES_V1){$pdo->exec("CREATE TABLE students(id TEXT PRIMARY KEY,name TEXT,halaqa_id INT,complex_id INT);INSERT INTO students VALUES('S','fixture-student',1,1),('foreign','foreign-student',2,1),('S2','other-complex',9,2);CREATE TABLE transfer_threads(complex_id INT,id TEXT,halaqa_id INT,target_role TEXT,version TEXT,value TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(complex_id,id));CREATE TABLE transfer_receipts(complex_id INT,operation_id TEXT,actor_sha256 TEXT,input_sha256 TEXT,value TEXT,applied_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(complex_id,operation_id))");}
+ if(getenv('QHP_FIXTURE_TRANSITIONS')==='1'){
+  $pdo->exec(file_get_contents(__DIR__.'/fixtures/transition-http.sql'));
+  app_state_upsert($pdo,'sard_queue',[['id'=>'sq-1','studentId'=>'S','assignmentId'=>'old','halaqaId'=>1,'week'=>1,'attempt'=>1,'phase'=>'full','status'=>'scheduled'],['id'=>'sq-final','studentId'=>'FINAL','assignmentId'=>'final-assignment','halaqaId'=>1,'week'=>1,'attempt'=>1,'phase'=>'full','status'=>'scheduled']],1);
+  app_state_upsert($pdo,'sard_history',[['id'=>'historic-zero','studentId'=>'legacy','percent'=>0,'unknown'=>null,'at'=>'2020-01-01']],1);
+  app_state_upsert($pdo,'academic_records',[],1);
+ }
  exit;
 }
 try{

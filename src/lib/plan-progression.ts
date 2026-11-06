@@ -1,3 +1,4 @@
+import type { SardHistoryItem } from "./mock-data";
 import type { AcademicPhaseRecord } from "./academic-record";
 import type { EducationPlan, PlanTrack } from "@/lib/plan-types";
 import {
@@ -13,6 +14,7 @@ import { fetchPlans, assignStudentPlan, fetchStudentPlanSheet } from "@/lib/plan
 
 export interface PlanAdvanceResult {
   academicRecord?: AcademicPhaseRecord;
+  historyRecord?: SardHistoryItem;
   completedAssignmentId?: string;
   closedPlanTitle?: string;
   newPlanTitle?: string;
@@ -27,8 +29,18 @@ export async function completePlanAndAdvance(
   studentId: string,
   assignedBy: string,
   track: PlanTrack,
-  options?: { planStartDate?: string; expectedAssignmentId?: string; studentPhase?: number; sardResult?: { id: string; percent: number; phase: string; academic_record?: { hifzScore: number; reviewScore: number } } },
+  options?: { planStartDate?: string; expectedAssignmentId?: string; studentPhase?: number; sardResult?: { id: string; percent: number; phase: string; academic_record?: { hifzScore: number; reviewScore: number }; write_protocol?: 2; history_record?: SardHistoryItem } },
 ): Promise<PlanAdvanceResult> {
+  if (options?.sardResult?.write_protocol === 2) {
+    const { resumePendingPlanTransition } = await import("./plans-service");
+    const recovered = await resumePendingPlanTransition(studentId, options.expectedAssignmentId, options.sardResult);
+    if (recovered) {
+      const { sheet, receipt } = recovered, plan = sheet.plan!;
+      const catalog = await fetchPlans(plan.track), phase = globalPhaseFromPlanLevel(plan.track, plan.level_number, catalog);
+      const final = receipt.academic_record?.finalPlanCompleted === true;
+      return { academicRecord: receipt.academic_record ?? undefined, historyRecord: receipt.sard_history_record ?? undefined, completedAssignmentId: receipt.academic_record?.assignmentId, closedPlanTitle: receipt.academic_record?.planTitle, newPlanId: final ? undefined : plan.id, newPlanTitle: final ? undefined : plan.title, newGlobalPhase: phase ?? undefined, newInstituteLevel: instituteLevelFromPlanLevel(plan.level_number) ?? undefined, newPlanStartDate: sheet.assignment?.plan_start_date, newPlanAssignedAt: sheet.assignment?.assigned_at };
+    }
+  }
   const sheet = await fetchStudentPlanSheet(studentId);
   if (options?.expectedAssignmentId && sheet.assignment?.id !== options.expectedAssignmentId) {
     throw new Error("تغيّرت خطة الطالب — حدّث الصفحة قبل إعادة الاعتماد");
@@ -51,7 +63,11 @@ export async function completePlanAndAdvance(
     ? options.studentPhase
     : currentGlobal;
   if (effectivePhase >= maxGlobalPhase(assignmentTrack)) {
-    return result; // Keep the final plan visible for the supervisor.
+    if (options?.sardResult?.write_protocol === 2) {
+      const transition = await assignStudentPlan(studentId, sheet.plan.id, sheet.assignment.start_segment_index, assignedBy, { expected_assignment_id: sheet.assignment.id, sard_result: options.sardResult, finalize_only: true });
+      result.academicRecord = transition.academic_record ?? undefined; result.historyRecord = transition.sard_history_record ?? undefined;
+    }
+    return result; // Keep the final assignment visible; record the pass atomically without inventing a successor.
   }
 
   const following = followingPlan(plans, sheet.plan, options?.studentPhase);
@@ -70,6 +86,7 @@ export async function completePlanAndAdvance(
   });
 
   result.academicRecord = transition?.academic_record ?? undefined;
+  result.historyRecord = transition?.sard_history_record ?? undefined;
   const sheetAfter = await fetchStudentPlanSheet(studentId);
   if (sheetAfter.assignment) {
     result.newPlanStartDate = sheetAfter.assignment.plan_start_date ?? startDate;
