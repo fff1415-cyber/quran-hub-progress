@@ -35,10 +35,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        test: ['sard-assessments-native.php', 'transition-native.php']
+        engine: ['mysql', 'mariadb']
         include:
-          - image: mysql:8.0
+          - engine: mysql
+            image: mysql:8.0
             health: mysqladmin ping -h 127.0.0.1
-          - image: mariadb:11.8
+          - engine: mariadb
+            image: mariadb:11.8
             health: healthcheck.sh --connect --innodb_initialized
     services:
       mysql:
@@ -56,6 +60,6 @@ jobs:
         with:
           php-version: '8.3'
           extensions: pdo_mysql, pcntl
-      - run: php tests/sard-assessments-native.php
+      - run: php tests/${{ matrix.test }}
         env:
           AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4

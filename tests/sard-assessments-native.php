@@ -23,3 +23,10 @@ foreach(['HISTORY','QUEUE','RECEIPT']as$target){
  try{app_state_patch_sard($pdo,1,$packet,$auth);throw new LogicException('Expected native assessment failure');}catch(RuntimeException $e){check($e->getCode()===409,'native '.$target.' failure is explicitly reported');}
  check(nativeAssessmentState()===$before,'native '.$target.' failure rolls back queue, details and receipt and retains prior bytes');
 }
+$packet=seedNativeAssessment('BADENGINE');$pdo->exec('RENAME TABLE app_state TO held_assessment_state');
+foreach(['MyISAM'=>true,'InnoDB'=>false]as$engine=>$correctKey){
+ $pdo->exec('CREATE TABLE app_state(complex_id INT,`key` VARCHAR(100),value LONGTEXT,UNIQUE('.($correctKey?'complex_id,':'').'`key`)) ENGINE='.$engine);
+ try{app_state_patch_sard($pdo,1,$packet,$auth);throw new LogicException('Unsafe assessment storage accepted');}catch(RuntimeException $e){check($e->getCode()===503&&(int)$pdo->query('SELECT COUNT(*) FROM app_state')->fetchColumn()===0,'native nontransactional engine or invalid tenant key is refused before any assessment write');}
+ $pdo->exec('DROP TABLE app_state');
+}
+$pdo->exec('RENAME TABLE held_assessment_state TO app_state');

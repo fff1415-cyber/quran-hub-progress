@@ -1,6 +1,12 @@
 <?php
 declare(strict_types=1);
 
+function plans_transition_storage_ready(PDO $pdo):void {
+    sard_assessment_storage_ready($pdo);
+    if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='mysql')return;
+    foreach(['students','student_plan_assignments']as$table){$q=$pdo->prepare('SELECT ENGINE FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?');$q->execute([$table]);if(strtolower((string)$q->fetchColumn())!=='innodb')throw new RuntimeException('الحفظ الذري للانتقال يحتاج InnoDB؛ لم تبدأ أي كتابة',503);}
+}
+
 function plans_transition_receipt_key(array $input):?string {
     if(!isset($input['sard_result']['academic_record'])||empty($input['expected_assignment_id']))return null;
     return 'grade_plan_transition:'.hash('sha256',json_encode([(string)$input['student_id'],(string)$input['expected_assignment_id']],JSON_THROW_ON_ERROR));

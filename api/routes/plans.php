@@ -692,6 +692,7 @@ function handle_assign_plan(): void
     plans_assert_student_in_complex($pdo, $studentId, $cid, $tenants);
     plans_assert_plan_in_complex($pdo, $planId, $cid, $tenants);
 
+    if (($input['sard_result']['write_protocol'] ?? null) === 2) plans_transition_storage_ready($pdo);
     try {
         plans_ensure_assignment_v2_columns($pdo);
         plans_ensure_daily_faces_columns($pdo);

@@ -204,6 +204,18 @@ function sard_assessment_packet(mixed $value, ?array $auth): ?array
     return ['key'=>'grade_sard_receipt:'.hash('sha256',$value['operation_id']),'hash'=>hash('sha256',json_encode($value,JSON_THROW_ON_ERROR)),'actor'=>hash('sha256',json_encode([$auth['role'],$auth['accountId']],JSON_THROW_ON_ERROR))];
 }
 
+function sard_assessment_storage_ready(PDO $pdo):void
+{
+    if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='mysql')return;
+    $q=$pdo->prepare('SELECT ENGINE FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?');$q->execute(['app_state']);
+    if(strtolower((string)$q->fetchColumn())!=='innodb')error_response('الحفظ الذري للاختبار يحتاج InnoDB؛ لم تبدأ أي كتابة',503);
+    $q=$pdo->prepare('SELECT INDEX_NAME,COLUMN_NAME FROM information_schema.statistics WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=? AND NON_UNIQUE=0 ORDER BY INDEX_NAME,SEQ_IN_INDEX');$q->execute(['app_state']);$indexes=[];
+    foreach($q->fetchAll(PDO::FETCH_ASSOC)as$row)$indexes[$row['INDEX_NAME']][]=$row['COLUMN_NAME'];
+    $expected=app_state_tenant_enabled($pdo)?['complex_id','key']:['key'];sort($expected);$found=false;
+    foreach($indexes as$columns){sort($columns);if($columns===$expected)$found=true;elseif(in_array('key',$columns,true))error_response('مفتاح عزل مخزن الاختبارات غير مطابق؛ لم تبدأ أي كتابة',503);}
+    if(!$found)error_response('مفتاح مخزن الاختبارات غير مهيأ؛ لم تبدأ أي كتابة',503);
+}
+
 function sard_assessment_history(PDO $pdo,int $cid,array $value,array $base,array $current):array
 {
     if(empty($base['assignmentId'])||($base['assignmentId']??null)!==($current['assignmentId']??null))throw new RuntimeException('تعيين الاختبار غير مثبت؛ لم يُنسب بالتخمين',409);
@@ -232,6 +244,7 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value, ?array $auth=nul
     $scope = $tenants ? 'complex_id = ? AND `key` = ?' : '`key` = ?';
     $params = $tenants ? [$cid, 'sard_queue'] : ['sard_queue'];
     plans_ensure_completion_assignment_column($pdo);
+    if(array_key_exists('sard_assessment_protocol',$value))sard_assessment_storage_ready($pdo);
     $pdo->beginTransaction();
     try {
         $sql = $tenants ? 'INSERT IGNORE INTO app_state (complex_id, `key`, value) VALUES (?, ?, ?)' : 'INSERT IGNORE INTO app_state (`key`, value) VALUES (?, ?)';
