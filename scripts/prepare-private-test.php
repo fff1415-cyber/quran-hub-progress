@@ -21,8 +21,8 @@ try{
  }
  if(!chmod($file,0600))throw new RuntimeException('Cannot secure config');
  $stage='interactive_helper';$setter=str_replace('declare(strict_types=1);',"declare(strict_types=1);\nconst QHP_DEFAULT_TEST_HOST=".var_export(DB_HOST,true).";\nconst QHP_PRODUCTION_USER_SHA256=".var_export(hash('sha256',DB_USER),true).";",$setter);
- foreach(['configure-msht-test.php'=>$setter,'private-test-config.php'=>$parser]as$name=>$content){$path=$private.'/'.$name;if(is_link($path))throw new RuntimeException('Unsafe helper link');if(is_file($path)&&file_get_contents($path)!==$content)throw new RuntimeException('Existing helper differs; kept untouched');if(!is_file($path)){$h=fopen($path,'x');if(!$h)throw new RuntimeException('Cannot install helper');fwrite($h,$content);fclose($h);}chmod($path,0600);}
- clearstatcache();$secured=(fileperms($private)&0777)===0700&&(fileperms($file)&0777)===0600;foreach(['configure-msht-test.php','private-test-config.php']as$name)$secured=$secured&&(fileperms($private.'/'.$name)&0777)===0600;
+ foreach(['set-msht-test.php'=>$setter,'private-test-config.php'=>$parser]as$name=>$content){$path=$private.'/'.$name;if(is_link($path))throw new RuntimeException('Unsafe helper link');if(is_file($path)&&file_get_contents($path)!==$content)throw new RuntimeException('Existing helper differs; kept untouched');if(!is_file($path)){$h=fopen($path,'x');if(!$h)throw new RuntimeException('Cannot install helper');fwrite($h,$content);fclose($h);}chmod($path,0600);}
+ clearstatcache();$secured=(fileperms($private)&0777)===0700&&(fileperms($file)&0777)===0600;foreach(['set-msht-test.php','private-test-config.php']as$name)$secured=$secured&&(fileperms($private.'/'.$name)&0777)===0600;
  if(!$secured)throw new RuntimeException('Permissions not confirmed');
  eval(substr($parser,5));$settings=null;try{$settings=qhp_load_private_test_config((string)file_get_contents($file));}catch(Throwable){}
  $connection='needs_test_credentials';$tables=null;$stage='test_connection';

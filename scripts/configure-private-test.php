@@ -12,7 +12,8 @@ fwrite(STDOUT,'Test database host ['.$host.']: ');$answer=trim((string)fgets(STD
 fwrite(STDOUT,'Test database username'.($user!==''?' ['.$user.']':'').': ');$answer=trim((string)fgets(STDIN));if($answer!=='')$user=$answer;
 if($user===''||hash_equals(QHP_PRODUCTION_USER_SHA256,hash('sha256',$user))){fwrite(STDERR,"Use the separate test database user. Original file unchanged.\n");exit(1);}
 $mode=trim((string)shell_exec('stty -g 2>/dev/null'));if($mode===''){fwrite(STDERR,"Cannot hide password input; stopped.\n");exit(1);}
-$password='';try{system('stty -echo');fwrite(STDOUT,'Test password (hidden): ');$password=rtrim((string)fgets(STDIN),"\r\n");}finally{system('stty '.escapeshellarg($mode));fwrite(STDOUT,"\n");}
+system('stty -echo',$hiddenStatus);if($hiddenStatus!==0){system('stty '.escapeshellarg($mode));fwrite(STDERR,"Cannot hide password input; stopped before reading it.\n");exit(1);}
+$password='';try{fwrite(STDOUT,'Test password (hidden): ');$password=rtrim((string)fgets(STDIN),"\r\n");}finally{system('stty '.escapeshellarg($mode));fwrite(STDOUT,"\n");}
 try{
  if($password==='')throw new RuntimeException('Empty test password');
  $settings=['host'=>$host,'database'=>'u112851217_msht_test','user'=>$user,'password'=>$password];
