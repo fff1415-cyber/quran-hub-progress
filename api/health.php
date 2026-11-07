@@ -27,6 +27,7 @@ api_register_error_handlers();
 require_once $configPath;
 require_once __DIR__ . '/db.php';
 require_once __DIR__ . '/auth.php';
+require_once __DIR__ . '/tenant.php';
 require_once __DIR__ . '/routes/health.php';
 
 handle_health_check();
