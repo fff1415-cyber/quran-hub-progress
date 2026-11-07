@@ -49,9 +49,12 @@ function qhp_restore_archive(string $file,?PDO $write=null):array {
         if($create!==''){$create.="\n".$line;if(!str_ends_with($line,';'))continue;$line=$create;$create='';}
         if($line===''||str_starts_with($line,'--')){if(str_starts_with($line,'-- Dump completed'))$complete=true;continue;}
         if(preg_match('/^\/\*M?!999999.*enable the sandbox mode.*\*\/$/D',$line))continue;
-        if(preg_match('/^\/\*M?![0-9]{5,6}\s+SET\s+(?:(?:@(?:OLD_[A-Z_]+|saved_cs_client)|[A-Z_]+)\s*=.+|NAMES\s+utf8mb4)\s*\*\/;?$/iD',$line)){
+        if(preg_match('/^\/\*M?![0-9]{5,6}\s+SET\s+[^\r\n]+\*\/\s*;?$/iD',$line)){
             if(preg_match('/\b(?:GLOBAL|GTID|SQL_LOG_BIN)\b/i',$line))throw new RuntimeException('unsupported_global_dump_directive');continue;
         }
+        // The --events/--routines exporter emits these delimiters even for empty sections.
+        // Actual triggers, routines, events and any associated executable statements remain refused.
+        if(preg_match('/^DELIMITER\s+;{1,2}$/D',$line))continue;
         if(preg_match('/^(?:LOCK TABLES `[A-Za-z0-9_]+` WRITE|UNLOCK TABLES|\/\*!40000 ALTER TABLE `[A-Za-z0-9_]+` (?:DISABLE|ENABLE) KEYS \*\/);$/D',$line))continue;
         if(preg_match('/^DROP TABLE IF EXISTS `([A-Za-z0-9_]+)`;$/D',$line,$m)){
             if(isset($dropped[$m[1]]))throw new RuntimeException('duplicate_dump_drop');$dropped[$m[1]]=true;if($write)$write->exec($line);continue;
@@ -67,7 +70,8 @@ function qhp_restore_archive(string $file,?PDO $write=null):array {
             if(!str_ends_with($line,';')){$create=$line;continue;}
             $rows=qhp_restore_rows($line);foreach($rows as$row)$result[$m[1]]['rows'][]=$row;if($write)$write->exec($line);continue;
         }
-        throw new RuntimeException('unsupported_dump_statement'.(getenv('QHP_RESTORE_FIXTURE')==='1'?': '.substr($line,0,160):''));
+        $kind='other';foreach(['versioned'=>'/^\/\*/','use'=>'/^\s*USE\b/i','insert'=>'/^\s*INSERT\b/i','create'=>'/^\s*CREATE\b/i','drop'=>'/^\s*DROP\b/i','set'=>'/^\s*SET\b/i','delimiter'=>'/^\s*DELIMITER\b/i','lock'=>'/^\s*(?:UN)?LOCK\b/i']as$type=>$pattern)if(preg_match($pattern,$line)){$kind=$type;break;}
+        throw new RuntimeException('unsupported_dump_statement_'.$kind.(getenv('QHP_RESTORE_FIXTURE')==='1'?': '.substr($line,0,160):''));
     }}finally{gzclose($h);}
     if(!$complete||$create!==''||!$result||array_keys($dropped)!==array_keys($result))throw new RuntimeException('incomplete_plain_dump');
     foreach($result as&$table){sort($table['rows']);$table['row_count']=count($table['rows']);$table['data_sha256']=hash('sha256',implode('',$table['rows']));unset($table['rows']);}unset($table);ksort($result);return $result;
