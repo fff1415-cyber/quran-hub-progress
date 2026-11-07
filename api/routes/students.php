@@ -84,21 +84,7 @@ function handle_upsert_students(): void
                 ) VALUES (
                   :id, :complex_id, :name, :halaqa_id, :national_id, :parent_phone, :student_phone,
                   :level, :level_type, :institute_level, :phase_number, :assigned_to, :assigned_assistant_code, :memorized
-                )
-                ON DUPLICATE KEY UPDATE
-                  name = VALUES(name),
-                  halaqa_id = VALUES(halaqa_id),
-                  national_id = VALUES(national_id),
-                  parent_phone = VALUES(parent_phone),
-                  student_phone = VALUES(student_phone),
-                  level = VALUES(level),
-                  level_type = VALUES(level_type),
-                  institute_level = VALUES(institute_level),
-                  phase_number = VALUES(phase_number),
-                  assigned_to = VALUES(assigned_to),
-                  assigned_assistant_code = VALUES(assigned_assistant_code),
-                  memorized = VALUES(memorized),
-                  complex_id = VALUES(complex_id)';
+                )';
     } else {
         $sql = 'INSERT INTO students (id, name, halaqa_id, national_id, parent_phone, student_phone, level, level_type, institute_level, phase_number, assigned_to, assigned_assistant_code, memorized)
                 VALUES (:id, :name, :halaqa_id, :national_id, :parent_phone, :student_phone, :level, :level_type, :institute_level, :phase_number, :assigned_to, :assigned_assistant_code, :memorized)
@@ -117,6 +103,17 @@ function handle_upsert_students(): void
                   memorized = VALUES(memorized)';
     }
     $stmt = $pdo->prepare($sql);
+    if ($tenants) {
+        $byId = $pdo->prepare('SELECT id, complex_id FROM students WHERE id = ? FOR UPDATE');
+        $byNationalId = $pdo->prepare('SELECT id FROM students WHERE complex_id = ? AND national_id = ? FOR UPDATE');
+        $update = $pdo->prepare(
+            'UPDATE students SET name = :name, halaqa_id = :halaqa_id, national_id = :national_id,
+             parent_phone = :parent_phone, student_phone = :student_phone, level = :level,
+             level_type = :level_type, institute_level = :institute_level, phase_number = :phase_number,
+             assigned_to = :assigned_to, assigned_assistant_code = :assigned_assistant_code, memorized = :memorized
+             WHERE id = :id AND complex_id = :complex_id'
+        );
+    }
 
     $preparedRows = [];
     foreach ($students as $s) {
@@ -147,8 +144,34 @@ function handle_upsert_students(): void
 
     try {
         $pdo->beginTransaction();
-        foreach ($preparedRows as $params) $stmt->execute($params);
+        foreach ($preparedRows as $params) {
+            if ($tenants) {
+                $byId->execute([$params[':id']]);
+                $existing = $byId->fetch(PDO::FETCH_ASSOC);
+                $byId->closeCursor();
+                if ($existing !== false && (int) $existing['complex_id'] !== $cid) {
+                    throw new DomainException('Student identifier conflicts with an existing record');
+                }
+                $targetId = $existing === false ? false : $existing['id'];
+                if ($targetId === false) {
+                    $byNationalId->execute([$cid, $params[':national_id']]);
+                    $targetId = $byNationalId->fetchColumn();
+                    $byNationalId->closeCursor();
+                }
+                if ($targetId !== false) {
+                    $params[':id'] = $targetId;
+                    $update->execute($params);
+                    continue;
+                }
+            }
+            // A concurrent insert can fail safely; never update a duplicate of unknown ownership.
+            $stmt->execute($params);
+        }
         $pdo->commit();
+    } catch (DomainException $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_response('Student identifier conflicts with an existing record', 409);
+        return;
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         error_response(api_safe_failure_message($error, 'students_batch'), api_database_error_status($error));
