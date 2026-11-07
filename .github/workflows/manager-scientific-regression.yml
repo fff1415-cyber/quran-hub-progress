@@ -1,0 +1,26 @@
+name: Manager scientific refresh and atomic grade checks
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  refresh:
+    if: github.head_ref == 'fix/manager-sync-scientific'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - run: node tests/stage2-roster.cjs && node tests/scientific-clear-marker-regression.cjs && node tests/stage2-atomic-sessions.cjs
+      - run: npx tsc --noEmit

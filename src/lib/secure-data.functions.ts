@@ -162,8 +162,8 @@ export async function secureDeleteRoleAccount({ data }: { data: { token: string;
 }
 
 // ---------- SHARED APP STATE ----------
-export async function secureListAppState({ data }: { data: { token: string; key?: string } }) {
-  const q = data.key ? `?key=${encodeURIComponent(data.key)}` : "";
+export async function secureListAppState({ data }: { data: { token: string; key?: string; omitGradeValue?: boolean } }) {
+  const q = data.key ? `?key=${encodeURIComponent(data.key)}` : data.omitGradeValue ? "?omit_grade_value=1" : "";
   return apiFetch<{ key: string; value: unknown }[]>(`/app-state${q}`, {
     method: "GET",
     cache: "no-store",

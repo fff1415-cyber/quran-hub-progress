@@ -19,7 +19,7 @@ class HttpFixtureDatabase extends PDO {
 $pdo=new HttpFixtureDatabase($fixture);
 function db():PDO{return $GLOBALS['pdo'];}
 function table_column_exists(PDO $pdo,string $table,string $column):bool{foreach($pdo->query('PRAGMA table_info('.$table.')')->fetchAll()as$row)if($row['name']===$column)return true;return false;}
-function require_auth():array{$token=$_SERVER['HTTP_AUTHORIZATION']??'';$role=substr($token,15);if(!in_array($role,['teacher','assistant','test_member'],true))error_response('Unauthenticated',401);return ['role'=>$role,'name'=>$role,'accountId'=>$role,'complexId'=>1,'halaqaId'=>1];}
+function require_auth():array{$token=$_SERVER['HTTP_AUTHORIZATION']??'';$role=substr($token,15);if(!str_starts_with($token,'Bearer fixture-')||!in_array($role,['teacher','assistant','manager','test_member'],true))error_response('Unauthenticated',401);return ['role'=>$role,'name'=>$role,'accountId'=>$role,'complexId'=>1,'halaqaId'=>1];}
 function require_complex_id(array $auth):int{return 1;}
 function json_input():array{return json_decode(file_get_contents('php://input'),true,512,JSON_THROW_ON_ERROR);}
 function error_response(string $message,int $status=400):never{http_response_code($status);json_response(['error'=>$message]);}

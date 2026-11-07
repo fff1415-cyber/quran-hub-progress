@@ -321,21 +321,28 @@ export async function syncFromCloud(options?: {
     saveStudents(students);
 
     if (token) {
+      let syncStep = "GET /semesters/active";
       try {
         await fetchActiveCalendar(!loadCachedCalendar());
 
         const sardBeforePull = JSON.stringify(loadSardQueue());
-        const stateRows = await secureListAppState({ data: { token } });
+        syncStep = "GET /app-state?omit_grade_value=1";
+        const stateRows = await secureListAppState({ data: { token, omitGradeValue: true } });
         const state = new Map(stateRows.map((row) => [row.key, row.value]));
         assertCurrent();
         owner = crypto.randomUUID();
         sessionStorage.setItem("qs_sync_owner", owner);
         sessionStorage.setItem("qs_syncing", "1");
         if (state.has("grades")) {
+          syncStep = "GET /app-state?key=grades&grade_protocol=1";
           await refreshConfirmedGrades();
           assertCurrent();
         }
-        if (state.has("weekly_tests")) await refreshSharedGrades<import("./weekly-tests").WeeklyTestsStore>("weekly_tests", {});
+        if (state.has("weekly_tests")) {
+          syncStep = "GET /app-state?key=weekly_tests&grade_protocol=1";
+          await refreshSharedGrades<import("./weekly-tests").WeeklyTestsStore>("weekly_tests", {});
+        }
+        syncStep = "apply cached state";
         if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
         if (state.has("staff_attendance_settings")) saveStaffAttendanceSettings(state.get("staff_attendance_settings") as import("./staff-attendance").StaffAttendanceSettings);
         if (state.has("staff_attendance")) {
@@ -362,7 +369,12 @@ export async function syncFromCloud(options?: {
           saveAllHalaqaPrograms(merged);
         }
         if (state.has("halaqa_program_grades")) saveAllProgramGrades(state.get("halaqa_program_grades") as HalaqaProgramGradesStore);
-        if (state.has("scientific_grades")) await refreshSharedGrades("scientific_grades", { configs: {}, data: {}, overrides: {} });
+        if (state.has("scientific_grades")) {
+          syncStep = "GET /app-state?key=scientific_grades&grade_protocol=1";
+          await refreshSharedGrades("scientific_grades", { configs: {}, data: {}, overrides: {} });
+          assertCurrent();
+          syncStep = "apply cached state";
+        }
         if (state.has(ABSENCE_ALERTS_APP_STATE_KEY)) {
           mergeAbsenceAlertRecordFromCloud(state.get(ABSENCE_ALERTS_APP_STATE_KEY));
         }
@@ -396,7 +408,7 @@ export async function syncFromCloud(options?: {
           sessionStorage.removeItem("qs_syncing");
           sessionStorage.removeItem("qs_sync_owner");
         }
-        console.warn("Cloud app-state sync failed (roster kept):", stateErr);
+        console.warn("Cloud app-state sync failed (roster kept):", stateErr, { step: syncStep });
       }
     }
 
