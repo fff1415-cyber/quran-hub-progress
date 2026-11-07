@@ -13,6 +13,8 @@ $insert=$source->prepare('INSERT INTO students VALUES(?,?,?)');$insert->execute(
 $target->exec("INSERT INTO students VALUES(9,'old test state',NULL)");
 $folder=sys_get_temp_dir().'/qhp-restore-fixture-'.bin2hex(random_bytes(8));mkdir($folder,0700);
 $archive=qhp_restore_dump(settings('audit_source'),'audit_source',$folder,'fixture-source',3307,true);
+// The server's dump client also emits a bare COMMIT after its table data.
+file_put_contents($archive,gzencode(str_replace('-- Dump completed',"COMMIT;\n-- Dump completed",gzdecode(file_get_contents($archive)))));
 $manifest=['status'=>'backup_created','consistent_snapshot'=>true,'sha256'=>hash_file('sha256',$archive),'table_count'=>1,'backup_id'=>'fixture'];
 $dir=$folder.'/success';mkdir($dir,0700);$report=qhp_restore_apply($target,settings('audit_target'),'audit_target',$archive,$manifest,$dir,3307);
 $select='SELECT * FROM students ORDER BY id';$rows=$source->query($select)->fetchAll(PDO::FETCH_ASSOC);

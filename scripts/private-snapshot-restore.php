@@ -59,6 +59,7 @@ function qhp_restore_archive(string $file,?PDO $write=null):array {
         }
         // The exporter can also emit bare session/setup directives. Do not replay them.
         if(preg_match('/^SET\s+[^\r\n]+;$/iD',$line))continue;
+        if(preg_match('/^(?:COMMIT|START TRANSACTION(?: WITH CONSISTENT SNAPSHOT)?);$/iD',$line))continue;
         // The --events/--routines exporter emits these delimiters even for empty sections.
         // Actual triggers, routines, events and any associated executable statements remain refused.
         if(preg_match('/^DELIMITER\s+;{1,2}$/D',$line))continue;
