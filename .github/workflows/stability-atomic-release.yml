@@ -1,0 +1,57 @@
+name: Atomic release and legacy cutover acceptance
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  cutover:
+    if: github.head_ref == 'release/stability-atomic'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - name: Save before activation, switch modes, and confirm real HTTP saves in two sessions
+        run: node tests/stage2-atomic-sessions.cjs
+      - name: Preserve scoped drafts, linked grades, and plan transition history
+        run: |
+          node tests/stage2-atomic-local.cjs
+          php tests/stage3-atomic-plan.php
+          php tests/stage4-profile.php
+          node tests/stage4-plan-track.cjs
+      - run: npx tsc --noEmit
+  transactional-writes:
+    if: github.head_ref == 'release/stability-atomic'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      matrix:
+        suite: [atomic-native, stage4-native]
+    services:
+      mariadb:
+        image: mariadb:11.8
+        env:
+          MYSQL_DATABASE: audit_test
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: ['3307:3306']
+        options: --health-cmd="healthcheck.sh --connect --innodb_initialized" --health-interval=5s --health-timeout=5s --health-retries=15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, pcntl
+      - run: php tests/${{ matrix.suite }}.php
+        env:
+          AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4

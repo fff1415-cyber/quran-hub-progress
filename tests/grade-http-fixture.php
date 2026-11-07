@@ -3,7 +3,7 @@ declare(strict_types=1);
 // Synthetic tokens and a file under the OS test directory only. Never loads production configuration.
 $fixture=getenv('QHP_FIXTURE_DB');
 if(!$fixture || !str_starts_with(basename($fixture),'qhp-atomic-') || !is_dir(dirname($fixture)))exit(1);
-define('QHP_GRADE_WRITES_V1',true);
+define('QHP_GRADE_WRITES_V1',getenv('QHP_FIXTURE_LEGACY')!=='1');
 class HttpFixtureDatabase extends PDO {
  public function __construct(string $file){parent::__construct('sqlite:'.$file);$this->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);$this->setAttribute(PDO::ATTR_DEFAULT_FETCH_MODE,PDO::FETCH_ASSOC);}
  public function prepare(string $query,array $options=[]):PDOStatement|false{

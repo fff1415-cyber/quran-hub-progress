@@ -6,14 +6,42 @@ const env={...process.env,QHP_FIXTURE_DB:db};cp.execFileSync(php,['tests/grade-h
 let server,base,sequence=0;const id=()=>`fixture-operation-${++sequence}`;
 const request=async(token,packet)=>{const response=await fetch(base+(packet?'':'?key=grades&grade_protocol=1'),{method:packet?'POST':'GET',headers:{Authorization:'Bearer fixture-'+token,'Content-Type':'application/json'},body:packet?JSON.stringify({key:'grades',grade_write_protocol:1,value:packet}):undefined});const value=await response.json();if(!response.ok)throw Object.assign(Error(value.error),{status:response.status});return value;};
 const edit=(box,field,value)=>{const before=box.view({}),after=structuredClone(before);after.S[1].days.sun[field]=value;box.edit(before,after);};
+const legacy=(token,store)=>fetch(base+(store?'':'?key=grades'),{
+ method:store?'POST':'GET',headers:{Authorization:'Bearer fixture-'+token,'Content-Type':'application/json'},
+ body:store?JSON.stringify({key:'grades',value:store}):undefined,
+});
+async function start(legacyMode){
+ const listener=net.createServer();await new Promise(r=>listener.listen(0,'127.0.0.1',r));
+ const port=listener.address().port;await new Promise(r=>listener.close(r));base=`http://127.0.0.1:${port}/app-state`;
+ server=cp.spawn(php,['-S',`127.0.0.1:${port}`,'tests/grade-http-fixture.php'],{env:{...env,QHP_FIXTURE_LEGACY:legacyMode?'1':'0'},stdio:'ignore'});
+ let reason;
+ for(let i=0;i<50;i++){try{const response=await legacy('teacher');if(response.ok)return;reason=await response.text();}catch(error){reason=error.message;}await new Promise(r=>setTimeout(r,50));}
+ throw Error('Fixture HTTP server did not become ready: '+reason);
+}
+async function stop(){
+ const child=server;server=null;
+ if(child&&child.exitCode===null)await new Promise(resolve=>{child.once('exit',resolve);child.kill();});
+}
 (async()=>{
- const listener=net.createServer();await new Promise(r=>listener.listen(0,'127.0.0.1',r));const port=listener.address().port;await new Promise(r=>listener.close(r));base=`http://127.0.0.1:${port}/app-state`;
- server=cp.spawn(php,['-S',`127.0.0.1:${port}`,'tests/grade-http-fixture.php'],{env,stdio:'ignore'});
- let ready=false;for(let i=0;i<50;i++){try{await request('teacher');ready=true;break;}catch{await new Promise(r=>setTimeout(r,50));}}assert(ready);
+ await start(true);
+ const prior=(await (await legacy('teacher')).json())[0].value;
+ prior.S[1].days.sun.attendance='late';
+ assert.equal((await legacy('teacher',prior)).status,200);
+ assert.deepEqual((await (await legacy('assistant')).json())[0].value,prior);
+ await assert.rejects(request('teacher'),{status:503});
+ await assert.rejects(request('assistant',{operation_id:'premature-fixture-write'}),{status:503});
+ assert.deepEqual((await (await legacy('teacher')).json())[0].value,prior);
+ await stop();
+ await start(false);
+ assert.deepEqual((await request('assistant')).value,prior);
+ assert.equal((await legacy('teacher',{...prior,historic:{}})).status,409);
+ assert.deepEqual((await request('teacher')).value,prior);
+ console.log('PASS: legacy writes remain available before activation; atomic writes are fenced before activation, inherit the last saved store, and fence stale legacy replacements afterwards');
  const aStore=storage(),bStore=storage(),a=new GradeOutbox(aStore,'teacher',id),b=new GradeOutbox(bStore,'assistant',id);
  a.accept(await request('teacher'));b.accept(await request('assistant'));
  edit(a,'hifz','one');edit(b,'muraja','pass');await Promise.all([a.flush(p=>request('teacher',p)),b.flush(p=>request('assistant',p))]);
- let snapshot=await request('teacher');a.accept(snapshot);b.accept(snapshot);assert.equal(a.view({}).S[1].days.sun.hifz,'one');assert.equal(b.view({}).S[1].days.sun.muraja,'pass');assert.equal(snapshot.value.historic[8].keep,0);
+ let snapshot=await request('teacher');a.accept(snapshot);b.accept(await request('assistant'));
+ assert.equal(a.view({}).S[1].days.sun.muraja,'pass');assert.equal(b.view({}).S[1].days.sun.hifz,'one');assert.equal(snapshot.value.historic[8].keep,0);
  edit(a,'hifz','two');edit(b,'hifz','half');await a.flush(p=>request('teacher',p));await b.flush(p=>request('assistant',p));assert.equal(b.drafts().at(-1).status,'conflict');assert.equal(b.view({}).S[1].days.sun.hifz,'half');assert.equal((await request('teacher')).value.S[1].days.sun.hifz,'two');
  b.accept(await request('assistant'));b.resolve(b.drafts().find(d=>d.status==='conflict').packet.operation_id,false);assert.equal(b.view({}).S[1].days.sun.hifz,'two');
  a.accept(await request('teacher'));edit(a,'attendance','present');const packet=a.drafts().at(-1).packet;
@@ -27,4 +55,4 @@ const edit=(box,field,value)=>{const before=box.view({}),after=structuredClone(b
  const allRows=await (await fetch(base,{headers:{Authorization:'Bearer fixture-teacher'}})).json();assert(allRows.every(row=>!row.key.startsWith('grade_plan_')));
  for(const method of ['GET','POST']){const result=await fetch(base+(method==='GET'?'?key=grade_plan_event%3Afixture':''),{method,headers:{Authorization:'Bearer fixture-teacher','Content-Type':'application/json'},body:method==='POST'?JSON.stringify({key:'grade_plan_event:fixture',value:{forged:true}}):undefined});assert.equal(result.status,403);}
  console.log('PASS: two isolated sessions through actual PHP HTTP handlers preserve independent edits, detect same-cell conflict, retain offline drafts across reopen, replay lost-response packet once, chain rapid edits, isolate accounts and reject legacy whole-store replacement');
-})().catch(error=>{console.error(error);process.exitCode=1;}).finally(()=>{server?.kill();if(path.dirname(path.resolve(folder))!==path.resolve(os.tmpdir())||!path.basename(folder).startsWith('qhp-atomic-'))throw Error('Unsafe fixture cleanup');fs.rmSync(folder,{recursive:true,force:true});});
+})().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{await stop();if(path.dirname(path.resolve(folder))!==path.resolve(os.tmpdir())||!path.basename(folder).startsWith('qhp-atomic-'))throw Error('Unsafe fixture cleanup');fs.rmSync(folder,{recursive:true,force:true});});
