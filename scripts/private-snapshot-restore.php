@@ -52,6 +52,8 @@ function qhp_restore_archive(string $file,?PDO $write=null):array {
         if(preg_match('/^\/\*M?![0-9]{5,6}\s+SET\s+[^\r\n]+\*\/\s*;?$/iD',$line)){
             if(preg_match('/\b(?:GLOBAL|GTID|SQL_LOG_BIN)\b/i',$line))throw new RuntimeException('unsupported_global_dump_directive');continue;
         }
+        // The exporter can also emit bare session/setup directives. Do not replay them.
+        if(preg_match('/^SET\s+[^\r\n]+;$/iD',$line))continue;
         // The --events/--routines exporter emits these delimiters even for empty sections.
         // Actual triggers, routines, events and any associated executable statements remain refused.
         if(preg_match('/^DELIMITER\s+;{1,2}$/D',$line))continue;
@@ -76,7 +78,7 @@ function qhp_restore_archive(string $file,?PDO $write=null):array {
     if(!$complete||$create!==''||!$result||array_keys($dropped)!==array_keys($result))throw new RuntimeException('incomplete_plain_dump');
     foreach($result as&$table){sort($table['rows']);$table['row_count']=count($table['rows']);$table['data_sha256']=hash('sha256',implode('',$table['rows']));unset($table['rows']);}unset($table);ksort($result);return $result;
 }
-function qhp_restore_dump(array $settings,string $target,string $directory,string $name,int $port=3306):string {
+function qhp_restore_dump(array $settings,string $target,string $directory,string $name,int $port=3306,bool $sourceHeaders=false):string {
     $binary=null;foreach(['/usr/bin/mariadb-dump','/usr/bin/mysqldump','/bin/mariadb-dump','/bin/mysqldump']as$path)if(is_executable($path)){$binary=$path;break;}if(!$binary)throw new RuntimeException('dump_tool_missing');
     $quote=static fn(string $v):string=>'"'.strtr($v,["\\"=>"\\\\",'"'=>'\\"',"\n"=>'\\n',"\r"=>'\\r']).'"';
     $credentials=$directory.'/.test-client-'.bin2hex(random_bytes(8)).'.cnf';$config="[client]\nhost=".$quote($settings['host'])."\nport=$port\nuser=".$quote($settings['user'])."\npassword=".$quote($settings['password'])."\ndefault-character-set=utf8mb4\n";
@@ -84,7 +86,8 @@ function qhp_restore_dump(array $settings,string $target,string $directory,strin
     $archive=$directory.'/'.$name.'.sql.gz';
     try{
         if(fwrite($h,$config)!==strlen($config))throw new RuntimeException('private_client_config_incomplete');fclose($h);unset($h,$config);
-        $process=proc_open([$binary,'--defaults-file='.$credentials,'--single-transaction','--quick','--skip-lock-tables','--no-tablespaces','--hex-blob','--skip-triggers',$target],[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['file',$directory.'/'.$name.'.stderr','w']],$pipes);
+        $headers=$sourceHeaders?['--routines','--events','--triggers']:['--skip-triggers'];
+        $process=proc_open([$binary,'--defaults-file='.$credentials,'--single-transaction','--quick','--skip-lock-tables','--no-tablespaces','--hex-blob',...$headers,$target],[0=>['file','/dev/null','r'],1=>['pipe','w'],2=>['file',$directory.'/'.$name.'.stderr','w']],$pipes);
         if(!is_resource($process))throw new RuntimeException('test_dump_process_failed');$gzip=gzopen($archive,'wb6');if(!$gzip)throw new RuntimeException('private_test_archive_unavailable');
         try{while(!feof($pipes[1])){$chunk=fread($pipes[1],1048576);if($chunk===false||($chunk!==''&&gzwrite($gzip,$chunk)!==strlen($chunk)))throw new RuntimeException('test_dump_incomplete');}}
         finally{fclose($pipes[1]);gzclose($gzip);$exit=proc_close($process);}

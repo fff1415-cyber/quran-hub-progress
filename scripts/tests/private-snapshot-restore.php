@@ -12,7 +12,7 @@ foreach([$source,$target]as$pdo)$pdo->exec('CREATE TABLE students(id INT PRIMARY
 $insert=$source->prepare('INSERT INTO students VALUES(?,?,?)');$insert->execute([0,"نص ' مع \\ وقوس ),( وسطر\nجديد", "binary\x00"]);$insert->execute([2,null,null]);
 $target->exec("INSERT INTO students VALUES(9,'old test state',NULL)");
 $folder=sys_get_temp_dir().'/qhp-restore-fixture-'.bin2hex(random_bytes(8));mkdir($folder,0700);
-$archive=qhp_restore_dump(settings('audit_source'),'audit_source',$folder,'fixture-source',3307);
+$archive=qhp_restore_dump(settings('audit_source'),'audit_source',$folder,'fixture-source',3307,true);
 $manifest=['status'=>'backup_created','consistent_snapshot'=>true,'sha256'=>hash_file('sha256',$archive),'table_count'=>1,'backup_id'=>'fixture'];
 $dir=$folder.'/success';mkdir($dir,0700);$report=qhp_restore_apply($target,settings('audit_target'),'audit_target',$archive,$manifest,$dir,3307);
 $select='SELECT * FROM students ORDER BY id';$rows=$source->query($select)->fetchAll(PDO::FETCH_ASSOC);
