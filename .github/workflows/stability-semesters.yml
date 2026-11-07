@@ -4,6 +4,23 @@ on:
 permissions:
   contents: read
 jobs:
+  published-baseline-integration:
+    if: github.head_ref == 'release/semester-receipt-integration'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - run: node tests/semester-shared-sessions.cjs && node tests/stage2-atomic-sessions.cjs && node tests/stage2-atomic-local.cjs
+      - run: npx tsc --noEmit
   scope:
     if: github.head_ref == 'fix/stability-semester-stores'
     runs-on: ubuntu-latest

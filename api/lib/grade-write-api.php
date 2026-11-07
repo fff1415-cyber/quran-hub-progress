@@ -2,9 +2,16 @@
 declare(strict_types=1);
 require_once __DIR__.'/grade-cell-operations.php';
 require_once __DIR__.'/grade-plan-effect.php';
+require_once __DIR__.'/grade-cutover.php';
 
 /** Explicit rollout switch; creating tables alone never activates production writers. */
-function grade_writes_enabled():bool{return defined('QHP_GRADE_WRITES_V1') && QHP_GRADE_WRITES_V1 === true;}
+function grade_writes_enabled():bool{
+    if (defined('QHP_GRADE_WRITES_V1') && QHP_GRADE_WRITES_V1 === true) return true;
+    $root = dirname(__DIR__, 2);
+    if (!defined('DB_NAME') || DB_NAME !== 'u112851217_msht_io' ||
+        !preg_match('~^(/home/[^/]+)/domains/msht\.io/public_html$~D', $root, $paths)) return false;
+    return grade_cutover_protocol($root . '/index.html', $paths[1] . '/.qhp-private/grade-cutover.lock');
+}
 
 function grade_write_snapshot(PDO $pdo,int $cid,string $cursor='',string $logicalKey='grades'):array {
     $owns=!$pdo->inTransaction();
