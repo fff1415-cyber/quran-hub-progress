@@ -22,6 +22,14 @@ function summarize_manager_response(mixed $value, string $label): array {
             $body = $row['value'];
             $out['stores'][$row['key']] = ['type' => get_debug_type($body), 'list' => is_array($body) && array_is_list($body),
                 'bytes' => strlen(json_encode($body, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE))];
+            if ($row['key'] === 'scientific_grades') {
+                $configs = is_array($body['configs'] ?? null) ? $body['configs'] : [];
+                $out['scientific_config_shape'] = ['configs'=>count($configs),'missing_default_scores'=>0,'legacy_attendance_defaults'=>0];
+                foreach ($configs as $config) {
+                    if (!is_array($config['defaultScores'] ?? null)) $out['scientific_config_shape']['missing_default_scores']++;
+                    if (is_string($config['defaultScores']['attendance'] ?? null)) $out['scientific_config_shape']['legacy_attendance_defaults']++;
+                }
+            }
         }
     }
     if ($label === 'atomic_grades') $out['valid_snapshot'] = ($value['protocol'] ?? null) === 1 && $value['value'] instanceof stdClass && ($value['calendar_context']['known'] ?? null) === true;
@@ -52,6 +60,7 @@ try {
     ];
     foreach ($reads as $label => [$handler, $params]) {
         $_GET = $params;
+        $started = hrtime(true);
         try { $handler(); $result = ['status'=>'no_response']; }
         catch (ManagerProbeResponse $response) {
             $result = ['status'=>$response->getCode()];
@@ -67,7 +76,7 @@ try {
                 if (preg_match('/^[\p{Arabic}\p{P} ]{1,200}$/u', $message) || str_starts_with($message, 'Call to undefined function')) $result['message'] = $message;
             }
         }
-        $report[$label] = $result;
+        $report[$label] = $result + ['elapsed_ms'=>round((hrtime(true)-$started)/1000000,1)];
     }
     $pdo->rollBack();
     echo json_encode(['status'=>'manager_read_probe','results'=>$report,'production_writes'=>false], JSON_THROW_ON_ERROR) . "\n";
