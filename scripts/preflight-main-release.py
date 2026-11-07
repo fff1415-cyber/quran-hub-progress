@@ -30,9 +30,29 @@ code="eval(substr(base64_decode('"+schema+"'),5));"+r'''
 function grade_log_summary(string $front, int $since): array {
  $home=dirname($front,3);
  $files=[$home.'/.logs/error_log_msht.io',$front.'/error_log',$front.'/api/error_log'];
- $summary=['readable_sources'=>0,'recent_diagnostics'=>0,'grade_errors'=>[],'grade_php_fatals'=>0,'tail_truncated'=>false];
+ $dirs=[$home.'/.logs',dirname($front).'/logs',dirname($front).'/.logs',$front.'/.logs'];
+ $summary=['readable_sources'=>0,'visible_log_directories'=>0,'recent_diagnostics'=>0,'grade_errors'=>[],'grade_php_fatals'=>0,'tail_truncated'=>false,'explicit_log_errors'=>null];
+ foreach($dirs as $dir){
+  $resolved=realpath($dir);
+  if($resolved===false||!str_starts_with($resolved,$home.'/')||!is_dir($resolved)||!is_readable($resolved))continue;
+  $summary['visible_log_directories']++;
+  foreach(new DirectoryIterator($resolved) as $entry){
+   if(preg_match('/^(?:error_log(?:_msht\.io)?|msht\.io\.error\.log|error\.log)(?:\.[0-9]+)?$/D',$entry->getFilename())){
+    if($dir===$home.'/.logs'&&!str_contains($entry->getFilename(),'msht.io'))continue;
+    $files[]=$entry->getPathname();
+   }
+  }
+ }
+ foreach([$front.'/.user.ini',$front.'/api/.user.ini'] as $settings){
+  if(realpath($settings)===$settings&&is_readable($settings)){
+   $body=@file_get_contents($settings,false,null,0,65536);
+   if(is_string($body)&&preg_match_all('/^\s*log_errors\s*=\s*"?(on|off|true|false|1|0)"?\s*(?:;[^\r\n]*)?$/im',$body,$options)){
+    $summary['explicit_log_errors']=in_array(strtolower(end($options[1])),['on','true','1'],true);
+   }
+  }
+ }
  $seen=[];
- foreach($files as $file){
+ foreach(array_unique($files) as $file){
   if(!is_file($file)||!is_readable($file)||is_link($file)||realpath($file)!==$file)continue;
   $handle=@fopen($file,'rb');if(!$handle)continue;
   $summary['readable_sources']++;
