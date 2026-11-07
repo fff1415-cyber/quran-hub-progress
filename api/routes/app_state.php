@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../diagnostics.php';
 require_once __DIR__ . '/../lib/grade-write-api.php';
+require_once __DIR__ . '/../lib/semester-grade-reads.php';
 
 function app_state_tenant_enabled(PDO $pdo): bool
 {
@@ -52,13 +53,14 @@ function handle_list_app_state(): void
     $pdo = db();
     $tenants = app_state_tenant_enabled($pdo);
     $keyFilter = (string) ($_GET['key'] ?? '');
-    if (str_starts_with($keyFilter, 'grade_plan_')) error_response('سجلات الحفظ الداخلية غير متاحة من مخزن التطبيق العام', 403);
+    if (grade_store_internal_key($keyFilter)) error_response('سجلات الحفظ الداخلية غير متاحة من مخزن التطبيق العام', 403);
     if ($keyFilter === 'staff_tasks_v1') error_response('اعرض المهام من الواجهة المخصصة', 403);
 
     if (in_array($role, ['test_member', 'test_chair'], true)) {
         $allowed = ['weekly_tests', 'weekly_tests_settings'];
         if ($role === 'test_chair') $allowed = array_merge($allowed, ['staff_attendance', 'staff_attendance_settings']);
         if ($keyFilter !== '' && !in_array($keyFilter, $allowed, true)) error_response('غير مصرح بعرض هذه البيانات', 403);
+        if (in_array($keyFilter,['grades','weekly_tests','scientific_grades'],true) && (semester_grade_stores_enabled() || ($_GET['grade_protocol']??'')==='1' || ($_GET['legacy']??'')==='1')) { semester_handle_grade_read($pdo,$cid,$keyFilter);return; }
         $placeholders = implode(',', array_fill(0, count($allowed), '?'));
         $sql = $tenants
             ? "SELECT `key`, value FROM app_state WHERE complex_id = ? AND `key` IN ($placeholders)"
@@ -70,14 +72,11 @@ function handle_list_app_state(): void
             $row['value'] = json_decode($row['value'] ?? '{}', true);
             $row['context_complex_id'] = $cid;
         }
+        if($keyFilter==='')$rows=semester_project_grade_rows($pdo,$cid,$rows,array_values(array_intersect($allowed,['grades','weekly_tests','scientific_grades'])));
         json_response($keyFilter === '' ? $rows : array_values(array_filter($rows, fn($row) => $row['key'] === $keyFilter)));
     }
 
-    if ($keyFilter === 'grades' && ($_GET['grade_protocol'] ?? '') === '1') {
-        if (!grade_writes_enabled()) error_response('الحفظ المؤكد غير مفعّل بعد؛ بقيت مسودتك محفوظة محليًا', 503);
-        json_response(grade_write_snapshot($pdo, $cid, (string) ($_GET['grade_cursor'] ?? '')));
-        return;
-    }
+    if (in_array($keyFilter,['grades','weekly_tests','scientific_grades'],true) && (semester_grade_stores_enabled() || ($_GET['grade_protocol']??'')==='1' || ($_GET['legacy']??'')==='1')) { semester_handle_grade_read($pdo,$cid,$keyFilter);return; }
 
     $omitGradeValue = $keyFilter === '' && ($_GET['omit_grade_value'] ?? '') === '1';
     $valueColumn = $omitGradeValue ? "CASE WHEN `key`='grades' THEN NULL ELSE value END AS value" : 'value';
@@ -87,7 +86,7 @@ function handle_list_app_state(): void
             $stmt->execute([$cid, $keyFilter]);
             $rows = $stmt->fetchAll();
         } else {
-            $stmt = $pdo->prepare("SELECT `key`, $valueColumn FROM app_state WHERE complex_id = ? AND SUBSTR(`key`,1,11) <> 'grade_plan_'");
+            $stmt = $pdo->prepare("SELECT `key`, $valueColumn FROM app_state WHERE complex_id = ? AND SUBSTR(`key`,1,11) <> 'grade_plan_' AND SUBSTR(`key`,1,5) <> 'term:'");
             $stmt->execute([$cid]);
             $rows = $stmt->fetchAll();
         }
@@ -96,7 +95,7 @@ function handle_list_app_state(): void
         $stmt->execute([$keyFilter]);
         $rows = $stmt->fetchAll();
     } else {
-        $rows = $pdo->query("SELECT `key`, $valueColumn FROM app_state WHERE SUBSTR(`key`,1,11) <> 'grade_plan_'")->fetchAll();
+        $rows = $pdo->query("SELECT `key`, $valueColumn FROM app_state WHERE SUBSTR(`key`,1,11) <> 'grade_plan_' AND SUBSTR(`key`,1,5) <> 'term:'")->fetchAll();
     }
     $rows = array_values(array_filter($rows, static fn (array $row): bool => ($row['key'] ?? '') !== 'staff_tasks_v1' && !str_starts_with((string)($row['key'] ?? ''), 'grade_plan_')));
     foreach ($rows as &$row) {
@@ -108,6 +107,7 @@ function handle_list_app_state(): void
         }
     }
     if (!$rows && $keyFilter === 'grades') $rows[] = ['key'=>'grades','value'=>new stdClass(),'context_complex_id'=>$cid,'calendar_context'=>app_state_read_calendar_context($pdo,$cid)];
+    if($keyFilter==='')$rows=semester_project_grade_rows($pdo,$cid,$rows,['grades','weekly_tests','scientific_grades']);
     json_response($rows);
 }
 
@@ -288,6 +288,10 @@ function app_state_save_untruncated_history(PDO $pdo, int $cid, string $key, arr
         }
         foreach ($previous ?? [] as $record) {
             $keyForRow = app_state_history_retention_key($record);
+            if ($key === 'academic_records' && !empty($record['assignmentId']) && isset($record['newPlanTitle'])) {
+                $same = array_values(array_filter($value, static fn($item) => is_array($item) && ($item['id'] ?? null) === ($record['id'] ?? null)));
+                if (count($same) !== 1 || $same[0] != $record) { $pdo->rollBack(); error_response('سجل الاجتياز مؤكد بمعاملة الانتقال؛ لم يُستبدل من نسخة جهاز قديمة', 409); }
+            }
             if (empty($remaining[$keyForRow])) {
                 $pdo->rollBack();
                 error_response('الطلب مختصر أو قديم وسيُسقط سجلات محفوظة — حدّث الصفحة؛ لم يتغير التاريخ المحفوظ', 409);
@@ -362,7 +366,7 @@ function handle_set_app_state(): void
     $cid = require_complex_id($auth);
     $input = json_input();
     $key = (string) ($input['key'] ?? '');
-    if (str_starts_with($key, 'grade_plan_')) error_response('سجلات الحفظ الداخلية لا تُستبدل من مخزن التطبيق العام', 403);
+    if (grade_store_internal_key($key)) error_response('سجلات الحفظ الداخلية لا تُستبدل من مخزن التطبيق العام', 403);
     if ($key === 'late_permissions') error_response('سجّل إذن الدخول من الواجهة المخصصة', 403);
     if ($key === 'staff_tasks_v1') error_response('حدّث المهام من الواجهة المخصصة', 403);
     $role = (string) ($auth['role'] ?? '');
@@ -377,9 +381,9 @@ function handle_set_app_state(): void
 
     if (array_key_exists('grade_write_protocol', $input)
         && in_array($key, ['grades', 'weekly_tests', 'scientific_grades'], true)) {
-        if ($key === 'grades' && $input['grade_write_protocol'] === 1 && grade_writes_enabled()) {
+        if (in_array($key,['grades','scientific_grades'],true) && $input['grade_write_protocol'] === 1 && shared_grade_writes_enabled($key)) {
             try {
-                $receipt = grade_write_request(db(), $cid, is_array($input['value'] ?? null) ? $input['value'] : [], $auth);
+                $receipt = grade_write_request(db(), $cid, is_array($input['value'] ?? null) ? $input['value'] : [], $auth, $key);
                 json_response(['ok'=>true] + $receipt);return;
             } catch (Throwable $error) {
                 error_response($error instanceof PDOException ? api_safe_failure_message($error, 'grade_cells') : $error->getMessage(), $error instanceof PDOException ? api_database_error_status($error) : (in_array($error->getCode(), [400,409], true) ? $error->getCode() : 503));
@@ -388,7 +392,7 @@ function handle_set_app_state(): void
         error_response('نسخة الخادم لا تدعم طريقة حفظ الدرجات المطلوبة؛ لم تتغير السجلات. حدّث الصفحة قبل إعادة المحاولة.', 503);
     }
 
-    if ($key === 'grades' && grade_writes_enabled()) error_response('طريقة الحفظ القديمة لا تؤكد الخلايا؛ حدّث الصفحة. لم تُستبدل أي درجات', 409);
+    if (in_array($key,['grades','weekly_tests','scientific_grades'],true) && shared_grade_writes_enabled($key)) error_response('طريقة الحفظ القديمة لا تؤكد الخلايا؛ حدّث الصفحة. لم تُستبدل أي درجات', 409);
 
     $pdo = db();
     if ($key === 'sard_queue') {

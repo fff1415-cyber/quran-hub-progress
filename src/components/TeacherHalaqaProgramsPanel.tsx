@@ -1,3 +1,4 @@
+import { assertSharedGradePeriod, currentGradeOutbox } from "@/lib/grade-sync";
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { loadGrades, loadStudents, loadHalaqat, GRADES_CHANGED_EVENT } from "@/lib/mock-data";
 import { gradeViewerSectionLabel, resolveAssistantCode, shouldShowGradeViewerDivider } from "@/lib/halaqa-assistants";
@@ -120,8 +121,10 @@ export function TeacherHalaqaProgramsPanel({
     if (!isScientificProgramEnabled(cfg)) return;
     const ids = allStudentIdsKey ? allStudentIdsKey.split(",").filter(Boolean) : [];
     if (ids.length === 0) return;
-    syncScientificScoresFromPrepForHalaqa(halaqaId, loadGrades(), ids, cfg);
-  }, [halaqaId, allStudentIdsKey]);
+    const box = currentGradeOutbox(); if (box && !box.snapshot()) return;
+    try { assertSharedGradePeriod("grades", calendar.semester?.id ?? null); assertSharedGradePeriod("scientific_grades", calendar.semester?.id ?? null); } catch { return; }
+    syncScientificScoresFromPrepForHalaqa(halaqaId, box?.snapshot()?.value ?? loadGrades(), ids, cfg);
+  }, [halaqaId, allStudentIdsKey, calendar.semester?.id]);
 
   useEffect(() => {
     syncScientificFromPrep();

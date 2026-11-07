@@ -1,3 +1,4 @@
+import { sharedGradeView, recordSharedGradeEdit } from "./grade-sync";
 /** Teacher-configured numeric scores — reflected in halaqa program totals only. */
 import { hasAuthToken } from "@/lib/auth-session";
 import { ATTENDANCE_OPTION_LABELS, type AttendanceOption } from "@/lib/grade-input-settings";
@@ -177,7 +178,7 @@ function persist(store: ScientificGradesStore) {
   }, SCIENTIFIC_CLOUD_DEBOUNCE_MS);
 }
 
-export function loadScientificGradesStore(): ScientificGradesStore {
+function loadLegacyScientificGradesStore(): ScientificGradesStore {
   if (typeof window === "undefined") {
     return { configs: {}, data: {}, overrides: {} };
   }
@@ -195,7 +196,9 @@ export function loadScientificGradesStore(): ScientificGradesStore {
   }
 }
 
+export function loadScientificGradesStore(): ScientificGradesStore { return sharedGradeView("scientific_grades", loadLegacyScientificGradesStore()); }
 export function saveScientificGradesStore(store: ScientificGradesStore) {
+  if (typeof window !== "undefined" && sessionStorage.getItem("qs_syncing") !== "1" && recordSharedGradeEdit("scientific_grades", loadScientificGradesStore(), store)) { persist(store); return; }
   localStorage.setItem(KEY, JSON.stringify(store));
   notifyScientificGradesChanged();
   persist(store);
