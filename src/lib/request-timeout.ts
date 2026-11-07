@@ -19,7 +19,11 @@ export async function fetchWithTimeout(
       status: response.status, statusText: response.statusText, headers: response.headers,
     });
   } catch (error) {
-    if (timedOut) throw new Error("انتهت مهلة الطلب؛ لم يتأكد الحفظ. تحقّق من النتيجة قبل إعادة الإرسال");
+    if (timedOut) {
+      const method = (options.method ?? (input instanceof Request ? input.method : "GET")).toUpperCase();
+      if (method === "GET" || method === "HEAD") throw new Error("انتهت مهلة قراءة البيانات؛ أعد محاولة التحديث");
+      throw new Error("انتهت مهلة الطلب؛ لم يتأكد الحفظ. تحقّق من النتيجة قبل إعادة الإرسال");
+    }
     throw error;
   } finally {
     clearTimeout(timer);

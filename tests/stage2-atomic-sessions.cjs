@@ -34,6 +34,13 @@ async function stop(){
  await stop();
  await start(false);
  assert.deepEqual((await request('assistant')).value,prior);
+ for(const role of ['manager','teacher','assistant']){
+  const response=await fetch(base+'?omit_grade_value=1',{headers:{Authorization:'Bearer fixture-'+role}});
+  assert.equal(response.status,200);
+  const row=(await response.json()).find(r=>r.key==='grades');assert(row);
+  assert.deepEqual(row.value,[],'bulk refresh contains only the grade marker');
+  assert.deepEqual((await request(role)).value,prior,'atomic endpoint still returns exact attendance and historical grades');
+ }
  assert.equal((await legacy('teacher',{...prior,historic:{}})).status,409);
  assert.deepEqual((await request('teacher')).value,prior);
  console.log('PASS: legacy writes remain available before activation; atomic writes are fenced before activation, inherit the last saved store, and fence stale legacy replacements afterwards');
