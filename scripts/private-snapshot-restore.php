@@ -106,17 +106,25 @@ function qhp_restore_compare(PDO $pdo,array $settings,string $target,string $dir
     foreach($expected as$table=>$meta)if((int)$pdo->query('SELECT COUNT(*) FROM `'.$table.'`')->fetchColumn()!==$meta['row_count'])throw new RuntimeException('restored_row_count_differs');
     if(qhp_restore_archive(qhp_restore_dump($settings,$target,$directory,$name,$port))!==$expected)throw new RuntimeException('restored_schema_or_values_differ');
 }
-function qhp_restore_apply(PDO $pdo,array $settings,string $target,string $archive,array $manifest,string $directory,int $port=3306):array {
+function qhp_restore_apply(PDO $pdo,array $settings,string $target,string $archive,array $manifest,string $directory,int $port=3306,bool $preserveGradeTables=false):array {
     qhp_restore_identity($pdo,$target);
     if(($manifest['status']??null)!=='backup_created'||($manifest['consistent_snapshot']??false)!==true||!hash_equals((string)($manifest['sha256']??''),(string)hash_file('sha256',$archive)))throw new RuntimeException('source_archive_integrity_failed');
     $expected=qhp_restore_archive($archive);if(count($expected)!==(int)($manifest['table_count']??0))throw new RuntimeException('source_manifest_table_count_differs');
-    if(qhp_restore_tables($pdo)!==array_keys($expected))throw new RuntimeException('test_schema_table_set_differs_before_restore');
+    $actualTables=qhp_restore_tables($pdo);$extras=array_values(array_diff($actualTables,array_keys($expected)));
+    if(array_values(array_diff($actualTables,$extras))!==array_keys($expected) ||
+       ($extras && (!$preserveGradeTables || $extras!==['grade_cell_versions','grade_operation_receipts'])))throw new RuntimeException('test_schema_table_set_differs_before_restore');
     $old=qhp_restore_dump($settings,$target,$directory,'test-before-restore',$port);$previous=qhp_restore_archive($old);
-    if(array_keys($previous)!==array_keys($expected))throw new RuntimeException('test_safety_backup_incomplete');
+    if(array_keys($previous)!==$actualTables)throw new RuntimeException('test_safety_backup_incomplete');
+    $roundtrip=$expected;
+    foreach($extras as$table){
+        if($previous[$table]['row_count']!==0)throw new RuntimeException('test_protocol_tables_not_empty');
+        $roundtrip[$table]=$previous[$table];
+    }
+    ksort($roundtrip);
     $oldSha=hash_file('sha256',$old);if(!file_put_contents($directory.'/test-before-restore.sha256',$oldSha."\n",LOCK_EX))throw new RuntimeException('test_backup_manifest_write_failed');
     $pdo->exec("SET SESSION sql_mode='NO_AUTO_VALUE_ON_ZERO', SESSION time_zone='+00:00', SESSION foreign_key_checks=0");
     try{
-        qhp_restore_identity($pdo,$target);if(!hash_equals($manifest['sha256'],(string)hash_file('sha256',$archive)))throw new RuntimeException('source_archive_changed');qhp_restore_archive($archive,$pdo);qhp_restore_compare($pdo,$settings,$target,$directory,'restored-roundtrip',$expected,$port);
+        qhp_restore_identity($pdo,$target);if(!hash_equals($manifest['sha256'],(string)hash_file('sha256',$archive)))throw new RuntimeException('source_archive_changed');qhp_restore_archive($archive,$pdo);qhp_restore_compare($pdo,$settings,$target,$directory,'restored-roundtrip',$roundtrip,$port);
     }catch(Throwable $failure){
         try{qhp_restore_identity($pdo,$target);if(!hash_equals($oldSha,(string)hash_file('sha256',$old)))throw new RuntimeException('test_backup_changed');qhp_restore_archive($old,$pdo);qhp_restore_compare($pdo,$settings,$target,$directory,'rollback-roundtrip',$previous,$port);}
         catch(Throwable){throw new RuntimeException('test_restore_failed_private_rollback_needs_review');}

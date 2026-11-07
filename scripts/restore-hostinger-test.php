@@ -18,7 +18,7 @@ try{
  if($source===null)throw new RuntimeException('no_private_production_archive');
  $stage='test_grants';$pdo=new PDO('mysql:host='.$settings['host'].';dbname='.$target.';charset=utf8mb4',$settings['user'],$settings['password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::MYSQL_ATTR_MULTI_STATEMENTS=>false]);qhp_restore_identity($pdo,$target);
  $stage='private_test_restore';$directory=$private.'/restore-'.$manifest['backup_id'].'-'.bin2hex(random_bytes(5));if(!mkdir($directory,0700))throw new RuntimeException('private_restore_directory_unavailable');
- $report=qhp_restore_apply($pdo,$settings,$target,$source,$manifest,$directory);
+ $report=qhp_restore_apply($pdo,$settings,$target,$source,$manifest,$directory,3306,($argv[3]??'')==='preserve-empty-grade-tables');
  $stage='restored_schema_compatibility';$pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();$report['application_schema']=schema_inspect($pdo);$pdo->rollBack();
  $report['restored_database']=$target;$report['verified_at_utc']=gmdate('c');$report['private_test_backup_location']=basename($directory);$report['main_api_path_verified']=true;
  if(!file_put_contents($directory.'/verified.json',json_encode($report,JSON_PRETTY_PRINT|JSON_THROW_ON_ERROR)."\n",LOCK_EX))throw new RuntimeException('restore_receipt_write_failed');

@@ -16,7 +16,8 @@ for file in ['scripts/private-test-config.php','scripts/private-snapshot-restore
 with tempfile.TemporaryDirectory() as folder:
     ask=pathlib.Path(folder,'askpass');ask.write_text('#!/bin/sh\nprintf "%s\\n" "$DEPLOY_SSH_PASSWORD"\n');ask.chmod(0o700)
     env=dict(os.environ,SSH_ASKPASS=str(ask),SSH_ASKPASS_REQUIRE='force',DISPLAY=':0')
-    command='php -d display_errors=0 -r '+shlex.quote(code)+' -- '+shlex.quote(root)+' '+shlex.quote(home)
+    preserve=' preserve-empty-grade-tables' if os.environ.get('PRESERVE_EMPTY_GRADE_TABLES')=='1' else ''
+    command='php -d display_errors=0 -r '+shlex.quote(code)+' -- '+shlex.quote(root)+' '+shlex.quote(home)+preserve
     result=subprocess.run(['ssh','-T','-p','65002','-o','ConnectTimeout=20','-o','StrictHostKeyChecking=accept-new',user+'@'+host,command],env=env,capture_output=True,timeout=360,start_new_session=True)
     print(result.stdout.decode())
     if result.returncode:raise SystemExit('Independent restoration incomplete; details and data stay on Hostinger')

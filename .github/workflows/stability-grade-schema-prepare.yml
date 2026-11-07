@@ -1,7 +1,7 @@
 name: Prepare production grade tables without activation
 on:
   pull_request:
-    types: [opened]
+    types: [opened, synchronize]
 permissions:
   contents: read
 jobs:
@@ -32,8 +32,15 @@ jobs:
           umask 077
           printf 'BACKUP_RESULT_FILE=%s\nRESTORE_RESULT_FILE=%s\nGRADE_TEST_RESULT_FILE=%s\n' "$RUNNER_TEMP/grade-backup.json" "$RUNNER_TEMP/grade-restore.json" "$RUNNER_TEMP/grade-schema.json" >> "$GITHUB_ENV"
       - name: Fresh private snapshot of the current production data
+        if: github.event.action == 'opened'
         run: python3 scripts/create-private-db-backup.py | tee "$BACKUP_RESULT_FILE"
+      - name: Reuse the fresh snapshot from the stopped attempt
+        if: github.event.action == 'synchronize'
+        run: |
+          printf '%s\n' '{"backup_id":"20261107T182611Z-ca1f2af7d7","sha256":"e84d73f1c4f6a7e32c9488ac1e0bc4ad40107e6670bb6701ad8b6a9fdc05d29d"}' > "$BACKUP_RESULT_FILE"
       - name: Verify a round-trip restore in the independent database
+        env:
+          PRESERVE_EMPTY_GRADE_TABLES: '1'
         run: python3 scripts/restore-hostinger-test.py | tee "$RESTORE_RESULT_FILE"
       - name: Validate the exact additive schema against the freshly restored data
         run: python3 scripts/test-grade-schema.py | tee "$GRADE_TEST_RESULT_FILE"

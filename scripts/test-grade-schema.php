@@ -54,7 +54,12 @@ try {
     $stage = 'verify_restored_baseline';
     $expected = qhp_restore_archive($expectedArchive);
     $before = qhp_restore_archive(qhp_restore_dump($settings, $target, $directory, 'before'));
-    if ($expected !== $before || count($before) !== 16) throw new RuntimeException('test_baseline_changed');
+    if ($expected !== $before) throw new RuntimeException('test_baseline_changed');
+    foreach ($tables as $table) {
+        if (isset($before[$table]) && (!$fresh || $before[$table]['row_count'] !== 0)) throw new RuntimeException('unexpected_protocol_rows');
+        unset($before[$table]);
+    }
+    if (count($before) !== 16) throw new RuntimeException('unexpected_legacy_table_count');
     $stage = 'add_test_tables';
     $pdo->exec('SET SESSION lock_wait_timeout=3');
     foreach ($statements as $statement) $pdo->exec($statement);
