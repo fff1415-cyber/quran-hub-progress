@@ -14,7 +14,7 @@ jobs:
           fetch-depth: 0
       - name: Verify live marker, main roots, schema and candidate API baseline without writes
         env:
-          RELEASE_CANDIDATE: 9345b1b04ccc2ed7c3856f9c5a46336af420e853
+          RELEASE_CANDIDATE: c2d339b801cbb666ef91b1e704a5606267468d63
           REQUIRE_PUBLISHED_CANDIDATE: 'true'
           DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
           DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
