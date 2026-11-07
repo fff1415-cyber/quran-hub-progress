@@ -1,5 +1,5 @@
 """Test an additive index only on the verified restored database; no production connection."""
-import base64, ipaddress, os, pathlib, re, shlex, subprocess, tempfile
+import base64, ipaddress, json, os, pathlib, re, shlex, subprocess, tempfile
 
 user=os.environ['DEPLOY_USER'].strip().split('@')[0]
 host=os.environ['DEPLOY_HOST'].strip()
@@ -16,7 +16,13 @@ for file in ['scripts/private-test-config.php','scripts/private-snapshot-restore
 with tempfile.TemporaryDirectory() as folder:
     ask=pathlib.Path(folder,'askpass');ask.write_text('#!/bin/sh\nprintf "%s\\n" "$DEPLOY_SSH_PASSWORD"\n');ask.chmod(0o700)
     env=dict(os.environ,SSH_ASKPASS=str(ask),SSH_ASKPASS_REQUIRE='force',DISPLAY=':0')
-    command='php -d display_errors=0 -r '+shlex.quote(code)+' -- '+shlex.quote(root)+' '+shlex.quote(home)
+    arguments=[root,home]
+    if os.environ.get('RESTORE_RESULT_FILE'):
+        report=json.loads(pathlib.Path(os.environ['RESTORE_RESULT_FILE']).read_text())
+        backup=json.loads(pathlib.Path(os.environ['BACKUP_RESULT_FILE']).read_text())
+        if report['status']!='independent_restore_verified' or report['source_sha256']!=backup['sha256'] or report['source_backup_id']!=backup['backup_id']:raise SystemExit('Restore did not verify this fresh backup')
+        arguments += [report['private_test_backup_location'],report['source_sha256']]
+    command='php -d display_errors=0 -r '+shlex.quote(code)+' -- '+' '.join(map(shlex.quote,arguments))
     result=subprocess.run(['ssh','-T','-p','65002','-o','ConnectTimeout=20','-o','StrictHostKeyChecking=accept-new',user+'@'+host,command],env=env,capture_output=True,timeout=360,start_new_session=True)
     print(result.stdout.decode())
     if result.returncode:raise SystemExit('Independent schema compatibility test incomplete; details and data stay on Hostinger')
