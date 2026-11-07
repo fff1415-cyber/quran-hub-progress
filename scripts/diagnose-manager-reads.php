@@ -16,7 +16,7 @@ function json_response(mixed $data, int $status = 200): never { throw new Manage
 function error_response(string $message, int $status = 400): never { throw new ManagerProbeResponse(['error' => $message], $status); }
 function summarize_manager_response(mixed $value, string $label): array {
     $out = ['bytes' => strlen(json_encode($value, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE))];
-    if ($label === 'app_state') {
+    if (in_array($label, ['app_state','app_state_compact'], true)) {
         $keys = ['grades','weekly_tests','weekly_tests_settings','staff_attendance','staff_attendance_settings','sard_queue','sard_history','academic_records','halaqa_programs','halaqa_program_grades','scientific_grades','message_templates','late_permissions','student_portal_settings','push_notification_settings','complex_features','financial_ledger','tarbawi_program'];
         foreach ($value as $row) if (in_array($row['key'] ?? null, $keys, true)) {
             $body = $row['value'];
@@ -37,8 +37,10 @@ function summarize_manager_response(mixed $value, string $label): array {
 }
 try {
     $root = $argv[1];
+    $expected = $argv[2] ?? '';
     if (!preg_match('~^/home/[A-Za-z0-9_-]+/domains/msht\.io/public_html$~D', $root) ||
-        realpath($root) !== $root || trim(file_get_contents($root . '/deploy-sha.txt')) !== '39066642fc089771b2fa68f86e89ca3e942aa2e4') throw new RuntimeException('unexpected_site_scope');
+        !preg_match('/^[0-9a-f]{40}$/D', $expected) || realpath($root) !== $root ||
+        trim(file_get_contents($root . '/deploy-sha.txt')) !== $expected) throw new RuntimeException('unexpected_site_scope');
     require $root . '/api/config.php';
     require $root . '/api/config-loader.php';
     api_load_optional_config();
@@ -56,6 +58,7 @@ try {
     $reads = [
         'students' => ['handle_list_students', []], 'halaqat' => ['handle_list_halaqat', []],
         'active_semester' => ['handle_get_active_semester', []], 'app_state' => ['handle_list_app_state', []],
+        'app_state_compact' => ['handle_list_app_state', ['omit_grade_value'=>'1']],
         'atomic_grades' => ['handle_list_app_state', ['key'=>'grades','grade_protocol'=>'1']],
     ];
     foreach ($reads as $label => [$handler, $params]) {
@@ -78,8 +81,13 @@ try {
         }
         $report[$label] = $result + ['elapsed_ms'=>round((hrtime(true)-$started)/1000000,1)];
     }
+    $receipts = (int) $pdo->query("SELECT COUNT(*) FROM grade_operation_receipts WHERE store_key='grades' AND operation_id REGEXP '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'")->fetchColumn();
     $pdo->rollBack();
-    echo json_encode(['status'=>'manager_read_probe','results'=>$report,'production_writes'=>false], JSON_THROW_ON_ERROR) . "\n";
+    $success = !array_filter($report, static fn($result) => $result['status'] !== 200)
+        && ($report['app_state_compact']['stores']['grades']['bytes'] ?? null) === 2
+        && $report['atomic_grades']['valid_snapshot'] === true;
+    echo json_encode(['status'=>'manager_read_probe','published_sha'=>$expected,'compact_and_atomic_reads_verified'=>$success,'results'=>$report,'confirmed_browser_receipts'=>$receipts,'production_writes'=>false], JSON_THROW_ON_ERROR) . "\n";
+    if (!$success) exit(1);
 } catch (Throwable $error) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
     echo json_encode(['status'=>'manager_probe_incomplete','class'=>get_class($error),
