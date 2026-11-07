@@ -26,6 +26,7 @@ function stop_grade_worker(array $worker): void {
 }
 $root = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'qhp-cutover-' . bin2hex(random_bytes(6));
 mkdir($root, 0700); mkdir($root . '/assets', 0700);
+mkdir($root . '/api', 0700);
 $entry = $root . '/index.html';
 $lock = $root . '/cutover.lock';
 $base = str_repeat('a', 40);
@@ -48,6 +49,13 @@ file_put_contents($root . '/deploy-sha.txt', $base . "\n");
 fclose(grade_release_lock($lock));
 $worker = null;
 try {
+    $library = '<?php function cutover_fixture_dependency() {}';
+    $manifest = [['path' => 'lib/fixture.php', 'content' => base64_encode($library),
+        'sha256' => hash('sha256', $library), 'beforeSha256' => null]];
+    grade_release_publish_api($root, $manifest);
+    expect(file_get_contents($root . '/api/lib/fixture.php') === $library, 'missing allowlisted API library directory is created before its new dependency');
+    grade_release_publish_api($root, $manifest);
+    expect(file_get_contents($root . '/api/lib/fixture.php') === $library, 'retry accepts a file already staged with the approved bytes');
     $worker = start_grade_worker($entry, $lock, true);
     expect($worker[2] === 'legacy', 'prepared backend keeps existing grade writes in legacy mode');
     $probe = fopen($lock, 'r+b');
@@ -70,5 +78,8 @@ try {
     if ($worker) stop_grade_worker($worker);
     foreach (glob($root . '/assets/*') as $asset) unlink($asset);
     foreach ([$entry, $lock, $root . '/deploy-sha.txt'] as $file) unlink($file);
+    if (is_file($root . '/api/lib/fixture.php')) unlink($root . '/api/lib/fixture.php');
+    if (is_dir($root . '/api/lib')) rmdir($root . '/api/lib');
+    rmdir($root . '/api');
     rmdir($root . '/assets'); rmdir($root);
 }

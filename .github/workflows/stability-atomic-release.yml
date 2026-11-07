@@ -5,6 +5,13 @@ on:
 permissions:
   contents: read
 jobs:
+  api-stage-retry:
+    if: github.head_ref == 'release/stability-atomic-deploy-retry'
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - run: php tests/grade-entry-cutover.php
   cutover:
     if: github.head_ref == 'release/stability-atomic'
     runs-on: ubuntu-latest

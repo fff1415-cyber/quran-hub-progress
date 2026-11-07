@@ -69,7 +69,7 @@ function grade_release_fallback(string $root, string $lockPath, string $html, st
 }
 function grade_release_publish_api(string $root, array $items): void {
     if (!$items || count($items) > 80) throw new RuntimeException('invalid_api_package_size');
-    $files = [];
+    $files = []; $directories = [];
     foreach ($items as $item) {
         $relative = $item['path'] ?? '';
         if (!preg_match('~^(?:[a-zA-Z0-9_-]+/)*[a-zA-Z0-9_-]+\.php$~D', $relative) ||
@@ -77,20 +77,32 @@ function grade_release_publish_api(string $root, array $items): void {
             throw new RuntimeException('invalid_api_path');
         }
         $file = $root . '/api/' . $relative;
+        $directory = dirname($file);
         $content = base64_decode($item['content'] ?? '', true);
         $before = $item['beforeSha256'];
+        if (realpath($directory) !== $directory) {
+            if ($directory !== $root . '/api/lib' || file_exists($directory) || is_link($directory) ||
+                realpath(dirname($directory)) !== dirname($directory) || $before !== null) throw new RuntimeException('unexpected_api_parent');
+            $directories[$directory] = true;
+        }
+        $actual = is_file($file) && !is_link($file) ? hash_file('sha256', $file) : null;
         if ($content === false || hash('sha256', $content) !== $item['sha256'] || is_link($file) ||
-            realpath(dirname($file)) !== dirname($file) || ($before === null ? file_exists($file) : hash_file('sha256', $file) !== $before)) {
+            ($actual !== $before && $actual !== $item['sha256']) || ($actual === null && file_exists($file))) {
             throw new RuntimeException('api_baseline_or_payload_changed');
         }
-        $files[$relative] = [$file, $content, $before === null];
+        $files[$relative] = [$file, $content, $before === null, $actual === $item['sha256']];
+    }
+    foreach (array_keys($directories) as $directory) {
+        if (!mkdir($directory, 0755) || !chmod($directory, 0755) || realpath($directory) !== $directory) {
+            throw new RuntimeException('api_lib_directory_creation_failed');
+        }
     }
     // Install new dependencies first. The app-state route supplies the fence before the kiosk route uses it.
     uksort($files, static function ($a, $b) use ($files) {
         $rank = static fn ($p) => $files[$p][2] ? 0 : ($p === 'routes/app_state.php' ? 1 : 2);
         return $rank($a) <=> $rank($b) ?: strcmp($a, $b);
     });
-    foreach ($files as [$file, $content]) grade_release_atomic($file, $content);
+    foreach ($files as [$file, $content, , $unchanged]) if (!$unchanged) grade_release_atomic($file, $content);
 }
 function grade_release_db(string $root): PDO {
     require_once $root . '/api/config.php';
