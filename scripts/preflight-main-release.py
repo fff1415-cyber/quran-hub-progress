@@ -27,6 +27,40 @@ if os.environ.get('REQUIRE_PUBLISHED_CANDIDATE')=='true':
         if status not in ['401','403']:raise SystemExit('An authenticated data endpoint did not reject an anonymous request')
 schema=base64.b64encode(pathlib.Path('api/schema.php').read_bytes()).decode()
 code="eval(substr(base64_decode('"+schema+"'),5));"+r'''
+function grade_log_summary(string $front, int $since): array {
+ $home=dirname($front,3);
+ $files=[$home.'/.logs/error_log_msht.io',$front.'/error_log',$front.'/api/error_log'];
+ $summary=['readable_sources'=>0,'recent_diagnostics'=>0,'grade_errors'=>[],'grade_php_fatals'=>0,'tail_truncated'=>false];
+ $seen=[];
+ foreach($files as $file){
+  if(!is_file($file)||!is_readable($file)||is_link($file)||realpath($file)!==$file)continue;
+  $handle=@fopen($file,'rb');if(!$handle)continue;
+  $summary['readable_sources']++;
+  $stat=fstat($handle);
+  if(($stat['size']??0)>2097152){fseek($handle,-2097152,SEEK_END);fgets($handle);$summary['tail_truncated']=true;}
+  while(($line=fgets($handle,65536))!==false){
+   if(!preg_match('/^\[([^\]]+)\]/',$line,$match))continue;
+   $time=strtotime($match[1]);if($time===false||$time<$since)continue;
+   $json=strpos($line,'{"event":"qhp_failure"');
+   if($json!==false){
+    $entry=json_decode(trim(substr($line,$json)),true);
+    if(!is_array($entry))continue;
+    $id=$entry['reference']??null;
+    if(is_string($id)){if(isset($seen[$id]))continue;$seen[$id]=true;}
+    $summary['recent_diagnostics']++;
+    if(($entry['context']??null)==='grade_cells'){
+     $category=$entry['category']??'other';
+     if(!in_array($category,['connection','permission','schema','timeout','conflict','integrity','sql'],true))$category='other';
+     $summary['grade_errors'][$category]=($summary['grade_errors'][$category]??0)+1;
+    }
+   }elseif(preg_match('/PHP (?:Fatal|Parse) error/i',$line)&&preg_match('/grade-(?:cutover|cell|write|plan)|routes\/app_state\.php/',$line)){
+    $summary['grade_php_fatals']++;
+   }
+  }
+  fclose($handle);
+ }
+ return $summary;
+}
 try {
  $front=$argv[1];$api=$argv[2];if(realpath($front)!==$front||realpath($api)!==$api)throw new RuntimeException('resolved_main_root_mismatch');
  foreach([$front.'/index.html',$front.'/.htaccess',$front.'/assets',$api.'/routes',$api.'/lib',$api.'/r.php']as$p)if(is_link($p))throw new RuntimeException('symlink_in_release_path');
@@ -42,10 +76,14 @@ try {
    $rows['confirmed_grade_receipts']=(int)$pdo->query("SELECT COUNT(*) FROM grade_operation_receipts WHERE store_key='grades'")->fetchColumn();
    $rows['confirmed_browser_grade_receipts']=(int)$pdo->query("SELECT COUNT(*) FROM grade_operation_receipts WHERE store_key='grades' AND operation_id REGEXP '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'")->fetchColumn();
    $rows['confirmed_grade_plan_events']=(int)$pdo->query("SELECT COUNT(*) FROM app_state WHERE LEFT(`key`,17)='grade_plan_event:'")->fetchColumn();
+   $first=$pdo->query("SELECT MIN(UNIX_TIMESTAMP(applied_at)) FROM grade_operation_receipts WHERE store_key='grades' AND operation_id REGEXP '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'")->fetchColumn();
+   $rows['first_browser_receipt_utc']=$first===null?null:gmdate('c',(int)$first);
+   $rows['grade_receipts_with_plan_event']=(int)$pdo->query("SELECT COUNT(*) FROM grade_operation_receipts r WHERE r.store_key='grades' AND EXISTS(SELECT 1 FROM app_state s WHERE s.complex_id=r.context_id AND s.`key`=CONCAT('grade_plan_event:',SHA2(r.operation_id,256)))")->fetchColumn();
   }
  }$pdo->rollBack();
+ $logs=($argv[3]??'')==='atomic'?grade_log_summary($front,strtotime('2026-11-07T19:08:10Z')):null;
  $flags=[];foreach(['QHP_GRADE_WRITES_V1','QHP_SHARED_GRADE_WRITES_V1','QHP_SEMESTER_STORES_V1','QHP_TRANSFER_WRITES_V1']as$f)$flags[$f]=defined($f)&&constant($f)===true;
- echo json_encode(['status'=>'main_preflight','database_identity_confirmed'=>$identity,'main_roots_confirmed'=>true,'schema'=>$schema,'duplicate_evaluation_groups'=>$duplicates,'php_compatible'=>PHP_VERSION_ID>=80100,'flags'=>$flags,'read_only_counts'=>$rows,'production_writes'=>false])."\n";
+ echo json_encode(['status'=>'main_preflight','database_identity_confirmed'=>$identity,'main_roots_confirmed'=>true,'schema'=>$schema,'duplicate_evaluation_groups'=>$duplicates,'php_compatible'=>PHP_VERSION_ID>=80100,'flags'=>$flags,'read_only_counts'=>$rows,'php_log_summary'=>$logs,'production_writes'=>false])."\n";
  if(!$identity||!$schema['ready']||PHP_VERSION_ID<80100)exit(1);
 }catch(Throwable){echo "{\"status\":\"main_preflight_incomplete\",\"production_writes\":false}\n";exit(1);}
 '''
