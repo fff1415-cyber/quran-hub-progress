@@ -1,0 +1,24 @@
+name: Grade protocol rehearsal on Hostinger test
+on:
+  pull_request:
+    types: [opened, synchronize]
+permissions:
+  contents: read
+jobs:
+  isolated-rehearsal:
+    if: github.head_ref == 'ops/grade-host-rehearsal' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: 410719acbbbbeac7a06bdd5825b10bd706976e7d
+          path: candidate
+          persist-credentials: false
+      - name: Read restored grades and roll back synthetic teacher and assistant writes
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: python3 scripts/rehearse-grade-host.py
