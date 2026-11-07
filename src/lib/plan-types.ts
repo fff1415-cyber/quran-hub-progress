@@ -7,6 +7,7 @@ export type AssignmentStatus = "active" | "frozen" | "transferred";
 export type HalaqaPlanStatusEntry = {
   student_id: string;
   status: "active" | "frozen";
+  assignment_id?: string;
 };
 
 /** Daily face quotas + tap→face mapping (plan defaults, copied to assignment on link). */

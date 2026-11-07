@@ -599,7 +599,13 @@ function handle_kiosk_check_in(): void
 
     $week['days'][$dayKey]['attendance'] = $attendance;
     $grades[$sid][$weekKey] = $week;
-    kiosk_save_grades($pdo, $cid, $grades);
+    if (grade_writes_enabled()) {
+        if (!kiosk_record_atomic_attendance($pdo, $cid, $sid, $weekKey, $dayKey, $attendance)) {
+            json_response(['status'=>'already_checked_in','message'=>'مسجّل مسبقاً اليوم','studentName'=>$student['name']]);return;
+        }
+    } else {
+        kiosk_save_grades($pdo, $cid, $grades);
+    }
 
     if ($attendance === 'late') {
         json_response([
@@ -692,4 +698,13 @@ function handle_kiosk_put_settings(): void
     }
 
     handle_kiosk_get_settings();
+}
+
+/** Existing public kiosk policy, fenced against a concurrent teacher change; neighbouring cells stay intact. */
+function kiosk_record_atomic_attendance(PDO $pdo,int $cid,string $student,string $week,string $day,string $attendance):bool {
+    $capture=grade_cells_capture($pdo,$cid,'grades',[[$student,$week,'days',$day,'attendance']]);
+    $cell=$capture['cells'][0];$current=$cell['base']['value']??'';
+    if(in_array($current,['present','late','excused'],true))return false;
+    $change=$cell+['next'=>['present'=>true,'value'=>$attendance]];
+    grade_cells_apply($pdo,$cid,'grades','kiosk-'.bin2hex(random_bytes(16)),$capture['calendar_context'],[$change]);return true;
 }
