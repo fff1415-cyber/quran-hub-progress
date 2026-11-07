@@ -20,6 +20,7 @@ if os.environ.get('REQUIRE_PUBLISHED_CANDIDATE')=='true' and marker!=target:rais
 subprocess.run(['git','merge-base','--is-ancestor',marker,target],check=True)
 health=json.loads(http('/api/r.php?path=%2Fhealth'))
 if health.get('ok') is not True:raise SystemExit('Current main site API health failed')
+if os.environ.get('REQUIRE_ATOMIC_GRADE_MODE')=='true' and health.get('checks',{}).get('grade_protocol')!='atomic':raise SystemExit('The published API has not confirmed atomic grade mode')
 if os.environ.get('REQUIRE_PUBLISHED_CANDIDATE')=='true':
     for path in ['/api/r.php?path=%2Fstudents','/api/r.php?path=%2Fapp-state&key=grades']:
         status=subprocess.check_output(['curl','-sS','-o','/dev/null','-w','%{http_code}','--connect-timeout','15','--max-time','25','--resolve','msht.io:443:'+host,'https://msht.io'+path],stderr=subprocess.DEVNULL).decode()
@@ -37,6 +38,11 @@ try {
   $rows['grade_and_history_stores']=(int)$pdo->query("SELECT COUNT(*) FROM app_state WHERE `key` IN ('grades','weekly_tests','scientific_grades','sard_queue','sard_history','academic_records')")->fetchColumn();
   $rows['teacher_halaqa_configs']=(int)$pdo->query("SELECT COUNT(*) FROM halaqat WHERE COALESCE(teacher_code,'')<>''")->fetchColumn();
   $rows['assistant_halaqa_configs']=(int)$pdo->query("SELECT COUNT(*) FROM halaqat WHERE COALESCE(assistant_code,'')<>'' OR COALESCE(extra_assistants,'') NOT IN ('','[]','null')")->fetchColumn();
+  if(($argv[3]??'')==='atomic'){
+   $rows['confirmed_grade_receipts']=(int)$pdo->query("SELECT COUNT(*) FROM grade_operation_receipts WHERE store_key='grades'")->fetchColumn();
+   $rows['confirmed_browser_grade_receipts']=(int)$pdo->query("SELECT COUNT(*) FROM grade_operation_receipts WHERE store_key='grades' AND operation_id REGEXP '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'")->fetchColumn();
+   $rows['confirmed_grade_plan_events']=(int)$pdo->query("SELECT COUNT(*) FROM app_state WHERE LEFT(`key`,17)='grade_plan_event:'")->fetchColumn();
+  }
  }$pdo->rollBack();
  $flags=[];foreach(['QHP_GRADE_WRITES_V1','QHP_SHARED_GRADE_WRITES_V1','QHP_SEMESTER_STORES_V1','QHP_TRANSFER_WRITES_V1']as$f)$flags[$f]=defined($f)&&constant($f)===true;
  echo json_encode(['status'=>'main_preflight','database_identity_confirmed'=>$identity,'main_roots_confirmed'=>true,'schema'=>$schema,'duplicate_evaluation_groups'=>$duplicates,'php_compatible'=>PHP_VERSION_ID>=80100,'flags'=>$flags,'read_only_counts'=>$rows,'production_writes'=>false])."\n";
@@ -46,7 +52,8 @@ try {
 with tempfile.TemporaryDirectory() as directory:
     ask=pathlib.Path(directory,'askpass');ask.write_text('#!/bin/sh\nprintf "%s\\n" "$DEPLOY_SSH_PASSWORD"\n');ask.chmod(0o700)
     env=dict(os.environ,SSH_ASKPASS=str(ask),SSH_ASKPASS_REQUIRE='force',DISPLAY=':0')
-    command='php -d display_errors=0 -r '+shlex.quote(code)+' -- '+shlex.quote(front)+' '+shlex.quote(api)
+    protocol=' atomic' if os.environ.get('REQUIRE_ATOMIC_GRADE_MODE')=='true' else ''
+    command='php -d display_errors=0 -r '+shlex.quote(code)+' -- '+shlex.quote(front)+' '+shlex.quote(api)+protocol
     result=subprocess.run(['ssh','-T','-p','65002','-o','ConnectTimeout=20','-o','StrictHostKeyChecking=accept-new',user+'@'+host,command],env=env,capture_output=True,timeout=90,start_new_session=True)
     print(result.stdout.decode(),flush=True)
     metadata=json.loads(result.stdout)
@@ -58,5 +65,5 @@ if changes==1:
     subprocess.run(['python3','scripts/prepare-hostinger-api.py',marker,target],check=True)
     subprocess.run(['python3','scripts/verify-hostinger-api.py'],env=dict(os.environ,DEPLOY_USER=user,DEPLOY_API_PATH=api,API_VERIFY_PHASE='before',SEPARATE_SUBDOMAINS='false'),check=True)
 elif changes!=0:raise SystemExit('Could not compare API')
-print(json.dumps({'status':'main_release_requires_tested_index' if index_pending else 'main_release_preflight_passed','published_sha':marker,'candidate_sha':target,'api_health':True,'api_baseline_verified':True,'production_writes':False,'uploaded':False}))
+print(json.dumps({'status':'main_release_requires_tested_index' if index_pending else 'main_release_preflight_passed','published_sha':marker,'candidate_sha':target,'api_health':True,'grade_protocol':health.get('checks',{}).get('grade_protocol'),'api_baseline_verified':True,'production_writes':False,'uploaded':False}))
 if index_pending:raise SystemExit('Deployment gate remains closed until the approved index is present in production')
