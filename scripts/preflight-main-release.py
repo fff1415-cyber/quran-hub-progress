@@ -16,9 +16,14 @@ def http(path):
     return subprocess.check_output(['curl','-fsS','--connect-timeout','15','--max-time','30','--resolve','msht.io:443:'+host,'https://msht.io'+path],stderr=subprocess.DEVNULL)
 marker=http('/deploy-sha.txt?preflight='+os.environ.get('GITHUB_RUN_ID','0')).decode().strip()
 if not re.fullmatch(r'[a-f0-9]{40}',marker):raise SystemExit('Invalid published marker')
+if os.environ.get('REQUIRE_PUBLISHED_CANDIDATE')=='true' and marker!=target:raise SystemExit('Expected candidate is not the published release')
 subprocess.run(['git','merge-base','--is-ancestor',marker,target],check=True)
 health=json.loads(http('/api/r.php?path=%2Fhealth'))
 if health.get('ok') is not True:raise SystemExit('Current main site API health failed')
+if os.environ.get('REQUIRE_PUBLISHED_CANDIDATE')=='true':
+    for path in ['/api/r.php?path=%2Fstudents','/api/r.php?path=%2Fapp-state&key=grades']:
+        status=subprocess.check_output(['curl','-sS','-o','/dev/null','-w','%{http_code}','--connect-timeout','15','--max-time','25','--resolve','msht.io:443:'+host,'https://msht.io'+path],stderr=subprocess.DEVNULL).decode()
+        if status not in ['401','403']:raise SystemExit('An authenticated data endpoint did not reject an anonymous request')
 schema=base64.b64encode(pathlib.Path('api/schema.php').read_bytes()).decode()
 code="eval(substr(base64_decode('"+schema+"'),5));"+r'''
 try {
@@ -26,9 +31,15 @@ try {
  foreach([$front.'/index.html',$front.'/.htaccess',$front.'/assets',$api.'/routes',$api.'/lib',$api.'/r.php']as$p)if(is_link($p))throw new RuntimeException('symlink_in_release_path');
  require $api.'/config.php';if(DB_NAME!=='u112851217_msht_io')throw new RuntimeException('wrong_main_database');
  $pdo=new PDO('mysql:host='.DB_HOST.(defined('DB_PORT')?';port='.DB_PORT:'').';dbname='.DB_NAME.';charset='.DB_CHARSET,DB_USER,DB_PASS,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
- $pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();$schema=schema_inspect($pdo);$identity=$pdo->query('SELECT DATABASE()')->fetchColumn()===DB_NAME;$duplicates=(int)$pdo->query('SELECT COUNT(*) FROM (SELECT complex_id FROM evaluation_settings GROUP BY complex_id HAVING COUNT(*)>1) AS duplicates')->fetchColumn();$pdo->rollBack();
+ $pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();$schema=schema_inspect($pdo);$identity=$pdo->query('SELECT DATABASE()')->fetchColumn()===DB_NAME;$duplicates=(int)$pdo->query('SELECT COUNT(*) FROM (SELECT complex_id FROM evaluation_settings GROUP BY complex_id HAVING COUNT(*)>1) AS duplicates')->fetchColumn();
+ $rows=[];if($schema['ready']){
+  foreach(['students','education_plans','student_plan_assignments','segment_completions','semesters','academic_weeks']as$t)$rows[$t]=(int)$pdo->query('SELECT COUNT(*) FROM `'.$t.'`')->fetchColumn();
+  $rows['grade_and_history_stores']=(int)$pdo->query("SELECT COUNT(*) FROM app_state WHERE `key` IN ('grades','weekly_tests','scientific_grades','sard_queue','sard_history','academic_records')")->fetchColumn();
+  $rows['teacher_halaqa_configs']=(int)$pdo->query("SELECT COUNT(*) FROM halaqat WHERE COALESCE(teacher_code,'')<>''")->fetchColumn();
+  $rows['assistant_halaqa_configs']=(int)$pdo->query("SELECT COUNT(*) FROM halaqat WHERE COALESCE(assistant_code,'')<>'' OR COALESCE(extra_assistants,'') NOT IN ('','[]','null')")->fetchColumn();
+ }$pdo->rollBack();
  $flags=[];foreach(['QHP_GRADE_WRITES_V1','QHP_SHARED_GRADE_WRITES_V1','QHP_SEMESTER_STORES_V1','QHP_TRANSFER_WRITES_V1']as$f)$flags[$f]=defined($f)&&constant($f)===true;
- echo json_encode(['status'=>'main_preflight','database_identity_confirmed'=>$identity,'main_roots_confirmed'=>true,'schema'=>$schema,'duplicate_evaluation_groups'=>$duplicates,'php_compatible'=>PHP_VERSION_ID>=80100,'flags'=>$flags,'production_writes'=>false])."\n";
+ echo json_encode(['status'=>'main_preflight','database_identity_confirmed'=>$identity,'main_roots_confirmed'=>true,'schema'=>$schema,'duplicate_evaluation_groups'=>$duplicates,'php_compatible'=>PHP_VERSION_ID>=80100,'flags'=>$flags,'read_only_counts'=>$rows,'production_writes'=>false])."\n";
  if(!$identity||!$schema['ready']||PHP_VERSION_ID<80100)exit(1);
 }catch(Throwable){echo "{\"status\":\"main_preflight_incomplete\",\"production_writes\":false}\n";exit(1);}
 '''
