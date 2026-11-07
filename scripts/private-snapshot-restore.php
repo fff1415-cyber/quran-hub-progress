@@ -21,9 +21,10 @@ function qhp_restore_tables(PDO $pdo):array {
 }
 /** Only the plain table dump grammar emitted by the existing backup command is accepted. */
 function qhp_restore_rows(string $sql):array {
-    $values=substr($sql,strpos($sql,' VALUES ')+8);$i=0;$n=strlen($values);$rows=[];
+    if(!preg_match('/^INSERT INTO `[A-Za-z0-9_]+` VALUES\s+/D',$sql,$prefix))throw new RuntimeException('bad_dump_insert_prefix');
+    $values=substr($sql,strlen($prefix[0]));$i=0;$n=strlen($values);$rows=[];
     while($i<$n){
-        $start=$i;if($values[$i++]!=='(')throw new RuntimeException('bad_dump_tuple');
+        $i+=strspn($values," \t\r\n",$i);$start=$i;if(($values[$i++]??'')!=='(')throw new RuntimeException('bad_dump_tuple');
         while(true){
             $i+=strspn($values," \t",$i);if($i>=$n)throw new RuntimeException('bad_dump_literal');
             if(substr($values,$i,8)==="_binary'")$i+=7;
@@ -62,7 +63,8 @@ function qhp_restore_archive(string $file,?PDO $write=null):array {
             if($structure===null||preg_match('/\/\*|--|;.+|`\s*\.\s*`|\b(?:SELECT|TABLESPACE|CONNECTION|DEFINER)\b|\b(?:DATA|INDEX)\s+DIRECTORY\b/is',substr($structure,0,-1)))throw new RuntimeException('unsafe_dump_create');
             $result[$m[1]]=['schema_sha256'=>hash('sha256',$line),'rows'=>[]];if($write)$write->exec($line);continue;
         }
-        if(preg_match('/^INSERT INTO `([A-Za-z0-9_]+)` VALUES /',$line,$m)&&isset($result[$m[1]])){
+        if(preg_match('/^INSERT INTO `([A-Za-z0-9_]+)` VALUES(?:\s|$)/',$line,$m)&&isset($result[$m[1]])){
+            if(!str_ends_with($line,';')){$create=$line;continue;}
             $rows=qhp_restore_rows($line);foreach($rows as$row)$result[$m[1]]['rows'][]=$row;if($write)$write->exec($line);continue;
         }
         throw new RuntimeException('unsupported_dump_statement'.(getenv('QHP_RESTORE_FIXTURE')==='1'?': '.substr($line,0,160):''));
