@@ -46,6 +46,8 @@ async function stop(){
  b.accept(await request('assistant'));b.resolve(b.drafts().find(d=>d.status==='conflict').packet.operation_id,false);assert.equal(b.view({}).S[1].days.sun.hifz,'two');
  a.accept(await request('teacher'));edit(a,'attendance','present');const packet=a.drafts().at(-1).packet;
  await assert.rejects(a.flush(async p=>{await request('teacher',p);throw Error('response lost after commit');}),/response lost/);assert.equal(a.drafts().at(-1).status,'pending');
+ await stop(); await start(false);
+ assert.equal((await legacy('assistant',prior)).status,409,'a restart or fallback must not reopen the legacy writer');
  const reopened=new GradeOutbox(aStore,'teacher',id);await reopened.flush(p=>request('teacher',p));assert.equal(reopened.drafts().at(-1).status,'confirmed');assert.equal((await request('teacher',packet)).replayed,true);
  reopened.accept(await request('teacher'));edit(reopened,'muraja','fail');await assert.rejects(reopened.flush(async()=>{throw Error('offline');}),/offline/);const offlineId=reopened.drafts().at(-1).packet.operation_id;
  const reopenedAgain=new GradeOutbox(aStore,'teacher',id);assert.equal(reopenedAgain.view({}).S[1].days.sun.muraja,'fail');await reopenedAgain.flush(p=>request('teacher',p));assert.equal(reopenedAgain.drafts().find(d=>d.packet.operation_id===offlineId).status,'confirmed');

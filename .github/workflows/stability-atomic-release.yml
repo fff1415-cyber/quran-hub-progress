@@ -22,6 +22,8 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
       - name: Save before activation, switch modes, and confirm real HTTP saves in two sessions
         run: node tests/stage2-atomic-sessions.cjs
+      - name: Review legacy local data without importing it
+        run: node tests/legacy-grade-recovery.cjs
       - name: Preserve scoped drafts, linked grades, and plan transition history
         run: |
           node tests/stage2-atomic-local.cjs
@@ -29,6 +31,18 @@ jobs:
           php tests/stage4-profile.php
           node tests/stage4-plan-track.cjs
       - run: npx tsc --noEmit
+      - name: Build the candidate frontend
+        run: npm run build:hostinger
+      - uses: actions/checkout@v4
+        with:
+          ref: 02aad8f01b4fb420b5456da3fb56bf1b22e956c2
+          path: grade-fallback
+          persist-credentials: false
+      - name: Build the fallback and exercise cutover and rollback using both built entries
+        run: |
+          (cd grade-fallback && npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps && npm run build:hostinger)
+          python3 scripts/stage-grade-fallback-assets.py grade-fallback/dist/client dist/client
+          php tests/grade-entry-cutover.php dist/client grade-fallback/dist/client
   transactional-writes:
     if: github.head_ref == 'release/stability-atomic'
     runs-on: ubuntu-latest

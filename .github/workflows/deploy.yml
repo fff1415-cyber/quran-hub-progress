@@ -147,6 +147,38 @@ jobs:
       - name: Write deploy marker
         run: echo "${{ github.sha }}" > dist/client/deploy-sha.txt
 
+      - name: Keep the frontend entry off the bulk transport
+        id: grade_release
+        run: |
+          if [ -f api/lib/grade-cutover.php ]; then
+            mv dist/client/index.html "$RUNNER_TEMP/qhp-grade-index.html"
+            rm dist/client/deploy-sha.txt
+            echo "atomic=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Capture a private snapshot before the first protocol cutover
+        if: steps.grade_release.outputs.atomic == 'true' && steps.changes.outputs.base_sha == 'c2d339b801cbb666ef91b1e704a5606267468d63'
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ steps.paths.outputs.ssh_user }}
+          DEPLOY_API_PATH: ${{ steps.paths.outputs.api }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: python3 scripts/create-private-db-backup.py
+
+      - name: Check out the pinned protocol-compatible fallback frontend
+        if: steps.grade_release.outputs.atomic == 'true' && steps.changes.outputs.base_sha == 'c2d339b801cbb666ef91b1e704a5606267468d63'
+        uses: actions/checkout@v4
+        with:
+          ref: 02aad8f01b4fb420b5456da3fb56bf1b22e956c2
+          path: grade-fallback
+          persist-credentials: false
+
+      - name: Build and stage only the fallback frontend assets
+        if: steps.grade_release.outputs.atomic == 'true' && steps.changes.outputs.base_sha == 'c2d339b801cbb666ef91b1e704a5606267468d63'
+        run: |
+          (cd grade-fallback && npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps && npm run build:hostinger)
+          python3 scripts/stage-grade-fallback-assets.py grade-fallback/dist/client dist/client
+
       - name: Back up existing frontend before upload
         env:
           DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
@@ -189,7 +221,7 @@ jobs:
         run: python3 scripts/backup-hostinger-frontend.py
 
       - name: Sync PHP API (SFTP primary)
-        if: steps.changes.outputs.api_changed == 'true'
+        if: steps.changes.outputs.api_changed == 'true' && steps.grade_release.outputs.atomic != 'true'
         id: sftp_api
         continue-on-error: true
         uses: wlixcc/SFTP-Deploy-Action@v1.2.5
@@ -237,7 +269,7 @@ jobs:
             **/config.php
 
       - name: Ensure API deployed
-        if: always() && steps.changes.outputs.api_changed == 'true'
+        if: always() && steps.changes.outputs.api_changed == 'true' && steps.grade_release.outputs.atomic != 'true'
         run: |
           echo "API deploy results: SFTP=${{ steps.sftp_api.outcome }}, rsync=${{ steps.rsync_api.outcome || 'skipped' }}, FTPS=${{ steps.ftps_api.outcome || 'skipped' }}"
           ok=0
@@ -250,6 +282,18 @@ jobs:
           fi
           echo "::error::API deploy failed. Same FTP secrets as frontend — see Ensure frontend deployed step."
           exit 1
+
+      - name: Stage the verified PHP files with the legacy writer fenced
+        if: steps.grade_release.outputs.atomic == 'true' && steps.changes.outputs.api_changed == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ steps.paths.outputs.ssh_user }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          DEPLOY_SHA: ${{ github.sha }}
+          PUBLISHED_SHA: ${{ steps.changes.outputs.base_sha }}
+        run: |
+          python3 scripts/publish-grade-release.py prepare
+          python3 scripts/publish-grade-release.py api
 
       - name: Verify changed API files before frontend upload
         if: steps.changes.outputs.api_changed == 'true'
@@ -292,7 +336,7 @@ jobs:
             "${{ steps.paths.outputs.frontend }}"
 
       - name: Sync frontend (FTPS fallback)
-        if: steps.sftp_frontend.outcome == 'failure' && steps.rsync_frontend.outcome != 'success'
+        if: steps.grade_release.outputs.atomic != 'true' && steps.sftp_frontend.outcome == 'failure' && steps.rsync_frontend.outcome != 'success'
         id: ftps_frontend
         continue-on-error: true
         uses: SamKirkland/FTP-Deploy-Action@v4.3.5
@@ -327,6 +371,22 @@ jobs:
           echo "Enable SSH Access in hPanel → Advanced → SSH Access."
           echo "Test locally: FileZilla SFTP → Host=IP, Port=65002"
           exit 1
+
+      - name: Publish the prepared entry and switch grade mode together
+        if: steps.grade_release.outputs.atomic == 'true'
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ steps.paths.outputs.ssh_user }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          DEPLOY_SHA: ${{ github.sha }}
+          PUBLISHED_SHA: ${{ steps.changes.outputs.base_sha }}
+          GRADE_ENTRY: ${{ runner.temp }}/qhp-grade-index.html
+          GRADE_FALLBACK_ENTRY: grade-fallback/dist/client/index.html
+        run: |
+          if [ "$PUBLISHED_SHA" = "c2d339b801cbb666ef91b1e704a5606267468d63" ]; then
+            python3 scripts/publish-grade-release.py stage-fallback
+          fi
+          python3 scripts/publish-grade-release.py publish
 
       # Subdomains: by default m1/m2 use the same docroot as msht.io (hPanel).
       # Only sync separate folders when HOSTINGER_SEPARATE_SUBDOMAIN_DIRS=true.
