@@ -1,0 +1,35 @@
+name: Apply approved evaluation index
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  approved-index:
+    if: github.head_ref == 'fix/stability-approved-evaluation-index' && github.event.action == 'opened' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: hostinger-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+      DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+      DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+      DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set private runner evidence paths
+        run: |
+          umask 077
+          printf 'BACKUP_RESULT_FILE=%s\nRESTORE_RESULT_FILE=%s\nCOMPAT_RESULT_FILE=%s\n' "$RUNNER_TEMP/approved-index-backup.json" "$RUNNER_TEMP/approved-index-restore.json" "$RUNNER_TEMP/approved-index-compatibility.json" >> "$GITHUB_ENV"
+      - name: Create a fresh private production snapshot without row writes
+        run: python3 scripts/create-private-db-backup.py | tee "$BACKUP_RESULT_FILE"
+      - name: Restore and verify every value in the independent test database
+        run: python3 scripts/restore-hostinger-test.py | tee "$RESTORE_RESULT_FILE"
+      - name: Validate the exact online index on the fresh restored copy
+        run: python3 scripts/test-restored-compatibility.py | tee "$COMPAT_RESULT_FILE"
+      - name: Confirm no duplicates or NULL and apply only the approved online index
+        run: python3 scripts/apply-approved-evaluation-index.py
