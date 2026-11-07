@@ -16,8 +16,8 @@ function openGradeSnapshots(): Promise<IDBDatabase> {
     request.onblocked = () => reject(new Error("تعذّر فتح مخزن نسخة الدرجات في هذا المتصفح"));
   });
 }
-async function restoreGradeSnapshot(key: string, cid: number): Promise<void> {
-  if (typeof indexedDB === "undefined" || checkedSnapshotStorage.has(key)) return;
+async function restoreGradeSnapshot(key: string, cid: number): Promise<boolean> {
+  if (typeof indexedDB === "undefined" || checkedSnapshotStorage.has(key)) return false;
   let database: IDBDatabase | undefined;
   try {
     database = await openGradeSnapshots();
@@ -30,6 +30,7 @@ async function restoreGradeSnapshot(key: string, cid: number): Promise<void> {
     if (stored?.context_complex_id === cid) {
       assertGradeSnapshot(stored);
       snapshots.set(key, stored);
+      return true;
     }
   } catch (error) {
     // Browsers can block IndexedDB independently of the existing local cache.
@@ -38,6 +39,7 @@ async function restoreGradeSnapshot(key: string, cid: number): Promise<void> {
     checkedSnapshotStorage.add(key);
     database?.close();
   }
+  return false;
 }
 async function persistGradeSnapshot(key: string, snapshot: GradeSnapshot): Promise<void> {
   if (typeof indexedDB === "undefined") return;
@@ -88,8 +90,9 @@ let serial: Promise<unknown> = Promise.resolve();
 function enqueue<T>(run: () => Promise<T>): Promise<T> { const next = serial.then(run, run); serial = next.catch(() => undefined); return next; }
 async function read(session: NonNullable<ReturnType<typeof identity>>, box: GradeOutbox) {
   const key = box.prefix + "snapshot";
-  await restoreGradeSnapshot(key, session.cid);
+  const restored = await restoreGradeSnapshot(key, session.cid);
   if (identity()?.scope !== session.scope || getToken() !== session.token) throw Error("تغيّرت الجلسة؛ لم تُطبّق استجابة حساب سابق");
+  if (restored) notify();
   const snapshot = await secureGradeSnapshot(session.token, box.snapshot()?.cursor);
   if (identity()?.scope !== session.scope || getToken() !== session.token) throw Error("تغيّرت الجلسة؛ لم تُطبّق استجابة حساب سابق");
   if (snapshot.context_complex_id !== session.cid) throw Error("استجابة الحفظ لا تطابق المجمع الحالي");
