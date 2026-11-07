@@ -26,9 +26,9 @@ try {
  foreach([$front.'/index.html',$front.'/.htaccess',$front.'/assets',$api.'/routes',$api.'/lib',$api.'/r.php']as$p)if(is_link($p))throw new RuntimeException('symlink_in_release_path');
  require $api.'/config.php';if(DB_NAME!=='u112851217_msht_io')throw new RuntimeException('wrong_main_database');
  $pdo=new PDO('mysql:host='.DB_HOST.(defined('DB_PORT')?';port='.DB_PORT:'').';dbname='.DB_NAME.';charset='.DB_CHARSET,DB_USER,DB_PASS,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION]);
- $pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();$schema=schema_inspect($pdo);$identity=$pdo->query('SELECT DATABASE()')->fetchColumn()===DB_NAME;$pdo->rollBack();
+ $pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();$schema=schema_inspect($pdo);$identity=$pdo->query('SELECT DATABASE()')->fetchColumn()===DB_NAME;$duplicates=(int)$pdo->query('SELECT COUNT(*) FROM (SELECT complex_id FROM evaluation_settings GROUP BY complex_id HAVING COUNT(*)>1) AS duplicates')->fetchColumn();$pdo->rollBack();
  $flags=[];foreach(['QHP_GRADE_WRITES_V1','QHP_SHARED_GRADE_WRITES_V1','QHP_SEMESTER_STORES_V1','QHP_TRANSFER_WRITES_V1']as$f)$flags[$f]=defined($f)&&constant($f)===true;
- echo json_encode(['status'=>'main_preflight','database_identity_confirmed'=>$identity,'main_roots_confirmed'=>true,'schema'=>$schema,'flags'=>$flags,'production_writes'=>false])."\n";
+ echo json_encode(['status'=>'main_preflight','database_identity_confirmed'=>$identity,'main_roots_confirmed'=>true,'schema'=>$schema,'duplicate_evaluation_groups'=>$duplicates,'php_compatible'=>PHP_VERSION_ID>=80100,'flags'=>$flags,'production_writes'=>false])."\n";
  if(!$identity||!$schema['ready']||PHP_VERSION_ID<80100)exit(1);
 }catch(Throwable){echo "{\"status\":\"main_preflight_incomplete\",\"production_writes\":false}\n";exit(1);}
 '''
@@ -38,10 +38,14 @@ with tempfile.TemporaryDirectory() as directory:
     command='php -d display_errors=0 -r '+shlex.quote(code)+' -- '+shlex.quote(front)+' '+shlex.quote(api)
     result=subprocess.run(['ssh','-T','-p','65002','-o','ConnectTimeout=20','-o','StrictHostKeyChecking=accept-new',user+'@'+host,command],env=env,capture_output=True,timeout=90,start_new_session=True)
     print(result.stdout.decode(),flush=True)
-    if result.returncode:raise SystemExit('Main compatibility not confirmed; no upload')
+    metadata=json.loads(result.stdout)
+    schema=metadata.get('schema',{})
+    index_pending=(metadata.get('database_identity_confirmed') is True and metadata.get('main_roots_confirmed') is True and metadata.get('php_compatible') is True and metadata.get('duplicate_evaluation_groups')==0 and schema.get('missing_columns')==[] and schema.get('missing_unique_keys')==['evaluation_settings(complex_id)'] and schema.get('app_state_capacity_ready') is True)
+    if result.returncode and not index_pending:raise SystemExit('Main compatibility not confirmed; no upload')
 changes=subprocess.run(['git','diff','--quiet',marker,target,'--','api/']).returncode
 if changes==1:
     subprocess.run(['python3','scripts/prepare-hostinger-api.py',marker,target],check=True)
     subprocess.run(['python3','scripts/verify-hostinger-api.py'],env=dict(os.environ,DEPLOY_USER=user,DEPLOY_API_PATH=api,API_VERIFY_PHASE='before',SEPARATE_SUBDOMAINS='false'),check=True)
 elif changes!=0:raise SystemExit('Could not compare API')
-print(json.dumps({'status':'main_release_preflight_passed','published_sha':marker,'candidate_sha':target,'api_health':True,'production_writes':False,'uploaded':False}))
+print(json.dumps({'status':'main_release_requires_tested_index' if index_pending else 'main_release_preflight_passed','published_sha':marker,'candidate_sha':target,'api_health':True,'api_baseline_verified':True,'production_writes':False,'uploaded':False}))
+if index_pending:raise SystemExit('Deployment gate remains closed until the approved index is present in production')
