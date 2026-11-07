@@ -1,0 +1,41 @@
+name: Prepare production grade tables without activation
+on:
+  pull_request:
+    types: [opened]
+permissions:
+  contents: read
+jobs:
+  additive-preparation:
+    if: github.head_ref == 'ops/grade-schema-prepare' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    concurrency:
+      group: hostinger-production
+      cancel-in-progress: false
+    defaults:
+      run:
+        shell: bash
+    env:
+      DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+      DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+      DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+      DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          ref: 5874f7230864787840b6c863155af589c9613189
+          path: candidate
+          persist-credentials: false
+      - name: Set private evidence paths
+        run: |
+          umask 077
+          printf 'BACKUP_RESULT_FILE=%s\nRESTORE_RESULT_FILE=%s\nGRADE_TEST_RESULT_FILE=%s\n' "$RUNNER_TEMP/grade-backup.json" "$RUNNER_TEMP/grade-restore.json" "$RUNNER_TEMP/grade-schema.json" >> "$GITHUB_ENV"
+      - name: Fresh private snapshot of the current production data
+        run: python3 scripts/create-private-db-backup.py | tee "$BACKUP_RESULT_FILE"
+      - name: Verify a round-trip restore in the independent database
+        run: python3 scripts/restore-hostinger-test.py | tee "$RESTORE_RESULT_FILE"
+      - name: Validate the exact additive schema against the freshly restored data
+        run: python3 scripts/test-grade-schema.py | tee "$GRADE_TEST_RESULT_FILE"
+      - name: Prepare only the verified empty tables and keep the legacy writer active
+        run: python3 scripts/test-grade-schema.py prepare-production

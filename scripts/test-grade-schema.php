@@ -13,14 +13,23 @@ try {
     if (DB_NAME !== 'u112851217_msht_io') throw new RuntimeException('unexpected_main_identity');
     $private = $home . '/.qhp-private';
     $config = $private . '/msht-test.php';
-    $baseline = $private . '/compatibility-6fca1415377b4d9f';
-    foreach ([$private, $config, $baseline, $baseline . '/verified.json', $baseline . '/after-index.sql.gz'] as $path) {
+    $fresh = isset($argv[4], $argv[5]);
+    $baselineName = $argv[4] ?? 'compatibility-6fca1415377b4d9f';
+    $sourceSha = $argv[5] ?? '72a1db96694b9f386a4ca3b9a5a5313855e976e85571318b46b8de872405dea6';
+    if (!preg_match($fresh ? '/^restore-\d{8}T\d{6}Z-[a-f0-9]{10}-[a-f0-9]{10}$/D' : '/^compatibility-[a-f0-9]{16}$/D', $baselineName) ||
+        !preg_match('/^[a-f0-9]{64}$/D', $sourceSha)) throw new RuntimeException('invalid_restore_evidence');
+    $baseline = $private . '/' . $baselineName;
+    $expectedArchive = $baseline . ($fresh ? '/restored-roundtrip.sql.gz' : '/after-index.sql.gz');
+    foreach ([$private, $config, $baseline, $baseline . '/verified.json', $expectedArchive] as $path) {
         if (realpath($path) !== $path || is_link($path) || (fileperms($path) & 0077) !== 0) throw new RuntimeException('unsafe_private_path');
     }
     $proof = json_decode(file_get_contents($baseline . '/verified.json'), true, 512, JSON_THROW_ON_ERROR);
-    if (($proof['status'] ?? null) !== 'test_compatibility_verified' ||
-        ($proof['source_sha256'] ?? null) !== '72a1db96694b9f386a4ca3b9a5a5313855e976e85571318b46b8de872405dea6' ||
-        ($proof['all_row_values_unchanged'] ?? null) !== true) throw new RuntimeException('verified_baseline_required');
+    if (($proof['status'] ?? null) !== ($fresh ? 'independent_restore_verified' : 'test_compatibility_verified') ||
+        ($proof['source_sha256'] ?? null) !== $sourceSha ||
+        ($proof[$fresh ? 'schema_and_values_roundtrip_match' : 'all_row_values_unchanged'] ?? null) !== true ||
+        ($fresh && (($proof['restored_database'] ?? null) !== $target || ($proof['application_schema']['ready'] ?? null) !== true))) {
+        throw new RuntimeException('verified_baseline_required');
+    }
     $settings = qhp_load_private_test_config(file_get_contents($config));
     if ($settings['user'] === DB_USER || !preg_match('/^[A-Za-z0-9.:-]+$/D', $settings['host'])) throw new RuntimeException('test_credentials_not_independent');
     $lockPath = $private . '/test-restore.lock';
@@ -43,7 +52,7 @@ try {
         if (!str_starts_with($statements[$i], 'CREATE TABLE IF NOT EXISTS ' . $table . ' (')) throw new RuntimeException('unexpected_migration_table');
     }
     $stage = 'verify_restored_baseline';
-    $expected = qhp_restore_archive($baseline . '/after-index.sql.gz');
+    $expected = qhp_restore_archive($expectedArchive);
     $before = qhp_restore_archive(qhp_restore_dump($settings, $target, $directory, 'before'));
     if ($expected !== $before || count($before) !== 16) throw new RuntimeException('test_baseline_changed');
     $stage = 'add_test_tables';
@@ -59,10 +68,15 @@ try {
     if ($old !== $before) throw new RuntimeException('existing_test_values_changed');
     foreach ($statements as $statement) $pdo->exec($statement);
     if ($after !== qhp_restore_archive(qhp_restore_dump($settings, $target, $directory, 'repeat'))) throw new RuntimeException('migration_not_idempotent');
-    $report = ['status' => 'grade_schema_verified_on_independent_restore', 'source_backup_id' => $proof['source_backup_id'],
+    $definitions = [];
+    foreach ($tables as $table) {
+        $create = $pdo->query('SHOW CREATE TABLE `' . $table . '`')->fetch(PDO::FETCH_NUM);
+        $definitions[$table] = hash('sha256', $create[1]);
+    }
+    $report = ['status' => 'grade_schema_verified_on_independent_restore', 'source_backup_id' => $proof['source_backup_id'], 'source_sha256' => $sourceSha,
         'migration_sha256' => hash('sha256', $ddl), 'legacy_tables_unchanged' => count($old),
         'legacy_rows_unchanged' => array_sum(array_column($old, 'row_count')), 'empty_new_tables' => $tables,
-        'repeat_unchanged' => true, 'production_database_connected' => false, 'evidence' => basename($directory)];
+        'definitions_sha256' => $definitions, 'repeat_unchanged' => true, 'production_database_connected' => false, 'evidence' => basename($directory)];
     file_put_contents($directory . '/verified.json', json_encode($report, JSON_THROW_ON_ERROR) . "\n", LOCK_EX);
     echo json_encode($report, JSON_THROW_ON_ERROR) . "\n";
 } catch (Throwable $error) {
