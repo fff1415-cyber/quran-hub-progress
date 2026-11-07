@@ -142,18 +142,35 @@ function grade_cells_record_version(PDO $pdo,int $context,string $key,array $pat
 }
 
 /** A tombstone is the retained version of an explicit removal, even if the value is absent. */
-function grade_cells_apply(PDO $pdo,int $cid,string $key,string $operation,array $calendar,array $changes,int $attempt=0,?callable $effect=null,array $effectIdentity=[]): array
+function grade_cells_apply(PDO $pdo,int $cid,string $key,string $operation,array $calendar,array $changes,int $attempt=0,?callable $effect=null,array $effectIdentity=[],?bool $packetScoped=null): array
 {
     $owns=!$pdo->inTransaction();
     try {
         if(!preg_match('/^[A-Za-z0-9_-]{8,128}$/D',$operation)||!$changes)throw new RuntimeException('هوية طلب الدرجة أو خلاياه غير مكتملة');
         if($owns)$pdo->beginTransaction();
-        grade_cells_ready($pdo);$logicalKey=$key;$key=grade_store_key($pdo,$cid,$key,$calendar);$context=grade_cells_context($pdo,$cid);
-        $store=grade_cells_store($pdo,$cid,$key,true);
+        grade_cells_ready($pdo);$logicalKey=$key;$context=grade_cells_context($pdo,$cid);
         $identity=['protocol'=>1,'key'=>$logicalKey,'calendar_context'=>$calendar,'changes'=>$changes];
         if($effectIdentity)$identity['effect']=$effectIdentity;
         $hash=hash('sha256',grade_cells_json($identity));
-        $query=$pdo->prepare('SELECT input_sha256 FROM grade_operation_receipts WHERE context_id=? AND store_key=? AND operation_id=? FOR UPDATE');
+        $receiptSql='SELECT input_sha256 FROM grade_operation_receipts WHERE context_id=? AND store_key=? AND operation_id=?';
+        $scoped=semester_grade_stores_enabled();
+        if($scoped && $packetScoped!==null) {
+            // Pre-cutover browser packets used the logical key. A receipt is enough
+            // to acknowledge them, even if the old calendar can no longer be resolved.
+            $lookup=$pdo->prepare($receiptSql);
+            $lookup->execute([$context,$logicalKey,$operation]);
+            $legacy=$lookup->fetchColumn();
+            if($legacy!==false) {
+                if($packetScoped || !hash_equals((string)$legacy,$hash))throw new RuntimeException('معرّف طلب الدرجة مستخدم لحفظ سابق؛ لم يُكتب تسجيل جديد',409);
+                if($owns)$pdo->commit();
+                return ['operation_id'=>$operation,'input_sha256'=>$hash,'replayed'=>true];
+            }
+            if(!$packetScoped)throw new RuntimeException('هذه مسودة من قبل فصل السجلات؛ بقيت للمراجعة ولم تُنقل إلى الفصل الحالي',409);
+        }
+        if(!$scoped && $packetScoped===true)throw new RuntimeException('فصل السجلات غير متاح؛ بقي الطلب محفوظًا على الجهاز',503);
+        $key=grade_store_key($pdo,$cid,$logicalKey,$calendar);
+        $store=grade_cells_store($pdo,$cid,$key,true);
+        $query=$pdo->prepare($receiptSql.' FOR UPDATE');
         $query->execute([$context,$key,$operation]);$known=$query->fetchColumn();
         if($known!==false) {
             if(!hash_equals((string)$known,$hash))throw new RuntimeException('معرّف طلب الدرجة مستخدم لمحتوى مختلف',409);
@@ -184,7 +201,7 @@ function grade_cells_apply(PDO $pdo,int $cid,string $key,string $operation,array
         if($pdo->inTransaction()) {try {$pdo->rollBack();} catch(Throwable) {}}
         $code=$error instanceof PDOException?(int)($error->errorInfo[1]??0):0;
         if(in_array($code,[1020,1205,1213],true)) {
-            if($owns&&!$pdo->inTransaction()&&$attempt<2)return grade_cells_apply($pdo,$cid,$logicalKey??$key,$operation,$calendar,$changes,$attempt+1,$effect,$effectIdentity);
+            if($owns&&!$pdo->inTransaction()&&$attempt<2)return grade_cells_apply($pdo,$cid,$logicalKey??$key,$operation,$calendar,$changes,$attempt+1,$effect,$effectIdentity,$packetScoped);
             throw new RuntimeException('تعارض حفظ الدرجة؛ أُلغيت المعاملة كاملة. أعد المحاولة بنفس الطلب',409,$error);
         }
         throw $error;

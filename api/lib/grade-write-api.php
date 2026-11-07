@@ -52,5 +52,5 @@ function grade_write_request(PDO $pdo,int $cid,array $packet,array $auth=[],stri
         }
         if($effect)grade_plan_effect($pdo,$cid,$auth,$effect,$operation,$store,$versionKey);
     };
-    return grade_cells_apply($pdo,$cid,$key,$operation,$packet['calendar_context']??[],$changes,0,$key==='grades'?$apply:null,$effect??[]);
+    return grade_cells_apply($pdo,$cid,$key,$operation,$packet['calendar_context']??[],$changes,0,$key==='grades'?$apply:null,$effect??[],grade_packet_is_scoped($packet));
 }

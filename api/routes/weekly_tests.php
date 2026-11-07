@@ -50,7 +50,7 @@ function handle_patch_weekly_test(): void
             $attribution->{$kind}=$records;$row->attribution=$attribution;
             grade_cells_record_version($pdo,grade_cells_context($pdo,$cid),$versionKey,[$studentId,(string)$week,'attribution',$kind,(string)$index],$operation);
         };
-        try{$receipt=grade_cells_apply($pdo,$cid,'weekly_tests',$operation,$packet['calendar_context']??[],$changes,0,$effect);json_response(['ok'=>true]+$receipt);return;}
+        try{$receipt=grade_cells_apply($pdo,$cid,'weekly_tests',$operation,$packet['calendar_context']??[],$changes,0,$effect,[],grade_packet_is_scoped($packet));json_response(['ok'=>true]+$receipt);return;}
         catch(Throwable $error){error_response($error instanceof PDOException?api_safe_failure_message($error,'weekly_atomic'):$error->getMessage(),$error instanceof PDOException?api_database_error_status($error):(in_array($error->getCode(),[400,409],true)?$error->getCode():503));}
     }
     if(shared_grade_writes_enabled('weekly_tests'))error_response('حدّث واجهة الاختبارات لتأكيد الحفظ؛ لم تُحفظ عملية قديمة',409);

@@ -7,7 +7,7 @@ export type GradeStoreKey = "grades" | "weekly_tests" | "scientific_grades";
 export const GRADE_ORIGIN = Symbol("confirmed-grade-period");
 type Calendar = { known: boolean; active_semester_id: string | null };
 export type PlanEffect = { student_id: string; expected_assignment_id: string; task_type: "hifz" | "rabt" | "muraja"; action: "record" | "undo" | "compensation"; tap: "half" | "one" | "two"; completed_at: string; cell_path: string[] };
-export type GradePacket = { operation_id: string; calendar_context: Calendar; changes: Change[]; store_key?: GradeStoreKey; plan?: PlanEffect };
+export type GradePacket = { operation_id: string; calendar_context: Calendar; changes: Change[]; store_key?: GradeStoreKey; semester_scoped?: true; plan?: PlanEffect };
 export type GradeSnapshot<T extends object = GradesStore> = { store_key?: GradeStoreKey; semester_scoped?: boolean; protocol: 1; context_complex_id: number; cursor?: string; value: T; calendar_context: Calendar; versions: Record<string, { direct_version: string | null; subtree_version: string | null }> };
 export type GradeSnapshotResult<T extends object = GradesStore> = GradeSnapshot<T> | { protocol: 1; context_complex_id: number; cursor: string; unchanged: true };
 export type GradeDraft = { packet: GradePacket; order: number; dependencies: string[]; status: "pending" | "unbased" | "conflict" | "confirmed" | "superseded" | "discarded"; message?: string; observed?: boolean };
@@ -57,6 +57,8 @@ function stamp(snapshot: GradeSnapshot<object>, path: string[]): Stamp {
   return { ancestors: path.map((_, i) => snapshot.versions[JSON.stringify(path.slice(0, i))]?.direct_version ?? null), subtree: snapshot.versions[JSON.stringify(path)]?.subtree_version ?? null };
 }
 const active = (draft: GradeDraft) => ["pending", "unbased", "conflict"].includes(draft.status);
+const sameGradeStore = (packet: GradePacket, snapshot: GradeSnapshot<object>) =>
+  !!packet.semester_scoped === !!snapshot.semester_scoped && equal(packet.calendar_context, snapshot.calendar_context);
 
 /** Each immutable packet has its own storage key: two tabs cannot replace each other's queues. */
 export class GradeOutbox<T extends object = GradesStore> {
@@ -78,7 +80,7 @@ export class GradeOutbox<T extends object = GradesStore> {
   view(fallback: T): T {
     const snapshot = this.snapshot(), value = clone(snapshot?.value ?? fallback);
     if (!object(value)) throw Error("صيغة مخزن الدرجات غير صالحة");
-    for (const draft of this.drafts().filter(d => (active(d) || d.status === "confirmed" && !d.observed) && (!snapshot || equal(d.packet.calendar_context, snapshot.calendar_context)))) for (const change of draft.packet.changes) setSharedCell(this.storeKey, value, change.path, change.next);
+    for (const draft of this.drafts().filter(d => (active(d) || d.status === "confirmed" && !d.observed) && (!snapshot || sameGradeStore(d.packet, snapshot)))) for (const change of draft.packet.changes) setSharedCell(this.storeKey, value, change.path, change.next);
     if (snapshot) Object.defineProperty(value, GRADE_ORIGIN, { value: snapshot.calendar_context, enumerable: true });
     return value;
   }
@@ -101,7 +103,7 @@ export class GradeOutbox<T extends object = GradesStore> {
   private queue(edits: { path: string[]; base: Cell; next: Cell }[], plan?: PlanEffect) {
     if (!edits.length) return;
     if (edits.length > 100) throw Error("التعديل كبير؛ احفظ دفعات أصغر دون إغلاق الصفحة");
-    const snapshot = this.snapshot(), drafts = this.drafts(), calendar = snapshot?.calendar_context ?? { known: false, active_semester_id: null }, pending = drafts.filter(d => active(d) && equal(d.packet.calendar_context, calendar)), dependencies = new Set<string>();
+    const snapshot = this.snapshot(), drafts = this.drafts(), calendar = snapshot?.calendar_context ?? { known: false, active_semester_id: null }, pending = drafts.filter(d => active(d) && (snapshot ? sameGradeStore(d.packet, snapshot) : !d.packet.semester_scoped && equal(d.packet.calendar_context, calendar))), dependencies = new Set<string>();
     let based = !!snapshot?.calendar_context.known;
     const changes = edits.map(change => {
       let expected = snapshot ? stamp(snapshot, change.path) : { ancestors: change.path.map(() => null), subtree: null };
@@ -110,7 +112,7 @@ export class GradeOutbox<T extends object = GradesStore> {
       else if (!snapshot || !equal(sharedCell(this.storeKey, snapshot.value, change.path), change.base)) based = false;
       return { ...change, stamp: expected };
     });
-    this.write({ packet: { operation_id: this.id(), calendar_context: calendar, changes, ...(this.storeKey === "grades" ? {} : { store_key: this.storeKey }), ...(plan ? { plan } : {}) }, order: Math.max(0, ...drafts.map(d => d.order)) + 1, dependencies: [...dependencies], status: based && (!plan || !!plan.expected_assignment_id) ? "pending" : "unbased" });
+    this.write({ packet: { operation_id: this.id(), calendar_context: calendar, changes, ...(this.storeKey === "grades" ? {} : { store_key: this.storeKey }), ...(snapshot?.semester_scoped ? { semester_scoped: true } : {}), ...(plan ? { plan } : {}) }, order: Math.max(0, ...drafts.map(d => d.order)) + 1, dependencies: [...dependencies], status: based && (!plan || !!plan.expected_assignment_id) ? "pending" : "unbased" });
   }
   async flush(send: (packet: GradePacket) => Promise<{ ok: boolean; operation_id: string; input_sha256: string }>, current = () => true) {
     for (const initial of this.drafts().filter(d => d.status === "pending")) {
@@ -145,9 +147,9 @@ export class GradeOutbox<T extends object = GradesStore> {
     if (!draft || !["conflict", "unbased"].includes(draft.status) || !snapshot?.calendar_context.known) throw Error("حدّث البيانات قبل مراجعة التعارض");
     const chain = this.reviewChain(id), changes = this.reviewChanges(id);
     if (useDraft && chain.some(d => d.packet.plan)) throw Error("هذه المسودة مرتبطة بخطة؛ راجع التعيين والإنجاز قبل إعادة تسجيلها، دون إسنادها لخطة جديدة تلقائيًا");
-    if (useDraft && chain.some(d => !equal(d.packet.calendar_context, snapshot.calendar_context))) throw Error("تغيّر الفصل؛ لن تُنقل المسودة إلى فصل آخر بالتخمين");
+    if (useDraft && chain.some(d => !sameGradeStore(d.packet, snapshot))) throw Error("تغيّر الفصل أو مخزن التسجيل؛ راجع المسودة وسجّلها يدويًا في سياقها الصحيح");
     if (changes.length > 100) throw Error("المسودة المرتبطة كبيرة؛ يلزم تقسيمها قبل الحسم");
-    if (useDraft) this.write({ ...draft, packet: { operation_id: this.id(), ...(this.storeKey === "grades" ? {} : { store_key: this.storeKey }), calendar_context: snapshot.calendar_context, changes: changes.map(c => ({ ...c, base: sharedCell(this.storeKey, snapshot.value, c.path), stamp: stamp(snapshot, c.path) })) }, order: Math.max(...all.map(d => d.order)) + 1, status: "pending", dependencies: [] });
+    if (useDraft) this.write({ ...draft, packet: { operation_id: this.id(), ...(this.storeKey === "grades" ? {} : { store_key: this.storeKey }), ...(snapshot.semester_scoped ? { semester_scoped: true } : {}), calendar_context: snapshot.calendar_context, changes: changes.map(c => ({ ...c, base: sharedCell(this.storeKey, snapshot.value, c.path), stamp: stamp(snapshot, c.path) })) }, order: Math.max(...all.map(d => d.order)) + 1, status: "pending", dependencies: [] });
     for (const member of chain) this.write({ ...member, status: useDraft ? "superseded" : "discarded" });
   }
 }

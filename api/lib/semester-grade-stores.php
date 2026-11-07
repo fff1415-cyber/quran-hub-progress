@@ -3,6 +3,11 @@ declare(strict_types=1);
 
 function semester_grade_stores_enabled():bool{return defined('QHP_SEMESTER_STORES_V1') && QHP_SEMESTER_STORES_V1 === true;}
 function shared_grade_writes_enabled(string $key):bool{return $key==='grades'?grade_writes_enabled():(defined('QHP_SHARED_GRADE_WRITES_V1')&&QHP_SHARED_GRADE_WRITES_V1===true);}
+function grade_packet_is_scoped(array $packet):bool {
+    if(!array_key_exists('semester_scoped',$packet))return false;
+    if(!is_bool($packet['semester_scoped']))throw new RuntimeException('سياق مخزن الدرجات غير صالح',400);
+    return $packet['semester_scoped'];
+}
 function grade_store_base_key(string $key):string {
     if(in_array($key,['grades','weekly_tests','scientific_grades'],true))return $key;
     if(preg_match('/^term:[A-Za-z0-9_-]{1,64}:(grades|weekly_tests|scientific_grades)$/D',$key,$m))return $m[1];

@@ -12,15 +12,47 @@ async function request(role,key,packet,extra=''){
  const response=await fetch(base+(weekly?'/weekly-tests/result':'/app-state')+(packet?'':`?key=${key}&grade_protocol=1${extra}`),{method:packet?'POST':'GET',headers:{Authorization:'Bearer fixture-'+role,'Content-Type':'application/json'},body:packet?JSON.stringify(weekly?{studentId:p[0],week:Number(p[1]),kind:p[2],index:Number(p[3]),result:slot.next.value,grade_write_protocol:1,value:packet}:{key,grade_write_protocol:1,value:packet}):undefined});
  const value=await response.json();if(!response.ok)throw Object.assign(Error(value.error),{status:response.status});return value;
 }
-function box(role,key){return new GradeOutbox(storage(),role,id,()=>{},key);}
+function box(role,key,device=storage()){return new GradeOutbox(device,role,id,()=>{},key);}
 function edit(b,fn){const before=b.view({}),after={...before};fn(after);b.edit(before,after);}
-(async()=>{
+async function start(scoped){
  const listener=net.createServer();await new Promise(r=>listener.listen(0,'127.0.0.1',r));const port=listener.address().port;await new Promise(r=>listener.close(r));base=`http://127.0.0.1:${port}`;
- server=cp.spawn(php,['-S',`127.0.0.1:${port}`,'tests/grade-http-fixture.php'],{env,stdio:'ignore'});
+ server=cp.spawn(php,['-S',`127.0.0.1:${port}`,'tests/grade-http-fixture.php'],{env:{...env,QHP_FIXTURE_SEMESTERS:scoped?'1':'0'},stdio:'ignore'});
  let ready=false,last;for(let i=0;i<50;i++){try{await request('teacher','grades');ready=true;break;}catch(e){last=e;await new Promise(r=>setTimeout(r,50));}}if(!ready)throw last;
+}
+async function stop(){
+ const child=server;server=null;
+ if(child&&child.exitCode===null)await new Promise(resolve=>{child.once('exit',resolve);child.kill();});
+}
+(async()=>{
+ const teacherDevice=storage(),assistantDevice=storage();
+ await start(false);
+ const oldTeacher=box('teacher','grades',teacherDevice),oldAssistant=box('assistant','grades',assistantDevice);
+ oldTeacher.accept(await request('teacher','grades'));oldAssistant.accept(await request('assistant','grades'));
+ const editAttendance=(outbox,value)=>edit(outbox,v=>{v.S=structuredClone(v.S);v.S[1].days.sun.attendance=value;});
+ editAttendance(oldTeacher,'present');let originalReceipt;
+ await assert.rejects(oldTeacher.flush(async p=>{assert.equal(p.semester_scoped,undefined);originalReceipt=await request('teacher','grades',p);throw Error('old response lost');}),/old response lost/);
+ const oldPacket=oldTeacher.drafts()[0].packet;
+ editAttendance(oldAssistant,'late');
+ await assert.rejects(oldAssistant.flush(async()=>{throw Error('old device offline');}),/old device offline/);
+ await stop();await start(true);
+ const reopened=box('teacher','grades',teacherDevice),other=box('assistant','grades',assistantDevice);
+ reopened.accept(await request('teacher','grades'));other.accept(await request('assistant','grades'));
+ assert.deepEqual(Object.keys(other.view({})),[],'old offline draft is not overlaid on the same calendar after store cutover');
+ await reopened.flush(async p=>{const receipt=await request('teacher','grades',p);assert.equal(receipt.replayed,true);assert.equal(receipt.input_sha256,originalReceipt.input_sha256);return receipt;});
+ assert.equal(reopened.drafts()[0].status,'confirmed');
+ await other.flush(p=>request('assistant','grades',p));
+ assert.equal(other.drafts()[0].status,'conflict');assert.throws(()=>other.resolve(other.drafts()[0].packet.operation_id,true),/مخزن التسجيل/);
+ await assert.rejects(request('teacher','grades',{...oldPacket,semester_scoped:true}),{status:409});
+ const modified=structuredClone(oldPacket);modified.changes[0].next.value='absent';
+ await assert.rejects(request('teacher','grades',modified),{status:409});
+ assert.deepEqual(Object.keys((await request('assistant','grades')).value),[]);
+ assert.equal((await request('assistant','grades',null,'&legacy=1'))[0].value.S[1].days.sun.attendance,'present');
+ console.log('PASS: pre-cutover receipt replay, offline draft retention, reopen on both devices and no historic or scoped overwrite');
  const legacy=await request('teacher','grades',null,'&legacy=1');assert.equal(legacy[0].legacy_unknown_semester,true);assert.equal(legacy[0].value.historic[8].keep,0);
  const daily=box('teacher','grades');daily.accept(await request('teacher','grades'));assert.deepEqual(Object.keys(daily.view({})),[],'legacy values never copied to current semester');
  edit(daily,v=>{v.S={1:{days:{sun:{attendance:'present'}}}}});await daily.flush(p=>request('teacher','grades',p));const receiptPacket=daily.drafts()[0].packet;
+ assert.equal(receiptPacket.semester_scoped,true);
+ other.accept(await request('assistant','grades'));assert.equal(other.view({}).S[1].days.sun.attendance,'present');
  const a=box('teacher','scientific_grades'),b=box('assistant','scientific_grades');a.accept(await request('teacher','scientific_grades'));b.accept(await request('assistant','scientific_grades'));
  assert.equal(a.view({}).configs[1].visible,true);assert.deepEqual(a.view({}).data,{});
  edit(a,v=>{v.data={1:{S:{1:{sun:{hifz:'0'}}}}};v.overrides={1:{S:{1:{sun:{hifz:true}}}}};});
@@ -45,4 +77,4 @@ function edit(b,fn){const before=b.view({}),after={...before};fn(after);b.edit(b
  const nextSci=await request('teacher','scientific_grades');assert.deepEqual(nextSci.value.data,{});assert.deepEqual(nextSci.value.overrides,{});assert.equal((await request('teacher','scientific_grades',null,'&legacy=1'))[0].value.data[1].old[1].sun.hifz,'9');
  assert.equal(stale[GRADE_ORIGIN].active_semester_id,'1');await assert.rejects(request('teacher','term:1:grades'),e=>e.status===403);
  console.log('PASS: real PHP HTTP + two browser outboxes: scientific zero/override atomicity, receipt-loss recovery, independent writes, same-cell conflict, weekly slot merge + server attribution, unchanged committee/halaqa permissions, immutable legacy history and stale-screen/semester fences');
-})().catch(e=>{console.error(e);process.exitCode=1;}).finally(()=>{server?.kill();if(path.dirname(path.resolve(folder))!==path.resolve(os.tmpdir())||!path.basename(folder).startsWith('qhp-atomic-'))throw Error('Unsafe fixture cleanup');fs.rmSync(folder,{recursive:true,force:true});});
+})().catch(e=>{console.error(e);process.exitCode=1;}).finally(async()=>{await stop();if(path.dirname(path.resolve(folder))!==path.resolve(os.tmpdir())||!path.basename(folder).startsWith('qhp-atomic-'))throw Error('Unsafe fixture cleanup');fs.rmSync(folder,{recursive:true,force:true});});
