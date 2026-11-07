@@ -79,13 +79,15 @@ function handle_list_app_state(): void
         return;
     }
 
+    $omitGradeValue = $keyFilter === '' && ($_GET['omit_grade_value'] ?? '') === '1';
+    $valueColumn = $omitGradeValue ? "CASE WHEN `key`='grades' THEN NULL ELSE value END AS value" : 'value';
     if ($tenants) {
         if ($keyFilter !== '') {
             $stmt = $pdo->prepare('SELECT `key`, value FROM app_state WHERE complex_id = ? AND `key` = ?');
             $stmt->execute([$cid, $keyFilter]);
             $rows = $stmt->fetchAll();
         } else {
-            $stmt = $pdo->prepare("SELECT `key`, value FROM app_state WHERE complex_id = ? AND SUBSTR(`key`,1,11) <> 'grade_plan_'");
+            $stmt = $pdo->prepare("SELECT `key`, $valueColumn FROM app_state WHERE complex_id = ? AND SUBSTR(`key`,1,11) <> 'grade_plan_'");
             $stmt->execute([$cid]);
             $rows = $stmt->fetchAll();
         }
@@ -94,7 +96,7 @@ function handle_list_app_state(): void
         $stmt->execute([$keyFilter]);
         $rows = $stmt->fetchAll();
     } else {
-        $rows = $pdo->query("SELECT `key`, value FROM app_state WHERE SUBSTR(`key`,1,11) <> 'grade_plan_'")->fetchAll();
+        $rows = $pdo->query("SELECT `key`, $valueColumn FROM app_state WHERE SUBSTR(`key`,1,11) <> 'grade_plan_'")->fetchAll();
     }
     $rows = array_values(array_filter($rows, static fn (array $row): bool => ($row['key'] ?? '') !== 'staff_tasks_v1' && !str_starts_with((string)($row['key'] ?? ''), 'grade_plan_')));
     foreach ($rows as &$row) {

@@ -320,20 +320,24 @@ export async function syncFromCloud(options?: {
     saveStudents(students);
 
     if (token) {
+      let syncStep = "GET /semesters/active";
       try {
         await fetchActiveCalendar(!loadCachedCalendar());
 
         const sardBeforePull = JSON.stringify(loadSardQueue());
-        const stateRows = await secureListAppState({ data: { token } });
+        syncStep = "GET /app-state?omit_grade_value=1";
+        const stateRows = await secureListAppState({ data: { token, omitGradeValue: true } });
         const state = new Map(stateRows.map((row) => [row.key, row.value]));
         assertCurrent();
         owner = crypto.randomUUID();
         sessionStorage.setItem("qs_sync_owner", owner);
         sessionStorage.setItem("qs_syncing", "1");
         if (state.has("grades")) {
+          syncStep = "GET /app-state?key=grades&grade_protocol=1";
           await refreshConfirmedGrades();
           assertCurrent();
         }
+        syncStep = "apply cached state";
         if (state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
         if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
         if (state.has("staff_attendance_settings")) saveStaffAttendanceSettings(state.get("staff_attendance_settings") as import("./staff-attendance").StaffAttendanceSettings);
@@ -362,6 +366,7 @@ export async function syncFromCloud(options?: {
         }
         if (state.has("halaqa_program_grades")) saveAllProgramGrades(state.get("halaqa_program_grades") as HalaqaProgramGradesStore);
         if (state.has("scientific_grades")) {
+          syncStep = "merge scientific grade settings";
           const {
             loadScientificGradesStore,
             mergeScientificGradesStores,
@@ -371,6 +376,7 @@ export async function syncFromCloud(options?: {
           assertCurrent();
           const merged = mergeScientificGradesStores(cloud, loadScientificGradesStore());
           saveScientificGradesStore(merged);
+          syncStep = "apply cached state";
         }
         if (state.has(ABSENCE_ALERTS_APP_STATE_KEY)) {
           mergeAbsenceAlertRecordFromCloud(state.get(ABSENCE_ALERTS_APP_STATE_KEY));
@@ -405,7 +411,7 @@ export async function syncFromCloud(options?: {
           sessionStorage.removeItem("qs_syncing");
           sessionStorage.removeItem("qs_sync_owner");
         }
-        console.warn("Cloud app-state sync failed (roster kept):", stateErr);
+        console.warn("Cloud app-state sync failed (roster kept):", stateErr, { step: syncStep });
       }
     }
 

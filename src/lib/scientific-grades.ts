@@ -894,14 +894,14 @@ export function isScientificProgramId(id: string): boolean {
 }
 
 function mergeDefaultScores(
-  base: ScientificDefaultScores,
-  overlay: ScientificDefaultScores,
+  base: ScientificDefaultScores | undefined,
+  overlay: ScientificDefaultScores | undefined,
 ): ScientificDefaultScores {
   const out: ScientificDefaultScores = { ...base };
-  if (overlay.hifz?.trim()) out.hifz = overlay.hifz.trim();
-  if (overlay.rabt?.trim()) out.rabt = overlay.rabt.trim();
-  if (overlay.muraja?.trim()) out.muraja = overlay.muraja.trim();
-  const att: ScientificAttendanceScores = { ...(base.attendance ?? {}), ...(overlay.attendance ?? {}) };
+  if (overlay?.hifz?.trim()) out.hifz = overlay.hifz.trim();
+  if (overlay?.rabt?.trim()) out.rabt = overlay.rabt.trim();
+  if (overlay?.muraja?.trim()) out.muraja = overlay.muraja.trim();
+  const att: ScientificAttendanceScores = { ...base?.attendance, ...overlay?.attendance };
   if (Object.keys(att).length > 0) out.attendance = att;
   else delete out.attendance;
   return out;

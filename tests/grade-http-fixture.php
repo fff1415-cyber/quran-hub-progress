@@ -17,7 +17,7 @@ class HttpFixtureDatabase extends PDO {
 $pdo=new HttpFixtureDatabase($fixture);
 function db():PDO{return $GLOBALS['pdo'];}
 function table_column_exists(PDO $pdo,string $table,string $column):bool{foreach($pdo->query('PRAGMA table_info('.$table.')')->fetchAll()as$row)if($row['name']===$column)return true;return false;}
-function require_auth():array{$token=$_SERVER['HTTP_AUTHORIZATION']??'';if(!in_array($token,['Bearer fixture-teacher','Bearer fixture-assistant'],true))error_response('Unauthenticated',401);return ['role'=>$token==='Bearer fixture-teacher'?'teacher':'assistant','complexId'=>1,'halaqaId'=>1];}
+function require_auth():array{$token=$_SERVER['HTTP_AUTHORIZATION']??'';if(!in_array($token,['Bearer fixture-teacher','Bearer fixture-assistant','Bearer fixture-manager'],true))error_response('Unauthenticated',401);return ['role'=>substr($token,15),'complexId'=>1,'halaqaId'=>1];}
 function require_complex_id(array $auth):int{return 1;}
 function json_input():array{return json_decode(file_get_contents('php://input'),true,512,JSON_THROW_ON_ERROR);}
 function error_response(string $message,int $status=400):never{http_response_code($status);json_response(['error'=>$message]);}
