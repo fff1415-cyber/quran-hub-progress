@@ -406,13 +406,13 @@ function kiosk_empty_week(array $workingDayKeys): array
 
 function kiosk_load_grades(PDO $pdo, int $complexId): array
 {
-    $tenants = app_state_tenant_enabled($pdo);
+    $tenants = app_state_tenant_enabled($pdo);$gradeKey=grade_store_current_key($pdo,$complexId,'grades');
     if ($tenants) {
         $stmt = $pdo->prepare('SELECT value FROM app_state WHERE complex_id = ? AND `key` = ? LIMIT 1');
-        $stmt->execute([$complexId, 'grades']);
+        $stmt->execute([$complexId, $gradeKey]);
     } else {
         $stmt = $pdo->prepare('SELECT value FROM app_state WHERE `key` = ? LIMIT 1');
-        $stmt->execute(['grades']);
+        $stmt->execute([$gradeKey]);
     }
     $raw = $stmt->fetchColumn();
     if ($raw === false || $raw === '') {

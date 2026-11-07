@@ -5,6 +5,7 @@ declare(strict_types=1);
 require_once __DIR__ . '/../schema.php';
 require_once __DIR__ . '/../diagnostics.php';
 require_once __DIR__ . '/../lib/plan-profile.php';
+require_once __DIR__ . '/../lib/plan-academic-record.php';
 
 function plans_require_roles(array $auth, array $roles): void
 {
@@ -720,6 +721,8 @@ function handle_assign_plan(): void
         $studentStmt = $pdo->prepare('SELECT ' . implode(', ', $studentColumns) . ' FROM students WHERE id = ? FOR UPDATE');
         $studentStmt->execute([$studentId]);
         $studentRow = $studentStmt->fetch();
+        $previousTransition = plans_transition_receipt($pdo, $cid, $input);
+        if ($previousTransition !== null) { $pdo->commit(); json_response($previousTransition); return; }
         if (!empty($input['only_if_unassigned'])) {
             $existingLink = $pdo->prepare("SELECT id FROM student_plan_assignments WHERE student_id = ? AND status IN ('active', 'frozen') FOR UPDATE");
             $existingLink->execute([$studentId]);
@@ -778,6 +781,7 @@ function handle_assign_plan(): void
         ]);
 
         $sardQueue = null;
+        $academicRecord = null;
         if (isset($input['sard_result'])) {
             $sard = $input['sard_result'];
             $stateTenants = app_state_tenant_enabled($pdo);
@@ -798,6 +802,7 @@ function handle_assign_plan(): void
                 $entry['closedPlanTitle'] = $current['title'] ?? null;
                 $entry['newPlanTitle'] = $planRow['title'];
                 $entry['newPlanStartDate'] = $dateVal;
+                if (array_key_exists('academic_record', $sard)) $academicRecord = plans_commit_academic_record($pdo, $cid, $studentId, $current, $planRow, $sard, $entry, $input);
                 $found = true;
             }
             unset($entry);
@@ -808,8 +813,10 @@ function handle_assign_plan(): void
             throw new RuntimeException('طلب الاجتياز مطلوب لترحيل الخطة');
         }
         $studentPhase = plans_commit_profile_phase($pdo, $cid, $studentId, $planRow, $tenants);
+        $transitionResponse = ['ok' => true, 'assignment_id' => $id, 'sard_queue' => $sardQueue, 'student_phase' => $studentPhase, 'academic_record' => $academicRecord];
+        plans_store_transition_receipt($pdo, $cid, $input, $transitionResponse);
         $pdo->commit();
-        json_response(['ok' => true, 'assignment_id' => $id, 'sard_queue' => $sardQueue, 'student_phase' => $studentPhase]);
+        json_response($transitionResponse);
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         plans_abort_with_sql_error($pdo, $e, 'ربط الطالب بالخطة');

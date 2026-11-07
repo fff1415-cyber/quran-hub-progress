@@ -1,3 +1,4 @@
+import { assertSharedGradePeriod } from "@/lib/grade-sync";
 import { confirmedGradePlanAssignment, rememberGradePlanAssignments, flushConfirmedGrades, currentGradeOutbox } from "@/lib/grade-sync";
 import type { PlanEffect } from "@/lib/grade-outbox";
 import { planCompletionDate } from "@/lib/plan-completion-date";
@@ -868,9 +869,10 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     repairScientificHalaqaProgram(halaqaId);
     const box = currentGradeOutbox();
     if (box && !box.snapshot()) return;
+    try { assertSharedGradePeriod("grades", calendar.semester?.id ?? null); assertSharedGradePeriod("scientific_grades", calendar.semester?.id ?? null); } catch { return; }
     syncScientificScoresFromPrepForHalaqa(halaqaId, box?.snapshot()?.value ?? loadGrades(), ids, cfg);
     refreshSciData();
-  }, [halaqaId, students, refreshSciData]);
+  }, [halaqaId, students, refreshSciData, calendar.semester?.id]);
 
   useEffect(() => {
     syncSciScoresFromPrep();
@@ -917,6 +919,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     value: string,
   ) => {
     if (closedDayKeys.has(dayKey)) return;
+    try { assertSharedGradePeriod("scientific_grades", calendar.semester?.id ?? null); } catch (e) { toast.error(e instanceof Error ? e.message : "تغيّر الفصل"); return; }
     setTeacherScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
     setSciData(loadScientificData(halaqaId));
   };
@@ -930,6 +933,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     if (closedDayKeys.has(dayKey)) return;
     const week = grades[studentId]?.[weekNum] ?? emptyWeek(workingKeysList);
     const entry = dayEntryFor(week, dayKey, workingKeysList);
+    try { assertSharedGradePeriod("scientific_grades", calendar.semester?.id ?? null); } catch (e) { toast.error(e instanceof Error ? e.message : "تغيّر الفصل"); return; }
     finalizeTeacherScientificDayScore(
       halaqaId,
       studentId,
@@ -1123,11 +1127,12 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   };
 
   const update = (studentId: string, fn: (w: WeekRecord) => WeekRecord, sync?: boolean | "immediate", plan?: PlanEffect) => {
+    try { assertSharedGradePeriod("grades", calendar.semester?.id ?? null); } catch (e) { toast.error(e instanceof Error ? e.message : "تغيّر الفصل"); return; }
     const next = mutateStudentWeek(
       studentId,
       weekNum,
       (w) => fn(ensureWeekDays(w, workingKeysList)),
-      { sync, plan },
+      { sync, plan, semesterId: calendar.semester?.id ?? null },
     );
     setGrades(next);
     if (sync !== false) flushGradesToCloudSoon();
@@ -1531,6 +1536,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         <div className="flex items-center gap-2 flex-wrap sm:justify-self-end justify-center">
           {!isTalqeen && (
             <ScientificGradesToolbar
+              semesterId={calendar.semester?.id ?? null}
               halaqaId={halaqaId}
               onConfigChange={handleSciConfigChange}
             />

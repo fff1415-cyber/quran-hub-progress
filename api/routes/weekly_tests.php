@@ -35,6 +35,25 @@ function handle_patch_weekly_test(): void
         error_response('الحلقة غير مصرح بها', 403);
     }
 
+    if(array_key_exists('grade_write_protocol',$input)){
+        if($input['grade_write_protocol']!==1||!shared_grade_writes_enabled('weekly_tests'))error_response('الحفظ المؤكد للاختبارات غير مفعّل؛ بقيت المسودة على الجهاز',503);
+        $packet=$input['value']??[];
+        if(!is_array($packet))error_response('طلب الاختبار غير صالح',400);
+        $changes=$packet['changes']??[];$path=[$studentId,(string)$week,$kind,(string)$index];
+        if(!is_array($changes)||count($changes)!==1||($changes[0]['path']??null)!==$path||($changes[0]['next']??null)!==['present'=>true,'value'=>$result]||isset($packet['plan']))error_response('طلب الاختبار لا يطابق الخانة المحددة',400);
+        $operation=(string)($packet['operation_id']??'');
+        $effect=static function(stdClass $store,string $versionKey)use($pdo,$cid,$auth,$studentId,$week,$kind,$index,$result,$operation):void{
+            $row=$store->{$studentId}->{(string)$week};$attribution=$row->attribution??new stdClass();if(!$attribution instanceof stdClass)$attribution=new stdClass();
+            $records=$attribution->{$kind}??[];if(!is_array($records))throw new RuntimeException('سجل إسناد الاختبار يحتاج مراجعة؛ لم تُمح بياناته',409);
+            $records=array_pad(array_values($records),$index+1,null);
+            $records[$index]=$result===''?null:(object)['result'=>$result,'byName'=>(string)($auth['name']??''),'byId'=>(string)($auth['accountId']??''),'at'=>gmdate('Y-m-d\TH:i:s\Z')];
+            $attribution->{$kind}=$records;$row->attribution=$attribution;
+            grade_cells_record_version($pdo,grade_cells_context($pdo,$cid),$versionKey,[$studentId,(string)$week,'attribution',$kind,(string)$index],$operation);
+        };
+        try{$receipt=grade_cells_apply($pdo,$cid,'weekly_tests',$operation,$packet['calendar_context']??[],$changes,0,$effect,[],grade_packet_is_scoped($packet));json_response(['ok'=>true]+$receipt);return;}
+        catch(Throwable $error){error_response($error instanceof PDOException?api_safe_failure_message($error,'weekly_atomic'):$error->getMessage(),$error instanceof PDOException?api_database_error_status($error):(in_array($error->getCode(),[400,409],true)?$error->getCode():503));}
+    }
+    if(shared_grade_writes_enabled('weekly_tests'))error_response('حدّث واجهة الاختبارات لتأكيد الحفظ؛ لم تُحفظ عملية قديمة',409);
     $pdo->beginTransaction();
     try {
         $insert = $pdo->prepare($tenants
