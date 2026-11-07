@@ -41,11 +41,22 @@ function stamp(snapshot: GradeSnapshot, path: string[]): Stamp {
 }
 const active = (draft: GradeDraft) => ["pending", "unbased", "conflict"].includes(draft.status);
 
+export function assertGradeSnapshot(snapshot: GradeSnapshot) {
+  if (snapshot.protocol !== 1 || !object(snapshot.value) || !object(snapshot.versions) ||
+    typeof snapshot.calendar_context?.known !== "boolean") throw Error("لم يؤكد الخادم بروتوكول الحفظ؛ بقيت المسودات محفوظة");
+}
+
 /** Each immutable packet has its own storage key: two tabs cannot replace each other's queues. */
 export class GradeOutbox {
   readonly prefix: string;
-  constructor(private storage: Storage, scope: string, private id = () => crypto.randomUUID(), private changed = () => {}) { this.prefix = "qhp_grade_outbox_v1:" + encodeURIComponent(scope) + ":"; }
-  snapshot(): GradeSnapshot | null { const raw = this.storage.getItem(this.prefix + "snapshot"); return raw ? JSON.parse(raw) : null; }
+  constructor(private storage: Storage, scope: string, private id = () => crypto.randomUUID(), private changed = () => {}, private snapshots?: Map<string, GradeSnapshot>) { this.prefix = "qhp_grade_outbox_v1:" + encodeURIComponent(scope) + ":"; }
+  snapshot(): GradeSnapshot | null {
+    const key = this.prefix + "snapshot";
+    const cached = this.snapshots?.get(key);
+    if (cached) return cached;
+    const raw = this.storage.getItem(key);
+    return raw ? JSON.parse(raw) : null;
+  }
   drafts(): GradeDraft[] {
     const result: GradeDraft[] = [];
     for (let i = 0; i < this.storage.length; i++) { const key = this.storage.key(i); if (key?.startsWith(this.prefix + "operation:")) result.push(JSON.parse(this.storage.getItem(key)!)); }
@@ -53,8 +64,10 @@ export class GradeOutbox {
   }
   private write(draft: GradeDraft) { this.storage.setItem(this.prefix + "operation:" + draft.packet.operation_id, JSON.stringify(draft)); this.changed(); }
   accept(snapshot: GradeSnapshot) {
-    if (snapshot.protocol !== 1 || !object(snapshot.value) || !object(snapshot.versions) || !snapshot.calendar_context || typeof snapshot.calendar_context.known !== "boolean") throw Error("لم يؤكد الخادم بروتوكول الحفظ؛ بقيت المسودات محفوظة");
-    this.storage.setItem(this.prefix + "snapshot", JSON.stringify(snapshot));
+    assertGradeSnapshot(snapshot);
+    const key = this.prefix + "snapshot";
+    if (this.snapshots?.has(key)) this.snapshots.set(key, snapshot);
+    else this.storage.setItem(key, JSON.stringify(snapshot));
     for (const draft of this.drafts()) if (draft.status === "confirmed" && !draft.observed) this.write({ ...draft, observed: true });
     this.changed();
   }
