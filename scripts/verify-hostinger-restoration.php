@@ -15,8 +15,8 @@ try {
     if (DB_NAME !== 'u112851217_msht_io') throw new RuntimeException('Unexpected production identity');
     $testName = 'u112851217_msht_test';
     $privateConfig = $home . '/.qhp-private/msht-test.php';
-    $settings = ['host' => DB_HOST, 'database' => $testName, 'user' => DB_USER, 'password' => DB_PASS];
-    $source = 'existing_server_credentials';
+    $settings = null;
+    $source = 'private_server_file';
     $checks['private_config_present'] = is_file($privateConfig);
     if (is_file($privateConfig)) {
         $realConfig = realpath($privateConfig);
@@ -32,6 +32,8 @@ try {
         $settings = qhp_load_private_test_config($privateContents);
         $source = 'private_server_file';
     }
+    if ($settings === null) throw new RuntimeException('Private configuration needs literal connection fields');
+    if (($settings['user'] ?? null) === DB_USER) throw new RuntimeException('Production credentials cannot be used for test verification');
     $checks['private_config_array'] = is_array($settings);
     $checks['test_identity_matches'] = is_array($settings) && ($settings['database'] ?? '') === $testName;
     if (!is_array($settings) || ($settings['database'] ?? '') !== $testName) throw new RuntimeException('Test identity must be explicit');

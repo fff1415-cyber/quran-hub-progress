@@ -1,3 +1,5 @@
+import type { PlanEffect } from "./grade-outbox";
+import { gradeView, recordGradeEdit } from "./grade-sync";
 // Mock data + localStorage store for مجمع حلقات الشتيوي
 import { hasAuthToken } from "@/lib/auth-session";
 
@@ -49,6 +51,7 @@ export interface DayEntry {
   compensationFaces?: number;
   /** Plan hifz segment indexes applied when this day's hifz was recorded (for undo). */
   hifzPlanSegments?: number[];
+  hifzPlanAssignmentId?: string;
   /** Custom field id → selected option (per halaqa field definitions). */
   custom?: Record<string, string>;
   /** Last local edit time — used to merge teacher/assistant concurrent saves. */
@@ -210,8 +213,9 @@ export function dayEntryFor(
 // ---- localStorage layer ----
 const KEY_STUDENTS = "qshatawi_students_v2";
 const KEY_HALAQAT = "qshatawi_halaqat_v2";
-const KEY_GRADES = "qshatawi_grades_v2";
-const KEY_GRADES_SEMESTER = "qshatawi_grades_semester_id";
+// Leave the legacy, unscoped cache intact for recovery. It is never a write base.
+const KEY_LOCAL_GRADES = "qhp_unsigned_grades_v1";
+const KEY_GRADES_SEMESTER = "qhp_grades_semester_v1";
 const KEY_NOTIFICATIONS = "qshatawi_notifications_v2";
 const KEY_SARD_QUEUE = "qshatawi_sard_queue_v2";
 const KEY_SARD_HISTORY = "qshatawi_sard_history_v2";
@@ -437,7 +441,7 @@ export function mutateStudentWeek(
   studentId: string,
   weekNum: number,
   fn: (w: WeekRecord) => WeekRecord,
-  options?: { sync?: boolean | "immediate" },
+  options?: { sync?: boolean | "immediate"; plan?: PlanEffect },
 ): GradesStore {
   // Read at the moment of the tap, so each field patch starts with all prior taps.
   const latest = loadGrades();
@@ -448,7 +452,7 @@ export function mutateStudentWeek(
     ...next[studentId],
     [weekNum]: mergedWeek,
   };
-  saveGrades(next, options?.sync === undefined ? undefined : { sync: options.sync });
+  saveGrades(next, options);
   return next;
 }
 
@@ -518,11 +522,16 @@ export function saveHalaqat(h: Halaqa[], options?: { allowEmpty?: boolean }) {
 
 export function loadGrades(): GradesStore {
   if (typeof window === "undefined") return {};
-  const raw = localStorage.getItem(KEY_GRADES);
-  return raw ? JSON.parse(raw) : {};
+  if (hasAuthToken()) return gradeView({});
+  const raw = localStorage.getItem(KEY_LOCAL_GRADES);
+  return gradeView(raw ? JSON.parse(raw) : {});
 }
-export function saveGrades(g: GradesStore, options?: { sync?: boolean | "immediate" }) {
-  localStorage.setItem(KEY_GRADES, JSON.stringify(g));
+export function saveGrades(g: GradesStore, options?: { sync?: boolean | "immediate"; plan?: PlanEffect }) {
+  if (options?.sync !== false) {
+    if (!recordGradeEdit(loadGrades(), g, options?.plan)) localStorage.setItem(KEY_LOCAL_GRADES, JSON.stringify(g));
+  } else if (!hasAuthToken()) {
+    localStorage.setItem(KEY_LOCAL_GRADES, JSON.stringify(g));
+  }
   notifyGradesChanged();
   if (options?.sync === false) return;
   scheduleGradesCloudPush(g);

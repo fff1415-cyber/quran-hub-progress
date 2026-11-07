@@ -45,7 +45,7 @@ async function apiFetch<T>(
     }
   }
   if (!res.ok) {
-    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+    throw Object.assign(new Error((body as { error?: string }).error ?? `HTTP ${res.status}`), { status: res.status });
   }
   return body as T;
 }
@@ -241,4 +241,11 @@ export async function secureUpdateActiveSemester({
     auth: data.token,
     body: JSON.stringify({ semester: data.semester, weeks: data.weeks }),
   });
+}
+
+export async function secureGradeSnapshot(token: string, cursor?: string) {
+  return apiFetch<import("./grade-outbox").GradeSnapshotResult>("/app-state?key=grades&grade_protocol=1" + (cursor ? "&grade_cursor=" + encodeURIComponent(cursor) : ""), { auth: token });
+}
+export async function secureGradeOperation(token: string, packet: import("./grade-outbox").GradePacket) {
+  return apiFetch<{ ok: boolean; operation_id: string; input_sha256: string; replayed: boolean }>("/app-state", { method: "POST", auth: token, body: JSON.stringify({ key: "grades", grade_write_protocol: 1, value: packet }) });
 }

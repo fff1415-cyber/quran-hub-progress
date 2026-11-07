@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 require_once __DIR__ . '/../schema.php';
 require_once __DIR__ . '/../diagnostics.php';
+require_once __DIR__ . '/../lib/plan-profile.php';
 
 function plans_require_roles(array $auth, array $roles): void
 {
@@ -806,8 +807,9 @@ function handle_assign_plan(): void
         } elseif (($auth['role'] ?? '') === 'musammi') {
             throw new RuntimeException('طلب الاجتياز مطلوب لترحيل الخطة');
         }
+        $studentPhase = plans_commit_profile_phase($pdo, $cid, $studentId, $planRow, $tenants);
         $pdo->commit();
-        json_response(['ok' => true, 'assignment_id' => $id, 'sard_queue' => $sardQueue]);
+        json_response(['ok' => true, 'assignment_id' => $id, 'sard_queue' => $sardQueue, 'student_phase' => $studentPhase]);
     } catch (PDOException $e) {
         if ($pdo->inTransaction()) $pdo->rollBack();
         plans_abort_with_sql_error($pdo, $e, 'ربط الطالب بالخطة');
@@ -1045,7 +1047,7 @@ function handle_halaqa_plan_status(): void
     try {
         if (plans_students_tenant_scoped($pdo, $tenants)) {
             $stmt = $pdo->prepare(
-                'SELECT spa.student_id, spa.status, spa.assigned_at
+                'SELECT spa.id AS assignment_id, spa.student_id, spa.status, spa.assigned_at
                  FROM student_plan_assignments spa
                  INNER JOIN students s ON s.id = spa.student_id
                  WHERE s.halaqa_id = ? AND s.complex_id = ?
@@ -1055,7 +1057,7 @@ function handle_halaqa_plan_status(): void
             $stmt->execute([$halaqaId, $cid]);
         } else {
             $stmt = $pdo->prepare(
-                'SELECT spa.student_id, spa.status, spa.assigned_at
+                'SELECT spa.id AS assignment_id, spa.student_id, spa.status, spa.assigned_at
                  FROM student_plan_assignments spa
                  INNER JOIN students s ON s.id = spa.student_id
                  WHERE s.halaqa_id = ?
@@ -1079,6 +1081,7 @@ function handle_halaqa_plan_status(): void
             }
             $statuses[] = [
                 'student_id' => $studentId,
+                'assignment_id' => (string) $row['assignment_id'],
                 'status' => $status,
             ];
         }
@@ -1096,11 +1099,16 @@ function handle_apply_plan_input(): void
     $auth = require_auth();
     $cid = require_complex_id($auth);
     plans_require_roles($auth, ['teacher', 'assistant', 'manager']);
+    if (function_exists('grade_writes_enabled') && grade_writes_enabled()) error_response('سجّل الدرجة والإنجاز من مسار الحفظ المؤكد؛ لم تُنفّذ عملية خطة منفردة', 409);
     $input = json_input();
     $studentId = trim((string) ($input['student_id'] ?? ''));
     $taskType = trim((string) ($input['task_type'] ?? ''));
     $tap = trim((string) ($input['tap'] ?? ''));
     $completedDate = trim((string) ($input['completed_at'] ?? date('Y-m-d')));
+    $dateParts = explode('-', $completedDate);
+    if (!preg_match('/^\d{4}-\d{2}-\d{2}$/', $completedDate) || !checkdate((int) ($dateParts[1] ?? 0), (int) ($dateParts[2] ?? 0), (int) ($dateParts[0] ?? 0))) {
+        error_response('تاريخ الإنجاز غير صالح');
+    }
 
     if ($studentId === '' || !in_array($taskType, ['hifz', 'rabt', 'muraja'], true)) {
         error_response('بيانات غير صالحة');
@@ -1208,7 +1216,7 @@ function handle_apply_plan_input(): void
     );
     $applied = [];
     foreach ($nextSegs as $seg) {
-        $compDate = $taskType === 'hifz' ? $completedDate : date('Y-m-d');
+        $compDate = $completedDate;
         $ins->execute([new_uuid(), $studentId, $planId, $seg, $taskType, $compDate, $recorder, $assignment['id']]);
         $applied[] = $seg;
     }
@@ -1217,7 +1225,7 @@ function handle_apply_plan_input(): void
         'ok' => true,
         'applied_segments' => $applied,
         'task_type' => $taskType,
-        'completed_at' => $taskType === 'hifz' ? $completedDate : null,
+        'completed_at' => $completedDate,
     ]);
 }
 
@@ -1226,6 +1234,7 @@ function handle_remove_plan_completions(): void
     $auth = require_auth();
     $cid = require_complex_id($auth);
     plans_require_roles($auth, ['teacher', 'assistant', 'manager']);
+    if (function_exists('grade_writes_enabled') && grade_writes_enabled()) error_response('سجّل الدرجة والإنجاز من مسار الحفظ المؤكد؛ لم تُنفّذ عملية خطة منفردة', 409);
     $input = json_input();
     $studentId = trim((string) ($input['student_id'] ?? ''));
     $taskType = trim((string) ($input['task_type'] ?? 'hifz'));

@@ -1,3 +1,4 @@
+import { refreshConfirmedGrades, flushConfirmedGrades } from "./grade-sync";
 // Cloud sync layer — all data via Hostinger PHP API
 import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, SardHistoryItem, SardQueueItem, Student } from "./mock-data";
 import {
@@ -330,8 +331,8 @@ export async function syncFromCloud(options?: {
         sessionStorage.setItem("qs_sync_owner", owner);
         sessionStorage.setItem("qs_syncing", "1");
         if (state.has("grades")) {
-          const cloud = state.get("grades") as GradesStore;
-          saveGrades(mergeGradesStores(loadGrades(), cloud), { sync: false });
+          await refreshConfirmedGrades();
+          assertCurrent();
         }
         if (state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
         if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
@@ -511,59 +512,11 @@ export async function fetchCloudGrades(): Promise<GradesStore> {
   return row.value as GradesStore;
 }
 
-let gradesPushQueue: Promise<GradesStore> = Promise.resolve({} as GradesStore);
-
-/** Skip redundant cloud pulls when the remote grades blob is unchanged. */
-let lastPulledCloudHash = "";
-
-function gradesPayloadHash(g: GradesStore): string {
-  return JSON.stringify(g);
-}
-
-/** Upload local grades after merging with the latest cloud copy (teacher + assistant). */
-export async function pushMergedGrades(local: GradesStore): Promise<GradesStore> {
-  const run = async (): Promise<GradesStore> => {
-    const cloud = await fetchCloudGrades();
-    const merged = mergeGradesStores(cloud, local);
-    await secureSetAppState({ data: { token: tokenOrThrow(), key: "grades", value: merged } });
-    // A teacher can tap another field while this request is in flight.
-    // Keep those local edits when the earlier upload finishes.
-    saveGrades(mergeGradesStores(merged, loadGrades()), { sync: false });
-    lastPulledCloudHash = gradesPayloadHash(merged);
-    return merged;
-  };
-  const next = gradesPushQueue.then(run, run);
-  gradesPushQueue = next.then(
-    (v) => v,
-    () => local,
-  );
-  return next;
-}
-
-/** Pull cloud grades and merge into local without echoing a push. */
+/** Durable cell packets are recorded at each local edit, never rebuilt from a whole-store upload. */
+export async function pushMergedGrades(_local: GradesStore): Promise<GradesStore> { return flushConfirmedGrades(); }
 export async function pullMergedGrades(): Promise<GradesStore | null> {
-  const token = getToken();
-  if (!token) return null;
-  const cloud = await fetchCloudGrades();
-  const cloudHash = gradesPayloadHash(cloud);
-  if (cloudHash === lastPulledCloudHash) return null;
-
-  const local = loadGrades();
-  const merged = mergeGradesStores(local, cloud);
-  const mergedHash = gradesPayloadHash(merged);
-  lastPulledCloudHash = cloudHash;
-
-  if (mergedHash === gradesPayloadHash(local)) return null;
-
-  const prev = sessionStorage.getItem("qs_syncing");
-  sessionStorage.setItem("qs_syncing", "1");
-  try {
-    saveGrades(merged, { sync: false });
-  } finally {
-    if (prev) sessionStorage.setItem("qs_syncing", prev);
-    else sessionStorage.removeItem("qs_syncing");
-  }
-  return merged;
+  if (!getToken()) return null;
+  return refreshConfirmedGrades();
 }
 
 export async function fetchCloudScientificGrades(): Promise<import("./scientific-grades").ScientificGradesStore> {

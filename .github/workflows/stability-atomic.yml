@@ -1,0 +1,115 @@
+name: Atomic grade acceptance
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  changed-safety:
+    if: github.head_ref == 'fix/stability-stage-2-atomic'
+    runs-on: ubuntu-latest
+    outputs:
+      probe: ${{ steps.scope.outputs.probe }}
+      native: ${{ steps.scope.outputs.native }}
+      app: ${{ steps.scope.outputs.app }}
+      http: ${{ steps.scope.outputs.http }}
+      local: ${{ steps.scope.outputs.local }}
+      plan: ${{ steps.scope.outputs.plan }}
+      engine: ${{ steps.scope.outputs.engine }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: scope
+        run: |
+          candidate='${{ github.event.pull_request.head.sha }}'
+          if git diff --quiet "$candidate^" "$candidate" -- scripts/inspect-safety-provenance.py; then
+            echo 'probe=false' >> "$GITHUB_OUTPUT"
+          else
+            echo 'probe=true' >> "$GITHUB_OUTPUT"
+          fi
+          changed() {
+            name="$1"; shift
+            if git diff --quiet "$candidate^" "$candidate" -- "$@"; then
+              echo "$name=false" >> "$GITHUB_OUTPUT"
+            else
+              echo "$name=true" >> "$GITHUB_OUTPUT"
+            fi
+          }
+          changed native api/lib api/routes/plans.php api/routes/kiosk.php tests/atomic-native.php tests/atomic-plan-cases.php tests/grade-cell-native-cases.php tests/grade-cell-cases.php tests/fixtures
+          changed app src package.json package-lock.json vite.config.ts
+          changed http api/routes/app_state.php api/lib src/lib/grade-outbox.ts tests/grade-http-fixture.php tests/stage2-atomic-sessions.cjs
+          changed local src/lib/mock-data.ts src/lib/grade-sync.ts src/lib/grade-outbox.ts src/components/GradeSaveStatus.tsx tests/stage2-atomic-local.cjs
+          changed plan api/lib api/routes/plans.php tests/atomic-plan-cases.php tests/stage3-atomic-plan.php
+          changed engine api/lib/grade-cell-operations.php tests/backend-grade-cell-operations.php tests/grade-cell-cases.php
+  client:
+    needs: changed-safety
+    if: github.head_ref == 'fix/stability-stage-2-atomic'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - run: node tests/stage2-atomic-sessions.cjs
+        if: needs.changed-safety.outputs.http == 'true'
+      - run: node tests/stage2-atomic-local.cjs
+        if: needs.changed-safety.outputs.local == 'true'
+      - run: php tests/backend-grade-cell-operations.php
+        if: needs.changed-safety.outputs.engine == 'true'
+      - run: php tests/stage3-atomic-plan.php
+        if: needs.changed-safety.outputs.plan == 'true'
+      - run: npx tsc --noEmit
+        if: needs.changed-safety.outputs.app == 'true'
+      - run: npm run build:hostinger
+        if: needs.changed-safety.outputs.app == 'true'
+  native:
+    needs: changed-safety
+    if: needs.changed-safety.outputs.native == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        include:
+          - image: mysql:8.0
+            health: mysqladmin ping -h 127.0.0.1
+          - image: mariadb:11.8
+            health: healthcheck.sh --connect --innodb_initialized
+    services:
+      mysql:
+        image: ${{ matrix.image }}
+        env:
+          MYSQL_DATABASE: audit_test
+          MYSQL_USER: audit
+          MYSQL_PASSWORD: audit_only
+          MYSQL_ROOT_PASSWORD: isolated_root_only
+        ports: ['3307:3306']
+        options: --health-cmd="${{ matrix.health }}" --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_mysql, pcntl
+      - run: php tests/atomic-native.php
+        env:
+          AUDIT_MYSQL_DSN: mysql:host=127.0.0.1;port=3307;dbname=audit_test;charset=utf8mb4
+  safety-provenance:
+    needs: changed-safety
+    if: needs.changed-safety.outputs.probe == 'true' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inspect private configuration labels and domain-root provenance without connecting to a database
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: python3 scripts/inspect-safety-provenance.py
