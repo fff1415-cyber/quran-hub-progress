@@ -44,11 +44,11 @@ function qhp_restore_rows(string $sql):array {
 function qhp_restore_archive(string $file,?PDO $write=null):array {
     $h=gzopen($file,'rb');if(!$h)throw new RuntimeException('archive_unreadable');$result=[];$dropped=[];$create='';$complete=false;
     try{while(($line=gzgets($h))!==false){
-        $line=rtrim($line,"\r\n");
+        $line=rtrim($line," \t\r\n");
         if($create!==''){$create.="\n".$line;if(!str_ends_with($line,';'))continue;$line=$create;$create='';}
         if($line===''||str_starts_with($line,'--')){if(str_starts_with($line,'-- Dump completed'))$complete=true;continue;}
         if(preg_match('/^\/\*M?!999999.*enable the sandbox mode.*\*\/$/D',$line))continue;
-        if(preg_match('/^\/\*M?![0-9]{5,6} SET (?:@OLD_[A-Z_]+\s*=.*|@saved_cs_client\s*=.*|[A-Z_]+\s*=.*|NAMES utf8mb4) \*\/;$/iD',$line)){
+        if(preg_match('/^\/\*M?![0-9]{5,6}\s+SET\s+(?:(?:@(?:OLD_[A-Z_]+|saved_cs_client)|[A-Z_]+)\s*=.+|NAMES\s+utf8mb4)\s*\*\/;?$/iD',$line)){
             if(preg_match('/\b(?:GLOBAL|GTID|SQL_LOG_BIN)\b/i',$line))throw new RuntimeException('unsupported_global_dump_directive');continue;
         }
         if(preg_match('/^(?:LOCK TABLES `[A-Za-z0-9_]+` WRITE|UNLOCK TABLES|\/\*!40000 ALTER TABLE `[A-Za-z0-9_]+` (?:DISABLE|ENABLE) KEYS \*\/);$/D',$line))continue;
@@ -65,7 +65,7 @@ function qhp_restore_archive(string $file,?PDO $write=null):array {
         if(preg_match('/^INSERT INTO `([A-Za-z0-9_]+)` VALUES /',$line,$m)&&isset($result[$m[1]])){
             $rows=qhp_restore_rows($line);foreach($rows as$row)$result[$m[1]]['rows'][]=$row;if($write)$write->exec($line);continue;
         }
-        throw new RuntimeException('unsupported_dump_statement');
+        throw new RuntimeException('unsupported_dump_statement'.(getenv('QHP_RESTORE_FIXTURE')==='1'?': '.substr($line,0,160):''));
     }}finally{gzclose($h);}
     if(!$complete||$create!==''||!$result||array_keys($dropped)!==array_keys($result))throw new RuntimeException('incomplete_plain_dump');
     foreach($result as&$table){sort($table['rows']);$table['row_count']=count($table['rows']);$table['data_sha256']=hash('sha256',implode('',$table['rows']));unset($table['rows']);}unset($table);ksort($result);return $result;
@@ -100,7 +100,7 @@ function qhp_restore_apply(PDO $pdo,array $settings,string $target,string $archi
     $oldSha=hash_file('sha256',$old);if(!file_put_contents($directory.'/test-before-restore.sha256',$oldSha."\n",LOCK_EX))throw new RuntimeException('test_backup_manifest_write_failed');
     $pdo->exec("SET SESSION sql_mode='NO_AUTO_VALUE_ON_ZERO', SESSION time_zone='+00:00', SESSION foreign_key_checks=0");
     try{
-        qhp_restore_identity($pdo,$target);qhp_restore_archive($archive,$pdo);qhp_restore_compare($pdo,$settings,$target,$directory,'restored-roundtrip',$expected,$port);
+        qhp_restore_identity($pdo,$target);if(!hash_equals($manifest['sha256'],(string)hash_file('sha256',$archive)))throw new RuntimeException('source_archive_changed');qhp_restore_archive($archive,$pdo);qhp_restore_compare($pdo,$settings,$target,$directory,'restored-roundtrip',$expected,$port);
     }catch(Throwable $failure){
         try{qhp_restore_identity($pdo,$target);if(!hash_equals($oldSha,(string)hash_file('sha256',$old)))throw new RuntimeException('test_backup_changed');qhp_restore_archive($old,$pdo);qhp_restore_compare($pdo,$settings,$target,$directory,'rollback-roundtrip',$previous,$port);}
         catch(Throwable){throw new RuntimeException('test_restore_failed_private_rollback_needs_review');}
