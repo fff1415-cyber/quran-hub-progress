@@ -662,7 +662,7 @@ function gradeTableWidthPx(
 
 function buildDayColWidths(isTalqeen: boolean, sci: SciTableCtx, compensationPerDay: boolean): number[] {
   if (isTalqeen) {
-    const out = [GRADE_COL.attendance, GRADE_COL.wajib];
+    const out: number[] = [GRADE_COL.attendance, GRADE_COL.wajib];
     if (sci.visible && sci.fields.attendance) out.splice(1, 0, GRADE_COL.scientific);
     return out;
   }

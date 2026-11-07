@@ -62,12 +62,24 @@ import {
 export { getToken, setToken, clearToken, hasAuthToken };
 
 const SYNC_FRESH_KEY = "qs_cloud_sync_at";
+export const CLOUD_SYNC_STATUS_EVENT = "qs-cloud-sync-status";
+export type CloudSyncStatus = "idle" | "syncing" | "confirmed" | "failed";
+let cloudSyncStatus: CloudSyncStatus = "idle";
+export function getCloudSyncStatus(): CloudSyncStatus { return cloudSyncStatus; }
+function setCloudSyncStatus(status: CloudSyncStatus): void {
+  cloudSyncStatus = status;
+  if (typeof window !== "undefined") window.dispatchEvent(new Event(CLOUD_SYNC_STATUS_EVENT));
+}
+function syncScope(): string {
+  return JSON.stringify([getActiveComplexId(), getAuthItem("qs_complex"), getAuthItem("qs_account"), getAuthItem("qs_student"), getAuthItem("qs_halaqa"), getAuthItem("qs_role"), !!getToken()]);
+}
+function scopedSyncFreshKey(): string { return SYNC_FRESH_KEY + ":" + syncScope(); }
 /** Skip full roster + app_state pull when synced recently (navigation within session). */
 const SYNC_TTL_MS = 3 * 60 * 1000;
 
 export function isCloudSyncFresh(): boolean {
   if (typeof sessionStorage === "undefined") return false;
-  const raw = sessionStorage.getItem(SYNC_FRESH_KEY);
+  const raw = sessionStorage.getItem(scopedSyncFreshKey());
   if (!raw) return false;
   const at = Number(raw);
   return Number.isFinite(at) && Date.now() - at < SYNC_TTL_MS;
@@ -75,13 +87,14 @@ export function isCloudSyncFresh(): boolean {
 
 export function markCloudSyncFresh(): void {
   if (typeof sessionStorage !== "undefined") {
-    sessionStorage.setItem(SYNC_FRESH_KEY, String(Date.now()));
+    sessionStorage.setItem(scopedSyncFreshKey(), String(Date.now()));
   }
 }
 
 export function invalidateCloudSyncCache(): void {
   if (typeof sessionStorage !== "undefined") {
     sessionStorage.removeItem(SYNC_FRESH_KEY);
+    sessionStorage.removeItem(scopedSyncFreshKey());
   }
 }
 
@@ -252,12 +265,18 @@ export async function fetchHalaqatRoster(complexId?: number): Promise<Halaqa[]> 
 export async function syncFromCloud(options?: {
   force?: boolean;
 }): Promise<{ students: Student[]; halaqat: Halaqa[] } | null> {
+  const token = getToken();
+  const context = syncScope();
+  const current = () => token === getToken() && context === syncScope();
+  const assertCurrent = () => { if (!current()) throw new Error("تغيّرت الجلسة أو المجمع أثناء التحديث"); };
+  let complete = true;
+  let owner: string | null = null;
   try {
     if (!options?.force && isCloudSyncFresh()) {
       return { students: loadStudents(), halaqat: loadHalaqat() };
     }
 
-    const token = getToken();
+    setCloudSyncStatus("syncing");
     let halaqat: Halaqa[];
     let students: Student[];
 
@@ -269,16 +288,14 @@ export async function syncFromCloud(options?: {
       if (hResult.status === "fulfilled") {
         halaqat = (hResult.value as CloudHalaqaRow[]).map(rowToHalaqa);
       } else {
-        halaqat = await fetchHalaqatRoster();
+        complete = false;
+        halaqat = loadHalaqat();
       }
       if (sResult.status === "fulfilled") {
         students = (sResult.value as CloudStudentRow[]).map(rowToStudent);
       } else {
-        try {
-          students = ((await listPublicStudents()) as CloudStudentRow[]).map(rowToStudent);
-        } catch {
-          students = [];
-        }
+        complete = false;
+        students = loadStudents();
       }
     } else {
       const [hResult, sResult] = await Promise.allSettled([
@@ -288,18 +305,17 @@ export async function syncFromCloud(options?: {
       halaqat =
         hResult.status === "fulfilled"
           ? (hResult.value as CloudHalaqaRow[]).map(rowToHalaqa)
-          : [];
+          : (complete = false, loadHalaqat());
       students =
         sResult.status === "fulfilled"
           ? (sResult.value as CloudStudentRow[]).map(rowToStudent)
-          : [];
-      if (halaqat.length === 0) {
-        halaqat = await fetchHalaqatRoster();
-      }
+          : (complete = false, loadStudents());
+
     }
 
-    // Persist core roster first — never overwrite existing cache with an empty list.
-    if (halaqat.length > 0) saveHalaqat(halaqat);
+    // A confirmed empty roster is valid; a failed read retains the previous confirmed cache.
+    assertCurrent();
+    saveHalaqat(halaqat);
     saveStudents(students);
 
     if (token) {
@@ -309,6 +325,9 @@ export async function syncFromCloud(options?: {
         const sardBeforePull = JSON.stringify(loadSardQueue());
         const stateRows = await secureListAppState({ data: { token } });
         const state = new Map(stateRows.map((row) => [row.key, row.value]));
+        assertCurrent();
+        owner = crypto.randomUUID();
+        sessionStorage.setItem("qs_sync_owner", owner);
         sessionStorage.setItem("qs_syncing", "1");
         if (state.has("grades")) {
           const cloud = state.get("grades") as GradesStore;
@@ -324,6 +343,7 @@ export async function syncFromCloud(options?: {
             saveStaffCheckIns,
           } = await import("./staff-attendance");
           const cloud = state.get("staff_attendance") as import("./staff-attendance").StaffCheckIn[];
+          assertCurrent();
           const merged = mergeStaffCheckIns(cloud, loadStaffCheckIns());
           saveStaffCheckIns(merged, { sync: false });
         }
@@ -335,6 +355,7 @@ export async function syncFromCloud(options?: {
           const { loadAllHalaqaPrograms, mergeHalaqaProgramsStores, saveAllHalaqaPrograms } = await import(
             "./halaqa-programs"
           );
+          assertCurrent();
           const merged = mergeHalaqaProgramsStores(cloud, loadAllHalaqaPrograms());
           saveAllHalaqaPrograms(merged);
         }
@@ -346,6 +367,7 @@ export async function syncFromCloud(options?: {
             saveScientificGradesStore,
           } = await import("./scientific-grades");
           const cloud = state.get("scientific_grades") as import("./scientific-grades").ScientificGradesStore;
+          assertCurrent();
           const merged = mergeScientificGradesStores(cloud, loadScientificGradesStore());
           saveScientificGradesStore(merged);
         }
@@ -364,50 +386,34 @@ export async function syncFromCloud(options?: {
           const local = loadFinancialLedger();
           const { merged } = mergeFinancialLedgerStores(cloud, local);
           saveFinancialLedger(merged, { sync: false });
-        } else {
-          const local = loadFinancialLedger();
-          if (local.entries.length > 0) {
-            try {
-              await secureSetAppState({ data: { token, key: "financial_ledger", value: local } });
-            } catch {
-              /* ignore — will retry on next save */
-            }
-          }
         }
         if (state.has("tarbawi_program")) {
           const cloud = state.get("tarbawi_program") as TarbawiStore;
           const local = loadTarbawiStore();
-          const { merged, pushToCloud } = mergeTarbawiStores(local, cloud);
+          const { merged } = mergeTarbawiStores(local, cloud);
           saveTarbawiStore(merged);
-          if (pushToCloud) {
-            try {
-              await secureSetAppState({ data: { token, key: "tarbawi_program", value: merged } });
-            } catch {
-              /* local merge kept — will retry on next save */
-            }
-          }
-        } else if (!state.has("tarbawi_program")) {
-          const local = loadTarbawiStore();
-          const hasLocal = Object.keys(local.settingsBySemester).length > 0 || Object.keys(local.plans).length > 0;
-          if (hasLocal) {
-            try {
-              await secureSetAppState({ data: { token, key: "tarbawi_program", value: local } });
-            } catch {
-              /* ignore */
-            }
-          }
         }
-        sessionStorage.removeItem("qs_syncing");
+        if (owner && sessionStorage.getItem("qs_sync_owner") === owner) {
+          sessionStorage.removeItem("qs_syncing");
+          sessionStorage.removeItem("qs_sync_owner");
+        }
 
       } catch (stateErr) {
-        sessionStorage.removeItem("qs_syncing");
+        complete = false;
+        if (owner && sessionStorage.getItem("qs_sync_owner") === owner) {
+          sessionStorage.removeItem("qs_syncing");
+          sessionStorage.removeItem("qs_sync_owner");
+        }
         console.warn("Cloud app-state sync failed (roster kept):", stateErr);
       }
     }
 
-    markCloudSyncFresh();
+    assertCurrent();
+    if (complete) { markCloudSyncFresh(); setCloudSyncStatus("confirmed"); }
+    else { invalidateCloudSyncCache(); setCloudSyncStatus("failed"); }
     return { students, halaqat };
   } catch (e) {
+    if (current()) { invalidateCloudSyncCache(); setCloudSyncStatus("failed"); }
     console.warn("Cloud sync failed, using local cache:", e);
     return null;
   }
