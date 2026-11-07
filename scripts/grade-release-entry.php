@@ -129,7 +129,16 @@ if (!defined('QHP_GRADE_RELEASE_LIBRARY')) {
             $pdo = grade_release_db($root);
             $count = $pdo->query("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE() AND engine='InnoDB' AND table_name IN ('grade_cell_versions','grade_operation_receipts')")->fetchColumn();
             if ((int) $count !== 2) throw new RuntimeException('verified_grade_tables_required');
-            $handle = grade_release_lock($lock); fclose($handle);
+            $handle = grade_release_lock($lock);
+            if ($base === 'c2d339b801cbb666ef91b1e704a5606267468d63') {
+                require_once $root . '/api/config-loader.php';
+                api_load_optional_config();
+                if ((defined('QHP_GRADE_WRITES_V1') && QHP_GRADE_WRITES_V1 === true) ||
+                    stream_get_contents($handle, 2) !== '' || str_contains(file_get_contents($root . '/index.html'), GRADE_RELEASE_TAG)) {
+                    throw new RuntimeException('unexpected_existing_grade_activation');
+                }
+            }
+            fclose($handle);
         } elseif ($mode === 'api') {
             if (!is_file($lock) || is_link($lock)) throw new RuntimeException('release_lock_unavailable');
             grade_release_publish_api($root, json_decode(stream_get_contents(STDIN, 5000000), true, 512, JSON_THROW_ON_ERROR));

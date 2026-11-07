@@ -147,12 +147,10 @@ jobs:
       - name: Write deploy marker
         run: echo "${{ github.sha }}" > dist/client/deploy-sha.txt
 
-      - name: Keep the frontend entry off the bulk transport
+      - name: Select the fenced deployment path
         id: grade_release
         run: |
           if [ -f api/lib/grade-cutover.php ]; then
-            mv dist/client/index.html "$RUNNER_TEMP/qhp-grade-index.html"
-            rm dist/client/deploy-sha.txt
             echo "atomic=true" >> "$GITHUB_OUTPUT"
           fi
 
@@ -304,6 +302,12 @@ jobs:
           DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           SEPARATE_SUBDOMAINS: 'false'
         run: python3 scripts/verify-hostinger-api.py
+
+      - name: Keep the backed-up entry off the bulk transport
+        if: steps.grade_release.outputs.atomic == 'true'
+        run: |
+          mv dist/client/index.html "$RUNNER_TEMP/qhp-grade-index.html"
+          rm dist/client/deploy-sha.txt
 
       # Hostinger: SFTP on port 65002 is more reliable than FTPS from GitHub Actions
       - name: Sync frontend (SFTP primary)
