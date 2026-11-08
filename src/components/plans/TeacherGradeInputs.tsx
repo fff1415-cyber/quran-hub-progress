@@ -102,6 +102,10 @@ export function AttSelect({
           titleUnchecked="غائب"
           onChange={(next) => onChange(next ? "present" : "absent")}
         />
+        {value && (
+          <button type="button" className="px-1 text-xs" title="مسح تسجيل الحضور"
+            aria-label="مسح تسجيل الحضور" onClick={() => onChange("")}>×</button>
+        )}
       </AttendanceCellFrame>
     );
   }

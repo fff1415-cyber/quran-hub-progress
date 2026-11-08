@@ -165,5 +165,33 @@ async function stop(){
  const raw=await fetch(base,{method:'POST',headers:{Authorization:'Bearer fixture-teacher','Content-Type':'application/json'},body:JSON.stringify({key:'grades',value:{wipe:true}})});assert.equal(raw.status,409);assert.equal((await request('teacher')).value.historic[8].keep,0);
  const allRows=await (await fetch(base,{headers:{Authorization:'Bearer fixture-teacher'}})).json();assert(allRows.every(row=>!row.key.startsWith('grade_plan_')));
  for(const method of ['GET','POST']){const result=await fetch(base+(method==='GET'?'?key=grade_plan_event%3Afixture':''),{method,headers:{Authorization:'Bearer fixture-teacher','Content-Type':'application/json'},body:method==='POST'?JSON.stringify({key:'grade_plan_event:fixture',value:{forged:true}}):undefined});assert.equal(result.status,403);}
+ const teacherStorage=storage(), assistantStorage=storage();
+ const teacher=new GradeOutbox(teacherStorage,'cancel-teacher',id);
+ const assistant=new GradeOutbox(assistantStorage,'cancel-assistant',id);
+ for (const [field,value,seed] of [['attendance','present','late'],['hifz','one','two'],['rabt','pass','fail'],['muraja','pass','fail']]) {
+  teacher.accept(await request('teacher'));
+  if (teacher.view({}).S[1].days.sun[field]===value) {
+   edit(teacher,field,seed);await teacher.flush(p=>request('teacher',p));teacher.accept(await request('teacher'));
+  }
+  edit(teacher,field,value);
+  await teacher.flush(p=>request('teacher',p));
+  const acknowledged=teacher.drafts().at(-1);
+  assert.equal(acknowledged.status,'confirmed');
+  assistant.accept(await request('assistant'));
+  assert.equal(assistant.view({}).S[1].days.sun[field],value);
+  // Undo in the real window between the POST receipt and the next GET.
+  edit(teacher,field,'');
+  const cancel=teacher.drafts().at(-1);
+  assert.equal(cancel.status,'pending');
+  assert.deepEqual(cancel.dependencies,[acknowledged.packet.operation_id]);
+  await teacher.flush(p=>request('teacher',p));
+  assistant.accept(await request('assistant'));
+  assert.equal(assistant.view({}).S[1].days.sun[field],'');
+  const reload=new GradeOutbox(teacherStorage,'cancel-teacher',id);
+  reload.accept(await request('teacher'));
+  assert.equal(reload.view({}).S[1].days.sun[field],'');
+ }
+ assert.equal((await request('assistant')).value.historic[8].keep,0);
+ console.log('PASS: a cancellation after the receipt but before refresh persists for attendance, hifz, rabt and muraja across both sessions');
  console.log('PASS: two isolated sessions through actual PHP HTTP handlers preserve independent edits, detect same-cell conflict, retain offline drafts across reopen, replay lost-response packet once, chain rapid edits, isolate accounts and reject legacy whole-store replacement');
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{await stop();if(path.dirname(path.resolve(folder))!==path.resolve(os.tmpdir())||!path.basename(folder).startsWith('qhp-atomic-'))throw Error('Unsafe fixture cleanup');fs.rmSync(folder,{recursive:true,force:true});});

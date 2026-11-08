@@ -33,8 +33,13 @@ function atomicPlanCases(PDO $pdo):void {
     $view=json_decode(gradeCellRaw($pdo,1),true);check($view['planned'][1]['compensationFaces']==0.5&&$view['planned'][1]['compensationPlanSegments']===[]&&(int)$pdo->query('SELECT COUNT(*) FROM segment_completions')->fetchColumn()===1,'compensation reduction reverses only its known rows and keeps ordinary hifz');
     $pdo->exec("INSERT INTO segment_completions(id,student_id,plan_id,segment_index,task_type,completed_at,recorded_by,assignment_id)VALUES('historical','planned','plan',3,'hifz','2020-01-01','historic',NULL)");
     $historic=$pdo->query("SELECT * FROM segment_completions WHERE id='historical'")->fetch();
-    $missing=$packet('plan-unknown-undo','tue','hifz','','undo');$before=gradeCellRaw($pdo,1);gradeCellFailure(fn()=>grade_write_request($pdo,1,$missing,$auth),'لا يوجد رابط إنجاز مؤكد');
-    check(gradeCellRaw($pdo,1)===$before&&$pdo->query("SELECT * FROM segment_completions WHERE id='historical'")->fetch()===$historic,'unknown legacy undo is blocked without deleting or attributing historical rows');
+    $legacy=grade_cells_store($pdo,1,'grades',false);
+    grade_cells_set($legacy,['planned','1','days','tue','hifz'],['present'=>true,'value'=>'one']);
+    app_state_upsert($pdo,'grades',$legacy,1);
+    $missing=$packet('plan-unknown-undo','tue','hifz','','undo');grade_write_request($pdo,1,$missing,$auth);
+    check(json_decode(gradeCellRaw($pdo,1),true)['planned'][1]['days']['tue']['hifz']===''&&
+        $pdo->query("SELECT * FROM segment_completions WHERE id='historical'")->fetch()===$historic,
+        'legacy grade can be cleared without deleting or attributing an independent historical completion');
     $failure=$packet('plan-receipt-failure','wed','hifz','one');$before=gradeCellRaw($pdo,1);$count=(int)$pdo->query('SELECT COUNT(*) FROM segment_completions')->fetchColumn();
     if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')$pdo->exec("CREATE TRIGGER fail_plan_receipt BEFORE INSERT ON grade_operation_receipts WHEN NEW.operation_id='plan-receipt-failure' BEGIN SELECT RAISE(ABORT,'plan receipt failure');END");
     else $pdo->exec("ALTER TABLE grade_operation_receipts ADD CONSTRAINT plan_receipt_failure CHECK(operation_id<>'plan-receipt-failure')");

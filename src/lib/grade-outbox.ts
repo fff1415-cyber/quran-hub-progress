@@ -55,6 +55,10 @@ function stamp(snapshot: GradeSnapshot, path: string[]): Stamp {
   return { ancestors: path.map((_, i) => snapshot.versions[JSON.stringify(path.slice(0, i))]?.direct_version ?? null), subtree: snapshot.versions[JSON.stringify(path)]?.subtree_version ?? null };
 }
 const active = (draft: GradeDraft) => ["pending", "unbased", "conflict"].includes(draft.status);
+export const cancelsDayGrade = (draft: GradeDraft): boolean => draft.packet.changes.some(({path,base,next}) =>
+  path.length===5 && path[2]==="days" && ["attendance","hifz","rabt","muraja"].includes(path[4]) &&
+  base.present && base.value!=="" && (!next.present || next.value==="" ||
+    (["rabt","muraja"].includes(path[4]) && base.value==="pass" && next.value==="fail")));
 
 /** Each immutable packet has its own storage key: two tabs cannot replace each other's queues. */
 export class GradeOutbox {
@@ -88,7 +92,7 @@ export class GradeOutbox {
         return saved.present || change.base.present ? "server" : "unresolved";
     });
     if (decisions.every(decision => decision === "same") && !packet.plan) return "reconciled";
-    if (decisions.includes("server") && !decisions.includes("unresolved")) return "archived";
+    if (!cancelsDayGrade(draft) && decisions.includes("server") && !decisions.includes("unresolved")) return "archived";
   }
   reconcile(snapshot: GradeSnapshot) {
     if (!snapshot.calendar_context.known) return;
@@ -126,11 +130,14 @@ export class GradeOutbox {
       !isEmptyCompensationDefault(change) || !!plan && equal(change.path, plan.cell_path));
     if (!edits.length) return;
     if (edits.length > 100) throw Error("التعديل كبير؛ احفظ دفعات أصغر دون إغلاق الصفحة");
-    const snapshot = this.snapshot(), drafts = this.drafts(), pending = drafts.filter(active), dependencies = new Set<string>();
+    const snapshot = this.snapshot(), drafts = this.drafts(), dependencies = new Set<string>();
     let based = !!snapshot?.calendar_context.known;
     const changes = edits.map(change => {
       let expected = snapshot ? stamp(snapshot, change.path) : { ancestors: change.path.map(() => null), subtree: null };
-      const predecessor = [...pending].reverse().find(d => d.packet.changes.some(c => equal(c.path, change.path)));
+      const predecessor = [...drafts].reverse().find(d =>
+        (active(d) || d.status==="confirmed" && !d.observed &&
+          expected.subtree!==d.packet.operation_id) &&
+        d.packet.changes.some(c => equal(c.path, change.path)));
       if (predecessor) { dependencies.add(predecessor.packet.operation_id); expected = { ...expected, subtree: predecessor.packet.operation_id }; }
       else if (!snapshot || !equal(at(snapshot.value, change.path), change.base)) based = false;
       return { ...change, stamp: expected };

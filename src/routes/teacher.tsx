@@ -1137,6 +1137,12 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       };
     }, undefined, plan);
 
+    if (!plan && [patch.attendance, patch.hifz, patch.rabt, patch.muraja].includes("")) {
+      void flushConfirmedGrades().catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : "لم يتأكد إلغاء التسجيل؛ بقيت المسودة للمراجعة.");
+      });
+    }
+
     if (!currentGradeOutbox()) syncScientificScoresFromDayPatch(
       halaqaId,
       studentId,

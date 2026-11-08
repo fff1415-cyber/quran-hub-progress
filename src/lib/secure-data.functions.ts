@@ -39,12 +39,12 @@ async function apiFetch<T>(
     try {
       body = JSON.parse(text);
     } catch {
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      if (!res.ok) throw Object.assign(new Error(`HTTP ${res.status}`), { status: res.status });
       throw new Error("استجابة غير صالحة من الخادم — تحقق من مجلد api/ وملف .htaccess");
     }
   }
   if (!res.ok) {
-    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
+    throw Object.assign(new Error((body as { error?: string }).error ?? `HTTP ${res.status}`), { status: res.status });
   }
   return body as T;
 }

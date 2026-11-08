@@ -20,7 +20,10 @@ function grade_plan_effect(PDO $pdo,int $cid,array $auth,array $effect,string $o
     $scoped=app_state_tenant_enabled($pdo);$query=$pdo->prepare('SELECT value FROM app_state WHERE '.($scoped?'complex_id=? AND ':'').'`key`=? FOR UPDATE');$query->execute($scoped?[$cid,$key]:[$key]);$raw=$query->fetchColumn();$previous=$raw===false?null:json_decode((string)$raw,true,512,JSON_THROW_ON_ERROR);
     $action=(string)($effect['action']??'');$rows=[];
     if($action==='undo'){
-        if(!is_array($previous)||($previous['status']??'')!=='active'||($previous['assignment_id']??'')!==$expected)throw new RuntimeException('لا يوجد رابط إنجاز مؤكد لهذه الخلية؛ لم يُحذف أي إنجاز تاريخي بالتخمين',409);
+        // A legacy grade can be cleared without guessing which independent
+        // completion it came from. Only an active, recorded link authorizes removal.
+        if ($previous===null || ($previous['status']??'')==='reversed') return;
+        if(!is_array($previous)||($previous['status']??'')!=='active'||($previous['assignment_id']??'')!==$expected)throw new RuntimeException('رابط الإنجاز غير مؤكد؛ لم يُحذف أي إنجاز تاريخي',409);
         foreach($previous['rows']as$row){
             $find=$pdo->prepare('SELECT * FROM segment_completions WHERE id=? AND student_id=? AND plan_id=? AND assignment_id=? AND task_type=? FOR UPDATE');$find->execute([$row['id'],$student,$assignment['plan_id'],$expected,$task]);$current=$find->fetch();
             if(!$current||grade_cells_json($current)!==grade_cells_json($row))throw new RuntimeException('تغيّر الإنجاز المرتبط؛ لم تُحذف كتابة أخرى',409);

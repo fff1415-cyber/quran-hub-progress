@@ -1,4 +1,4 @@
-import { GradeOutbox } from "./grade-outbox";
+import { cancelsDayGrade, GradeOutbox } from "./grade-outbox";
 import type { GradePacket, PlanEffect } from "./grade-outbox";
 import type { GradesStore } from "./mock-data";
 import { decodeAuthTokenPayload, getToken } from "./auth-session";
@@ -60,8 +60,13 @@ export function flushConfirmedGrades(): Promise<GradesStore> {
   const session = identity(), box = currentGradeOutbox();
   if (!session || !box) return Promise.reject(Error("يلزم تسجيل الدخول لتأكيد الحفظ"));
   return enqueue(async () => {
+    const pendingCancellations = new Set(box.drafts().filter(d => d.status === "pending" && cancelsDayGrade(d))
+      .map(d => d.packet.operation_id));
     try { await box.flush((packet: GradePacket) => secureGradeOperation(session.token, packet), () => identity()?.scope === session.scope && getToken() === session.token); }
     finally { notify(); }
-    return read(session, box);
+    const view = await read(session, box);
+    const rejected = box.drafts().find(d => pendingCancellations.has(d.packet.operation_id) && d.status === "conflict");
+    if (rejected) throw new Error(rejected.message || "لم يتأكد إلغاء التسجيل؛ بقيت المسودة للمراجعة.");
+    return view;
   });
 }
