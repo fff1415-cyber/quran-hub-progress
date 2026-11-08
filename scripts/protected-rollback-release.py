@@ -57,7 +57,7 @@ def health():
 def live_acceptance():
     if live_marker() != target or not health():
         return False
-    for route in ('/mm', '/mm/teacher', '/mm/manager', '/mm/program-supervisor'):
+    for route in ('/mm', '/mm/teacher', '/mm/manager', '/mm/program-supervisor', '/mm/supervisor', '/mm/musammi'):
         status, html = site(route + '?rollback_check=' + str(time.time_ns()))
         if status != 200 or ('<!-- qhp-grade-release:' + target + ' -->').encode() not in html:
             return False
@@ -67,7 +67,7 @@ def live_acceptance():
     status, _ = site('/api/r.php?path=%2Fapp-state&key=grades&grade_protocol=1')
     if status != 401:
         return False
-    for route in ('/tarbawi/record','/scientific-grades/store'):
+    for route in ('/tarbawi/record','/scientific-grades/store','/plans/sard-referral'):
         status, _ = site('/api/r.php?' + urllib.parse.urlencode({'path':route}), 'POST')
         if status != 401:
             return False
