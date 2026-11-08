@@ -31,9 +31,9 @@ def git(*args):
 def digest(data):
     return hashlib.sha256(data).hexdigest()
 
-def site(path):
+def site(path, method='GET'):
     result = subprocess.run(['curl', '-sS', '--connect-timeout', '10', '--max-time', '16',
-        '--resolve', 'msht.io:443:' + host, '-H', 'Cache-Control: no-cache',
+        '--resolve', 'msht.io:443:' + host, '-H', 'Cache-Control: no-cache', '-X', method,
         '-w', '\n%{http_code}', 'https://msht.io' + path], stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     if result.returncode:
         return 0, b''
@@ -61,11 +61,17 @@ def live_acceptance():
         status, html = site(route + '?rollback_check=' + str(time.time_ns()))
         if status != 200 or ('<!-- qhp-grade-release:' + target + ' -->').encode() not in html:
             return False
-    status, body = site('/api/r.php?' + urllib.parse.urlencode({'path':'/tenant-resolve','subdomain':'mm'}))
+    status, body = site('/api/r.php?' + urllib.parse.urlencode({'path':'/tenant-resolve','q':'mm'}))
     if status != 200:
         return False
     status, _ = site('/api/r.php?path=%2Fapp-state&key=grades&grade_protocol=1')
-    return status == 401
+    if status != 401:
+        return False
+    for route in ('/tarbawi/record','/scientific-grades/store'):
+        status, _ = site('/api/r.php?' + urllib.parse.urlencode({'path':route}), 'POST')
+        if status != 401:
+            return False
+    return True
 
 if git('rev-parse', target + '^{tree}').decode().strip() != pathlib.Path('scripts/safe-legacy-tree.txt').read_text().strip():
     raise SystemExit('The approved release tree does not match the tested source')
@@ -120,8 +126,12 @@ with tempfile.TemporaryDirectory() as temp:
 
     def remote(command):
         args = ['php','-d','display_errors=0',stage+'/protected-rollback-release.php',command,home,base,target]
-        result = subprocess.run(ssh+[shlex.join(args)], env=env, start_new_session=True,
-                                timeout=100, capture_output=True, text=True)
+        try:
+            result = subprocess.run(ssh+[shlex.join(args)], env=env, start_new_session=True,
+                                    timeout=100, capture_output=True, text=True)
+        except subprocess.TimeoutExpired:
+            print('Remote command timed out; checking the live marker', flush=True)
+            return False
         print(result.stdout, end='', flush=True)
         return result.returncode == 0
 
