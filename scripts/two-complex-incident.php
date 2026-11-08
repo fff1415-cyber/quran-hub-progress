@@ -185,7 +185,8 @@ function recorded_summary(array $grades,array $roster,array $groups): array {
             }
             foreach (['testMuraja','testRabt'] as $field) {
                 $found=[];cell_map($record[$field]??[],[$field],$found);
-                $n=count($found)+(is_scalar($record[$field]??null) && $record[$field]!=='' ? 1 : 0);
+                $value=$record[$field]??null;
+                $n=count($found)+($value===true || $value==='pass' || $value==='fail' ? 1 : 0);
                 if ($n) $out['fields'][$field]=($out['fields'][$field]??0)+$n;
             }
         }
@@ -220,6 +221,9 @@ function live_read(string $root,array $ids,array $fresh): array {
         $raw=json_decode(json_encode($snapshot['value'],JSON_THROW_ON_ERROR),true,512,JSON_THROW_ON_ERROR);
         $current=tenant_view($fresh,$id);
         $before=$current['stores']['grades']??[];
+        $q=$pdo->prepare('SELECT week_number,start_date,end_date FROM academic_weeks WHERE semester_id=? AND start_date<=? AND end_date>=?');
+        $today=(new DateTimeImmutable('now',new DateTimeZone('Asia/Riyadh')))->format('Y-m-d');
+        $q->execute([$current['active']['id'],$today,$today]);$todayWeeks=$q->fetchAll();
         $q=$pdo->prepare('SELECT id FROM role_accounts WHERE complex_id=? AND role=\'manager\' LIMIT 1');
         $q->execute([$id]);$account=$q->fetchColumn();
         $token=generate_token(['role'=>'manager','complexId'=>(int)$id,'accountId'=>$account,'exp'=>time()*1000+90000]);
@@ -239,6 +243,7 @@ function live_read(string $root,array $ids,array $fresh): array {
         }
         $views[$id]=['tenant'=>$tenant,'halaqa_name_labels'=>$labels,'snapshot_context'=>$snapshot['context_complex_id'],
             'snapshot_matches_emergency_archive'=>$raw===$before,'http'=>$http,
+            'riyadh_date'=>$today,'calendar_rows_today'=>$todayWeeks,
             'recorded'=>recorded_summary($raw,$current['roster'],$groups)];
     }
     $pdo->rollBack();
