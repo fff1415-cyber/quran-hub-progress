@@ -5,6 +5,7 @@ $root=$argv[1]??'';
 if (!preg_match('~^/home/[A-Za-z0-9_-]+/domains/msht\.io/public_html$~D',$root) || realpath($root)!==$root ||
     trim(file_get_contents($root.'/deploy-sha.txt'))!=='cfaccd12f687794daf71ff73776301df37bc4c12') exit(1);
 require $root.'/api/config.php';
+require $root.'/api/routes/plans.php';
 if (DB_NAME!=='u112851217_msht_io') exit(1);
 try {
     $pdo=new PDO('mysql:host='.DB_HOST.';dbname='.DB_NAME.';charset='.DB_CHARSET,DB_USER,DB_PASS,
@@ -31,6 +32,36 @@ try {
     $result['foreign_keys']=$pdo->query("SELECT TABLE_NAME,COLUMN_NAME,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
         WHERE TABLE_SCHEMA=DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
         AND TABLE_NAME IN ('segment_completions','app_state','grade_operation_receipts','grade_cell_versions')")->fetchAll();
+    $result['unique_keys']=$pdo->query("SELECT TABLE_NAME,INDEX_NAME,GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS columns_used
+        FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND NON_UNIQUE=0
+        AND TABLE_NAME IN ('segment_completions','app_state','grade_operation_receipts','grade_cell_versions') GROUP BY TABLE_NAME,INDEX_NAME")->fetchAll();
+    $q=$pdo->prepare("SELECT a.id,a.student_id,a.plan_id,a.assigned_at,a.start_segment_index,a.start_muraja_segment,p.track,p.level_number
+        FROM student_plan_assignments a JOIN students s ON s.id=a.student_id JOIN education_plans p ON p.id=a.plan_id
+        WHERE a.status='active' AND s.complex_id=?");
+    $q->execute([$cid]); $assignments=$q->fetchAll();
+    $segments=$pdo->prepare("SELECT segment_index FROM plan_segments WHERE plan_id=? ORDER BY segment_index");
+    $completions=$pdo->prepare("SELECT segment_index,task_type,assignment_id,created_at FROM segment_completions WHERE student_id=? AND plan_id=?");
+    $counts=[];
+    foreach ($assignments as $a) {
+        $segments->execute([$a['plan_id']]); $all=array_map('intval',$segments->fetchAll(PDO::FETCH_COLUMN));
+        $completions->execute([$a['student_id'],$a['plan_id']]); $done=[];$older=[];
+        foreach ($completions as $row) {
+            $task=$row['task_type']; $n=(int)$row['segment_index'];
+            if ($row['assignment_id']===$a['id'] || ($row['assignment_id']===null && $row['created_at']>=$a['assigned_at'])) $done[$task][]=$n;
+            else $older[$task][]=$n;
+        }
+        foreach (['hifz','rabt','muraja'] as $task) {
+            if ($task==='hifz') $next=plans_next_hifz_segments_for_tap($a['track'],$a['track']==='gold'?'one':'half',(int)$a['start_segment_index'],$all,$done['hifz']??[]);
+            else {
+                $n=plans_next_segment_for_task($task,(int)$a['start_segment_index'],$a['start_muraja_segment']===null?null:(int)$a['start_muraja_segment'],
+                    (int)$a['level_number'],$all,$done['hifz']??[],$done[$task]??[]);
+                $next=$n===null?[]:[$n];
+            }
+            $bucket=$next?(array_intersect($next,$older[$task]??[])?'historical_collision':'available'):'no_segments';
+            $key=$task.'/'.$bucket; $counts[$key]=($counts[$key]??0)+1;
+        }
+    }
+    $result['mm_next_segment_paths']=$counts;
     foreach (['grade-plan-effect','grade-cell-operations','grade-write-api'] as $file)
         $result['runtime_hashes'][$file]=hash_file('sha256',$root.'/api/lib/'.$file.'.php');
     $receiptTime = array_values(array_filter($schema, static fn($row) =>
