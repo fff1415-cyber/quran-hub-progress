@@ -44,3 +44,8 @@ with ThreadPoolExecutor(max_workers=3) as executor:
 print(json.dumps({'status':'halaqa_public_entry_reads','routes':checks,'production_writes':False}))
 if any(row['status'] != 200 or not row['published_entry'] or row['server_error_page'] for row in checks.values()):
     raise SystemExit('A manager or halaqa route did not serve the published entry')
+health = json.loads(subprocess.check_output(['curl','-fsS','--connect-timeout','12','--max-time','18',
+    '--resolve','msht.io:443:'+host,'https://msht.io/api/r.php?path=%2Fhealth'], stderr=subprocess.DEVNULL))
+if health.get('ok') is not True or health.get('checks', {}).get('grade_protocol') != 'atomic':
+    raise SystemExit('Published API did not confirm the active atomic grade protocol')
+print(json.dumps({'status':'published_atomic_grade_protocol_verified','production_writes':False}))
