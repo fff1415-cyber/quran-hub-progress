@@ -107,13 +107,7 @@ async function run() {
     page.on("console", msg => {
       if (msg.type() === "error" && /TypeError|ReferenceError|Minified React|Something went wrong/.test(msg.text())) record(msg.text());
     });
-    await page.goto(base + "/mm/teacher?h=" + (process.env.QHP_REPRO_ONLY ? "2" : "1"));
-    if (process.env.QHP_REPRO_ONLY) {
-      await page.getByText("Something went wrong!", { exact: true }).waitFor({ timeout: 9000 });
-      assert.match(errors.join("\n"), /التعديل كبير/);
-      console.log("CONFIRMED: opening a 17-student empty week exceeds the atomic write limit before any user edit");
-      return;
-    }
+    await page.goto(base + "/mm/teacher?h=1");
     for (const group of halaqat) {
       errors = [];
       if (group.id !== 1) {
@@ -132,6 +126,8 @@ async function run() {
       }
       assert.deepEqual(errors, [], "No uncaught errors in halaqa " + group.id);
       if (group.id === 2) await page.getByText("طالب جديد 16", { exact: true }).waitFor({ timeout: 9000 });
+      const operationCount = await page.evaluate(() => Object.keys(localStorage).filter(key => key.startsWith("qhp_grade_outbox_v1:") && key.includes(":operation:")).length);
+      assert.equal(operationCount, group.id === 1 ? 0 : 1, "Opening a halaqa must not enqueue grade writes");
       if (group.id === 1) {
         const attendance = page.getByRole("row").filter({ hasText: "طالب تجربة 1" }).getByRole("combobox").first();
         await page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith("qhp_grade_outbox_v1:") && key.endsWith(":snapshot")));

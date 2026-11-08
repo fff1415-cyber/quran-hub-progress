@@ -1028,26 +1028,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   };
 
   useEffect(() => {
-    let changed = false;
-    const g = { ...grades };
-    students.forEach((s) => {
-      if (!g[s.id]) g[s.id] = {};
-      if (!g[s.id][weekNum]) {
-        g[s.id][weekNum] = emptyWeek(workingKeysList);
-        changed = true;
-      } else {
-        const normalized = ensureWeekDays(g[s.id][weekNum], workingKeysList);
-        if (normalized !== g[s.id][weekNum]) {
-          g[s.id][weekNum] = normalized;
-          changed = true;
-        }
-      }
-    });
-    if (changed) { setGrades(g); saveGrades(g); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekNum, halaqaId, workingKeysList]);
-
-  useEffect(() => {
     if (!studentIdsKey) {
       setPlanStudentIds(new Set());
       setFrozenPlanStudentIds(new Set());
