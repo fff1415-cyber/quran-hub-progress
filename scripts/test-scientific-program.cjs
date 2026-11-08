@@ -27,4 +27,9 @@ lib.syncScientificScoresFromPrepForHalaqa(1,{
 assert.equal(lib.loadScientificData(1).prior[1].sun.hifz,'20');
 assert.equal(lib.loadScientificData(1).new[1].sun,undefined);
 assert.deepEqual(lib.loadScientificData(1).new[1].mon,{hifz:'11',rabt:'7',muraja:'5'});
+const allFields = ['attendance','hifz','rabt','muraja'];
+const active = {fixture:{1:{mon:{attendance:'9',hifz:'11',rabt:'7',muraja:'5'}}}};
+const cleared = {fixture:{1:{mon:{attendance:'',hifz:'11',rabt:'',muraja:'5'}}}};
+assert.equal(lib.studentScientificWeekTotals(active,'fixture',1,allFields).total,32);
+assert.equal(lib.studentScientificWeekTotals(cleared,'fixture',1,allFields).total,16);
 console.log('PASS: incomplete or failed preparation earns no points, and existing scores are not rewritten during display sync');

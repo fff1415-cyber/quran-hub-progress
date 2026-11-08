@@ -118,6 +118,46 @@ function test_scientific_config_and_scores(PDO $pdo,int $cid,string $student): a
     $prep->{$student}->{'1'}->days->sun->muraja = 'pass';
     app_state_upsert($pdo,'grades',$prep,$cid);
     $earned = $write(['scientific_base'=>$afterConfig['revision'],'value'=>$next]);
+    $q = $pdo->prepare('SELECT id FROM halaqat WHERE complex_id=? LIMIT 1');
+    $q->execute([$cid]);
+    $realGroup = (int)$q->fetchColumn();
+    $pdo->prepare("INSERT INTO students(id,complex_id,name,halaqa_id,national_id) VALUES (?,?,?,?,'')")->execute([$student,$cid,$student,$realGroup]);
+    $program = $read();
+    $projectConfig = $config;
+    $projectConfig['fields']['attendance'] = true;
+    $projectConfig['defaultScores']['attendance'] = ['present'=>'9'];
+    if ($write(['scientific_base'=>$program['revision'],'scientific_config'=>['halaqaId'=>$realGroup,'settings'=>$projectConfig]])!==200) {
+        throw new RuntimeException('attendance_config_fixture');
+    }
+    $mark = static function (string $field,string $value) use ($pdo,$cid,$student): void {
+        $path = [$student,'1','days','mon',$field];
+        $capture = grade_cells_capture($pdo,$cid,'grades',[$path]);
+        $change = $capture['cells'][0]+['next'=>['present'=>true,'value'=>$value]];
+        grade_write_request($pdo,$cid,['operation_id'=>'fixture-'.bin2hex(random_bytes(8)),
+            'calendar_context'=>$capture['calendar_context'],'changes'=>[$change]]);
+    };
+    $mark('attendance','present');
+    $present = $read()['value']['data'][$realGroup][$student][1]['mon'];
+    if ($present !== ['attendance'=>'9']) throw new RuntimeException('attendance_awarded_task');
+    $mark('hifz','one');
+    // Simulate an old automatic result plus a real teacher override on the same day.
+    $legacy = grade_cells_store($pdo,$cid,'scientific_grades',true);
+    $day = $legacy->data->{$realGroup}->{$student}->{'1'}->mon;
+    $day->rabt = '7';
+    $day->muraja = '5';
+    $legacy->overrides = (object)($legacy->overrides ?? []);
+    $legacy->overrides->{$realGroup} = (object)($legacy->overrides->{$realGroup} ?? []);
+    $legacy->overrides->{$realGroup}->{$student} = (object)['1'=>(object)['mon'=>(object)['muraja'=>true]]];
+    app_state_upsert($pdo,'scientific_grades',$legacy,$cid);
+    $mark('attendance','');
+    $cleared = $read();
+    $day = $cleared['value']['data'][$realGroup][$student][1]['mon'];
+    $staleAttendance = $cleared['value'];
+    $staleAttendance['data'][$realGroup][$student][1]['mon']['attendance'] = '9';
+    if ($day!==['attendance'=>'','hifz'=>'11','rabt'=>'','muraja'=>'5'] ||
+        $write(['scientific_base'=>$cleared['revision'],'value'=>$staleAttendance])!==409) {
+        throw new RuntimeException('attendance_projection_regression');
+    }
     $pdo->rollBack();
     if ([$enabled,$disabled,$reenabled,$stale,$noPrep,$failedPrep,$earned] !== [200,200,200,409,409,409,200] ||
         $offRead['value']['configs'][$group]['fields']['hifz'] !== false ||
@@ -127,7 +167,8 @@ function test_scientific_config_and_scores(PDO $pdo,int $cid,string $student): a
         throw new RuntimeException('scientific_regression');
     }
     return ['scientific_config_on_off_on'=>[200,200,200], 'stale_settings'=>409,
-        'scientific_missing_and_failed_prep'=>[409,409], 'scientific_earned'=>200, 'scientific_history_unchanged'=>true];
+        'scientific_missing_and_failed_prep'=>[409,409], 'scientific_earned'=>200, 'scientific_history_unchanged'=>true,
+        'attendance_only'=>true,'clear_preserves_confirmed_and_manual_scores'=>true,'stale_attendance_rejected'=>409];
 }
 
 function test_safe_legacy_login_and_transitions(PDO $pdo,int $cid,string $fixture): array {
