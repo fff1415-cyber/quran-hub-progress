@@ -21,13 +21,16 @@ probe = pathlib.Path('scripts/rollback-compat-probe.php').read_text(encoding='ut
 if os.environ.get('QHP_SAFE_LEGACY_CANDIDATE') == '1':
     candidate = pathlib.Path('candidate')
     libs = ['grade-cell-operations','grade-plan-effect','grade-cutover','grade-write-api']
-    for name in ['api/lib/'+lib+'.php' for lib in libs] + paths:
+    for name in ['api/lib/'+lib+'.php' for lib in libs] + paths + ['api/routes/login.php','api/routes/staff_tasks.php']:
         source = (candidate/name).read_text(encoding='utf-8')
         source = re.sub(r"(?m)^require_once __DIR__\.'[^'\n]*grade-(?:cell-operations|plan-effect|cutover|write-api)\.php';\n", '', source)
         pieces.append(source.encode())
+    auth = (candidate/'api/auth.php').read_text(encoding='utf-8')
+    pieces.append(('<?php\n' + auth[auth.index('function base64url_encode'):auth.index('function require_auth')] +
+                   auth[auth.index('function new_uuid'):]).replace('TOKEN_SECRET', 'QHP_TEST_TOKEN_SECRET').encode())
     pieces.append(pathlib.Path('scripts/safe-legacy-restore-cases.php').read_bytes())
     probe = probe.replace("$stage = 'stale_write_reproduction';", "$stage = 'candidate_restore_cases'; test_safe_legacy_restore($pdo,$cid,$reads); exit(0);", 1)
-    probe = probe.replace('declare(strict_types=1);', "declare(strict_types=1);\ndefine('QHP_GRADE_WRITES_V1', true);", 1)
+    probe = probe.replace('declare(strict_types=1);', "declare(strict_types=1);\ndefine('QHP_GRADE_WRITES_V1', true);\ndefine('QHP_TEST_TOKEN_SECRET', bin2hex(random_bytes(32)));", 1)
 else:
     pieces.extend(subprocess.check_output(['git','show',old+':'+name]) for name in paths)
 loaded = ''.join("eval(substr(base64_decode('" + base64.b64encode(piece).decode() + "'),5));\n" for piece in pieces)

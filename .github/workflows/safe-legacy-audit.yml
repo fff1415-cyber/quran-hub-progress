@@ -32,5 +32,6 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
           node tests/stage2-atomic-local.cjs
           node tests/stage2-atomic-sessions.cjs
+          node tests/tarbawi-local.cjs
           php tests/stage3-atomic-plan.php
           npm run build:hostinger

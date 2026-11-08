@@ -48,7 +48,89 @@ function test_safe_legacy_restore(PDO $pdo, int $cid, array $reads): void {
         (int)$pdo->query('SELECT COUNT(*) FROM grade_operation_receipts')->fetchColumn()!==$receiptCount) {
         throw new RuntimeException('restore_preservation_failed');
     }
+    $GLOBALS['stage'] = 'tarbawi_preservation';
+    $tarbawiBefore = probe('handle_list_app_state',['key'=>'tarbawi_program'])->body;
+    $semester = $calendar['active_semester_id'];
+    $tarbawi = static fn(array $packet) => probe('handle_set_app_state',[],['key'=>'tarbawi_program']+$packet);
+    $settings = ['semesterId'=>$semester,'paragraphTypes'=>[],'weeklyRequiredCount'=>2,'halaqaSpans'=>[]];
+    $programPlan = ['semesterId'=>$semester,'halaqaId'=>2000000000,'status'=>'draft','items'=>[['id'=>$id]]];
+    $edit = static fn(string $section, string $sem, ?array $base, array $next) =>
+        ['tarbawi_write_protocol'=>1,'value'=>['semesterId'=>$sem,'section'=>$section,'base'=>$base,'next'=>$next]];
+    $pdo->beginTransaction();
+    $planWrite = $tarbawi($edit('plans',$semester,null,$programPlan))->getCode();
+    $withPlan = probe('handle_list_app_state',['key'=>'tarbawi_program'])->body;
+    $oldSettings = $withPlan[0]['value']['settingsBySemester'][$semester] ?? null;
+    if ($oldSettings === $settings) $settings['weeklyRequiredCount']++;
+    $settingsWrite = $tarbawi($edit('settingsBySemester',$semester,$oldSettings,$settings))->getCode();
+    $bothRecords = probe('handle_list_app_state',['key'=>'tarbawi_program'])->body;
+    $tarbawiStatuses = [
+        $tarbawi(['value'=>['settingsBySemester'=>[],'plans'=>[]]])->getCode(),
+        $tarbawi($edit('plans',$id,null,array_replace($programPlan,['semesterId'=>$id,'items'=>[]])))->getCode(),
+        $tarbawi($edit('settingsBySemester',$semester,$oldSettings,array_replace($settings,['weeklyRequiredCount'=>10])))->getCode(),
+    ];
+    $unchanged = probe('handle_list_app_state',['key'=>'tarbawi_program'])->body === $bothRecords;
+    $pdo->rollBack();
+    if ($planWrite!==200 || $settingsWrite!==200 || $tarbawiStatuses!==[409,409,409] || !$unchanged ||
+        probe('handle_list_app_state',['key'=>'tarbawi_program'])->body!==$tarbawiBefore) {
+        throw new RuntimeException('tarbawi_preservation_failed');
+    }
+    $GLOBALS['stage'] = 'login_and_transitions';
+    $more = test_safe_legacy_login_and_transitions($pdo,$cid,$id);
     echo json_encode(['database'=>'isolated_test','reads'=>$reads,'teacher_and_assistant_write'=>[200,200],
         'receipt_replayed'=>true,'stale_status'=>$staleStatus,'empty_replacements'=>$bulk,
-        'historical_values_unchanged'=>true,'synthetic_changes_reverted'=>true,'production_writes'=>false],JSON_THROW_ON_ERROR).PHP_EOL;
+        'tarbawi_rejections'=>$tarbawiStatuses,'tarbawi_preserved'=>true,
+        'historical_values_unchanged'=>true,'synthetic_changes_reverted'=>true,'production_writes'=>false]+$more,JSON_THROW_ON_ERROR).PHP_EOL;
+}
+
+function test_safe_legacy_login_and_transitions(PDO $pdo,int $cid,string $fixture): array {
+    $q = $pdo->prepare("SELECT code FROM role_accounts WHERE complex_id=? AND role='manager' AND code<>'' LIMIT 1");
+    $q->execute([$cid]);
+    $manager = $q->fetchColumn();
+    $q = $pdo->prepare("SELECT teacher_code,assistant_code FROM halaqat WHERE complex_id=? AND teacher_code<>'' AND assistant_code<>'' LIMIT 1");
+    $q->execute([$cid]);
+    $codes = $q->fetch();
+    $login = [];
+    foreach (['manager'=>$manager,'teacher'=>$codes['teacher_code'] ?? null,'assistant'=>$codes['assistant_code'] ?? null] as $role=>$code) {
+        if (!$code) throw new RuntimeException('login_fixture_missing');
+        $result = probe('handle_login_by_code',[],['code'=>(string)$code,'complexId'=>$cid]);
+        $token = verify_token($result->body['token'] ?? null);
+        if ($result->getCode()!==200 || ($token['role'] ?? null)!==$role || ($token['complexId'] ?? null)!==$cid) {
+            throw new RuntimeException('real_login_handler_failed');
+        }
+        $login[$role] = 200;
+    }
+    if (probe('handle_login_by_code',[],['code'=>$fixture,'complexId'=>$cid])->getCode()!==401) {
+        throw new RuntimeException('invalid_login_handler_failed');
+    }
+    $q = $pdo->prepare('SELECT id FROM halaqat WHERE complex_id=? ORDER BY id LIMIT 2');
+    $q->execute([$cid]); $groups = $q->fetchAll(PDO::FETCH_COLUMN);
+    $q = $pdo->prepare("SELECT id FROM education_plans WHERE complex_id=? AND track='gold' ORDER BY level_number LIMIT 2");
+    $q->execute([$cid]); $plans = $q->fetchAll(PDO::FETCH_COLUMN);
+    if (count($groups)!==2 || count($plans)!==2) throw new RuntimeException('transition_fixture_missing');
+    $student = new_uuid(); $assignment = new_uuid();
+    try {
+        $pdo->prepare("INSERT INTO students(id,complex_id,name,halaqa_id,national_id) VALUES (?,?,?,?,'')")->execute([$student,$cid,$fixture,$groups[0]]);
+        $pdo->prepare('INSERT INTO student_plan_assignments(id,student_id,plan_id) VALUES (?,?,?)')->execute([$assignment,$student,$plans[0]]);
+        $GLOBALS['testAuth'] = ['role'=>'manager','complexId'=>$cid,'name'=>'Isolated test'];
+        $transfer = probe('handle_patch_student',[],['id'=>$student,'patch'=>['halaqa_id'=>(int)$groups[1]]]);
+        $GLOBALS['testAuth']['role'] = 'supervisor';
+        $assign = probe('handle_assign_plan',[],['student_id'=>$student,'plan_id'=>$plans[1],
+            'expected_assignment_id'=>$assignment,'start_segment_index'=>1]);
+        $q = $pdo->prepare('SELECT halaqa_id FROM students WHERE id=? AND complex_id=?');
+        $q->execute([$student,$cid]);
+        if ($transfer->getCode()!==200 || (int)$q->fetchColumn()!==(int)$groups[1] || $assign->getCode()!==200) {
+            throw new RuntimeException('transition_handler_failed');
+        }
+        $q = $pdo->prepare('SELECT id,plan_id,status FROM student_plan_assignments WHERE student_id=?');
+        $q->execute([$student]);
+        $history = array_column($q->fetchAll(),'status','plan_id');
+        if (($history[$plans[0]] ?? null)!=='transferred' || ($history[$plans[1]] ?? null)!=='active') {
+            throw new RuntimeException('transition_history_failed');
+        }
+    } finally {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        $pdo->prepare('DELETE FROM student_plan_assignments WHERE student_id=?')->execute([$student]);
+        $pdo->prepare('DELETE FROM students WHERE id=? AND complex_id=?')->execute([$student,$cid]);
+    }
+    return ['login'=>$login,'invalid_login'=>401,'halaqa_transfer'=>200,'plan_transition'=>200,'prior_assignment_retained'=>true];
 }
