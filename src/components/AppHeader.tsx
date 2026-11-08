@@ -16,7 +16,7 @@ import { useTenant } from "@/contexts/TenantContext";
 import { tenantPath } from "@/lib/tenant";
 import { TenantLogo } from "@/components/TenantLogo";
 import { StaffAttendanceCheckInButton } from "@/components/StaffAttendanceCheckInButton";
-import { GradeDraftArchive } from "@/components/GradeSaveStatus";
+import { GradeDraftArchive, GradeSaveStatus } from "@/components/GradeSaveStatus";
 import { canStaffCheckIn, isHalaqaBoundStaffRole } from "@/lib/staff-attendance";
 
 interface NavItem {
@@ -105,7 +105,10 @@ export function AppHeader({ title, subtitle }: { title: string; subtitle?: strin
                 </SheetTitle>
               </SheetHeader>
               <nav className="mt-6 space-y-1">
-                {open && <GradeDraftArchive />}
+                {open && <>
+                  <GradeSaveStatus />
+                  <GradeDraftArchive />
+                </>}
                 {items.map((item) => {
                   const Icon = item.icon;
                   const search = item.to === "/teacher" ? teacherHalaqaSearch : item.search;

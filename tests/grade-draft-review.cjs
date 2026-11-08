@@ -108,6 +108,11 @@ const planRequired = "هذه الدرجة مرتبطة بخطة؛ يلزم تس�
     const realClear = addDraft("clear", [original.packet.changes[0]]);
     const knownPlan = addDraft("plan", [legacyEmpty], "conflict", { plan: effect });
     const uncertainReceipt = addDraft("pending", [legacyEmpty], "pending");
+    const blockedParent = addDraft("blocked-parent", [legacyEmpty]);
+    const blockedChild = addDraft("blocked-child", [original.packet.changes[0]], "pending");
+    const blockedKey = box.prefix + "operation:" + blockedChild;
+    const blockedDraft = JSON.parse(persistent.getItem(blockedKey));
+    persistent.setItem(blockedKey, JSON.stringify({ ...blockedDraft, order: 9, dependencies: [blockedParent] }));
     const priorSemester = addDraft("prior-semester", [legacyEmpty], "conflict", {
       calendar_context: { known: true, active_semester_id: "previous" },
     });
@@ -120,6 +125,9 @@ const planRequired = "هذه الدرجة مرتبطة بخطة؛ يلزم تس�
     assert.equal(box.view({})["synthetic-student"][10].days.sun.rabt, "pass");
     for (const id of [knownPlan, priorSemester]) assert.equal(byId(id).status, "conflict");
     assert.equal(byId(uncertainReceipt).status, "pending");
+    assert.equal(byId(blockedParent).status, "reconciled");
+    assert.equal(byId(blockedChild).status, "archived");
+    assert.deepEqual(byId(blockedChild).packet, blockedDraft.packet);
     for (const task of ["rabt", "muraja"]) for (const next of ["", "fail"]) {
       const calls = [];
       const view = PlanAwareTaskCell({ task, student: { levelType: "gold" }, hasPlan: true,

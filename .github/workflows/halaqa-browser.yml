@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   grade-draft-review:
-    if: github.head_ref == 'fix/grade-draft-review' || github.head_ref == 'fix/grade-comparison-feedback' || github.head_ref == 'fix/grade-review-panel' || github.head_ref == 'fix/grade-draft-reconcile'
+    if: github.head_ref == 'fix/grade-draft-review' || github.head_ref == 'fix/grade-comparison-feedback' || github.head_ref == 'fix/grade-review-panel' || github.head_ref == 'fix/grade-draft-reconcile' || github.head_ref == 'fix/grade-drafts-sidebar'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
@@ -22,10 +22,10 @@ jobs:
       - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
       - run: node tests/grade-draft-review.cjs && node tests/stage2-atomic-local.cjs
       - run: node tests/stage2-atomic-sessions.cjs && php tests/stage3-atomic-plan.php
-        if: github.head_ref == 'fix/grade-draft-review' || github.head_ref == 'fix/grade-draft-reconcile'
+        if: github.head_ref == 'fix/grade-draft-review' || github.head_ref == 'fix/grade-draft-reconcile' || github.head_ref == 'fix/grade-drafts-sidebar'
       - run: npx tsc --noEmit && npm run build:hostinger
   halaqa:
-    if: github.head_ref == 'fix/halaqa-render' || github.head_ref == 'fix/grade-comparison-feedback' || github.head_ref == 'fix/grade-review-panel' || github.head_ref == 'fix/grade-draft-reconcile'
+    if: github.head_ref == 'fix/halaqa-render' || github.head_ref == 'fix/grade-comparison-feedback' || github.head_ref == 'fix/grade-review-panel' || github.head_ref == 'fix/grade-draft-reconcile' || github.head_ref == 'fix/grade-drafts-sidebar'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:

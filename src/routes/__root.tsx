@@ -1,4 +1,3 @@
-import { GradeSaveStatus } from "@/components/GradeSaveStatus";
 import { LegacyGradeRecovery } from "@/components/LegacyGradeRecovery";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
@@ -89,7 +88,6 @@ function RootComponent() {
         <EvaluationSettingsProvider>
           <GradeInputSettingsProvider>
             <CloudSyncStatus />
-            <GradeSaveStatus />
             <LegacyGradeRecovery />
             <Outlet />
           </GradeInputSettingsProvider>
