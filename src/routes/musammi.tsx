@@ -6,6 +6,7 @@ import {
   type SardQueueItem,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
+import { refreshSardReferrals } from "@/lib/plans-service";
 import { useEvaluationSettings } from "@/contexts/EvaluationSettingsContext";
 import {
   computeReviewScore,
@@ -89,6 +90,15 @@ export function MusammiPage() {
   const students = loadStudents();
 
   const refresh = () => setQueue(loadSardQueue());
+  useEffect(() => {
+    if (activeId) return;
+    let active = true;
+    const poll = () => void refreshSardReferrals().then(next => { if (active) setQueue(next); }).catch(() => {});
+    poll();
+    const timer = setInterval(poll, 15000);
+    window.addEventListener("focus", poll);
+    return () => { active = false; clearInterval(timer); window.removeEventListener("focus", poll); };
+  }, [activeId]);
 
   const visible = useMemo(
     () => sortMusammiQueue(queue.filter((q) => isMusammiVisible(q))),

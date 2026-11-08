@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { loadStudents, type Student } from "@/lib/mock-data";
 import { syncFromCloud } from "@/lib/cloud-sync";
-import { fetchPlans, fetchStudentPlanSheet, importPlans, assignStudentPlan, patchStudentAssignment, deletePlan, unconfirmedLocalPlanLink, updateSupervisorPlanHifz } from "@/lib/plans-service";
+import { fetchPlans, fetchStudentPlanSheet, importPlans, assignStudentPlan, patchStudentAssignment, deletePlan, unconfirmedLocalPlanLink, updateSupervisorPlanHifz, referStudentForSard } from "@/lib/plans-service";
 import type { EducationPlan, PlanTrack, StudentPlanSheetData } from "@/lib/plan-types";
 import { faceQuotasFromPlan } from "@/lib/plan-daily-faces";
 import { FaceQuotasFields } from "@/components/plans/FaceQuotasFields";
@@ -19,7 +19,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { FileSpreadsheet, Link2, Loader2, Snowflake, Search, Trash2, Sun } from "lucide-react";
 import { toast } from "sonner";
 
-export function PlanStudentLookup({ readOnly = false, refreshKey = 0 }: { readOnly?: boolean; refreshKey?: number }) {
+export function PlanStudentLookup({ readOnly = false, refreshKey = 0, onSardReferral }: { readOnly?: boolean; refreshKey?: number; onSardReferral?: () => void }) {
   const [q, setQ] = useState("");
   const [sheet, setSheet] = useState<StudentPlanSheetData | null>(null);
   const [selected, setSelected] = useState<Student | null>(null);
@@ -28,8 +28,28 @@ export function PlanStudentLookup({ readOnly = false, refreshKey = 0 }: { readOn
   const [localLink, setLocalLink] = useState<ReturnType<typeof unconfirmedLocalPlanLink>>(null);
   const [hifzDate, setHifzDate] = useState(getCalendarIsoDate());
   const [editingSegment, setEditingSegment] = useState<number | null>(null);
+  const [referring, setReferring] = useState(false);
   const lookupVersion = useRef(0);
   const canEditHifz = !readOnly && getSessionRole() === "supervisor";
+
+  const refer = async () => {
+    if (referring || !canEditHifz || !selected || sheet?.assignment?.status !== "active") return;
+    setReferring(true);
+    try {
+      const calendar = await fetchActiveCalendar();
+      const { item, created } = await referStudentForSard(selected.id, sheet.assignment.id, calendar.currentWeekNumber, true);
+      if (item?.status === "plan_completed") {
+        toast.success(created ? "أضيف الطالب إلى قائمة الإحالة للسرد" : "الطالب موجود في قائمة الإحالة للسرد");
+        onSardReferral?.();
+      } else {
+        toast.info("لهذه الخطة طلب سرد قائم أو منتهٍ");
+      }
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "تعذّرت إحالة الطالب للسرد");
+    } finally {
+      setReferring(false);
+    }
+  };
 
   const students = loadStudents();
   const results = q.trim().length >= 2
@@ -144,6 +164,11 @@ export function PlanStudentLookup({ readOnly = false, refreshKey = 0 }: { readOn
               onHifzChange={canEditHifz ? (segmentIndex, isComplete) => void changeHifz(segmentIndex, isComplete) : undefined}
               editingSegment={editingSegment}
             />
+            {canEditHifz && sheet?.assignment?.status === "active" && (
+              <Button type="button" disabled={referring} onClick={() => void refer()}>
+                {referring ? "جارٍ تأكيد الإحالة…" : "نقل الطالب للسرد"}
+              </Button>
+            )}
           </>
         )}
       </CardContent>
@@ -151,7 +176,7 @@ export function PlanStudentLookup({ readOnly = false, refreshKey = 0 }: { readOn
   );
 }
 
-export function SupervisorPlansPanel() {
+export function SupervisorPlansPanel({ onSardReferral }: { onSardReferral?: () => void } = {}) {
   const [plans, setPlans] = useState<EducationPlan[]>([]);
   const [loading, setLoading] = useState(true);
   const [importing, setImporting] = useState(false);
@@ -506,7 +531,7 @@ export function SupervisorPlansPanel() {
 
       <StudentFaceReportPanel />
 
-      <PlanStudentLookup refreshKey={lookupRefresh} />
+      <PlanStudentLookup refreshKey={lookupRefresh} onSardReferral={onSardReferral} />
     </div>
   );
 }

@@ -369,7 +369,7 @@ function sard_current_assignments(PDO $pdo, int $cid): array
 }
 
 /** Compare only modified items under a row lock; stale devices cannot erase other items. */
-function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
+function app_state_patch_sard(PDO $pdo, int $cid, mixed $value, string $role): void
 {
     if (!is_array($value) || !isset($value['changes']) || !is_array($value['changes'])) {
         error_response('نسخة الصفحة قديمة — حدّث الصفحة قبل تعديل السرد', 409);
@@ -392,6 +392,18 @@ function app_state_patch_sard(PDO $pdo, int $cid, mixed $value): void
             $index = null;
             foreach ($queue as $i => $existing) if ($existing['id'] === $item['id']) { $index = $i; break; }
             $current = $index === null ? null : $queue[$index];
+            if (($item['manualReferralAt']??null)!==($current['manualReferralAt']??null)) {
+                throw new RuntimeException('الإحالة اليدوية تُنشأ من استمارة الخطة فقط');
+            }
+            if (!empty($current['manualReferralAt'])) {
+                if (($item['studentId']??null)!==$current['studentId'] || ($item['assignmentId']??null)!==$current['assignmentId']) {
+                    throw new RuntimeException('لا يمكن نقل إحالة إلى خطة أخرى');
+                }
+                if (($current['status']??'')==='plan_completed' && $current!=$item &&
+                    ($role!=='supervisor' || ($item['status']??'')!=='pending' || empty($item['supervisorForwardedAt']))) {
+                    throw new RuntimeException('المشرف التعليمي وحده يحيل الطلب اليدوي إلى المسمّع');
+                }
+            }
             if ($current == $item) continue; // Idempotent retry.
             $restoreSupervisorHifz = $current
                 && ($current['status'] ?? '') === 'archived'
@@ -492,7 +504,7 @@ function handle_set_app_state(): void
     $pdo = db();
     if ($key === 'sard_queue') {
         if (!empty($input['value']['removals']) && $role !== 'manager') error_response('المدير فقط يمكنه إزالة الطلب', 403);
-        app_state_patch_sard($pdo, $cid, $input['value'] ?? null);
+        app_state_patch_sard($pdo, $cid, $input['value'] ?? null, $role);
         json_response(['ok' => true]);
         return;
     }

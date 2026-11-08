@@ -789,6 +789,7 @@ export type SardStatus =
 export type SardPhase = "full" | "review_only";
 
 export interface SardQueueItem {
+  manualReferralAt?: string;
   assignmentId?: string;
   archiveReason?: string;
   id: string;

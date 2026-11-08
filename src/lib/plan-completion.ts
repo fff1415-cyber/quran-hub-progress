@@ -1,5 +1,5 @@
-import { enqueuePlanCompleted, loadSardQueue, type Student } from "@/lib/mock-data";
-import { fetchStudentPlanSheet } from "@/lib/plans-service";
+import type { Student } from "@/lib/mock-data";
+import { fetchStudentPlanSheet, referStudentForSard } from "@/lib/plans-service";
 import { notifyTeacherHalaqa } from "@/lib/teacher-notifications";
 
 export function isPlanHifzComplete(
@@ -15,33 +15,17 @@ export function isPlanHifzComplete(
   return visible.every((s) => hifzDone.has(s.segment_index));
 }
 
-function alreadyQueuedForPlan(studentId: string): boolean {
-  return loadSardQueue().some(
-    (q) =>
-      q.studentId === studentId &&
-      (q.status === "plan_completed" ||
-        q.status === "pending" ||
-        q.status === "scheduled" ||
-        q.status === "awaiting_review" ||
-        q.status === "approved_third" ||
-        q.status === "awaiting_supervisor"),
-  );
-}
-
 /** After plan input — if hifz complete, queue for supervisor and notify teacher. */
 export async function checkAndHandlePlanCompletion(
   student: Student,
   weekNum: number,
 ): Promise<boolean> {
-  if (alreadyQueuedForPlan(student.id)) return false;
-
   const sheet = await fetchStudentPlanSheet(student.id);
-  if (!isPlanHifzComplete(sheet)) return false;
-  if (loadSardQueue().some((q) => q.assignmentId === sheet.assignment?.id
-    && !(q.status === "archived" && q.archiveReason === "supervisor_hifz_removed"))) return false;
+  if (!sheet.assignment || sheet.assignment.status !== "active" || !isPlanHifzComplete(sheet)) return false;
 
   const planTitle = sheet.plan?.title ?? "الخطة التعليمية";
-  enqueuePlanCompleted(student.id, student.halaqaId, weekNum, planTitle, sheet.assignment?.id);
+  const { created } = await referStudentForSard(student.id, sheet.assignment.id, weekNum);
+  if (!created) return false;
 
   notifyTeacherHalaqa(
     student.halaqaId,

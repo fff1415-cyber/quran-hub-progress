@@ -57,6 +57,45 @@ function seed(): TestDatabase {
 }
 function activePlan(PDO $pdo): string {return (string)$pdo->query("SELECT plan_id FROM student_plan_assignments WHERE status='active'")->fetchColumn();}
 function queue(PDO $pdo): array {return json_decode((string)$pdo->query("SELECT value FROM app_state WHERE `key`='sard_queue'")->fetchColumn(),true);}
+$pdo=seed();
+$pdo->exec('ALTER TABLE students ADD COLUMN halaqa_id INTEGER DEFAULT 1; DELETE FROM segment_completions WHERE segment_index=2');
+$advance=$GLOBALS['input'];
+app_state_upsert($pdo,'sard_queue',[['id'=>'old-request','studentId'=>'student-1','assignmentId'=>'previous','status'=>'pending']],1);
+$GLOBALS['input']=['student_id'=>'student-1','assignment_id'=>'old','week'=>2,'manual'=>true];
+$GLOBALS['auth']['role']='teacher';$GLOBALS['auth']['halaqaId']=1;
+expectFailure(fn()=>handle_plan_sard_referral(),'غير مصرح');
+$GLOBALS['input']['manual']=false;
+handle_plan_sard_referral();
+check(!$GLOBALS['response']['created'],'automatic referral requires a completed current plan');
+$GLOBALS['input']['manual']=true;
+$GLOBALS['auth']['role']='supervisor';
+handle_plan_sard_referral();
+$referral=$GLOBALS['response']['item'];
+check($GLOBALS['response']['created'] && $referral['status']==='plan_completed' && !empty($referral['manualReferralAt'])
+    && !isset($referral['planCompletedAt']) && count(queue($pdo))===2,'manual referral waits for supervisor without marking hifz complete');
+handle_plan_sard_referral();
+check(!$GLOBALS['response']['created'] && $GLOBALS['response']['item']===$referral,'retry returns the existing request');
+$advance['sard_result']['id']=$referral['id'];
+$GLOBALS['auth']['role']='musammi';$GLOBALS['input']=$advance;
+expectFailure(fn()=>handle_assign_plan(),'لم يكتمل حفظ');
+$forwarded=array_merge($referral,['status'=>'pending','supervisorForwardedAt'=>'2026-10-13T14:00:00Z']);
+$change=['changes'=>[['base'=>$referral,'item'=>$forwarded]]];
+expectFailure(fn()=>app_state_patch_sard($pdo,1,$change,'teacher'),'وحده يحيل');
+app_state_patch_sard($pdo,1,$change,'supervisor');
+$GLOBALS['input']['sard_result']['percent']=79;
+expectFailure(fn()=>handle_assign_plan(),'لم يكتمل حفظ');
+$GLOBALS['input']=$advance;
+handle_assign_plan();
+check(activePlan($pdo)==='next' && queue($pdo)[0]['status']==='passed' &&
+    (int)$pdo->query('SELECT COUNT(*) FROM segment_completions')->fetchColumn()===1,
+    'forwarded manual referral follows the pass and next-plan flow without adding or deleting hifz');
+$pdo=seed();$pdo->exec('ALTER TABLE students ADD COLUMN halaqa_id INTEGER DEFAULT 1');
+app_state_upsert($pdo,'sard_queue',[['id'=>'old-request','studentId'=>'student-1','assignmentId'=>'previous','status'=>'pending']],1);
+$GLOBALS['auth']=['role'=>'assistant','complexId'=>1,'halaqaId'=>1];
+$GLOBALS['input']=['student_id'=>'student-1','assignment_id'=>'old','week'=>2,'manual'=>false];
+handle_plan_sard_referral();
+check($GLOBALS['response']['created'] && !empty($GLOBALS['response']['item']['planCompletedAt']) && queue($pdo)[1]['status']==='archived',
+    'a completed current plan is referred even when a previous assignment has a stale request');
 $pdo=seed();handle_assign_plan();check(activePlan($pdo)==='next' && queue($pdo)[0]['status']==='passed','failed attempt then pass commits next plan and result together with hifz alone');
 expectFailure(fn()=>handle_assign_plan(),'تغيّرت خطة الطالب');check((int)$pdo->query('SELECT COUNT(*) FROM student_plan_assignments')->fetchColumn()===2,'repeat approval does not create another assignment');
 $pdo=seed();$pdo->exec("CREATE TRIGGER fail_insert BEFORE INSERT ON student_plan_assignments BEGIN SELECT RAISE(ABORT,'simulated insert failure'); END");expectFailure(fn()=>handle_assign_plan(),'simulated insert failure');check(activePlan($pdo)==='current' && queue($pdo)[0]['status']==='scheduled','assignment insert failure rolls back plan closure');
@@ -74,10 +113,10 @@ $pdo=seed();$pdo->exec('UPDATE education_plans SET track="silver",level_number=4
 $pdo=seed();$pdo->exec('UPDATE education_plans SET track="silver",level_number=2018 WHERE id="current"; UPDATE education_plans SET track="silver",level_number=3027 WHERE id="next"; UPDATE students SET phase_number=25, level="25" WHERE id="student-1"');expectFailure(fn()=>handle_assign_plan(),'لا يمكن تجاوز');check(activePlan($pdo)==='current','profile mismatch cannot authorize a plan jump');
 $pdo=seed();$GLOBALS['input']['sard_result']['id']='missing';expectFailure(fn()=>handle_assign_plan(),'طلب السرد غير محفوظ');check(activePlan($pdo)==='current','missing queue item rolls back advancement');
 $pdo=seed();$initial=queue($pdo)[0];$deviceA=array_merge($initial,['status'=>'pending']);$pdo->exec('INSERT INTO students(id,complex_id,phase_number,level) VALUES ("student-2",1,1,"1"); INSERT INTO student_plan_assignments(id,student_id,plan_id,start_segment_index,status) VALUES ("other","student-2","current",1,"active"); INSERT INTO segment_completions(student_id,plan_id,segment_index,task_type,assignment_id) VALUES("student-2","current",1,"hifz","other"),("student-2","current",2,"hifz","other")');$deviceB=['id'=>'sq-2','studentId'=>'student-2','assignmentId'=>'other','status'=>'plan_completed'];
-app_state_patch_sard($pdo,1,['changes'=>[['item'=>$deviceA,'base'=>$initial]]]);app_state_patch_sard($pdo,1,['changes'=>[['item'=>$deviceB,'base'=>null]]]);check(count(queue($pdo))===2 && queue($pdo)[0]['status']==='pending','different device updates preserve unrelated queue items');
-expectFailure(fn()=>app_state_patch_sard($pdo,1,['changes'=>[['item'=>array_merge($initial,['status'=>'passed']),'base'=>$initial]]]),'تغيّر السرد');check(queue($pdo)[0]['status']==='pending','stale same-item write cannot undo newer status');
-app_state_patch_sard($pdo,1,['changes'=>[['item'=>$deviceA,'base'=>$initial]]]);check(count(queue($pdo))===2,'identical write retry is idempotent');
-expectFailure(fn()=>app_state_patch_sard($pdo,1,[]),'نسخة الصفحة قديمة');
+app_state_patch_sard($pdo,1,['changes'=>[['item'=>$deviceA,'base'=>$initial]]],'supervisor');app_state_patch_sard($pdo,1,['changes'=>[['item'=>$deviceB,'base'=>null]]],'teacher');check(count(queue($pdo))===2 && queue($pdo)[0]['status']==='pending','different device updates preserve unrelated queue items');
+expectFailure(fn()=>app_state_patch_sard($pdo,1,['changes'=>[['item'=>array_merge($initial,['status'=>'passed']),'base'=>$initial]]],'musammi'),'تغيّر السرد');check(queue($pdo)[0]['status']==='pending','stale same-item write cannot undo newer status');
+app_state_patch_sard($pdo,1,['changes'=>[['item'=>$deviceA,'base'=>$initial]]],'supervisor');check(count(queue($pdo))===2,'identical write retry is idempotent');
+expectFailure(fn()=>app_state_patch_sard($pdo,1,[],'teacher'),'نسخة الصفحة قديمة');
 $pdo=seed();check(tasks_actor($GLOBALS['auth'],$pdo,1)==='musammi:staff-1','valid staff token resolves task actor');unset($GLOBALS['auth']['accountId']);expectFailure(fn()=>tasks_actor($GLOBALS['auth'],$pdo,1),'جلسة الدخول ناقصة');
 echo "Backend handler tests complete (SQLite adapter; no live MySQL writes).\n";
 
@@ -88,7 +127,7 @@ check(sard_reconcile_queue($clean,$assignments)===$clean,'repeated reconciliatio
 $records=[['id'=>'pending','studentId'=>'student-1','assignmentId'=>'new','status'=>'pending'],['id'=>'passed','studentId'=>'student-1','assignmentId'=>'new','status'=>'passed']];$clean=sard_reconcile_queue($records,$assignments);check($clean[0]['archiveReason']==='already_passed','another request cannot requeue a passed assignment');
 $records=[['id'=>'a','studentId'=>'student-1','assignmentId'=>'new','status'=>'plan_completed'],['id'=>'b','studentId'=>'student-1','assignmentId'=>'new','status'=>'pending','supervisorForwardedAt'=>'2026-10-13T13:00:00Z']];$clean=sard_reconcile_queue($records,$assignments);check($clean[0]['status']==='archived' && $clean[1]['status']==='pending','forwarded request wins over duplicate completion request');
 $records=[['id'=>'fresh','studentId'=>'student-1','planTitle'=>'new plan','planCompletedAt'=>'2026-10-13T13:00:00Z','status'=>'plan_completed']];$clean=sard_reconcile_queue($records,$assignments);check($clean[0]['status']==='plan_completed' && $clean[0]['assignmentId']==='new','verified current legacy request remains actionable');
-$pdo=seed();$old=queue($pdo)[0];app_state_patch_sard($pdo,1,['changes'=>[], 'removals'=>[['id'=>'sq-1','base'=>$old]]]);check(queue($pdo)[0]['status']==='archived','manager removal archives request on server');expectFailure(fn()=>app_state_patch_sard($pdo,1,['changes'=>[['item'=>$old,'base'=>queue($pdo)[0]]]]),'الطلب منتهٍ');
+$pdo=seed();$old=queue($pdo)[0];app_state_patch_sard($pdo,1,['changes'=>[], 'removals'=>[['id'=>'sq-1','base'=>$old]]],'manager');check(queue($pdo)[0]['status']==='archived','manager removal archives request on server');expectFailure(fn()=>app_state_patch_sard($pdo,1,['changes'=>[['item'=>$old,'base'=>queue($pdo)[0]]]],'supervisor'),'الطلب منتهٍ');
 $pdo=seed();$pdo->exec('UPDATE student_plan_assignments SET id="reassigned" WHERE id="old"');$GLOBALS['input']['expected_assignment_id']='reassigned';expectFailure(fn()=>handle_assign_plan(),'لم يكتمل حفظ');check(activePlan($pdo)==='current','previous assignment completions do not finish a reassigned plan');
 
 $pdo=seed();$pdo->exec('ALTER TABLE segment_completions DROP COLUMN assignment_id');plans_ensure_completion_assignment_column($pdo);plans_ensure_completion_assignment_column($pdo);check(table_column_exists($pdo,'segment_completions','assignment_id'),'legacy completion schema upgrades idempotently before transaction');

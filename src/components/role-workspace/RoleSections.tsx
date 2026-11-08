@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import {
   loadHalaqat, loadStudents, loadGrades, loadSardQueue,
   loadLatePermissions, loadMessageTemplates, formatMessage,
-  pushNotification, updateSardItem, forwardPlanToSard, DAYS,
+  pushNotification, updateSardItem, forwardPlanToSard, flushSardQueue, DAYS,
   type WeekRecord, type Student, type GradesStore,
 } from "@/lib/mock-data";
 import {
@@ -12,6 +12,7 @@ import {
   isSupervisorForceRetryCandidate,
 } from "@/lib/sard-phased-flow";
 import { weekLabel } from "@/lib/arabic-numbers";
+import { refreshSardReferrals } from "@/lib/plans-service";
 import { getCalendarDayKey, getCalendarIsoDate } from "@/lib/operational-date";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
@@ -403,34 +404,47 @@ export function SupervisorHalaqatPanel() {
 
 export function SupervisorPlanCompletedPanel() {
   const [queue, setQueue] = useState(() => loadSardQueue());
+  const [forwarding, setForwarding] = useState(false);
   const students = loadStudents();
   const halaqat = loadHalaqat();
   const refresh = () => setQueue(loadSardQueue());
 
   useEffect(() => {
-    const timer = setInterval(() => setQueue(loadSardQueue()), 5000);
-    return () => clearInterval(timer);
+    let active = true;
+    const poll = () => void refreshSardReferrals().then(next => { if (active) setQueue(next); }).catch(() => {});
+    poll();
+    const timer = setInterval(poll, 15000);
+    return () => { active = false; clearInterval(timer); };
   }, []);
 
   const completed = queue.filter((q) => q.status === "plan_completed");
 
-  const forward = (id: string, studentName: string, halaqaId: number, planTitle?: string) => {
+  const forward = async (id: string, studentName: string, halaqaId: number, planTitle?: string) => {
+    if (forwarding) return;
     const item = forwardPlanToSard(id);
     if (!item) return;
-    notifyTeacherHalaqa(
-      halaqaId,
-      `حُوّل ${studentName} للسرد${planTitle ? ` — ${planTitle}` : ""}`,
-      "sard",
-    );
-    toast.success(`تم تحويل ${studentName} لقائمة المسمّع`);
-    refresh();
+    setForwarding(true);
+    try {
+      await flushSardQueue();
+      notifyTeacherHalaqa(
+        halaqaId,
+        `حُوّل ${studentName} للسرد${planTitle ? ` — ${planTitle}` : ""}`,
+        "sard",
+      );
+      toast.success(`تم تحويل ${studentName} لقائمة المسمّع`);
+    } catch {
+      toast.error("لم يؤكد الخادم التحويل للمسمّع");
+    } finally {
+      setForwarding(false);
+      refresh();
+    }
   };
 
   return (
     <section className="glass-card rounded-2xl p-6">
       <h2 className="text-lg font-bold text-primary mb-2 flex items-center gap-2">
         <GraduationCap className="w-5 h-5" />
-        أتمّوا الخطة التعليمية ({completed.length})
+        بانتظار الإحالة للسرد ({completed.length})
       </h2>
       <p className="text-xs text-muted-foreground mb-4">
         حوّل الطالب للمسمّع عند الجاهزية — يظهر للمسمّع بالترتيب حسب وقت التحويل
@@ -455,10 +469,12 @@ export function SupervisorPlanCompletedPanel() {
                     {h.name} · {q.planTitle || "خطة تعليمية"} · {weekLabel(q.week)}
                   </div>
                   <div className="text-xs text-success font-medium mt-1">{daysSinceLabel(since)}</div>
+                  {q.manualReferralAt && <div className="text-xs text-muted-foreground">إحالة يدوية من المشرف</div>}
                 </div>
                 <button
                   type="button"
-                  onClick={() => forward(q.id, s.name, s.halaqaId, q.planTitle)}
+                  disabled={forwarding}
+                  onClick={() => void forward(q.id, s.name, s.halaqaId, q.planTitle)}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm"
                 >
                   <Send className="w-4 h-4" /> تحويل للسرد

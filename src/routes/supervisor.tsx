@@ -106,8 +106,10 @@ export function SupervisorPage() {
   }, []);
 
   useEffect(() => {
-    const id = setInterval(() => setQueue(loadSardQueue()), 5000);
-    return () => clearInterval(id);
+    const refresh = () => setQueue(loadSardQueue());
+    const id = setInterval(refresh, 5000);
+    window.addEventListener("qs-sard-referral-confirmed", refresh);
+    return () => { clearInterval(id); window.removeEventListener("qs-sard-referral-confirmed", refresh); };
   }, []);
 
   useEffect(() => {

@@ -107,11 +107,11 @@ export function SupervisorPlansPanelGroup({
           icon: GraduationCap,
           roles: ["supervisor"],
           perm: "manage_plans",
-          content: <SupervisorPlansPanel />,
+          content: <SupervisorPlansPanel onSardReferral={() => onSectionChange("plan-completed")} />,
         },
         {
           id: "plan-completed",
-          label: "إكمال الخطة",
+          label: "بانتظار الإحالة للسرد",
           icon: GraduationCap,
           roles: ["supervisor"],
           perm: "manage_plans",
@@ -119,7 +119,7 @@ export function SupervisorPlansPanelGroup({
           content: <SupervisorPlanCompletedPanel />,
         },
       ]),
-    [planCompletedCount],
+    [planCompletedCount, onSectionChange],
   );
 
   return <ManagerSubTabs tabs={tabs} value={section} onValueChange={onSectionChange} />;

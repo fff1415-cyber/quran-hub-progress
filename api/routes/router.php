@@ -213,6 +213,10 @@ function route_request(string $method, string $path): void
         handle_assign_plan();
         return;
     }
+    if ($path === '/plans/sard-referral' && $method === 'POST') {
+        handle_plan_sard_referral();
+        return;
+    }
     if ($path === '/plans/supervisor-hifz' && $method === 'POST') {
         handle_supervisor_plan_hifz();
         return;

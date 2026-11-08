@@ -673,6 +673,120 @@ function plans_next_hifz_segments_for_tap(
     return $next;
 }
 
+function plans_sard_hifz_complete(PDO $pdo, string $student, array $assignment): bool
+{
+    $query = $pdo->prepare("SELECT COUNT(*) AS total, SUM(EXISTS(SELECT 1 FROM segment_completions c
+        WHERE c.student_id=? AND c.plan_id=s.plan_id AND c.segment_index=s.segment_index AND c.task_type='hifz'
+        AND (c.assignment_id=? OR (c.assignment_id IS NULL AND c.created_at>=?)))) AS done
+        FROM plan_segments s WHERE s.plan_id=? AND s.segment_index>=?");
+    $query->execute([$student,$assignment['id'],$assignment['assigned_at'],$assignment['plan_id'],$assignment['start_segment_index']]);
+    $counts = $query->fetch();
+    return (int)$counts['total'] > 0 && (int)$counts['total'] === (int)$counts['done'];
+}
+
+function handle_plan_sard_referral(): void
+{
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
+    $input = json_input();
+    $manual = ($input['manual'] ?? false) === true;
+    $role = $auth['role'] ?? '';
+    if ($manual ? $role !== 'supervisor' : !in_array($role,['teacher','assistant','supervisor','manager'],true)) {
+        error_response('غير مصرح بإحالة الطالب بهذه الطريقة',403);
+    }
+    $student = trim((string)($input['student_id'] ?? ''));
+    $expected = trim((string)($input['assignment_id'] ?? ''));
+    if ($student==='' || $expected==='') error_response('يلزم تحديد الطالب وخطته الحالية',400);
+    $pdo = db();
+    $tenants = plans_tenant_enabled($pdo);
+    plans_assert_student_in_complex($pdo,$student,$cid,$tenants);
+    plans_assert_teacher_student_access($pdo,$auth,$student,$tenants);
+    $pdo->beginTransaction();
+    try {
+        $lock = $pdo->prepare('SELECT halaqa_id FROM students WHERE id=? FOR UPDATE');
+        $lock->execute([$student]);
+        $halaqa = (int)$lock->fetchColumn();
+        $query = $pdo->prepare("SELECT a.id,a.plan_id,a.assigned_at,a.start_segment_index,p.title
+            FROM student_plan_assignments a JOIN education_plans p ON p.id=a.plan_id
+            WHERE a.student_id=? AND a.status='active' FOR UPDATE");
+        $query->execute([$student]);
+        $assignments = $query->fetchAll();
+        if (count($assignments)!==1 || $assignments[0]['id']!==$expected) {
+            throw new RuntimeException('تغيّرت خطة الطالب أو أنها مجمّدة. أعد فتح الاستمارة.');
+        }
+        $assignment = $assignments[0];
+        $scoped = app_state_tenant_enabled($pdo);
+        $args = $scoped ? [$cid,'sard_queue'] : ['sard_queue'];
+        $pdo->prepare($scoped ? 'INSERT IGNORE INTO app_state (complex_id,`key`,value) VALUES (?, ?, ?)'
+            : 'INSERT IGNORE INTO app_state (`key`,value) VALUES (?, ?)')->execute([...$args,'[]']);
+        $query = $pdo->prepare('SELECT value FROM app_state WHERE '.($scoped?'complex_id=? AND ':'').'`key`=? FOR UPDATE');
+        $query->execute($args);
+        $queue = sard_reconcile_queue(json_decode((string)$query->fetchColumn(),true,512,JSON_THROW_ON_ERROR),sard_current_assignments($pdo,$cid));
+        $revive = null;
+        $item = null;
+        $archived = null;
+        foreach ($queue as $i=>$row) {
+            if (($row['studentId']??null)!==$student || ($row['assignmentId']??null)!==$expected) continue;
+            if (($row['status']??null)==='archived') {
+                $reason = $row['archiveReason']??null;
+                if ($reason==='supervisor_hifz_removed') $revive = $i;
+                elseif ($reason!=='duplicate_assignment_request') $archived ??= $row;
+                continue;
+            }
+            $item = $row;
+            break;
+        }
+        $item ??= $archived;
+        $created = $item===null && ($manual || plans_sard_hifz_complete($pdo,$student,$assignment));
+        if ($created) {
+            $now = gmdate('c');
+            $item = ['id'=>$queue[$revive]['id']??'sq-assignment-'.$expected,'assignmentId'=>$expected,
+                'studentId'=>$student,'halaqaId'=>$halaqa,'week'=>max(1,(int)($input['week']??1)),
+                'attempt'=>1,'status'=>'plan_completed','phase'=>'full','createdAt'=>$now,'planTitle'=>$assignment['title']];
+            if ($manual) $item['manualReferralAt'] = $now;
+            else $item['planCompletedAt'] = $now;
+            if ($revive===null) array_unshift($queue,$item);
+            else $queue[$revive]=$item;
+            app_state_upsert($pdo,'sard_queue',$queue,$scoped?$cid:null);
+        }
+        $pdo->commit();
+    } catch (PDOException $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_response('تعذّر تأكيد إحالة الطالب للسرد.',503);
+        return;
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_response($error instanceof RuntimeException ? $error->getMessage() : 'تعذّر إحالة الطالب للسرد.',409);
+        return;
+    }
+    json_response(['created'=>$created,'item'=>$item,'sard_queue'=>$queue]);
+}
+
+function plans_has_forwarded_manual_sard_pass(PDO $pdo,int $cid,string $student,string $assignment,mixed $result): bool
+{
+    if (!is_array($result) || !is_string($result['id']??null) || !is_numeric($result['percent']??null)) return false;
+    $percent=(float)$result['percent'];
+    if ($percent < 0 || $percent > 100) return false;
+    $scoped=app_state_tenant_enabled($pdo);
+    $q=$pdo->prepare('SELECT value FROM app_state WHERE '.($scoped?'complex_id=? AND ':'')."`key`='sard_queue' FOR UPDATE");
+    $q->execute($scoped?[$cid]:[]);
+    foreach (json_decode((string)$q->fetchColumn(),true)??[] as $row) {
+        if (($row['id']??null)===$result['id'] && ($row['studentId']??null)===$student &&
+            ($row['assignmentId']??null)===$assignment && !empty($row['manualReferralAt']) &&
+            !empty($row['supervisorForwardedAt']) &&
+            in_array($row['status']??'',['pending','scheduled','approved_third','awaiting_review'],true)) {
+            $threshold = false;
+            if (plans_table_exists($pdo,'evaluation_settings')) {
+                $settings=$pdo->prepare('SELECT pass_percent FROM evaluation_settings WHERE complex_id=?');
+                $settings->execute([$cid]);
+                $threshold=$settings->fetchColumn();
+            }
+            return $percent >= ($threshold===false ? 80 : (float)$threshold);
+        }
+    }
+    return false;
+}
+
 function handle_assign_plan(): void
 {
     $auth = require_auth();
@@ -745,10 +859,8 @@ function handle_assign_plan(): void
             if ($expected === '' || !$current || $current['track'] !== $planRow['track']) {
                 throw new RuntimeException('المسمّع مخوّل بترحيل الخطة الحالية فقط');
             }
-            $complete = $pdo->prepare("SELECT COUNT(*) AS total, SUM(EXISTS(SELECT 1 FROM segment_completions c WHERE c.student_id = ? AND c.plan_id = s.plan_id AND c.segment_index = s.segment_index AND c.task_type = 'hifz' AND (c.assignment_id = ? OR (c.assignment_id IS NULL AND c.created_at >= ?)))) AS done FROM plan_segments s WHERE s.plan_id = ? AND s.segment_index >= ?");
-            $complete->execute([$studentId, $current['id'], $current['assigned_at'], $current['plan_id'], $current['start_segment_index']]);
-            $counts = $complete->fetch();
-            if ((int) $counts['total'] === 0 || (int) $counts['total'] !== (int) $counts['done']) {
+            if (!plans_sard_hifz_complete($pdo,$studentId,$current) &&
+                !plans_has_forwarded_manual_sard_pass($pdo,$cid,$studentId,$expected,$input['sard_result']??null)) {
                 throw new RuntimeException('لم يكتمل حفظ الخطة الحالية');
             }
             $profilePhase = (int) ($studentRow['phase_number'] ?? $studentRow['level'] ?? 0);
@@ -796,6 +908,10 @@ function handle_assign_plan(): void
                 if ($entry['id'] !== ($sard['id'] ?? '')) continue;
                 if ($entry['studentId'] !== $studentId || (isset($entry['assignmentId']) && $entry['assignmentId'] !== $expected) || ($entry['status'] ?? '') === 'passed') {
                     throw new RuntimeException('تغيّر طلب السرد — حدّث الصفحة');
+                }
+                if (($auth['role']??'')==='musammi' && !empty($entry['manualReferralAt']) &&
+                    !plans_has_forwarded_manual_sard_pass($pdo,$cid,$studentId,$expected,$sard)) {
+                    throw new RuntimeException('لم يتأكد تحويل المشرف أو اجتياز السرد');
                 }
                 $entry['status'] = 'passed';
                 $entry['assignmentId'] = $expected;
@@ -1379,7 +1495,8 @@ function handle_supervisor_plan_hifz(): void
         $doneStmt->execute([$studentId, $assignmentId, $assignment['assigned_at'], $assignment['plan_id'], $assignment['start_segment_index']]);
         $counts = $doneStmt->fetch();
         $isComplete = (int) ($counts['total'] ?? 0) > 0 && (int) $counts['total'] === (int) ($counts['done'] ?? 0);
-        if (!$isComplete && $queueIndex !== null && ($queue[$queueIndex]['status'] ?? '') === 'plan_completed') {
+        if (!$isComplete && $queueIndex !== null && ($queue[$queueIndex]['status'] ?? '') === 'plan_completed'
+            && empty($queue[$queueIndex]['manualReferralAt'])) {
             $queue[$queueIndex]['status'] = 'archived';
             $queue[$queueIndex]['archiveReason'] = 'supervisor_hifz_removed';
         } elseif ($isComplete && ($queueIndex === null || ($queue[$queueIndex]['status'] ?? '') !== 'plan_completed')) {

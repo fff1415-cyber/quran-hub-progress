@@ -12,7 +12,7 @@ import { getToken } from "@/lib/cloud-sync";
 import { localGetStudentSheet } from "@/lib/plans-store";
 import { syncStudentPhaseFromPlan } from "@/lib/student-phase-promote";
 import { compensationHifzSegmentTarget, compensationHifzTap } from "@/lib/plan-translator";
-import type { Student } from "@/lib/mock-data";
+import type { SardQueueItem, Student } from "@/lib/mock-data";
 
 function apiUrl(path: string): string {
   return buildRphpUrl(path);
@@ -53,6 +53,37 @@ export async function fetchStudentPlanSheet(studentId: string): Promise<StudentP
   return planFetch<StudentPlanSheetData>(
     `/plans/student-sheet?student_id=${encodeURIComponent(studentId)}`,
   );
+}
+
+export async function referStudentForSard(studentId: string, assignmentId: string, week: number, manual = false) {
+  const { flushSardQueue, hasPendingSardWrites, loadSardQueue } = await import("@/lib/mock-data");
+  await flushSardQueue().catch(() => undefined);
+  const token = getToken();
+  const before = JSON.stringify(loadSardQueue());
+  const result = await planFetch<{created: boolean; item: SardQueueItem | null; sard_queue: SardQueueItem[]}>("/plans/sard-referral", {
+    method: "POST",
+    body: JSON.stringify({student_id:studentId, assignment_id:assignmentId, week, manual}),
+  });
+  if (!Array.isArray(result.sard_queue)) throw new Error("تعذّر تأكيد إحالة الطالب للسرد");
+  if (token !== getToken()) throw new Error("تغيّرت جلسة الدخول. حدّث قائمة الإحالات.");
+  if (!hasPendingSardWrites() && JSON.stringify(loadSardQueue()) === before) {
+    localStorage.setItem("qshatawi_sard_queue_v2", JSON.stringify(result.sard_queue));
+    window.dispatchEvent(new Event("qs-sard-referral-confirmed"));
+  }
+  return result;
+}
+
+export async function refreshSardReferrals() {
+  const { hasPendingSardWrites, loadSardQueue } = await import("@/lib/mock-data");
+  const token = getToken();
+  if (!token || hasPendingSardWrites()) return loadSardQueue();
+  const before = JSON.stringify(loadSardQueue());
+  const rows = await planFetch<{ key: string; value: SardQueueItem[] }[]>("/app-state?key=sard_queue");
+  if (token === getToken() && !hasPendingSardWrites() && JSON.stringify(loadSardQueue()) === before) {
+    const queue = rows.find(row => row.key === "sard_queue")?.value;
+    if (Array.isArray(queue)) localStorage.setItem("qshatawi_sard_queue_v2", JSON.stringify(queue));
+  }
+  return loadSardQueue();
 }
 
 /** Older versions could confirm a link in browser storage without writing it to the server. */
