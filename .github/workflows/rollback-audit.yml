@@ -34,3 +34,12 @@ jobs:
         run: python3 scripts/restore-hostinger-test.py
       - name: Test pinned legacy handlers against the fresh restored copy
         run: python3 scripts/rollback-compat-probe.py
+      - name: Verify protected handlers with the same isolated restore
+        env:
+          QHP_SAFE_LEGACY_CANDIDATE: '1'
+        run: |
+          git worktree add --detach candidate 7e9adf1d4059f20289f182e31613e18fe2cf0877
+          cat scripts/safe-legacy-patch-*.b64 | base64 --decode | gzip -dc > "$RUNNER_TEMP/safe-legacy.patch"
+          git -C candidate apply --index "$RUNNER_TEMP/safe-legacy.patch"
+          test "$(git -C candidate write-tree)" = "$(cat scripts/safe-legacy-tree.txt)"
+          python3 scripts/rollback-compat-probe.py
