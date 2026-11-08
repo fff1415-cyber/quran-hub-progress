@@ -42,3 +42,5 @@ pages = ['/mm/manager', *['/mm/teacher?h='+str(int(value)) for value in report['
 with ThreadPoolExecutor(max_workers=3) as executor:
     checks = dict(zip(pages, executor.map(check_entry,pages)))
 print(json.dumps({'status':'halaqa_public_entry_reads','routes':checks,'production_writes':False}))
+if any(row['status'] != 200 or not row['published_entry'] or row['server_error_page'] for row in checks.values()):
+    raise SystemExit('A manager or halaqa route did not serve the published entry')
