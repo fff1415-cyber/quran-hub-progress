@@ -19,6 +19,12 @@ const halaqat = Array.from({ length: 5 }, (_, i) => ({
   teacher_name: "Fixture teacher", teacher_code: "synthetic", assistant_name: "Fixture assistant", assistant_code: "synthetic-assistant",
 }));
 const students = halaqat.map(h => ({ id: "fixture-" + h.id, halaqa_id: h.id, complex_id: 1, name: "طالب تجربة " + h.id, national_id: "", level: "1", level_type: "gold" }));
+// 17 students with no saved record for the selected week: the old WeekTable
+// attempts to enqueue more than 100 placeholder changes just by opening it.
+const largeRoster = Array.from({ length: 17 }, (_, i) => ({
+  ...students[1], id: i === 0 ? students[1].id : "fixture-large-" + i,
+  name: i === 0 ? students[1].name : "طالب جديد " + i,
+}));
 const start = new Date();
 start.setUTCHours(0,0,0,0);
 start.setUTCDate(start.getUTCDate() - start.getUTCDay());
@@ -29,6 +35,7 @@ const semester = { id: "test-semester", name: "فصل تجربة", start_date: d
 const grades = Object.fromEntries(students.map(s => [s.id, { 1: { days: Object.fromEntries(
   ["sun", "mon", "tue", "wed", "thu"].map(day => [day, { attendance: day === "sun" ? "present" : "", hifz: day === "sun" ? "one" : "", rabt: "", muraja: "", wajib: false }]),
 ) } }]));
+delete grades["fixture-2"];
 const calendar = { known: true, active_semester_id: semester.id };
 const receipts = new Map();
 const scientific = { configs: Object.fromEntries(halaqat.slice(1, 4).map(h => [h.id, {
@@ -36,7 +43,7 @@ const scientific = { configs: Object.fromEntries(halaqat.slice(1, 4).map(h => [h
 }])), data: {} };
 const bodyFor = route => {
   if (route === "/tenant-info") return { id: 1, name: "مجمع تجربة", subdomain: "mm", is_active: true };
-  if (route === "/students") return students;
+  if (route === "/students") return [...students.filter(student => student.halaqa_id !== 2), ...largeRoster];
   if (route === "/halaqat") return halaqat;
   if (route === "/semesters/active") return { semester, weeks: [{ id: "wk", semester_id: semester.id, week_number: 1, start_date: date(start), end_date: date(end) }] };
   if (route === "/staff-tasks") return { items: [], actorId: "fixture", roster: [] };
@@ -100,7 +107,13 @@ async function run() {
     page.on("console", msg => {
       if (msg.type() === "error" && /TypeError|ReferenceError|Minified React|Something went wrong/.test(msg.text())) record(msg.text());
     });
-    await page.goto(base + "/mm/teacher?h=1");
+    await page.goto(base + "/mm/teacher?h=" + (process.env.QHP_REPRO_ONLY ? "2" : "1"));
+    if (process.env.QHP_REPRO_ONLY) {
+      await page.getByText("Something went wrong!", { exact: true }).waitFor({ timeout: 9000 });
+      assert.match(errors.join("\n"), /التعديل كبير/);
+      console.log("CONFIRMED: opening a 17-student empty week exceeds the atomic write limit before any user edit");
+      return;
+    }
     for (const group of halaqat) {
       errors = [];
       if (group.id !== 1) {
@@ -118,6 +131,7 @@ async function run() {
         throw new Error("Fixture halaqa " + group.id + " failed: " + errors.join("\n") + "\n" + message.slice(0,900), { cause: error });
       }
       assert.deepEqual(errors, [], "No uncaught errors in halaqa " + group.id);
+      if (group.id === 2) await page.getByText("طالب جديد 16", { exact: true }).waitFor({ timeout: 9000 });
       if (group.id === 1) {
         const attendance = page.getByRole("row").filter({ hasText: "طالب تجربة 1" }).getByRole("combobox").first();
         await page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith("qhp_grade_outbox_v1:") && key.endsWith(":snapshot")));

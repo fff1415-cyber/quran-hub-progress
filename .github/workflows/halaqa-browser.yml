@@ -22,4 +22,4 @@ jobs:
           npm install --prefix "$RUNNER_TEMP/qhp-browser" playwright@1.51.1 --no-audit --no-fund
           node "$RUNNER_TEMP/qhp-browser/node_modules/playwright/cli.js" install chromium
       - name: Open the built halaqa pages with synthetic data
-        run: QHP_PLAYWRIGHT="$RUNNER_TEMP/qhp-browser/node_modules/playwright" node tests/halaqa-browser.cjs
+        run: QHP_REPRO_ONLY=1 QHP_PLAYWRIGHT="$RUNNER_TEMP/qhp-browser/node_modules/playwright" node tests/halaqa-browser.cjs
