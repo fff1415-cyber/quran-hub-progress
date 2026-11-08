@@ -6,14 +6,14 @@ if(!function_exists('assert_row_belongs_to_complex')){function assert_row_belong
 function atomicPlanCases(PDO $pdo):void {
     $pdo->exec("INSERT INTO students VALUES('planned',1,1);
     CREATE TABLE education_plans(id VARCHAR(36) PRIMARY KEY,complex_id INT,track VARCHAR(10),level_number INT);INSERT INTO education_plans VALUES('plan',1,'gold',1001);
-    CREATE TABLE student_plan_assignments(id VARCHAR(36) PRIMARY KEY,student_id VARCHAR(50),plan_id VARCHAR(36),status VARCHAR(20),start_segment_index INT,start_muraja_segment INT);INSERT INTO student_plan_assignments VALUES('assignment','planned','plan','active',1,NULL);
+    CREATE TABLE student_plan_assignments(id VARCHAR(36) PRIMARY KEY,student_id VARCHAR(50),plan_id VARCHAR(36),status VARCHAR(20),start_segment_index INT,start_muraja_segment INT,assigned_at TIMESTAMP);INSERT INTO student_plan_assignments VALUES('assignment','planned','plan','active',1,NULL,'2026-10-04 00:00:00');
     CREATE TABLE plan_segments(plan_id VARCHAR(36),segment_index INT);INSERT INTO plan_segments VALUES('plan',1),('plan',2),('plan',3);
     CREATE TABLE segment_completions(id VARCHAR(36) PRIMARY KEY,student_id VARCHAR(50),plan_id VARCHAR(36),segment_index INT,task_type VARCHAR(10),completed_at VARCHAR(10),recorded_by VARCHAR(50),assignment_id VARCHAR(36),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE(student_id,plan_id,segment_index,task_type));");
     $auth=['role'=>'teacher','complexId'=>1,'halaqaId'=>1,'name'=>'fixture'];
     $pdo->exec("ALTER TABLE semesters ADD COLUMN start_date VARCHAR(10);ALTER TABLE semesters ADD COLUMN weeks_count INT;ALTER TABLE semesters ADD COLUMN working_days TEXT;ALTER TABLE semesters ADD COLUMN excluded_dates TEXT;UPDATE semesters SET start_date='2026-10-04',weeks_count=4,working_days='[0,1,2,3,4]',excluded_dates='[]'");
-    $packet=static function(string $operation,string $day,string $task,string $value,string $action='record',string $assignment='assignment')use($pdo):array{
-        $capture=grade_cells_capture($pdo,1,'grades',[['planned','1','days',$day,$task]]);
-        return ['operation_id'=>$operation,'calendar_context'=>$capture['calendar_context'],'changes'=>[gradeCellChange($capture,0,$value)],'plan'=>['student_id'=>'planned','expected_assignment_id'=>$assignment,'task_type'=>$task,'action'=>$action,'tap'=>'one','completed_at'=>['sun'=>'2026-10-04','mon'=>'2026-10-05','tue'=>'2026-10-06','wed'=>'2026-10-07'][$day],'cell_path'=>['planned','1','days',$day,$task]]];
+    $packet=static function(string $operation,string $day,string $task,string $value,string $action='record',string $assignment='assignment',string $student='planned')use($pdo):array{
+        $capture=grade_cells_capture($pdo,1,'grades',[[$student,'1','days',$day,$task]]);
+        return ['operation_id'=>$operation,'calendar_context'=>$capture['calendar_context'],'changes'=>[gradeCellChange($capture,0,$value)],'plan'=>['student_id'=>$student,'expected_assignment_id'=>$assignment,'task_type'=>$task,'action'=>$action,'tap'=>'one','completed_at'=>['sun'=>'2026-10-04','mon'=>'2026-10-05','tue'=>'2026-10-06','wed'=>'2026-10-07'][$day],'cell_path'=>[$student,'1','days',$day,$task]]];
     };
     $first=$packet('plan-first-record','sun','hifz','one');grade_write_request($pdo,1,$first,$auth);grade_write_request($pdo,1,$first,$auth);
     check((int)$pdo->query('SELECT COUNT(*) FROM segment_completions')->fetchColumn()===1,'atomic grade+plan replay creates exactly one completion');
@@ -46,4 +46,21 @@ function atomicPlanCases(PDO $pdo):void {
     try{grade_write_request($pdo,1,$failure,$auth);throw new LogicException('Receipt failure was not triggered');}catch(PDOException $error){check(str_contains($error->getMessage(),'plan_receipt_failure')||str_contains($error->getMessage(),'plan receipt failure'),'specific final receipt constraint fails after plan/grade writes');}
     check(gradeCellRaw($pdo,1)===$before&&(int)$pdo->query('SELECT COUNT(*) FROM segment_completions')->fetchColumn()===$count,'receipt failure rolls back grade, completion and event projection together');
     $changed=$first;$changed['plan']['completed_at']='2026-10-06';gradeCellFailure(fn()=>grade_write_request($pdo,1,$changed,$auth),'محتوى مختلف');
+    $pdo->exec("INSERT INTO students VALUES('legacy-plan',1,1);
+        INSERT INTO student_plan_assignments VALUES('legacy-assignment','legacy-plan','plan','active',1,NULL,'2026-10-04 00:00:00');
+        INSERT INTO segment_completions(id,student_id,plan_id,segment_index,task_type,completed_at,recorded_by,assignment_id,created_at)
+        VALUES('legacy-progress','legacy-plan','plan',1,'hifz','2026-10-04','historic',NULL,'2026-10-04 12:00:00')");
+    $legacyRow=$pdo->query("SELECT * FROM segment_completions WHERE id='legacy-progress'")->fetch();
+    $record=$packet('plan-legacy-safe-record','mon','hifz','one','record','legacy-assignment','legacy-plan');
+    $receipt=grade_write_request($pdo,1,$record,$auth);
+    $replay=grade_write_request($pdo,1,$record,$auth);
+    $scores=json_decode(gradeCellRaw($pdo,1),true);
+    check($receipt['operation_id']==='plan-legacy-safe-record'&&$replay['replayed']===true&&
+        $scores['legacy-plan'][1]['days']['mon']['hifz']==='one'&&$scores['legacy-plan'][1]['days']['mon']['hifzPlanSegments']===[2]&&
+        (int)$pdo->query("SELECT COUNT(*) FROM segment_completions WHERE student_id='legacy-plan'")->fetchColumn()===2,
+        'legacy progress is counted before choosing the next segment and receipt retry does not duplicate it');
+    grade_write_request($pdo,1,$packet('plan-legacy-safe-undo','mon','hifz','','undo','legacy-assignment','legacy-plan'),$auth);
+    check($pdo->query("SELECT * FROM segment_completions WHERE student_id='legacy-plan'")->fetchAll()===[$legacyRow]&&
+        json_decode(gradeCellRaw($pdo,1),true)['legacy-plan'][1]['days']['mon']['hifz']==='',
+        'reversing the new grade removes only its linked completion');
 }

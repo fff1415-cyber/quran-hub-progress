@@ -67,7 +67,7 @@ import { StaffTasksPanel } from "@/components/StaffTasksPanel";
 import { listStaffTasks, STAFF_TASKS_CHANGED, taskReminders } from "@/lib/staff-tasks";
 import { TeacherReportRecommendations } from "@/components/teacher/TeacherReportRecommendations";
 import { sendParentRecommendation } from "@/lib/parent-recommendations";
-import { hifzCheckedValue } from "@/lib/mock-data";
+import { isHifzChecked, type HifzValue } from "@/lib/mock-data";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";
@@ -1035,13 +1035,17 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       if (await checkAndHandlePlanCompletion(s, weekNum)) toast.info("اكتملت الخطة المؤكدة — بانتظار تحويل المشرف");
     } catch (e) { toast.error(e instanceof Error ? e.message : "لم يتأكد الحفظ؛ بقيت العملية معلقة على الجهاز"); }
   };
-  const handlePlanHifz = async (s: Student, dayKey: string, checked: boolean) => {
+  const handlePlanHifz = async (s: Student, dayKey: string, value: HifzValue) => {
     const completedAt = planCompletionDate(calendar, weekNum, dayKey);
     if (!completedAt) { toast.error("تعذّر تحديد تاريخ اليوم الدراسي؛ أعد تحميل التقويم"); return; }
     const day = loadGrades()[s.id]?.[weekNum]?.days[dayKey];
-    const expected = !checked && day?.hifzPlanAssignmentId ? day.hifzPlanAssignmentId : confirmedGradePlanAssignment(s.id);
-    const plan: PlanEffect = { student_id: s.id, expected_assignment_id: expected, task_type: "hifz", action: checked ? "record" : "undo", tap: s.levelType === "gold" ? "one" : "half", completed_at: completedAt, cell_path: [s.id, String(weekNum), "days", dayKey, "hifz"] };
-    updateDay(s.id, dayKey, { hifz: checked ? hifzCheckedValue(s.levelType) : "" }, plan);
+    if (isHifzChecked(day?.hifz) && isHifzChecked(value)) {
+      toast.info("ألغِ تسجيل الحفظ أولًا ثم سجّل المقدار الصحيح لربطه بالإنجاز.");
+      return;
+    }
+    const expected = !value && day?.hifzPlanAssignmentId ? day.hifzPlanAssignmentId : confirmedGradePlanAssignment(s.id);
+    const plan: PlanEffect = { student_id: s.id, expected_assignment_id: expected, task_type: "hifz", action: value ? "record" : "undo", tap: value || (s.levelType === "gold" ? "one" : "half"), completed_at: completedAt, cell_path: [s.id, String(weekNum), "days", dayKey, "hifz"] };
+    updateDay(s.id, dayKey, { hifz: value }, plan);
     void refreshConfirmedPlan(s);
   };
   const handlePlanPassFail = async (s: Student, dayKey: string, task: "rabt" | "muraja", value: "pass" | "fail" | "") => {
@@ -1340,7 +1344,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           onUpdateDay={updateDay}
           onUpdateSciScore={updateSciScore}
           onFinalizeSciScore={finalizeSciScore}
-          onPlanHifz={(s, dayKey, checked) => void handlePlanHifz(s, dayKey, checked)}
+          onPlanHifz={(s, dayKey, value) => void handlePlanHifz(s, dayKey, value)}
           onPlanPassFail={(s, dayKey, task, value) => void handlePlanPassFail(s, dayKey, task, value)}
           onCompensationChange={(s, dayKey, faces) => void handleDayCompensationChange(s, dayKey, faces)}
           onMarkAllPresent={markAllPresentForDay}
@@ -1672,7 +1676,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                           passFailValue=""
                           onHifzChange={(v) => updateDay(s.id, d.key, { hifz: v })}
                           onPassFailChange={() => {}}
-                          onPlanHifzChange={(checked) => void handlePlanHifz(s, d.key, checked)}
+                          onPlanHifzChange={(value) => void handlePlanHifz(s, d.key, value)}
                         />
                       </td>
                       {sciCtx.visible && sciCtx.fields.hifz && (

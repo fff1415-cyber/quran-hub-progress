@@ -212,6 +212,15 @@ async function stop(){
  const hifzInput=()=>inputs.HifzTaskInput({value:day().hifz,levelType:'gold',onChange:v=>sparseEdit('hifz',v)});
  const passFail=field=>inputs.PassFail({value:day()[field],field,onChange:v=>sparseEdit(field,v)});
  const attendance=()=>find(inputs.AttSelect({value:day().attendance,onChange:v=>sparseEdit('attendance',v)}),n=>n.type==='select')[0];
+ const {PlanAwareTaskCell}=load('src/components/plans/PlanAwareTaskCell.tsx',{
+  'react/jsx-runtime':jsx,'@/components/plans/TeacherGradeInputs':inputs,
+ });
+ const selected=[];
+ const planCell=PlanAwareTaskCell({student:{levelType:'gold'},task:'hifz',hasPlan:true,hifzValue:'',
+  onHifzChange:()=>assert.fail('a linked grade cannot be saved without its plan'),onPlanHifzChange:v=>selected.push(v),
+ });
+ planCell.props.onChange('two');
+ assert.deepEqual(selected,['two'],'the plan receives the exact chosen memorization amount');
  const flushSparse=async()=>{await sparse.flush(p=>request('teacher',p));sparse.accept(await request('teacher'));assistant.accept(await request('assistant'));};
  attendance().props.onChange({target:{value:'present'}});
  await flushSparse();
