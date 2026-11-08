@@ -3,13 +3,11 @@ import type { GradesStore } from "./mock-data";
 type Cell = { present: false } | { present: true; value: unknown };
 type Stamp = { ancestors: (string | null)[]; subtree: string | null };
 type Change = { path: string[]; base: Cell; next: Cell; stamp: Stamp };
-export type GradeStoreKey = "grades" | "weekly_tests" | "scientific_grades";
-export const GRADE_ORIGIN = Symbol("confirmed-grade-period");
 type Calendar = { known: boolean; active_semester_id: string | null };
 export type PlanEffect = { student_id: string; expected_assignment_id: string; task_type: "hifz" | "rabt" | "muraja"; action: "record" | "undo" | "compensation"; tap: "half" | "one" | "two"; completed_at: string; cell_path: string[] };
-export type GradePacket = { operation_id: string; calendar_context: Calendar; changes: Change[]; store_key?: GradeStoreKey; plan?: PlanEffect };
-export type GradeSnapshot<T extends object = GradesStore> = { store_key?: GradeStoreKey; semester_scoped?: boolean; protocol: 1; context_complex_id: number; cursor?: string; value: T; calendar_context: Calendar; versions: Record<string, { direct_version: string | null; subtree_version: string | null }> };
-export type GradeSnapshotResult<T extends object = GradesStore> = GradeSnapshot<T> | { protocol: 1; context_complex_id: number; cursor: string; unchanged: true };
+export type GradePacket = { operation_id: string; calendar_context: Calendar; changes: Change[]; plan?: PlanEffect };
+export type GradeSnapshot = { protocol: 1; context_complex_id: number; cursor?: string; value: GradesStore; calendar_context: Calendar; versions: Record<string, { direct_version: string | null; subtree_version: string | null }> };
+export type GradeSnapshotResult = GradeSnapshot | { protocol: 1; context_complex_id: number; cursor: string; unchanged: true };
 export type GradeDraft = { packet: GradePacket; order: number; dependencies: string[]; status: "pending" | "unbased" | "conflict" | "confirmed" | "superseded" | "discarded"; message?: string; observed?: boolean };
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -22,21 +20,6 @@ function set(value: Record<string, unknown>, path: string[], cell: Cell) {
   let node = value;
   for (const part of path.slice(0, -1)) { const child = node[part]; if (object(child)) node = child; else { const created: Record<string, unknown> = {}; node[part] = created; node = created; } }
   const key = path[path.length - 1]; if (cell.present) node[key] = clone(cell.value); else delete node[key];
-}
-function weeklySlot(key: GradeStoreKey, path: string[]): boolean { return key === "weekly_tests" && path.length === 4 && ["muraja", "rabt"].includes(path[2]) && /^[0-5]$/.test(path[3]); }
-function sharedCell(key: GradeStoreKey, value: unknown, path: string[]): Cell {
-  if (!weeklySlot(key, path)) return at(value, path);
-  const row = at(value, path.slice(0, 2));
-  const values = row.present && object(row.value) ? row.value[path[2]] : undefined;
-  return { present: true, value: Array.isArray(values) ? values[Number(path[3])] ?? "" : Number(path[3]) === 0 ? values ?? "" : "" };
-}
-function setSharedCell(key: GradeStoreKey, value: Record<string, unknown>, path: string[], cell: Cell) {
-  if (!weeklySlot(key, path)) { set(value, path, cell); return; }
-  const old = at(value, path.slice(0, 3));
-  const values = old.present ? Array.isArray(old.value) ? [...old.value] : [old.value] : [];
-  while (values.length <= Number(path[3])) values.push("");
-  values[Number(path[3])] = cell.present ? cell.value : "";
-  set(value, path.slice(0, 3), { present: true, value: values });
 }
 function changesBetween(before: unknown, after: unknown, path: string[] = []): { path: string[]; base: Cell; next: Cell }[] {
   if (equal(before, after)) return [];
@@ -53,64 +36,46 @@ function changesBetween(before: unknown, after: unknown, path: string[] = []): {
   if (before === undefined && (after === "" || after === false || Array.isArray(after) && after.length === 0)) return [];
   return [{ path, base: before === undefined ? { present: false } : { present: true, value: before }, next: after === undefined ? { present: false } : { present: true, value: after } }];
 }
-function stamp(snapshot: GradeSnapshot<object>, path: string[]): Stamp {
+function stamp(snapshot: GradeSnapshot, path: string[]): Stamp {
   return { ancestors: path.map((_, i) => snapshot.versions[JSON.stringify(path.slice(0, i))]?.direct_version ?? null), subtree: snapshot.versions[JSON.stringify(path)]?.subtree_version ?? null };
 }
 const active = (draft: GradeDraft) => ["pending", "unbased", "conflict"].includes(draft.status);
 
 /** Each immutable packet has its own storage key: two tabs cannot replace each other's queues. */
-export class GradeOutbox<T extends object = GradesStore> {
+export class GradeOutbox {
   readonly prefix: string;
-  constructor(private storage: Storage, scope: string, private id = () => crypto.randomUUID(), private changed = () => {}, readonly storeKey: GradeStoreKey = "grades") { this.prefix = "qhp_grade_outbox_v1:" + encodeURIComponent(scope) + ":" + (storeKey === "grades" ? "" : storeKey + ":"); }
-  snapshot(): GradeSnapshot<T> | null { const raw = this.storage.getItem(this.prefix + "snapshot"); return raw ? JSON.parse(raw) : null; }
+  constructor(private storage: Storage, scope: string, private id = () => crypto.randomUUID(), private changed = () => {}) { this.prefix = "qhp_grade_outbox_v1:" + encodeURIComponent(scope) + ":"; }
+  snapshot(): GradeSnapshot | null { const raw = this.storage.getItem(this.prefix + "snapshot"); return raw ? JSON.parse(raw) : null; }
   drafts(): GradeDraft[] {
     const result: GradeDraft[] = [];
     for (let i = 0; i < this.storage.length; i++) { const key = this.storage.key(i); if (key?.startsWith(this.prefix + "operation:")) result.push(JSON.parse(this.storage.getItem(key)!)); }
     return result.sort((a, b) => a.order - b.order || a.packet.operation_id.localeCompare(b.packet.operation_id));
   }
   private write(draft: GradeDraft) { this.storage.setItem(this.prefix + "operation:" + draft.packet.operation_id, JSON.stringify(draft)); this.changed(); }
-  accept(snapshot: GradeSnapshot<T>) {
-    if ((snapshot.store_key ?? "grades") !== this.storeKey || snapshot.protocol !== 1 || !object(snapshot.value) || !object(snapshot.versions) || !snapshot.calendar_context || typeof snapshot.calendar_context.known !== "boolean") throw Error("لم يؤكد الخادم بروتوكول الحفظ؛ بقيت المسودات محفوظة");
+  accept(snapshot: GradeSnapshot) {
+    if (snapshot.protocol !== 1 || !object(snapshot.value) || !object(snapshot.versions) || !snapshot.calendar_context || typeof snapshot.calendar_context.known !== "boolean") throw Error("لم يؤكد الخادم بروتوكول الحفظ؛ بقيت المسودات محفوظة");
     this.storage.setItem(this.prefix + "snapshot", JSON.stringify(snapshot));
     for (const draft of this.drafts()) if (draft.status === "confirmed" && !draft.observed) this.write({ ...draft, observed: true });
     this.changed();
   }
-  view(fallback: T): T {
-    const snapshot = this.snapshot(), value = clone(snapshot?.value ?? fallback);
-    if (!object(value)) throw Error("صيغة مخزن الدرجات غير صالحة");
-    for (const draft of this.drafts().filter(d => (active(d) || d.status === "confirmed" && !d.observed) && (!snapshot || equal(d.packet.calendar_context, snapshot.calendar_context)))) for (const change of draft.packet.changes) setSharedCell(this.storeKey, value, change.path, change.next);
-    if (snapshot) Object.defineProperty(value, GRADE_ORIGIN, { value: snapshot.calendar_context, enumerable: true });
+  view(fallback: GradesStore): GradesStore {
+    const value = clone(this.snapshot()?.value ?? fallback);
+    for (const draft of this.drafts().filter(d => active(d) || d.status === "confirmed" && !d.observed)) for (const change of draft.packet.changes) set(value, change.path, change.next);
     return value;
   }
-  edit(before: T, after: T, plan?: PlanEffect, expectedSemester?: string | null) {
-    this.checkPeriod(after, expectedSemester);
-    this.queue(changesBetween(before, after), plan);
-  }
-  editWeeklyResult(student: string, week: number, kind: "muraja" | "rabt", index: number, result: "" | "pass" | "fail", expectedSemester: string | null) {
-    if (this.storeKey !== "weekly_tests") throw Error("مخزن الاختبار غير صالح");
-    this.checkPeriod({}, expectedSemester);
-    const path = [student, String(week), kind, String(index)], base = sharedCell(this.storeKey, this.view({} as T), path), next: Cell = { present: true, value: result };
-    if (!equal(base, next)) this.queue([{ path, base, next }]);
-  }
-  private checkPeriod(after: object, expectedSemester?: string | null) {
-    const snapshot = this.snapshot();
-    if (!snapshot?.semester_scoped) return;
-    const origin = expectedSemester !== undefined ? { known: true, active_semester_id: expectedSemester } : (after as { [GRADE_ORIGIN]?: Calendar })[GRADE_ORIGIN];
-    if (!origin || !equal(origin, snapshot.calendar_context)) throw Error("تغيّر الفصل أو لم يُثبت سياق الشاشة؛ أعد تحميل بيانات الفصل قبل التسجيل. لم تُنقل درجات قديمة");
-  }
-  private queue(edits: { path: string[]; base: Cell; next: Cell }[], plan?: PlanEffect) {
-    if (!edits.length) return;
+  edit(before: GradesStore, after: GradesStore, plan?: PlanEffect) {
+    const edits = changesBetween(before, after); if (!edits.length) return;
     if (edits.length > 100) throw Error("التعديل كبير؛ احفظ دفعات أصغر دون إغلاق الصفحة");
-    const snapshot = this.snapshot(), drafts = this.drafts(), calendar = snapshot?.calendar_context ?? { known: false, active_semester_id: null }, pending = drafts.filter(d => active(d) && equal(d.packet.calendar_context, calendar)), dependencies = new Set<string>();
+    const snapshot = this.snapshot(), drafts = this.drafts(), pending = drafts.filter(active), dependencies = new Set<string>();
     let based = !!snapshot?.calendar_context.known;
     const changes = edits.map(change => {
       let expected = snapshot ? stamp(snapshot, change.path) : { ancestors: change.path.map(() => null), subtree: null };
       const predecessor = [...pending].reverse().find(d => d.packet.changes.some(c => equal(c.path, change.path)));
       if (predecessor) { dependencies.add(predecessor.packet.operation_id); expected = { ...expected, subtree: predecessor.packet.operation_id }; }
-      else if (!snapshot || !equal(sharedCell(this.storeKey, snapshot.value, change.path), change.base)) based = false;
+      else if (!snapshot || !equal(at(snapshot.value, change.path), change.base)) based = false;
       return { ...change, stamp: expected };
     });
-    this.write({ packet: { operation_id: this.id(), calendar_context: calendar, changes, ...(this.storeKey === "grades" ? {} : { store_key: this.storeKey }), ...(plan ? { plan } : {}) }, order: Math.max(0, ...drafts.map(d => d.order)) + 1, dependencies: [...dependencies], status: based && (!plan || !!plan.expected_assignment_id) ? "pending" : "unbased" });
+    this.write({ packet: { operation_id: this.id(), calendar_context: snapshot?.calendar_context ?? { known: false, active_semester_id: null }, changes, ...(plan ? { plan } : {}) }, order: Math.max(0, ...drafts.map(d => d.order)) + 1, dependencies: [...dependencies], status: based && (!plan || !!plan.expected_assignment_id) ? "pending" : "unbased" });
   }
   async flush(send: (packet: GradePacket) => Promise<{ ok: boolean; operation_id: string; input_sha256: string }>, current = () => true) {
     for (const initial of this.drafts().filter(d => d.status === "pending")) {
@@ -147,7 +112,7 @@ export class GradeOutbox<T extends object = GradesStore> {
     if (useDraft && chain.some(d => d.packet.plan)) throw Error("هذه المسودة مرتبطة بخطة؛ راجع التعيين والإنجاز قبل إعادة تسجيلها، دون إسنادها لخطة جديدة تلقائيًا");
     if (useDraft && chain.some(d => !equal(d.packet.calendar_context, snapshot.calendar_context))) throw Error("تغيّر الفصل؛ لن تُنقل المسودة إلى فصل آخر بالتخمين");
     if (changes.length > 100) throw Error("المسودة المرتبطة كبيرة؛ يلزم تقسيمها قبل الحسم");
-    if (useDraft) this.write({ ...draft, packet: { operation_id: this.id(), ...(this.storeKey === "grades" ? {} : { store_key: this.storeKey }), calendar_context: snapshot.calendar_context, changes: changes.map(c => ({ ...c, base: sharedCell(this.storeKey, snapshot.value, c.path), stamp: stamp(snapshot, c.path) })) }, order: Math.max(...all.map(d => d.order)) + 1, status: "pending", dependencies: [] });
+    if (useDraft) this.write({ ...draft, packet: { operation_id: this.id(), calendar_context: snapshot.calendar_context, changes: changes.map(c => ({ ...c, base: at(snapshot.value, c.path), stamp: stamp(snapshot, c.path) })) }, order: Math.max(...all.map(d => d.order)) + 1, status: "pending", dependencies: [] });
     for (const member of chain) this.write({ ...member, status: useDraft ? "superseded" : "discarded" });
   }
 }

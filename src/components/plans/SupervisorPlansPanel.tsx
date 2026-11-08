@@ -287,8 +287,7 @@ export function SupervisorPlansPanel() {
     assignmentBusy.current = true;
     setAssigning(true);
     try {
-      if (!currentAssignment.status_version || !["active", "frozen"].includes(currentAssignment.status)) throw Error("حدّث الاستمارة لتأكيد إصدار حالة الخطة");
-      await patchStudentAssignment(selectedStudent.id, status, currentAssignment.id, { status: currentAssignment.status as "active" | "frozen", version: currentAssignment.status_version });
+      await patchStudentAssignment(selectedStudent.id, status, currentAssignment.id);
       toast.success(status === "frozen" ? "تم تجميد الخطة" : "تم إلغاء التجميد — يمكن للمعلم التنفيذ");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "تعذّر تحديث التعيين");
@@ -301,7 +300,7 @@ export function SupervisorPlansPanel() {
 
   const removePlan = async (plan: EducationPlan) => {
     const ok = confirm(
-      `هل تريد حذف الخطة «${plan.title}»؟\n\nيمكن حذف الخطة غير المستخدمة فقط. تبقى أي خطة لها تعيينات أو إنجازات محفوظة لحماية سجل الطلاب.`,
+      `هل تريد حذف الخطة «${plan.title}»\n\nسيتم حذف الخطة وفك الربط الكامل عن جميع الطلاب المرتبطين بها.\n\nلا يمكن التراجع.`,
     );
     if (!ok) return;
     setDeletingId(plan.id);

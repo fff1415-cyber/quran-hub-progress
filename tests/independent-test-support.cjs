@@ -4,9 +4,7 @@ function load(path, deps, source = fs.readFileSync(path, 'utf8')) {
   const exports = {};
   const code = ts.transpileModule(source, {compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022,jsx:ts.JsxEmit.ReactJSX}}).outputText;
   // Transport timing has dedicated stage1-client coverage; preserve existing deferred domain fixtures and Proxy dependencies.
-  // Legacy domain fixtures have no shared-transfer session. Integration fixtures explicitly inject the actual runtime.
-  const legacyTransfers = { sharedTransferNotifications: () => [], saveSharedTransferLocalMarks: () => {}, isSharedTransfer: () => false, flushSharedTransfers: async () => {} };
-  new Function('require', 'exports', code)(name => { if (name === '@/lib/request-timeout') return { fetchWithTimeout: (...args) => global.fetch(...args) }; if (!(name in deps) && ["./shared-transfers", "@/lib/shared-transfers"].includes(name)) return legacyTransfers; if (!(name in deps)) throw Error(`Unexpected dependency ${name}`); return deps[name]; }, exports);
+  new Function('require', 'exports', code)(name => { if (name === '@/lib/request-timeout') return { fetchWithTimeout: (...args) => global.fetch(...args) }; if (!(name in deps)) throw Error(`Unexpected dependency ${name}`); return deps[name]; }, exports);
   return exports;
 }
 function storage() { const data = new Map(); return {data,getItem:key=>data.get(key)??null,setItem:(key,value)=>data.set(key,String(value)),removeItem:key=>data.delete(key)}; }

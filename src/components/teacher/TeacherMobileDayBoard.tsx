@@ -270,7 +270,7 @@ export function TeacherMobileDayBoard({
 
           <div className="flex items-center gap-1.5 flex-wrap">
             {!isTalqeen && (
-              <ScientificGradesToolbar semesterId={calendar.semester?.id ?? null} halaqaId={halaqaId} onConfigChange={onSciConfigChange} />
+              <ScientificGradesToolbar halaqaId={halaqaId} onConfigChange={onSciConfigChange} />
             )}
             {canAssign && (
               <button

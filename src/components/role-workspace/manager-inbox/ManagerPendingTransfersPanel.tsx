@@ -6,7 +6,7 @@ import {
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { studentReportPercentages } from "@/lib/semester-grading";
 import { getSessionName } from "@/lib/session-role";
-import { persistTransferAction, persistForwardTransfer } from "@/lib/transfer-actions";
+import { appendTransferAction, forwardTransferRecord } from "@/lib/transfer-actions";
 import { TransferActionForm } from "@/components/role-workspace/TransferActionForm";
 import { InboxItemActions } from "@/components/role-workspace/InboxItemActions";
 import { TransferPctStat } from "@/components/role-workspace/manager-inbox/TransferPctStat";
@@ -60,7 +60,7 @@ export function ManagerPendingTransfersPanel() {
     try {
       const targetRole = status === "to_secretary" ? "secretary" : "supervisor";
       const targetLabel = status === "to_secretary" ? "السكرتير" : "المشرف العلمي";
-      const saved = await persistForwardTransfer(n, status, {
+      forwardTransferRecord(n, status, {
         message: `تحويل من المدير: الطالب ${student?.name || "—"} (${halaqa?.name || "—"}) → ${targetLabel} — ${td.reason}`,
         type: "transfer",
         targetRole,
@@ -72,7 +72,7 @@ export function ManagerPendingTransfersPanel() {
           rootTransferId: n.id,
         },
       });
-      toast.success(saved === "shared" ? "أكد الخادم حفظ التحويل ووصوله إلى الجهة المحددة" : `${TRANSFER_TOAST[status]} — محفوظ على هذا الجهاز؛ لم يُرسل إلى الأجهزة الأخرى`);
+      toast.success(`${TRANSFER_TOAST[status]} — محفوظ على هذا الجهاز؛ لم يُرسل إلى الأجهزة الأخرى`);
       reload();
     } catch (e) {
       reload();
@@ -87,13 +87,13 @@ export function ManagerPendingTransfersPanel() {
     const managerName = getSessionName("المدير");
     setProcessingId(n.id);
     try {
-      const saved = await persistTransferAction(n.id, {
+      appendTransferAction(n.id, {
         role: "manager",
         byName: managerName,
         text: actionText,
         at: new Date().toISOString(),
       }, { transferStatus: "struggling", read: true });
-      toast.success(saved === "shared" ? "أكد الخادم تسجيل الإجراء ونقل الحالة للمتعثرين" : "تم تسجيل الإجراء ونقل الحالة للمتعثرين على هذا الجهاز");
+      toast.success("تم تسجيل الإجراء ونقل الحالة للمتعثرين على هذا الجهاز");
       setStrugglingPromptId(null);
       reload();
     } catch (e) {

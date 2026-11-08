@@ -1,6 +1,3 @@
-import { createSharedTransfer } from "@/lib/shared-transfers";
-import { TeacherSharedTransfers } from "@/components/TeacherSharedTransfers";
-import { assertSharedGradePeriod } from "@/lib/grade-sync";
 import { confirmedGradePlanAssignment, rememberGradePlanAssignments, flushConfirmedGrades, currentGradeOutbox } from "@/lib/grade-sync";
 import type { PlanEffect } from "@/lib/grade-outbox";
 import { planCompletionDate } from "@/lib/plan-completion-date";
@@ -370,7 +367,6 @@ export function TeacherPage() {
         </div>
 
         <HalaqaNotifications halaqaId={halaqa.id} />
-            <TeacherSharedTransfers halaqaId={halaqa.id} />
         <TeacherStudentFollowupAlerts halaqaId={halaqa.id} />
         {(role === "teacher" || role === "assistant") && <details className="glass-card rounded-xl p-4 mb-4">
           <summary className="cursor-pointer font-bold">مهامي {taskCount > 0 && <span className="rounded-full bg-primary text-primary-foreground px-2 py-0.5 text-xs">{taskCount}</span>}</summary>
@@ -872,10 +868,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     repairScientificHalaqaProgram(halaqaId);
     const box = currentGradeOutbox();
     if (box && !box.snapshot()) return;
-    try { assertSharedGradePeriod("grades", calendar.semester?.id ?? null); assertSharedGradePeriod("scientific_grades", calendar.semester?.id ?? null); } catch { return; }
     syncScientificScoresFromPrepForHalaqa(halaqaId, box?.snapshot()?.value ?? loadGrades(), ids, cfg);
     refreshSciData();
-  }, [halaqaId, students, refreshSciData, calendar.semester?.id]);
+  }, [halaqaId, students, refreshSciData]);
 
   useEffect(() => {
     syncSciScoresFromPrep();
@@ -922,7 +917,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     value: string,
   ) => {
     if (closedDayKeys.has(dayKey)) return;
-    try { assertSharedGradePeriod("scientific_grades", calendar.semester?.id ?? null); } catch (e) { toast.error(e instanceof Error ? e.message : "تغيّر الفصل"); return; }
     setTeacherScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
     setSciData(loadScientificData(halaqaId));
   };
@@ -936,7 +930,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     if (closedDayKeys.has(dayKey)) return;
     const week = grades[studentId]?.[weekNum] ?? emptyWeek(workingKeysList);
     const entry = dayEntryFor(week, dayKey, workingKeysList);
-    try { assertSharedGradePeriod("scientific_grades", calendar.semester?.id ?? null); } catch (e) { toast.error(e instanceof Error ? e.message : "تغيّر الفصل"); return; }
     finalizeTeacherScientificDayScore(
       halaqaId,
       studentId,
@@ -967,15 +960,24 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     col?.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
   }, [isCurrentWeek, todayKey, weekNum, useMobileBoard]);
 
-  const submitTransfer = async () => {
-    if (sendBusy) return;
+  const submitTransfer = () => {
     const student = students.find((s) => s.id === transferStudentId);
     if (!student) { toast.error("اختر الطالب"); return; }
     const reason = transferReason.trim();
     if (!reason) { toast.error("اكتب سبب التحويل"); return; }
-    setSendBusy(true);
-    try {
-    await createSharedTransfer(student.id, weekNum, reason);
+    pushNotification({
+      message: `تحويل من ${senderName}: الطالب ${student.name} — ${reason}`,
+      type: "transfer",
+      actionTab: "transfers",
+      transferData: {
+        studentId: student.id,
+        halaqaId: student.halaqaId,
+        week: weekNum,
+        reason,
+        fromName: senderName,
+      },
+      transferStatus: "pending",
+    });
     void dispatchPushEvent({
       event: "teacher_transfer",
       title: "طلب تحويل طالب",
@@ -987,13 +989,11 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     setTransferOpen(false);
     setTransferStudentId("");
     setTransferReason("");
-    } catch (error) { toast.error(error instanceof Error ? error.message : "لم يتأكد إرسال التحويل؛ بقيت المسودة"); }
-    finally { setSendBusy(false); }
   };
 
   const submitSend = async () => {
     if (sendRecipient === "administration") {
-      if (canSendToAdministration) await submitTransfer();
+      if (canSendToAdministration) submitTransfer();
       return;
     }
     if (!canSendParentRecommendation || sendBusy) return;
@@ -1026,26 +1026,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       setSendRecipient(canSendToAdministration ? "administration" : "parent");
     }
   };
-
-  useEffect(() => {
-    let changed = false;
-    const g = { ...grades };
-    students.forEach((s) => {
-      if (!g[s.id]) g[s.id] = {};
-      if (!g[s.id][weekNum]) {
-        g[s.id][weekNum] = emptyWeek(workingKeysList);
-        changed = true;
-      } else {
-        const normalized = ensureWeekDays(g[s.id][weekNum], workingKeysList);
-        if (normalized !== g[s.id][weekNum]) {
-          g[s.id][weekNum] = normalized;
-          changed = true;
-        }
-      }
-    });
-    if (changed) { setGrades(g); saveGrades(g); }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [weekNum, halaqaId, workingKeysList]);
 
   useEffect(() => {
     if (!studentIdsKey) {
@@ -1123,12 +1103,11 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   };
 
   const update = (studentId: string, fn: (w: WeekRecord) => WeekRecord, sync?: boolean | "immediate", plan?: PlanEffect) => {
-    try { assertSharedGradePeriod("grades", calendar.semester?.id ?? null); } catch (e) { toast.error(e instanceof Error ? e.message : "تغيّر الفصل"); return; }
     const next = mutateStudentWeek(
       studentId,
       weekNum,
       (w) => fn(ensureWeekDays(w, workingKeysList)),
-      { sync, plan, semesterId: calendar.semester?.id ?? null },
+      { sync, plan },
     );
     setGrades(next);
     if (sync !== false) flushGradesToCloudSoon();
@@ -1532,7 +1511,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         <div className="flex items-center gap-2 flex-wrap sm:justify-self-end justify-center">
           {!isTalqeen && (
             <ScientificGradesToolbar
-              semesterId={calendar.semester?.id ?? null}
               halaqaId={halaqaId}
               onConfigChange={handleSciConfigChange}
             />

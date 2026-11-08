@@ -1,4 +1,3 @@
-import { sharedGradeView } from "./grade-sync";
 /**
  * Weekly tests track — independent from semester overall % and plan progress.
  * Slot counts configured by manager (muraja_slots, rabt_slots).
@@ -118,7 +117,7 @@ function normalizeMuraja(
 export function loadWeeklyTests(): WeeklyTestsStore {
   if (typeof window === "undefined") return {};
   const raw = localStorage.getItem(KEY_STORE);
-  return sharedGradeView<WeeklyTestsStore>("weekly_tests", raw ? JSON.parse(raw) : {});
+  return raw ? JSON.parse(raw) : {};
 }
 
 export function saveWeeklyTests(store: WeeklyTestsStore, options?: { sync?: boolean }) {

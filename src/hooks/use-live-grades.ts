@@ -39,7 +39,6 @@ export function useLiveGrades(): [GradesStore, (g: GradesStore) => void] {
 
     let cancelled = false;
     let pollTimer: ReturnType<typeof setTimeout> | null = null;
-    let lastAcademicRead = 0;
 
     const tick = async () => {
       if (cancelled) return;
@@ -47,13 +46,6 @@ export function useLiveGrades(): [GradesStore, (g: GradesStore) => void] {
       try {
         const { pushMergedGrades } = await import("@/lib/cloud-sync");
         const next = await pushMergedGrades(loadGrades());
-        const { flushSharedGrades } = await import("@/lib/grade-sync");
-        await flushSharedGrades("scientific_grades", { configs: {}, data: {}, overrides: {} }).catch(() => undefined);
-        if (Date.now() - lastAcademicRead > 30000) {
-          lastAcademicRead = Date.now();
-          const { refreshConfirmedAcademicRecords } = await import("@/lib/academic-record");
-          await refreshConfirmedAcademicRecords().catch(() => undefined);
-        }
         if (!cancelled && next) {
           setGrades((prev) => (prev === next ? prev : next));
         }

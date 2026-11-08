@@ -13,7 +13,6 @@ async function scenario({review=false,itemPatch={},settingsPatch={},verified=tru
  const calc={...calculator,computeReviewScore:(segments,s)=>{usedSettings.push(s);return calculator.computeReviewScore(segments,s);}};
  const deps=Object.fromEntries([...source.matchAll(/from "([^"]+)"/g)].map(m=>[m[1],{}]));
  Object.assign(deps,{'react':runtime.react,'react/jsx-runtime':jsx,'@tanstack/react-router':{createFileRoute:()=>()=>({})},'@/lib/mock-data':mock,'@/contexts/EvaluationSettingsContext':{useEvaluationSettings:()=>context},'@/lib/evaluation-rules-snapshot':rules,'@/lib/evaluation-calculator':calc,'@/lib/sard-phased-flow':flow,'@/lib/teacher-notifications':{notifyTeacherHalaqa:()=>notifications++},'sonner':{toast:{success:m=>toasts.push(['success',m]),error:m=>toasts.push(['error',m]),warning:m=>toasts.push(['warning',m])}}});
- deps['@/lib/sard-assessments']={saveSardAssessment:(_base,patch,entry)=>{patches.push(patch);history.set(entry.id,entry);return gate.promise;}};
  const route=load('src/routes/musammi.tsx',deps,source),render=()=>runtime.render(()=>route[review?'SardEvaluatorReviewOnly':'SardEvaluatorFull']({item,studentName:'fixture',halaqaName:'fixture',level:'1',levelType:'gold',onDone:()=>done++}));
  let tree=render();const button=()=>find(render(),n=>n.type==='button'&&text(n).includes('إرسال'))[0];
  if(!verified&&!item.evaluationRules){assert.equal(button().props.disabled,true);button().props.onClick();await flush();assert.equal(patches.length,0);runtime.cleanup();return;}

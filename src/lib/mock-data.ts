@@ -1,6 +1,5 @@
 import type { PlanEffect } from "./grade-outbox";
-import { gradeView, recordGradeEdit, currentGradeOutbox, assertSharedGradePeriod } from "./grade-sync";
-import { sharedTransferNotifications, saveSharedTransferLocalMarks } from "./shared-transfers";
+import { gradeView, recordGradeEdit } from "./grade-sync";
 // Mock data + localStorage store for مجمع حلقات الشتيوي
 import { hasAuthToken } from "@/lib/auth-session";
 
@@ -214,8 +213,9 @@ export function dayEntryFor(
 // ---- localStorage layer ----
 const KEY_STUDENTS = "qshatawi_students_v2";
 const KEY_HALAQAT = "qshatawi_halaqat_v2";
-const KEY_GRADES = "qshatawi_grades_v2";
-const KEY_GRADES_SEMESTER = "qshatawi_grades_semester_id";
+// Leave the legacy, unscoped cache intact for recovery. It is never a write base.
+const KEY_LOCAL_GRADES = "qhp_unsigned_grades_v1";
+const KEY_GRADES_SEMESTER = "qhp_grades_semester_v1";
 const KEY_NOTIFICATIONS = "qshatawi_notifications_v2";
 const KEY_SARD_QUEUE = "qshatawi_sard_queue_v2";
 const KEY_SARD_HISTORY = "qshatawi_sard_history_v2";
@@ -441,9 +441,8 @@ export function mutateStudentWeek(
   studentId: string,
   weekNum: number,
   fn: (w: WeekRecord) => WeekRecord,
-  options?: { sync?: boolean | "immediate"; plan?: PlanEffect; semesterId?: string | null },
+  options?: { sync?: boolean | "immediate"; plan?: PlanEffect },
 ): GradesStore {
-  if (options?.sync !== false) assertSharedGradePeriod("grades", options?.semesterId);
   // Read at the moment of the tap, so each field patch starts with all prior taps.
   const latest = loadGrades();
   const mergedWeek = fn(latest[studentId]?.[weekNum] ?? emptyWeek());
@@ -523,14 +522,15 @@ export function saveHalaqat(h: Halaqa[], options?: { allowEmpty?: boolean }) {
 
 export function loadGrades(): GradesStore {
   if (typeof window === "undefined") return {};
-  const raw = localStorage.getItem(KEY_GRADES);
+  if (hasAuthToken()) return gradeView({});
+  const raw = localStorage.getItem(KEY_LOCAL_GRADES);
   return gradeView(raw ? JSON.parse(raw) : {});
 }
 export function saveGrades(g: GradesStore, options?: { sync?: boolean | "immediate"; plan?: PlanEffect }) {
   if (options?.sync !== false) {
-    if (!recordGradeEdit(loadGrades(), g, options?.plan)) localStorage.setItem(KEY_GRADES, JSON.stringify(g));
-  } else if (!currentGradeOutbox()?.snapshot()) {
-    localStorage.setItem(KEY_GRADES, JSON.stringify(g));
+    if (!recordGradeEdit(loadGrades(), g, options?.plan)) localStorage.setItem(KEY_LOCAL_GRADES, JSON.stringify(g));
+  } else if (!hasAuthToken()) {
+    localStorage.setItem(KEY_LOCAL_GRADES, JSON.stringify(g));
   }
   notifyGradesChanged();
   if (options?.sync === false) return;
@@ -561,7 +561,7 @@ export function ensureGradesSemester(semesterId: string | null): boolean {
   return current !== null && current !== semesterId;
 }
 
-export type TransferActionRole = "manager" | "secretary" | "supervisor" | "teacher" | "assistant";
+export type TransferActionRole = "manager" | "secretary" | "supervisor";
 
 export interface TransferActionRecord {
   role: TransferActionRole;
@@ -571,7 +571,6 @@ export interface TransferActionRecord {
 }
 
 export interface Notification {
-  sharedTransferId?: string;
   id: string;
   message: string;
   type: "sard" | "absence" | "late" | "info" | "transfer";
@@ -682,17 +681,14 @@ function writeNotificationsLocal(list: Notification[]) {
     const original = localStorage.getItem(KEY_NOTIFICATIONS);
     if (original !== null) localStorage.setItem(backupKey, original);
   }
-  saveSharedTransferLocalMarks(list);
-  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.filter(n => !n.sharedTransferId)));
+  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list));
   window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
 }
 
 export function loadNotifications(): Notification[] {
   if (typeof window === "undefined") return [];
   const raw = localStorage.getItem(KEY_NOTIFICATIONS);
-  const legacy: Notification[] = raw ? JSON.parse(raw) : [];
-  const shared = sharedTransferNotifications(), retained = legacy.filter(n => !n.sharedTransferId);
-  return shared.length ? mergeNotifications(shared, retained) : retained;
+  return raw ? JSON.parse(raw) : [];
 }
 
 export function pushNotification(n: Omit<Notification, "id" | "createdAt" | "read">) {
@@ -1050,10 +1046,6 @@ export function notifyLateSard(students: Student[]) {
 }
 
 export interface SardHistoryItem {
-  assessmentConfirmed?: boolean;
-  assignmentId?: string;
-  sourceQueueItemId?: string;
-  transitionConfirmed?: boolean;
   evaluationRules?: import("@/lib/evaluation-types").EvaluationRulesSnapshot;
   id: string;
   studentId: string;
@@ -1077,12 +1069,12 @@ function retainSardHistoryBeforeRepair() {
   const previous = localStorage.getItem(KEY_SARD_HISTORY);
   if (previous && !localStorage.getItem(`${KEY_SARD_HISTORY}:before-history-repair`)) localStorage.setItem(`${KEY_SARD_HISTORY}:before-history-repair`, previous);
 }
-export function pushSardHistory(h: SardHistoryItem, options?: { sync?: boolean }) {
+export function pushSardHistory(h: SardHistoryItem) {
   retainSardHistoryBeforeRepair();
   const list = loadSardHistory().filter(item => item.id !== h.id);
   list.unshift(h);
   localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list));
-  if (options?.sync !== false) persistShared("sard_history", list);
+  persistShared("sard_history", list);
 }
 export function saveSardHistory(list: SardHistoryItem[]) {
   retainSardHistoryBeforeRepair();

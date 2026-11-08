@@ -3,8 +3,14 @@ function fullStorage(){const s=storage();return {...s,get length(){return s.data
 global.window=new EventTarget();global.localStorage=fullStorage();global.sessionStorage=storage();
 const outbox=load('src/lib/grade-outbox.ts',{}),auth={getToken:()=> 'fixture-session',decodeAuthTokenPayload:()=>({role:'teacher',complexId:1,halaqaId:1,name:'fixture'}),hasAuthToken:()=>true};
 const sync=load('src/lib/grade-sync.ts',{'./grade-outbox':outbox,'./auth-session':auth,'./secure-data.functions':{}});
-const box=sync.currentGradeOutbox();box.accept({protocol:1,context_complex_id:1,value:{S:{1:{days:{sun:{hifz:'',rabt:''}}}}},calendar_context:{known:true,active_semester_id:'fixture-semester'},versions:{}});
 const mock=load('src/lib/mock-data.ts',{'@/lib/auth-session':auth,'./grade-sync':sync,'./cloud-sync':{pushMergedGrades:async()=>({})}});
+const legacy=JSON.stringify({S:{1:{days:{sun:{hifz:'two'}}}}});
+localStorage.setItem('qshatawi_grades_v2',legacy);localStorage.setItem('qshatawi_grades_semester_id','legacy-period');
+assert.deepEqual(mock.loadGrades(),{},'an unscoped browser snapshot is never a draft or an upload base');
+mock.saveGrades({},{sync:false});mock.setGradesSemesterId('new-period');
+assert.equal(localStorage.getItem('qshatawi_grades_v2'),legacy);
+assert.equal(localStorage.getItem('qshatawi_grades_semester_id'),'legacy-period');
+const box=sync.currentGradeOutbox();box.accept({protocol:1,context_complex_id:1,value:{S:{1:{days:{sun:{hifz:'',rabt:''}}}}},calendar_context:{known:true,active_semester_id:'fixture-semester'},versions:{}});
 const plan={student_id:'S',expected_assignment_id:'fixture-assignment',task_type:'hifz',action:'record',tap:'one',completed_at:'2026-10-04',cell_path:['S','1','days','sun','hifz']};
 mock.mutateStudentWeek('S',1,w=>({...w,days:{...w.days,sun:{...w.days.sun,hifz:'one',touchedAt:999999999999999,fieldTouchedAt:{hifz:999999999999999}}}}),{plan});
 assert.equal(box.drafts().length,1);assert.deepEqual(box.drafts()[0].packet.plan,plan);assert.equal(mock.loadGrades().S[1].days.sun.hifz,'one');assert.equal(box.drafts()[0].packet.changes.length,1,'device clocks must not become conflicting shared writes');

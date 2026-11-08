@@ -1,0 +1,31 @@
+name: Halaqa browser regression
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  halaqa:
+    if: github.head_ref == 'fix/halaqa-render'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - name: Verify manager, teacher and assistant through the atomic PHP handlers
+        run: node tests/stage2-atomic-sessions.cjs
+      - run: npm run build:hostinger
+      - name: Install isolated browser runner
+        run: |
+          npm install --prefix "$RUNNER_TEMP/qhp-browser" playwright@1.51.1 --no-audit --no-fund
+          node "$RUNNER_TEMP/qhp-browser/node_modules/playwright/cli.js" install chromium
+      - name: Open the built halaqa pages with synthetic data
+        run: QHP_PLAYWRIGHT="$RUNNER_TEMP/qhp-browser/node_modules/playwright" node tests/halaqa-browser.cjs

@@ -1,4 +1,3 @@
-import { sharedGradeView, recordSharedGradeEdit } from "./grade-sync";
 /** Teacher-configured numeric scores — reflected in halaqa program totals only. */
 import { hasAuthToken } from "@/lib/auth-session";
 import { ATTENDANCE_OPTION_LABELS, type AttendanceOption } from "@/lib/grade-input-settings";
@@ -178,7 +177,7 @@ function persist(store: ScientificGradesStore) {
   }, SCIENTIFIC_CLOUD_DEBOUNCE_MS);
 }
 
-function loadLegacyScientificGradesStore(): ScientificGradesStore {
+export function loadScientificGradesStore(): ScientificGradesStore {
   if (typeof window === "undefined") {
     return { configs: {}, data: {}, overrides: {} };
   }
@@ -196,9 +195,7 @@ function loadLegacyScientificGradesStore(): ScientificGradesStore {
   }
 }
 
-export function loadScientificGradesStore(): ScientificGradesStore { return sharedGradeView("scientific_grades", loadLegacyScientificGradesStore()); }
 export function saveScientificGradesStore(store: ScientificGradesStore) {
-  if (typeof window !== "undefined" && sessionStorage.getItem("qs_syncing") !== "1" && recordSharedGradeEdit("scientific_grades", loadScientificGradesStore(), store)) { persist(store); return; }
   localStorage.setItem(KEY, JSON.stringify(store));
   notifyScientificGradesChanged();
   persist(store);
@@ -897,14 +894,14 @@ export function isScientificProgramId(id: string): boolean {
 }
 
 function mergeDefaultScores(
-  base: ScientificDefaultScores,
-  overlay: ScientificDefaultScores,
+  base: ScientificDefaultScores | undefined,
+  overlay: ScientificDefaultScores | undefined,
 ): ScientificDefaultScores {
   const out: ScientificDefaultScores = { ...base };
-  if (overlay.hifz?.trim()) out.hifz = overlay.hifz.trim();
-  if (overlay.rabt?.trim()) out.rabt = overlay.rabt.trim();
-  if (overlay.muraja?.trim()) out.muraja = overlay.muraja.trim();
-  const att: ScientificAttendanceScores = { ...(base.attendance ?? {}), ...(overlay.attendance ?? {}) };
+  if (overlay?.hifz?.trim()) out.hifz = overlay.hifz.trim();
+  if (overlay?.rabt?.trim()) out.rabt = overlay.rabt.trim();
+  if (overlay?.muraja?.trim()) out.muraja = overlay.muraja.trim();
+  const att: ScientificAttendanceScores = { ...base?.attendance, ...overlay?.attendance };
   if (Object.keys(att).length > 0) out.attendance = att;
   else delete out.attendance;
   return out;

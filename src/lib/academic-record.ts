@@ -1,6 +1,6 @@
 import type { PlanTrack } from "@/lib/plan-types";
-import { hasAuthToken, getToken, decodeAuthTokenPayload } from "@/lib/auth-session";
-import { loadSardHistory, loadNotifications, saveNotifications, mergeNotifications } from "@/lib/mock-data";
+import { hasAuthToken } from "@/lib/auth-session";
+import { loadSardHistory } from "@/lib/mock-data";
 
 export interface AcademicPhaseRecord {
   id: string;
@@ -17,21 +17,9 @@ export interface AcademicPhaseRecord {
   planTitle?: string;
   levelNumber?: number;
   track?: PlanTrack;
-  assignmentId?: string;
-  newPlanTitle?: string;
-  sourceHistoryId?: string;
-  sourceQueueItemId?: string;
-  finalPlanCompleted?: boolean;
-  transitionConfirmed?: boolean;
 }
 
 const KEY = "qshatawi_academic_records_v1";
-function recordStorageKey(): string {
-  if (!hasAuthToken()) return KEY;
-  const auth = decodeAuthTokenPayload(getToken());
-  if (!auth?.complexId || !auth.role) throw new Error("تعذّر تثبيت هوية السجل الأكاديمي؛ أعد تسجيل الدخول");
-  return KEY + ":account:" + encodeURIComponent(JSON.stringify([auth.complexId, auth.role, auth.accountId ?? [auth.halaqaId, auth.name], auth.studentId]));
-}
 
 function persistShared(value: AcademicPhaseRecord[]) {
   if (typeof window === "undefined" || !hasAuthToken()) return;
@@ -43,50 +31,23 @@ function persistShared(value: AcademicPhaseRecord[]) {
 
 export function loadAcademicRecords(): AcademicPhaseRecord[] {
   if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(recordStorageKey());
+  const raw = localStorage.getItem(KEY);
   return raw ? JSON.parse(raw) : [];
 }
 
-export function saveAcademicRecords(list: AcademicPhaseRecord[], options?: { sync?: boolean }) {
-  const key = recordStorageKey(), previous = localStorage.getItem(key);
-  if (previous && !localStorage.getItem(`${key}:before-history-repair`)) localStorage.setItem(`${key}:before-history-repair`, previous);
-  localStorage.setItem(key, JSON.stringify(list));
-  const notices = list.filter(record => (record.newPlanTitle || record.finalPlanCompleted) && record.assignmentId).map(record => ({ id: `n-academic-${record.assignmentId}`, message: record.finalPlanCompleted ? `اجتاز الطالب الخطة الختامية: ${record.planTitle ?? ""}` : `بعد اجتياز السرد — انتقل الطالب إلى ${record.newPlanTitle}`, type: "info" as const, targetHalaqaId: record.halaqaId, createdAt: record.testDate, read: false }));
-  if (notices.length) saveNotifications(mergeNotifications(notices, loadNotifications()));
-  if (options?.sync !== false) persistShared(list);
+export function saveAcademicRecords(list: AcademicPhaseRecord[]) {
+  const previous = localStorage.getItem(KEY);
+  if (previous && !localStorage.getItem(`${KEY}:before-history-repair`)) localStorage.setItem(`${KEY}:before-history-repair`, previous);
+  localStorage.setItem(KEY, JSON.stringify(list));
+  persistShared(list);
 }
 
-/** Refresh is read-only remotely and cannot re-upload an old device's history. */
-export async function refreshConfirmedAcademicRecords(): Promise<void> {
-  const token = getToken(), key = recordStorageKey(); if (!token) return;
-  const { secureListAppState } = await import("./secure-data.functions");
-  const rows = await secureListAppState({ data: { token, key: "academic_records" } });
-  if (getToken() !== token || recordStorageKey() !== key) return;
-  const row = rows.find(row => row.key === "academic_records");
-  if (!row) return;
-  if (!Array.isArray(row.value)) throw new Error("صيغة السجل الأكاديمي تحتاج مراجعة؛ بقيت نسخة الجهاز");
-  mergeConfirmedAcademicRecords(row.value as AcademicPhaseRecord[]);
-}
-export function mergeConfirmedAcademicRecords(cloud: AcademicPhaseRecord[]): void {
-  const hasId = (record: AcademicPhaseRecord) => typeof record.id === "string" && record.id !== "";
-  const ids = new Set(cloud.filter(hasId).map(record => record.id)), anonymous = new Map<string, number>();
-  for (const record of cloud.filter(record => !hasId(record))) { const key = JSON.stringify(record); anonymous.set(key, (anonymous.get(key) ?? 0) + 1); }
-  const retained = loadAcademicRecords().filter(record => {
-    if (hasId(record)) return !ids.has(record.id);
-    const key = JSON.stringify(record), copies = anonymous.get(key) ?? 0;
-    if (copies > 0) { anonymous.set(key, copies - 1); return false; }
-    return true;
-  });
-  // Preserve every server row, including ambiguous duplicate IDs and anonymous legacy records.
-  saveAcademicRecords([...cloud, ...retained].sort((a, b) => String(b.testDate ?? "").localeCompare(String(a.testDate ?? ""))), { sync: false });
-}
-
-export function pushAcademicRecord(record: AcademicPhaseRecord, options?: { sync?: boolean }) {
+export function pushAcademicRecord(record: AcademicPhaseRecord) {
   const list = loadAcademicRecords();
   const existing = list.findIndex(item => item.id === record.id);
   if (existing !== -1) list.splice(existing, 1);
   list.unshift(record);
-  saveAcademicRecords(list, options);
+  saveAcademicRecords(list);
 }
 
 export function studentAcademicRecords(studentId: string): AcademicPhaseRecord[] {
@@ -96,10 +57,9 @@ export function studentAcademicRecords(studentId: string): AcademicPhaseRecord[]
 /** Includes passed sard history entries not yet migrated to academic records. */
 export function studentAcademicRecordsWithLegacy(studentId: string): AcademicPhaseRecord[] {
   const records = studentAcademicRecords(studentId);
-  const sources = new Set(records.map(r => r.sourceHistoryId).filter(Boolean));
-  const seen = new Set(records.filter(r => !r.sourceHistoryId).map((r) => `${r.week}-${r.attempt}`));
+  const seen = new Set(records.map((r) => `${r.week}-${r.attempt}`));
   const legacy = loadSardHistory()
-    .filter((h) => h.studentId === studentId && h.result === "passed" && !sources.has(h.id) && !seen.has(`${h.week}-${h.attempt}`))
+    .filter((h) => h.studentId === studentId && h.result === "passed" && !seen.has(`${h.week}-${h.attempt}`))
     .map((h): AcademicPhaseRecord => ({
       id: h.id,
       studentId: h.studentId,

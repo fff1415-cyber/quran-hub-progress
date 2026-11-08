@@ -24,17 +24,9 @@ require_once __DIR__ . '/academic_reports.php';
 require_once __DIR__ . '/parent_recommendations.php';
 require_once __DIR__ . '/late_permissions.php';
 require_once __DIR__ . '/weekly_tests.php';
-require_once __DIR__ . '/transfers.php';
 
 function route_request(string $method, string $path): void
 {
-    if ($path === '/plans/assignment-capabilities' && $method === 'GET') { handle_assignment_state_capabilities(); return; }
-    if ($path === '/sard/capabilities' && $method === 'GET') { handle_sard_assessment_capabilities(); return; }
-    if ($path === '/plans/capabilities' && $method === 'GET') {
-        handle_plan_transition_capabilities(); return;
-    }
-    if ($path === '/transfers' && $method === 'GET') { handle_list_transfers(); return; }
-    if ($path === '/transfers' && $method === 'POST') { handle_change_transfer(); return; }
     if ($path === '/staff-tasks' && $method === 'GET') { handle_list_staff_tasks(); return; }
     if ($path === '/staff-tasks' && $method === 'POST') { handle_change_staff_task(); return; }
     if ($path === '/student-entries' && $method === 'POST') { handle_record_student_entry(); return; }

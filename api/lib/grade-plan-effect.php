@@ -2,7 +2,7 @@
 declare(strict_types=1);
 
 /** Projection changes are backed by immutable event copies; unknown legacy links are never inferred. */
-function grade_plan_effect(PDO $pdo,int $cid,array $auth,array $effect,string $operation,stdClass $grades,string $versionKey='grades'):void {
+function grade_plan_effect(PDO $pdo,int $cid,array $auth,array $effect,string $operation,stdClass $grades):void {
     plans_require_roles($auth,['teacher','assistant','manager']);
     $student=(string)($effect['student_id']??'');$expected=(string)($effect['expected_assignment_id']??'');$task=(string)($effect['task_type']??'');
     $path=grade_cells_path($effect['cell_path']??null);
@@ -15,8 +15,8 @@ function grade_plan_effect(PDO $pdo,int $cid,array $auth,array $effect,string $o
     if(count($assignments)!==1||$assignments[0]['id']!==$expected)throw new RuntimeException('تغيّر التعيين أو توجد تعيينات ملتبسة؛ لم تُحفظ الدرجة أو الإنجاز',409);
     $assignment=$assignments[0];
     $check=$pdo->prepare('SELECT status FROM student_plan_assignments WHERE id=?');$check->execute([$expected]);if($check->fetchColumn()!=='active')throw new RuntimeException('الخطة مجمدة؛ لم تُحفظ عملية جزئية',409);
-    if($compensation){grade_plan_compensation($pdo,$cid,$auth,$effect,$operation,$grades,$assignment,$versionKey);return;}
-    $key='grade_plan_cell:'.hash('sha256',grade_cells_json($versionKey==='grades'?[$expected,$path]:[$expected,$path,$versionKey]));
+    if($compensation){grade_plan_compensation($pdo,$cid,$auth,$effect,$operation,$grades,$assignment);return;}
+    $key='grade_plan_cell:'.hash('sha256',grade_cells_json([$expected,$path]));
     $scoped=app_state_tenant_enabled($pdo);$query=$pdo->prepare('SELECT value FROM app_state WHERE '.($scoped?'complex_id=? AND ':'').'`key`=? FOR UPDATE');$query->execute($scoped?[$cid,$key]:[$key]);$raw=$query->fetchColumn();$previous=$raw===false?null:json_decode((string)$raw,true,512,JSON_THROW_ON_ERROR);
     $action=(string)($effect['action']??'');$rows=[];
     if($action==='undo'){
@@ -54,8 +54,8 @@ function grade_plan_effect(PDO $pdo,int $cid,array $auth,array $effect,string $o
     if($task==='hifz'){
         $base=array_slice($path,0,-1);grade_cells_set($grades,[...$base,'hifzPlanSegments'],['present'=>true,'value'=>$action==='record'?array_map('intval',array_column($rows,'segment_index')):[]]);
         grade_cells_set($grades,[...$base,'hifzPlanAssignmentId'],['present'=>true,'value'=>$expected]);
-        grade_cells_record_version($pdo,grade_cells_context($pdo,$cid),$versionKey,[...$base,'hifzPlanSegments'],$operation);
-        grade_cells_record_version($pdo,grade_cells_context($pdo,$cid),$versionKey,[...$base,'hifzPlanAssignmentId'],$operation);
+        grade_cells_record_version($pdo,grade_cells_context($pdo,$cid),'grades',[...$base,'hifzPlanSegments'],$operation);
+        grade_cells_record_version($pdo,grade_cells_context($pdo,$cid),'grades',[...$base,'hifzPlanAssignmentId'],$operation);
     }
 }
 
@@ -70,7 +70,7 @@ function grade_plan_assert_cell_date(PDO $pdo,int $cid,array $path,string $date)
     foreach($holidays??[]as$holiday)if((is_string($holiday)?$holiday:($holiday['date']??null))===$iso)throw new RuntimeException('اليوم إجازة وفق التقويم المعتمد؛ لم تُحفظ عملية جزئية',409);
 }
 
-function grade_plan_compensation(PDO $pdo,int $cid,array $auth,array $effect,string $operation,stdClass $grades,array $assignment,string $versionKey='grades'):void {
+function grade_plan_compensation(PDO $pdo,int $cid,array $auth,array $effect,string $operation,stdClass $grades,array $assignment):void {
     $student=$effect['student_id'];$path=$effect['cell_path'];$weekPath=[$student,$path[1]];$week=grade_cells_at($grades,$weekPath)['value'];
     $calendar=grade_cells_calendar($pdo,$cid,false);$q=$pdo->prepare('SELECT working_days FROM semesters WHERE id=?');$q->execute([$calendar['active_semester_id']]);$days=json_decode((string)$q->fetchColumn(),true,512,JSON_THROW_ON_ERROR);
     if(!is_array($days)||!$days)throw new RuntimeException('تعذّر تأكيد أيام التعويض؛ لم يُحفظ جزء من العملية',409);
@@ -78,7 +78,7 @@ function grade_plan_compensation(PDO $pdo,int $cid,array $auth,array $effect,str
     foreach(array_unique(array_map('intval',$days))as$day){$key=$keys[$day]??null;if($key===null)throw new RuntimeException('تقويم التعويض غير صالح',409);$value=$week->days->{$key}->compensationFaces??0;if(!is_numeric($value)||(float)$value<0||(float)$value>5||abs((float)$value*2-round((float)$value*2))>0.0001)throw new RuntimeException('قيمة التعويض تحتاج مراجعة',409);$total+=(float)$value;}
     if($total>5.0001)throw new RuntimeException('التعويض يتجاوز الحد الأسبوعي المعتمد؛ لم تُحفظ عملية جزئية',409);
     $target=$assignment['track']==='gold'?(int)floor($total):(int)round($total*2);
-    $key='grade_plan_cell:'.hash('sha256',grade_cells_json($versionKey==='grades'?[$assignment['id'],[...$weekPath,'compensationFaces']]:[$assignment['id'],[...$weekPath,'compensationFaces'],$versionKey]));$scoped=app_state_tenant_enabled($pdo);
+    $key='grade_plan_cell:'.hash('sha256',grade_cells_json([$assignment['id'],[...$weekPath,'compensationFaces']]));$scoped=app_state_tenant_enabled($pdo);
     $q=$pdo->prepare('SELECT value FROM app_state WHERE '.($scoped?'complex_id=? AND ':'').'`key`=? FOR UPDATE');$q->execute($scoped?[$cid,$key]:[$key]);$raw=$q->fetchColumn();$previous=$raw===false?null:json_decode((string)$raw,true,512,JSON_THROW_ON_ERROR);
     if($previous===null&&(!empty($week->compensationPlanSegments)||(float)($week->compensationFaces??0)>0))throw new RuntimeException('التعويض السابق غير مرتبط بحدث مؤكد؛ لم يُنسب أو يُحذف بالتخمين',409);
     $rows=$previous['rows']??[];$removed=[];
@@ -94,5 +94,5 @@ function grade_plan_compensation(PDO $pdo,int $cid,array $auth,array $effect,str
     }
     $event=['operation_id'=>$operation,'assignment_id'=>$assignment['id'],'student_id'=>$student,'plan_id'=>$assignment['plan_id'],'action'=>'compensation','cell_path'=>$path,'rows'=>$rows,'removed_rows'=>$removed,'previous_operation'=>$previous['operation_id']??null];
     app_state_upsert($pdo,'grade_plan_event:'.hash('sha256',$operation),$event,$scoped?$cid:null);app_state_upsert($pdo,$key,$event+['status'=>'active'],$scoped?$cid:null);
-    foreach(['compensationFaces'=>$total,'compensationPlanSegments'=>array_map('intval',array_column($rows,'segment_index')),'compensationPlanAssignmentId'=>$assignment['id']]as$field=>$value){$targetPath=[...$weekPath,$field];grade_cells_set($grades,$targetPath,['present'=>true,'value'=>$value]);grade_cells_record_version($pdo,grade_cells_context($pdo,$cid),$versionKey,$targetPath,$operation);}
+    foreach(['compensationFaces'=>$total,'compensationPlanSegments'=>array_map('intval',array_column($rows,'segment_index')),'compensationPlanAssignmentId'=>$assignment['id']]as$field=>$value){$targetPath=[...$weekPath,$field];grade_cells_set($grades,$targetPath,['present'=>true,'value'=>$value]);grade_cells_record_version($pdo,grade_cells_context($pdo,$cid),'grades',$targetPath,$operation);}
 }
