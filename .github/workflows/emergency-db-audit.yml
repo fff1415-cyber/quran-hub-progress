@@ -19,5 +19,6 @@ jobs:
       DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
-      - name: Preserve production without modifying rows
-        run: python3 scripts/create-private-db-backup.py
+      - name: Compare the two complexes in verified archives
+        run: python3 scripts/two-complex-incident.py
+
