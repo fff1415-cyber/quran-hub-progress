@@ -9,9 +9,6 @@ jobs:
     if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
-    concurrency:
-      group: hostinger-production
-      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
@@ -38,11 +35,3 @@ jobs:
           node tests/tarbawi-local.cjs
           php tests/stage3-atomic-plan.php
           npm run build:hostinger
-      - name: Publish and verify the approved protected rollback on the main site
-        env:
-          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
-          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
-          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-        run: |
-          git fetch --no-tags origin +refs/heads/release/qalaid-protected-rollback:refs/remotes/origin/release/qalaid-protected-rollback
-          python3 scripts/protected-rollback-release.py publish 86845cb025e83fd47c4f77ce01785799c0e70d85 ba66ab01b661d6e019ad4826b0aabc675c5dbbd1
