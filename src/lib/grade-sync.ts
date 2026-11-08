@@ -39,8 +39,10 @@ async function read(session: NonNullable<ReturnType<typeof identity>>, box: Grad
   if (identity()?.scope !== session.scope || getToken() !== session.token) throw Error("تغيّرت الجلسة؛ لم تُطبّق استجابة حساب سابق");
   if (snapshot.context_complex_id !== session.cid) throw Error("استجابة الحفظ لا تطابق المجمع الحالي");
   if ("unchanged" in snapshot) {
-    if (snapshot.protocol !== 1 || snapshot.cursor !== box.snapshot()?.cursor) throw Error("لم يؤكد الخادم نسخة الدرجات");
-    if (box.drafts().some(d => d.status === "confirmed" && !d.observed)) box.accept(box.snapshot()!);
+    const cached = box.snapshot();
+    if (snapshot.protocol !== 1 || !cached || snapshot.cursor !== cached.cursor) throw Error("لم يؤكد الخادم نسخة الدرجات");
+    if (box.drafts().some(d => d.status === "confirmed" && !d.observed)) box.accept(cached);
+    else box.reconcile(cached);
     return box.view({});
   }
   box.accept(snapshot); return box.view({});

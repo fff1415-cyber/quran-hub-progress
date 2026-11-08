@@ -9,7 +9,7 @@ export type PlanEffect = { student_id: string; expected_assignment_id: string; t
 export type GradePacket = { operation_id: string; calendar_context: Calendar; changes: Change[]; plan?: PlanEffect };
 export type GradeSnapshot = { protocol: 1; context_complex_id: number; cursor?: string; value: GradesStore; calendar_context: Calendar; versions: Record<string, { direct_version: string | null; subtree_version: string | null }> };
 export type GradeSnapshotResult = GradeSnapshot | { protocol: 1; context_complex_id: number; cursor: string; unchanged: true };
-export type GradeDraft = { packet: GradePacket; order: number; dependencies: string[]; status: "pending" | "unbased" | "conflict" | "confirmed" | "superseded" | "discarded"; message?: string; observed?: boolean };
+export type GradeDraft = { packet: GradePacket; order: number; dependencies: string[]; status: "pending" | "unbased" | "conflict" | "confirmed" | "superseded" | "discarded" | "reconciled" | "archived"; message?: string; observed?: boolean };
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
 function clone<T>(v: T): T { return structuredClone(v); }
@@ -71,7 +71,35 @@ export class GradeOutbox {
     if (snapshot.protocol !== 1 || !object(snapshot.value) || !object(snapshot.versions) || !snapshot.calendar_context || typeof snapshot.calendar_context.known !== "boolean") throw Error("لم يؤكد الخادم بروتوكول الحفظ؛ بقيت المسودات محفوظة");
     this.storage.setItem(this.prefix + "snapshot", JSON.stringify(snapshot));
     for (const draft of this.drafts()) if (draft.status === "confirmed" && !draft.observed) this.write({ ...draft, observed: true });
+    this.reconcile(snapshot);
     this.changed();
+  }
+  /** Close local-only reviews that ask for no change to the confirmed grades. */
+  reconcile(snapshot: GradeSnapshot) {
+    if (!snapshot.calendar_context.known) return;
+    const drafts = this.drafts();
+    const dependencies = new Set(drafts.filter(active).flatMap(draft => draft.dependencies));
+    for (const draft of drafts) {
+      const { packet } = draft;
+      if ((draft.status !== "conflict" && draft.status !== "unbased") ||
+          draft.dependencies.length || dependencies.has(packet.operation_id) ||
+          !equal(packet.calendar_context, snapshot.calendar_context)) continue;
+      const decisions = packet.changes.map(change => {
+        const saved = at(snapshot.value, change.path);
+        if (equal(saved, change.next) || (!saved.present && isEmptyCompensationDefault(change))) return "same";
+        if (!saved.present && !change.base.present && change.next.present && change.next.value === "" &&
+          change.path.length === 5 && change.path[2] === "days" &&
+          ["hifz", "rabt", "muraja"].includes(change.path[4])) return "same";
+        // A real change to a previously empty cell still needs review. The
+        // absence of a saved grade does not prove that this edit is obsolete.
+        return saved.present || change.base.present ? "server" : "unresolved";
+      });
+      if (decisions.every(decision => decision === "same") && !packet.plan) {
+        this.write({ ...draft, status: "reconciled" });
+      } else if (decisions.includes("server") && !decisions.includes("unresolved")) {
+        this.write({ ...draft, status: "archived" });
+      }
+    }
   }
   view(fallback: GradesStore): GradesStore {
     const value = clone(this.snapshot()?.value ?? fallback);

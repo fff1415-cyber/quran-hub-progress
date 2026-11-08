@@ -24,6 +24,25 @@ function gradeValue(value: unknown): string {
   return JSON.stringify(value) ?? "غير موجود";
 }
 
+export function GradeDraftArchive() {
+  const [open, setOpen] = useState(false);
+  const drafts = currentGradeOutbox()?.drafts().filter(draft => draft.status === "archived") ?? [];
+  if (!drafts.length) return null;
+  const students = open ? loadStudents() : [];
+  return <details className="px-3 py-2 text-sm" onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary className="cursor-pointer">سجل المسودات المحلي ({drafts.length})</summary>
+    {open && <div className="mt-2 space-y-2">
+      <p>أُبقيت القيم التي أكدها الخادم. هذه نسخ من المسودات على هذا الجهاز.</p>
+      {drafts.map(draft => <ul className="rounded border p-2" key={draft.packet.operation_id}>
+        {draft.packet.changes.map((change, index) => <li key={index}>
+          {students.find(student => student.id === change.path[0])?.name ?? "الطالب"} · {gradeLocation(change.path)}
+          {" · "}{change.next.present ? gradeValue(change.next.value) : "إزالة"}
+        </li>)}
+      </ul>)}
+    </div>}
+  </details>;
+}
+
 export function GradeSaveStatus() {
   const [, redraw] = useState(0), [error, setError] = useState("");
   const actionInProgress = useRef(false);
@@ -41,8 +60,7 @@ export function GradeSaveStatus() {
   const conflicts = unresolved.filter(d => d.status !== "pending");
   const pending = unresolved.filter(d => d.status === "pending");
   const students = reviewOpen ? loadStudents() : [];
-  const confirmed = drafts.some(d => d.status === "confirmed");
-  if (!unresolved.length && !confirmed && !localError) return null;
+  if (!unresolved.length && !localError) return null;
   const run = async (kind: NonNullable<typeof busy>, action: () => Promise<unknown>) => {
     if (actionInProgress.current) return;
     actionInProgress.current = true;
@@ -62,7 +80,7 @@ export function GradeSaveStatus() {
   };
   return <section aria-live="polite" className="border-b bg-secondary/40 p-3 text-sm" dir="rtl">
     {localError && <p role="alert">{localError}</p>}
-    <p>{unresolved.length ? `مسودات على هذا الجهاز: ${conflicts.length} للمراجعة، و${pending.length} بانتظار تأكيد الحفظ.` : drafts.every(d => d.status === "confirmed") ? "أكد الخادم جميع عمليات تسجيل الدرجات المرسلة." : "لا توجد مسودات بانتظار التأكيد."}</p>
+    {unresolved.length > 0 && <p>{`مسودات على هذا الجهاز: ${conflicts.length} للمراجعة، و${pending.length} بانتظار تأكيد الحفظ.`}</p>}
     {unresolved.length > 0 && <button type="button" aria-expanded={reviewOpen}
       aria-controls="grade-save-review" className="min-h-11 rounded border px-3"
       onClick={() => setReviewOpen(open => !open)}>

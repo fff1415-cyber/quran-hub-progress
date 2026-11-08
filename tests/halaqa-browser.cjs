@@ -133,12 +133,14 @@ async function run() {
         await page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith("qhp_grade_outbox_v1:") && key.endsWith(":snapshot")));
         assert.equal(await attendance.inputValue(), "present");
         await attendance.selectOption("absent");
-        try { await page.getByText("أكد الخادم جميع عمليات تسجيل الدرجات المرسلة.").waitFor({ timeout: 10000 }); }
+        try { await page.waitForFunction(() => Object.entries(localStorage).some(([key, value]) =>
+          key.startsWith("qhp_grade_outbox_v1:") && key.includes(":operation:") && JSON.parse(value).status === "confirmed")); }
         catch (error) {
           console.error("Synthetic pending operations:", await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("qhp_grade_outbox_v1:") && key.includes(":operation:")).map(([,value]) => JSON.parse(value))));
           throw error;
         }
         assert.equal(receipts.size, 1);
+        await page.getByRole("button", { name: "مراجعة المسودات", exact: true }).waitFor({ state: "hidden" });
         console.log("PASS: attendance edit used one atomic receipt before switching groups");
       }
       console.log("PASS: browser rendered roster and grades for halaqa", group.id);
@@ -153,8 +155,16 @@ async function run() {
       const key = Object.keys(localStorage).find(k => k.startsWith("qhp_grade_outbox_v1:") && k.endsWith(":snapshot"));
       if (!key) throw Error("Synthetic grade snapshot is unavailable");
       localStorage.setItem(key.replace(/snapshot$/, "operation:comparison-fixture"), JSON.stringify({
-        packet: { operation_id: "comparison-fixture", calendar_context: { known: true, active_semester_id: "test-semester" }, changes: [] },
+        packet: { operation_id: "comparison-fixture", calendar_context: { known: true, active_semester_id: "test-semester" }, changes: [
+          { path: ["fixture-1", "1", "days", "fri", "attendance"], base: { present: false }, next: { present: true, value: "late" } },
+        ] },
         order: 2, status: "unbased", dependencies: [],
+      }));
+      localStorage.setItem(key.replace(/snapshot$/, "operation:archive-fixture"), JSON.stringify({
+        packet: { operation_id: "archive-fixture", calendar_context: { known: true, active_semester_id: "test-semester" }, changes: [
+          { path: ["fixture-1", "1", "days", "sun", "attendance"], base: { present: true, value: "present" }, next: { present: true, value: "late" } },
+        ] },
+        order: 3, status: "conflict", dependencies: [],
       }));
       window.dispatchEvent(new Event("qhp-grade-save-status"));
     });
@@ -167,6 +177,10 @@ async function run() {
     assert.equal(receipts.size, 1);
     await page.getByRole("button", { name: "طيّ مراجعة المسودات", exact: true }).click();
     assert.equal(await refresh.count(), 0);
+    assert.equal(await attendance.inputValue(), "absent", "the confirmed grade wins");
+    await page.getByRole("button", { name: "القائمة", exact: true }).click();
+    await page.getByText("سجل المسودات المحلي (1)", { exact: true }).click();
+    await page.getByText(/الأسبوع 1 · الأحد · الحضور · متأخر/).waitFor({ timeout: 9000 });
     assert.equal(await page.evaluate(() => Object.keys(localStorage).some(k => k.endsWith(":operation:comparison-fixture"))), true);
     console.log("PASS: clicking compare gives feedback even with unchanged grades and retains the local draft");
   } finally { await browser.close(); }

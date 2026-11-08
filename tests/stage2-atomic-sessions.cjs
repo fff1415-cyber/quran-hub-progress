@@ -50,7 +50,12 @@ async function stop(){
  let snapshot=await request('teacher');a.accept(snapshot);b.accept(await request('assistant'));
  assert.equal(a.view({}).S[1].days.sun.muraja,'pass');assert.equal(b.view({}).S[1].days.sun.hifz,'one');assert.equal(snapshot.value.historic[8].keep,0);
  edit(a,'hifz','two');edit(b,'hifz','half');await a.flush(p=>request('teacher',p));await b.flush(p=>request('assistant',p));assert.equal(b.drafts().at(-1).status,'conflict');assert.equal(b.view({}).S[1].days.sun.hifz,'half');assert.equal((await request('teacher')).value.S[1].days.sun.hifz,'two');
- b.accept(await request('assistant'));b.resolve(b.drafts().find(d=>d.status==='conflict').packet.operation_id,false);assert.equal(b.view({}).S[1].days.sun.hifz,'two');
+ const conflictingPacket = b.drafts().at(-1).packet;
+ b.accept(await request('assistant'));
+ const archived = b.drafts().find(d => d.packet.operation_id === conflictingPacket.operation_id);
+ assert.equal(archived.status, 'archived');
+ assert.deepEqual(archived.packet, conflictingPacket);
+ assert.equal(b.view({}).S[1].days.sun.hifz, 'two');
  a.accept(await request('teacher'));edit(a,'attendance','present');const packet=a.drafts().at(-1).packet;
  await assert.rejects(a.flush(async p=>{await request('teacher',p);throw Error('response lost after commit');}),/response lost/);assert.equal(a.drafts().at(-1).status,'pending');
  await stop(); await start(false);
