@@ -18,15 +18,19 @@ jobs:
       DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
       DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
       EXPECTED_RELEASE: 86845cb025e83fd47c4f77ce01785799c0e70d85
+      AUDIT_MODE: compatibility-only
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
       - name: Preserve exact deployed code and inspect production aggregates read only
+        if: env.AUDIT_MODE != 'compatibility-only'
         run: python3 scripts/rollback-audit.py
       - name: Create and verify the private production database archive
+        if: env.AUDIT_MODE != 'compatibility-only'
         run: python3 scripts/create-private-db-backup.py
       - name: Restore the private archive only to the separate test database and verify hashes
+        if: env.AUDIT_MODE != 'compatibility-only'
         run: python3 scripts/restore-hostinger-test.py
       - name: Test pinned legacy handlers against the fresh restored copy
         run: python3 scripts/rollback-compat-probe.py

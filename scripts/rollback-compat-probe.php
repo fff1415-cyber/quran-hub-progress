@@ -5,14 +5,22 @@ if (PHP_SAPI !== 'cli') exit(1);
 final class ProbeResponse extends RuntimeException {
     public function __construct(public mixed $body, int $status) { parent::__construct('', $status); }
 }
-function json_response(mixed $data, int $status = 200): never { throw new ProbeResponse($data, $status); }
-function error_response(string $message, int $status = 400): never { throw new ProbeResponse(null, $status); }
+function json_response(mixed $data, int $status = 200): never {
+    $GLOBALS['probeHttpResponse'] = new ProbeResponse($data, $status);
+    throw $GLOBALS['probeHttpResponse'];
+}
+function error_response(string $message, int $status = 400): never {
+    // Production exits in json_response(). Its broad catch blocks can catch
+    // the test sentinel, but they cannot change the original HTTP response.
+    throw $GLOBALS['probeHttpResponse'] ?? new ProbeResponse(null, $status);
+}
 function db(): PDO { return $GLOBALS['testPdo']; }
 function require_auth(): array { return $GLOBALS['testAuth']; }
 function json_input(): array { return $GLOBALS['testInput']; }
 function probe(string $handler, array $query = [], array $input = []): ProbeResponse {
     $_GET = $query;
     $GLOBALS['testInput'] = $input;
+    $GLOBALS['probeHttpResponse'] = null;
     try { $handler(); }
     catch (ProbeResponse $response) { return $response; }
     throw new RuntimeException('handler_did_not_respond');
