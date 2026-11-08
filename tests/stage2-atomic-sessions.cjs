@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),cp=require('node:child_process'),fs=require('node:fs'),os=require('node:os'),path=require('node:path'),net=require('node:net');
-const {load}=require('./independent-test-support.cjs');const {GradeOutbox}=load('src/lib/grade-outbox.ts',{});
+const {load,jsx,find}=require('./independent-test-support.cjs');const {GradeOutbox}=load('src/lib/grade-outbox.ts',{});
 function storage(){const map=new Map();return {get length(){return map.size},key:i=>[...map.keys()][i]??null,getItem:key=>map.get(key)??null,setItem:(key,value)=>map.set(key,value),removeItem:key=>map.delete(key)};}
 const php=process.env.PHP_CMD||'php',folder=fs.mkdtempSync(path.join(os.tmpdir(),'qhp-atomic-')),db=path.join(folder,'qhp-atomic-fixture.sqlite');
 const env={...process.env,QHP_FIXTURE_DB:db};cp.execFileSync(php,['tests/grade-http-fixture.php'],{env,stdio:'pipe'});
@@ -193,5 +193,43 @@ async function stop(){
  }
  assert.equal((await request('assistant')).value.historic[8].keep,0);
  console.log('PASS: a cancellation after the receipt but before refresh persists for attendance, hifz, rabt and muraja across both sessions');
+ const data=load('src/lib/mock-data.ts',{'./grade-sync':{},'@/lib/auth-session':{}});
+ const inputSettings=load('src/lib/grade-input-settings.ts',{});
+ const inputs=load('src/components/plans/TeacherGradeInputs.tsx',{
+  'react/jsx-runtime':jsx,'@/lib/mock-data':data,'@/lib/grade-input-settings':inputSettings,
+  '@/contexts/GradeInputSettingsContext':{useGradeInputSettings:()=>({settings:inputSettings.DEFAULT_GRADE_INPUT_SETTINGS})},
+  '@/lib/utils':{cn:()=>''},'lucide-react':{},
+ });
+ const sparse=new GradeOutbox(storage(),'sparse-teacher',id);
+ sparse.accept(await request('teacher'));
+ const sparseEdit=(field,value)=>{
+  const before=sparse.view({}),next=structuredClone(before);
+  (next.S[1].days.tue??={})[field]=value;
+  sparse.edit(before,next);
+  assert.deepEqual(sparse.drafts().at(-1).packet.changes.map(c=>c.path),[['S','1','days','tue',field]]);
+ };
+ const day=()=>sparse.view({}).S[1].days.tue??{};
+ const hifzInput=()=>inputs.HifzTaskInput({value:day().hifz,levelType:'gold',onChange:v=>sparseEdit('hifz',v)});
+ const passFail=field=>inputs.PassFail({value:day()[field],field,onChange:v=>sparseEdit(field,v)});
+ const attendance=()=>find(inputs.AttSelect({value:day().attendance,onChange:v=>sparseEdit('attendance',v)}),n=>n.type==='select')[0];
+ const flushSparse=async()=>{await sparse.flush(p=>request('teacher',p));sparse.accept(await request('teacher'));assistant.accept(await request('assistant'));};
+ attendance().props.onChange({target:{value:'present'}});
+ await flushSparse();
+ assert.deepEqual(assistant.view({}).S[1].days.tue,{attendance:'present'});
+ assert.equal(hifzInput().props.checked,false);
+ assert.equal(passFail('rabt').props.checked,false);
+ assert.equal(passFail('muraja').props.checked,false);
+ for(const [field,input,value] of [['hifz',hifzInput,'one'],['rabt',()=>passFail('rabt'),'pass'],['muraja',()=>passFail('muraja'),'pass']]){
+  input().props.onChange(true);await flushSparse();
+  assert.equal(input().props.checked,true);
+  assert.equal(assistant.view({}).S[1].days.tue[field],value);
+  input().props.onChange(false);await flushSparse();
+  assert.equal(input().props.checked,false);
+  assert.equal(assistant.view({}).S[1].days.tue[field],'');
+  assert.equal(assistant.view({}).S[1].days.tue.attendance,'present');
+ }
+ attendance().props.onChange({target:{value:''}});await flushSparse();
+ assert.deepEqual((await request('assistant')).value.S[1].days.tue,{attendance:'',hifz:'',rabt:'',muraja:''});
+ console.log('PASS: actual preparation controls render a sparse attendance-only day correctly and save each control independently');
  console.log('PASS: two isolated sessions through actual PHP HTTP handlers preserve independent edits, detect same-cell conflict, retain offline drafts across reopen, replay lost-response packet once, chain rapid edits, isolate accounts and reject legacy whole-store replacement');
 })().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{await stop();if(path.dirname(path.resolve(folder))!==path.resolve(os.tmpdir())||!path.basename(folder).startsWith('qhp-atomic-'))throw Error('Unsafe fixture cleanup');fs.rmSync(folder,{recursive:true,force:true});});

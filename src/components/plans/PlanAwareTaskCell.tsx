@@ -35,7 +35,7 @@ export function PlanAwareTaskCell({
         disabled={disabled}
         onChange={(v) => {
           const wasOn = isHifzChecked(hifzValue);
-          const nowOn = v !== "";
+          const nowOn = isHifzChecked(v);
           if (hasPlan && wasOn !== nowOn) {
             onPlanHifzChange?.(nowOn);
             return;

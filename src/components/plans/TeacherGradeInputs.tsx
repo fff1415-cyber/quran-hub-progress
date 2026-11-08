@@ -119,7 +119,7 @@ export function AttSelect({
   return (
     <AttendanceCellFrame value={value}>
       <select
-        value={value}
+        value={value ?? ""}
         onChange={(e) => onChange(e.target.value as AttendanceOption | "")}
         className={cn(gradeCellSelectClass, "bg-transparent border-border/50")}
       >
@@ -177,7 +177,7 @@ export function HifzTaskInput({
           disabled={disabled}
           goldOnly={goldOnly}
         />
-        {value !== "" && !disabled && (
+        {isHifzChecked(value) && !disabled && (
           <button
             type="button"
             title="مسح الحفظ"
@@ -215,7 +215,7 @@ export function HifzSelect({
 }) {
   return (
     <select
-      value={value}
+      value={isHifzChecked(value) ? value : ""}
       disabled={disabled}
       onChange={(e) => onChange(e.target.value as HifzValue)}
       className={cn(gradeCellSelectClass, "font-bold")}
@@ -321,6 +321,7 @@ export function PassFail({
 }) {
   const { settings } = useGradeInputSettings();
   const cfg = field === "muraja" ? settings.muraja : settings.rabt;
+  const recorded = value === "pass" || value === "fail";
 
   if (cfg.mode === "checkbox") {
     const checked = value === "pass";
@@ -330,7 +331,7 @@ export function PassFail({
         disabled={disabled}
         titleChecked="مجتاز — اضغط لإلغاء"
         titleUnchecked={value === "fail" ? "راسب — اضغط لإلغاء" : "لم يُقيَّم — اضغط للمجتاز"}
-        onChange={() => onChange(value === "pass" || value === "fail" ? "" : "pass")}
+        onChange={() => onChange(recorded ? "" : "pass")}
       />
     );
   }
@@ -338,7 +339,7 @@ export function PassFail({
   return (
     <div className="flex items-center justify-center gap-0.5 min-w-0">
       <select
-        value={value}
+        value={recorded ? value : ""}
         disabled={disabled}
         onChange={(e) => onChange(e.target.value as PassFailOption | "")}
         className={cn(gradeCellSelectClass, "flex-1 min-w-0")}
@@ -348,7 +349,7 @@ export function PassFail({
           <option key={opt} value={opt}>{PASS_FAIL_LABELS[opt]}</option>
         ))}
       </select>
-      {value !== "" && !disabled && (
+      {recorded && !disabled && (
         <button
           type="button"
           title="مسح"

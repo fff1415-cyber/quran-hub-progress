@@ -1041,8 +1041,8 @@ export function hifzCheckedValue(levelType: Student["levelType"]): HifzValue {
   return levelType === "gold" ? "one" : "half";
 }
 
-export function isHifzChecked(hifz: HifzValue): boolean {
-  return hifz !== "";
+export function isHifzChecked(hifz: unknown): hifz is Exclude<HifzValue, ""> {
+  return hifz === "half" || hifz === "one" || hifz === "two";
 }
 
 export const COMPENSATION_FACE_OPTIONS: { value: number; label: string }[] = [
