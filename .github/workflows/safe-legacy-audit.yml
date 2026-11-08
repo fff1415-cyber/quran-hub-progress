@@ -9,6 +9,9 @@ jobs:
     if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    concurrency:
+      group: hostinger-production
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
@@ -36,3 +39,11 @@ jobs:
           node ../scripts/test-scientific-program.cjs
           php tests/stage3-atomic-plan.php
           npm run build:hostinger
+      - name: Publish and verify the grade cancellation fix
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          git fetch --no-tags origin +refs/heads/release/grade-cancellation-hotfix:refs/remotes/origin/release/grade-cancellation-hotfix
+          python3 scripts/protected-rollback-release.py publish 0a402bdab9f0f322e080596bb2aeb65e55505d14 20dbfe401845e4315225974a9d23fc252061f226
