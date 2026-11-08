@@ -149,6 +149,21 @@ async function run() {
     assert.equal(await attendance.inputValue(), "absent");
     assert.equal(receipts.size, 1);
     console.log("PASS: reopening the first halaqa shows the confirmed attendance without a duplicate write");
+    await page.evaluate(() => {
+      const key = Object.keys(localStorage).find(k => k.startsWith("qhp_grade_outbox_v1:") && k.endsWith(":snapshot"));
+      if (!key) throw Error("Synthetic grade snapshot is unavailable");
+      localStorage.setItem(key.replace(/snapshot$/, "operation:comparison-fixture"), JSON.stringify({
+        packet: { operation_id: "comparison-fixture", calendar_context: { known: true, active_semester_id: "test-semester" }, changes: [] },
+        order: 2, status: "unbased", dependencies: [],
+      }));
+      window.dispatchEvent(new Event("qhp-grade-save-status"));
+    });
+    const refresh = page.getByRole("button", { name: "تحديث القيم للمقارنة", exact: true });
+    await refresh.click();
+    await page.getByText("تم التحقق من القيم المحفوظة. ما زالت المسودات متاحة للمراجعة.", { exact: true }).waitFor({ timeout: 9000 });
+    assert.equal(receipts.size, 1);
+    assert.equal(await page.evaluate(() => Object.keys(localStorage).some(k => k.endsWith(":operation:comparison-fixture"))), true);
+    console.log("PASS: clicking compare gives feedback even with unchanged grades and retains the local draft");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => server.close());

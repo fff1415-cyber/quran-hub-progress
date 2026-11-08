@@ -1,5 +1,5 @@
 const assert = require("node:assert/strict");
-const { load, storage, jsx, hooks, text } = require("./independent-test-support.cjs");
+const { load, storage, jsx, hooks, text, find, deferred, flush } = require("./independent-test-support.cjs");
 const { GradeOutbox } = load("src/lib/grade-outbox.ts", {});
 const input = { PassFail: "PassFail", HifzTaskInput: "HifzTaskInput" };
 const { PlanAwareTaskCell } = load("src/components/plans/PlanAwareTaskCell.tsx", {
@@ -43,14 +43,37 @@ const planRequired = "هذه الدرجة مرتبطة بخطة؛ يلزم تس�
     const id = original.packet.operation_id;
     persistent.setItem(box.prefix + "operation:" + id, JSON.stringify(original));
     const h = hooks();
+    const request = deferred();
+    let reads = 0, writes = 0;
+    const sync = { currentGradeOutbox: () => box, gradeLocalSaveError: () => "",
+      refreshConfirmedGrades: () => { reads++; return request.promise; },
+      flushConfirmedGrades: () => { writes++; },
+    };
     const { GradeSaveStatus } = load("src/components/GradeSaveStatus.tsx", {
       react: h.react, "react/jsx-runtime": jsx, "@/lib/mock-data": { loadStudents: () => [] },
-      "@/lib/grade-sync": { currentGradeOutbox: () => box, gradeLocalSaveError: () => "" },
+      "@/lib/grade-sync": sync,
     });
-    const ui = text(h.render(() => GradeSaveStatus()));
+    const render = () => h.render(GradeSaveStatus);
+    const refreshButton = () => find(render(), el => el.type === "button" && /تحديث القيم للمقارنة/.test(text(el)))[0];
+    const ui = text(render());
     assert.match(ui, /لم يؤكد الخادم حفظها/);
     assert.match(ui, /الأسبوع 10 · الأحد · الربط — مسودتك: فارغ، المحفوظ: مجتاز/);
     assert.doesNotMatch(ui, /اعتماد مسودتي بعد المقارنة|compensationFaces/);
+    const firstClick = refreshButton().props.onClick;
+    firstClick();
+    firstClick();
+    assert.equal(reads, 1);
+    assert.equal(refreshButton().props.disabled, true);
+    assert.match(text(render()), /جارٍ تحديث القيم/);
+    request.resolve();
+    await flush();
+    assert.match(text(render()), /تم التحقق من القيم المحفوظة/);
+    assert.equal(refreshButton().props.disabled, false);
+    sync.refreshConfirmedGrades = async () => { throw Error("انتهت مهلة القراءة"); };
+    refreshButton().props.onClick();
+    await flush();
+    assert.match(text(render()), /تعذّر تحديث القيم للمقارنة؛ بقيت المسودات كما هي/);
+    assert.equal(writes, 0);
     assert.deepEqual(box.reviewChanges(id).map(c => c.path), [path("rabt")]);
     assert.throws(() => box.resolve(id, true), /مرتبطة بخطة/);
     assert.deepEqual(box.drafts().at(-1), original);

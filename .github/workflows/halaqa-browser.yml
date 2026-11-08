@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   grade-draft-review:
-    if: github.head_ref == 'fix/grade-draft-review'
+    if: github.head_ref == 'fix/grade-draft-review' || github.head_ref == 'fix/grade-comparison-feedback'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
@@ -20,10 +20,12 @@ jobs:
           php-version: '8.3'
           extensions: pdo_sqlite
       - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
-      - run: node tests/grade-draft-review.cjs && node tests/stage2-atomic-local.cjs && node tests/stage2-atomic-sessions.cjs && php tests/stage3-atomic-plan.php
+      - run: node tests/grade-draft-review.cjs && node tests/stage2-atomic-local.cjs
+      - run: node tests/stage2-atomic-sessions.cjs && php tests/stage3-atomic-plan.php
+        if: github.head_ref == 'fix/grade-draft-review'
       - run: npx tsc --noEmit && npm run build:hostinger
   halaqa:
-    if: github.head_ref == 'fix/halaqa-render'
+    if: github.head_ref == 'fix/halaqa-render' || github.head_ref == 'fix/grade-comparison-feedback'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:
@@ -38,6 +40,7 @@ jobs:
           extensions: pdo_sqlite
       - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
       - name: Verify manager, teacher and assistant through the atomic PHP handlers
+        if: github.head_ref == 'fix/halaqa-render'
         run: node tests/stage2-atomic-sessions.cjs
       - run: npm run build:hostinger
       - name: Install isolated browser runner
