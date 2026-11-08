@@ -25,7 +25,7 @@ jobs:
         if: github.head_ref == 'fix/grade-draft-review' || github.head_ref == 'fix/grade-draft-reconcile' || github.head_ref == 'fix/grade-drafts-sidebar'
       - run: npx tsc --noEmit && npm run build:hostinger
   halaqa:
-    if: github.head_ref == 'fix/halaqa-render' || github.head_ref == 'fix/grade-comparison-feedback' || github.head_ref == 'fix/grade-review-panel' || github.head_ref == 'fix/grade-draft-reconcile' || github.head_ref == 'fix/grade-drafts-sidebar'
+    if: github.head_ref == 'fix/halaqa-render' || github.head_ref == 'fix/grade-comparison-feedback' || github.head_ref == 'fix/grade-review-panel' || github.head_ref == 'fix/grade-draft-reconcile' || github.head_ref == 'fix/grade-drafts-sidebar' || github.head_ref == 'fix/grade-recovery-opt-in'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:

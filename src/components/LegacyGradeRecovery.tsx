@@ -4,7 +4,7 @@ import { currentGradeOutbox } from "@/lib/grade-sync";
 import { secureListStudents } from "@/lib/secure-data.functions";
 import { archiveDisplacedLegacyCopy, compareLegacyStudent, legacyGradeCopies, LEGACY_GRADE_KEY, readLegacyArchive, recoveryStudents } from "@/lib/legacy-grade-recovery";
 
-export function LegacyGradeRecovery() {
+export function LegacyGradeRecovery({ showReview = true }: { showReview?: boolean } = {}) {
   const [copies, setCopies] = useState<ReturnType<typeof legacyGradeCopies>>([]);
   const [review, setReview] = useState<{ token: string; students: ReturnType<typeof recoveryStudents> } | null>(null);
   const [selected, select] = useState(""), [copy, selectCopy] = useState(0), [error, setError] = useState("");
@@ -34,7 +34,7 @@ export function LegacyGradeRecovery() {
     return () => { live = false; window.removeEventListener("storage", changed); window.removeEventListener("focus", load); };
   }, []);
   const token = getToken(), session = decodeAuthTokenPayload(token);
-  if (!token || isTokenExpired(token) || !session?.complexId || !session.halaqaId || !["teacher", "assistant"].includes(session.role ?? "") || (!copies.length && !error)) return null;
+  if (!showReview || !token || isTokenExpired(token) || !session?.complexId || !session.halaqaId || !["teacher", "assistant"].includes(session.role ?? "") || (!copies.length && !error)) return null;
   const scope = { complexId: session.complexId, halaqaId: session.halaqaId };
   const available = review?.token === token ? review.students : null;
   const entry = copies[copy], snapshot = currentGradeOutbox()?.snapshot();
