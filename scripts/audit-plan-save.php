@@ -18,8 +18,13 @@ try {
     $result['recent_by_task']=$pdo->query("SELECT JSON_UNQUOTE(JSON_EXTRACT(value,'$.task_type')) AS task,
         COUNT(*) AS total, MAX(updated_at) AS last_event
         FROM app_state WHERE `key` LIKE 'grade_plan_event:%' GROUP BY task")->fetchAll();
-    $result['recent_grade_receipts']=$pdo->query("SELECT COUNT(*) AS total
-        FROM grade_operation_receipts WHERE store_key='grades' AND created_at >= CURRENT_TIMESTAMP - INTERVAL 2 HOUR")->fetchColumn();
+    $receiptTime = array_values(array_filter($schema, static fn($row) =>
+        $row['TABLE_NAME']==='grade_operation_receipts' && preg_match('/^(?:timestamp|datetime)/', $row['COLUMN_TYPE'])));
+    if (count($receiptTime)===1 && preg_match('/^[a-z_]+$/', $receiptTime[0]['COLUMN_NAME'])) {
+        $column = $receiptTime[0]['COLUMN_NAME'];
+        $result['recent_grade_receipts']=$pdo->query("SELECT COUNT(*) FROM grade_operation_receipts
+            WHERE store_key='grades' AND `$column` >= CURRENT_TIMESTAMP - INTERVAL 2 HOUR")->fetchColumn();
+    }
     try {
         $result['database_errors']=$pdo->query("SELECT MYSQL_ERRNO, RETURNED_SQLSTATE,COUNT(*) AS total,
             CASE WHEN SQL_TEXT LIKE '%segment_completions%' THEN 'plan_completion'
