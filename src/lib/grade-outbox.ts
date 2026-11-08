@@ -3,6 +3,7 @@ import type { GradesStore } from "./mock-data";
 type Cell = { present: false } | { present: true; value: unknown };
 type Stamp = { ancestors: (string | null)[]; subtree: string | null };
 type Change = { path: string[]; base: Cell; next: Cell; stamp: Stamp };
+type GradeEdit = Omit<Change, "stamp">;
 type Calendar = { known: boolean; active_semester_id: string | null };
 export type PlanEffect = { student_id: string; expected_assignment_id: string; task_type: "hifz" | "rabt" | "muraja"; action: "record" | "undo" | "compensation"; tap: "half" | "one" | "two"; completed_at: string; cell_path: string[] };
 export type GradePacket = { operation_id: string; calendar_context: Calendar; changes: Change[]; plan?: PlanEffect };
@@ -21,7 +22,21 @@ function set(value: Record<string, unknown>, path: string[], cell: Cell) {
   for (const part of path.slice(0, -1)) { const child = node[part]; if (object(child)) node = child; else { const created: Record<string, unknown> = {}; node[part] = created; node = created; } }
   const key = path[path.length - 1]; if (cell.present) node[key] = clone(cell.value); else delete node[key];
 }
-function changesBetween(before: unknown, after: unknown, path: string[] = []): { path: string[]; base: Cell; next: Cell }[] {
+// Empty weeks populate these numeric fields with zero for display. A zero
+// replacing an actual value is an edit and must still be sent.
+function isEmptyCompensationDefault(edit: GradeEdit): boolean {
+  const { path, base, next } = edit;
+  return !base.present && next.present && next.value === 0 && (
+    (path.length === 3 && ["compensationFaces", "compensationMurajaFaces"].includes(path[2])) ||
+    (path.length === 5 && path[2] === "days" && path[4] === "compensationFaces")
+  );
+}
+const planRequiredMessage = "هذه الدرجة مرتبطة بخطة؛ يلزم تسجيل الدرجة والإنجاز معًا، ولم يُحفظ جزء منفرد";
+function requiresPlanReview(draft: GradeDraft): boolean {
+  return !!draft.packet.plan || (draft.message === planRequiredMessage && draft.packet.changes.some(change =>
+    !isEmptyCompensationDefault(change) && ["hifz", "rabt", "muraja", "compensationFaces"].includes(change.path.at(-1) ?? "")));
+}
+function changesBetween(before: unknown, after: unknown, path: string[] = []): GradeEdit[] {
   if (equal(before, after)) return [];
   if (object(after) && (object(before) || before === undefined)) {
     const result: ReturnType<typeof changesBetween> = [];
@@ -64,7 +79,9 @@ export class GradeOutbox {
     return value;
   }
   edit(before: GradesStore, after: GradesStore, plan?: PlanEffect) {
-    const edits = changesBetween(before, after); if (!edits.length) return;
+    const edits = changesBetween(before, after).filter(change =>
+      !isEmptyCompensationDefault(change) || !!plan && equal(change.path, plan.cell_path));
+    if (!edits.length) return;
     if (edits.length > 100) throw Error("التعديل كبير؛ احفظ دفعات أصغر دون إغلاق الصفحة");
     const snapshot = this.snapshot(), drafts = this.drafts(), pending = drafts.filter(active), dependencies = new Set<string>();
     let based = !!snapshot?.calendar_context.known;
@@ -102,16 +119,23 @@ export class GradeOutbox {
   }
   reviewChanges(id: string): Change[] {
     const latest = new Map<string, Change>();
-    for (const draft of this.reviewChain(id)) for (const change of draft.packet.changes) latest.set(JSON.stringify(change.path), change);
+    for (const draft of this.reviewChain(id)) for (const change of draft.packet.changes) {
+      if (!isEmptyCompensationDefault(change) || equal(change.path, draft.packet.plan?.cell_path)) {
+        latest.set(JSON.stringify(change.path), change);
+      }
+    }
     return [...latest.values()];
+  }
+  reviewRequiresPlan(id: string): boolean {
+    return this.reviewChain(id).some(requiresPlanReview);
   }
   resolve(id: string, useDraft: boolean) {
     const all = this.drafts(), draft = all.find(d => d.packet.operation_id === id), snapshot = this.snapshot();
     if (!draft || !["conflict", "unbased"].includes(draft.status) || !snapshot?.calendar_context.known) throw Error("حدّث البيانات قبل مراجعة التعارض");
     const chain = this.reviewChain(id), changes = this.reviewChanges(id);
-    if (useDraft && chain.some(d => d.packet.plan)) throw Error("هذه المسودة مرتبطة بخطة؛ راجع التعيين والإنجاز قبل إعادة تسجيلها، دون إسنادها لخطة جديدة تلقائيًا");
+    if (useDraft && chain.some(requiresPlanReview)) throw Error("هذه المسودة مرتبطة بخطة؛ راجع التعيين والإنجاز قبل إعادة تسجيلها، دون إسنادها لخطة جديدة تلقائيًا");
     if (useDraft && chain.some(d => !equal(d.packet.calendar_context, snapshot.calendar_context))) throw Error("تغيّر الفصل؛ لن تُنقل المسودة إلى فصل آخر بالتخمين");
-    if (changes.length > 100) throw Error("المسودة المرتبطة كبيرة؛ يلزم تقسيمها قبل الحسم");
+    if (useDraft && (!changes.length || changes.length > 100)) throw Error("لا توجد تعديلات قابلة للإرسال في هذه المسودة، أو أن الدفعة أكبر من الحد المسموح");
     if (useDraft) this.write({ ...draft, packet: { operation_id: this.id(), calendar_context: snapshot.calendar_context, changes: changes.map(c => ({ ...c, base: at(snapshot.value, c.path), stamp: stamp(snapshot, c.path) })) }, order: Math.max(...all.map(d => d.order)) + 1, status: "pending", dependencies: [] });
     for (const member of chain) this.write({ ...member, status: useDraft ? "superseded" : "discarded" });
   }
