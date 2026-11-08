@@ -41,6 +41,9 @@ export function PlanStudentLookup({ readOnly = false, refreshKey = 0, onSardRefe
       if (item?.status === "plan_completed") {
         toast.success(created ? "أضيف الطالب إلى قائمة الإحالة للسرد" : "الطالب موجود في قائمة الإحالة للسرد");
         onSardReferral?.();
+      } else if (item?.status === "pending") {
+        toast.info("الطالب محوّل بالفعل إلى قائمة المسمّع");
+        onSardReferral?.();
       } else {
         toast.info("لهذه الخطة طلب سرد قائم أو منتهٍ");
       }

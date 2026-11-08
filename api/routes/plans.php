@@ -762,6 +762,80 @@ function handle_plan_sard_referral(): void
     json_response(['created'=>$created,'item'=>$item,'sard_queue'=>$queue]);
 }
 
+/** Recover missed completions and forward an existing request under the same tenant queue lock. */
+function handle_supervisor_sard_queue(): void
+{
+    $auth = require_auth();
+    $cid = require_complex_id($auth);
+    if (($auth['role'] ?? '') !== 'supervisor') error_response('غير مصرح', 403);
+    $input = json_input();
+    $forward = $input['forward_id'] ?? null;
+    if ($forward !== null && (!is_string($forward) || $forward === '')) error_response('طلب السرد غير صالح', 400);
+    $pdo = db();
+    $scoped = app_state_tenant_enabled($pdo);
+    $params = $scoped ? [$cid, 'sard_queue'] : ['sard_queue'];
+    $pdo->beginTransaction();
+    try {
+        $pdo->prepare($scoped ? 'INSERT IGNORE INTO app_state (complex_id,`key`,value) VALUES (?, ?, ?)'
+            : 'INSERT IGNORE INTO app_state (`key`,value) VALUES (?, ?)')->execute([...$params, '[]']);
+        $query = $pdo->prepare('SELECT value FROM app_state WHERE '.($scoped ? 'complex_id=? AND ' : '').'`key`=? FOR UPDATE');
+        $query->execute($params);
+        $assignments = sard_current_assignments($pdo, $cid);
+        $queue = sard_reconcile_queue(json_decode((string)$query->fetchColumn(), true, 512, JSON_THROW_ON_ERROR), $assignments);
+        $created = 0;
+        $forwarded = false;
+        $now = gmdate('c');
+        if ($forward !== null) {
+            $confirmed = false;
+            foreach ($queue as &$item) {
+                if (($item['id'] ?? null) !== $forward) continue;
+                if (($item['status'] ?? '') === 'plan_completed') {
+                    $item['status'] = 'pending';
+                    $item['supervisorForwardedAt'] = $now;
+                    $forwarded = true;
+                }
+                $confirmed = !empty($item['supervisorForwardedAt']) && ($item['status'] ?? '') !== 'archived';
+                break;
+            }
+            unset($item);
+            if (!$confirmed) throw new RuntimeException('الطلب غير متاح للتحويل. حدّث قائمة السرد.');
+        } else {
+            $known = [];
+            foreach ($queue as $item) {
+                if (!empty($item['assignmentId']) && !in_array($item['archiveReason'] ?? '',
+                    ['duplicate_assignment_request', 'supervisor_hifz_removed'], true)) $known[$item['assignmentId']] = true;
+            }
+            $studentsScoped = table_column_exists($pdo, 'students', 'complex_id');
+            $eligible = $pdo->prepare("SELECT a.id,a.student_id,s.halaqa_id,p.title
+                FROM student_plan_assignments a JOIN students s ON s.id=a.student_id JOIN education_plans p ON p.id=a.plan_id
+                WHERE a.status='active' ".($studentsScoped ? 'AND s.complex_id=? ' : '')."
+                  AND EXISTS (SELECT 1 FROM plan_segments x WHERE x.plan_id=a.plan_id AND x.segment_index>=a.start_segment_index)
+                  AND NOT EXISTS (SELECT 1 FROM plan_segments x WHERE x.plan_id=a.plan_id AND x.segment_index>=a.start_segment_index
+                      AND NOT EXISTS (SELECT 1 FROM segment_completions c WHERE c.student_id=a.student_id AND c.plan_id=a.plan_id
+                          AND c.segment_index=x.segment_index AND c.task_type='hifz'
+                          AND (c.assignment_id=a.id OR (c.assignment_id IS NULL AND c.created_at>=a.assigned_at))))");
+            $eligible->execute($studentsScoped ? [$cid] : []);
+            foreach ($eligible->fetchAll() as $a) {
+                if (($assignments[$a['student_id']]['id'] ?? null) !== $a['id'] || isset($known[$a['id']])) continue;
+                $item = ['id'=>'sq-assignment-'.$a['id'], 'assignmentId'=>$a['id'], 'studentId'=>$a['student_id'],
+                    'halaqaId'=>(int)$a['halaqa_id'], 'week'=>max(1,(int)($input['week'] ?? 1)), 'attempt'=>1,
+                    'status'=>'plan_completed', 'phase'=>'full', 'createdAt'=>$now, 'planCompletedAt'=>$now, 'planTitle'=>$a['title']];
+                $existing = array_search($item['id'], array_column($queue, 'id'), true);
+                if ($existing === false) $queue[] = $item;
+                else $queue[$existing] = $item;
+                $created++;
+            }
+        }
+        if ($created || $forwarded) app_state_upsert($pdo, 'sard_queue', $queue, $scoped ? $cid : null);
+        $pdo->commit();
+        json_response(['created'=>$created, 'forwarded'=>$forwarded, 'sard_queue'=>$queue]);
+    } catch (Throwable $error) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        error_response($error instanceof PDOException ? 'تعذّر تأكيد تحديث قائمة السرد.' : $error->getMessage(),
+            $error instanceof PDOException ? 503 : 409);
+    }
+}
+
 function plans_has_forwarded_manual_sard_pass(PDO $pdo,int $cid,string $student,string $assignment,mixed $result): bool
 {
     if (!is_array($result) || !is_string($result['id']??null) || !is_numeric($result['percent']??null)) return false;

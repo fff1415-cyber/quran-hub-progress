@@ -58,8 +58,9 @@ export function LateSardList() {
 }
 
 /** Active sard queue (pending + approved_third + scheduled-ready). Read-only. */
-export function ActiveSardList() {
-  const [queue] = useState(() => loadSardQueue());
+export function ActiveSardList({ currentQueue }: { currentQueue?: SardQueueItem[] } = {}) {
+  const [initialQueue] = useState(() => loadSardQueue());
+  const queue = currentQueue ?? initialQueue;
   const students = loadStudents();
   const halaqat = loadHalaqat();
 
@@ -81,11 +82,10 @@ export function ActiveSardList() {
           {visible.map((q) => {
             const s = students.find((x) => x.id === q.studentId);
             const h = halaqat.find((x) => x.id === q.halaqaId);
-            if (!s || !h) return null;
             return (
               <div key={q.id} className="p-3 rounded-lg bg-secondary/50 border border-border">
-                <div className="font-bold text-sm">{s.name}</div>
-                <div className="text-xs text-muted-foreground mt-1">{h.name} · {weekLabel(q.week)}</div>
+                <div className="font-bold text-sm">{s?.name ?? `طالب (${q.studentId})`}</div>
+                <div className="text-xs text-muted-foreground mt-1">{h?.name ?? "الحلقة"} · {weekLabel(q.week)}</div>
                 {q.attempt > 1 && (
                   <span className="inline-block mt-1 px-2 py-0.5 rounded text-[10px] font-bold bg-warning/20 text-warning">
                     محاولة {q.attempt}

@@ -217,6 +217,10 @@ function route_request(string $method, string $path): void
         handle_plan_sard_referral();
         return;
     }
+    if ($path === '/plans/sard-queue' && $method === 'POST') {
+        handle_supervisor_sard_queue();
+        return;
+    }
     if ($path === '/plans/supervisor-hifz' && $method === 'POST') {
         handle_supervisor_plan_hifz();
         return;

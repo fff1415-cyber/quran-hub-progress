@@ -250,6 +250,16 @@ export async function fetchHalaqatRoster(complexId?: number): Promise<Halaqa[]> 
   return halaqat;
 }
 
+export async function fetchSardRoster() {
+  const token = tokenOrThrow();
+  const [students, halaqat] = await Promise.all([
+    secureListStudents({ data: { token } }),
+    secureListHalaqatFull({ data: { token } }),
+  ]);
+  if (getToken() !== token) throw new Error("تغيّرت جلسة الدخول");
+  return { students: (students as CloudStudentRow[]).map(rowToStudent), halaqat: (halaqat as CloudHalaqaRow[]).map(rowToHalaqa) };
+}
+
 export async function syncFromCloud(options?: {
   force?: boolean;
 }): Promise<{ students: Student[]; halaqat: Halaqa[] } | null> {

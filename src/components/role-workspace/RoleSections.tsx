@@ -3,7 +3,7 @@ import { Link } from "@tanstack/react-router";
 import {
   loadHalaqat, loadStudents, loadGrades, loadSardQueue,
   loadLatePermissions, loadMessageTemplates, formatMessage,
-  pushNotification, updateSardItem, forwardPlanToSard, flushSardQueue, DAYS,
+  pushNotification, updateSardItem, DAYS,
   type WeekRecord, type Student, type GradesStore,
 } from "@/lib/mock-data";
 import {
@@ -12,7 +12,7 @@ import {
   isSupervisorForceRetryCandidate,
 } from "@/lib/sard-phased-flow";
 import { weekLabel } from "@/lib/arabic-numbers";
-import { refreshSardReferrals } from "@/lib/plans-service";
+import { refreshSardReferrals, updateSupervisorSardQueue } from "@/lib/plans-service";
 import { getCalendarDayKey, getCalendarIsoDate } from "@/lib/operational-date";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
@@ -405,35 +405,47 @@ export function SupervisorHalaqatPanel() {
 export function SupervisorPlanCompletedPanel() {
   const [queue, setQueue] = useState(() => loadSardQueue());
   const [forwarding, setForwarding] = useState(false);
+  const [queueError, setQueueError] = useState(false);
   const students = loadStudents();
   const halaqat = loadHalaqat();
   const refresh = () => setQueue(loadSardQueue());
 
   useEffect(() => {
     let active = true;
-    const poll = () => void refreshSardReferrals().then(next => { if (active) setQueue(next); }).catch(() => {});
+    const poll = () => void refreshSardReferrals().then(next => {
+      if (active) { setQueue(next); setQueueError(false); }
+    }).catch(() => { if (active) setQueueError(true); });
+    const recover = () => void fetchActiveCalendar()
+      .then(calendar => updateSupervisorSardQueue({ week: calendar.currentWeekNumber }))
+      .then(() => { if (active) refresh(); }).catch(() => { if (active) setQueueError(true); });
+    recover();
     poll();
     const timer = setInterval(poll, 15000);
-    return () => { active = false; clearInterval(timer); };
+    const recoveryTimer = setInterval(recover, 60000);
+    window.addEventListener("qs-sard-referral-confirmed", refresh);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      clearInterval(recoveryTimer);
+      window.removeEventListener("qs-sard-referral-confirmed", refresh);
+    };
   }, []);
 
   const completed = queue.filter((q) => q.status === "plan_completed");
 
   const forward = async (id: string, studentName: string, halaqaId: number, planTitle?: string) => {
     if (forwarding) return;
-    const item = forwardPlanToSard(id);
-    if (!item) return;
     setForwarding(true);
     try {
-      await flushSardQueue();
-      notifyTeacherHalaqa(
+      const { forwarded } = await updateSupervisorSardQueue({ forward_id: id });
+      if (forwarded) notifyTeacherHalaqa(
         halaqaId,
         `حُوّل ${studentName} للسرد${planTitle ? ` — ${planTitle}` : ""}`,
         "sard",
       );
       toast.success(`تم تحويل ${studentName} لقائمة المسمّع`);
-    } catch {
-      toast.error("لم يؤكد الخادم التحويل للمسمّع");
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "لم يؤكد الخادم التحويل للمسمّع");
     } finally {
       setForwarding(false);
       refresh();
@@ -449,6 +461,7 @@ export function SupervisorPlanCompletedPanel() {
       <p className="text-xs text-muted-foreground mb-4">
         حوّل الطالب للمسمّع عند الجاهزية — يظهر للمسمّع بالترتيب حسب وقت التحويل
       </p>
+      {queueError && <p role="status" className="text-sm text-destructive">تعذّر تحديث قائمة السرد. ستُعاد المحاولة تلقائيًا.</p>}
       {completed.length === 0 ? (
         <p className="text-muted-foreground text-center py-8 text-sm">لا يوجد طلاب بانتظار التحويل للسرد</p>
       ) : (
@@ -456,7 +469,7 @@ export function SupervisorPlanCompletedPanel() {
           {completed.map((q) => {
             const s = students.find((x) => x.id === q.studentId);
             const h = halaqat.find((x) => x.id === q.halaqaId);
-            if (!s || !h) return null;
+            const name = s?.name ?? `طالب (${q.studentId})`;
             const since = q.planCompletedAt ?? q.createdAt;
             return (
               <div
@@ -464,9 +477,9 @@ export function SupervisorPlanCompletedPanel() {
                 className="flex items-center justify-between p-4 rounded-lg bg-success/5 border border-success/20 flex-wrap gap-2"
               >
                 <div>
-                  <div className="font-bold">{s.name}</div>
+                  <div className="font-bold">{name}</div>
                   <div className="text-xs text-muted-foreground mt-0.5">
-                    {h.name} · {q.planTitle || "خطة تعليمية"} · {weekLabel(q.week)}
+                    {h?.name ?? "الحلقة"} · {q.planTitle || "خطة تعليمية"} · {weekLabel(q.week)}
                   </div>
                   <div className="text-xs text-success font-medium mt-1">{daysSinceLabel(since)}</div>
                   {q.manualReferralAt && <div className="text-xs text-muted-foreground">إحالة يدوية من المشرف</div>}
@@ -474,7 +487,7 @@ export function SupervisorPlanCompletedPanel() {
                 <button
                   type="button"
                   disabled={forwarding}
-                  onClick={() => void forward(q.id, s.name, s.halaqaId, q.planTitle)}
+                  onClick={() => void forward(q.id, name, s?.halaqaId ?? q.halaqaId, q.planTitle)}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm"
                 >
                   <Send className="w-4 h-4" /> تحويل للسرد

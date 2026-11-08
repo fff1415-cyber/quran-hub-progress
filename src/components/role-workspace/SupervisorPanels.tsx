@@ -21,6 +21,7 @@ import {
   GraduationCap, BookOpen, ClipboardCheck, Send, BarChart3, ScrollText, Users,
 } from "lucide-react";
 import type { PermissionKey } from "@/lib/permissions";
+import type { SardQueueItem } from "@/lib/mock-data";
 
 type Props = {
   section: string;
@@ -46,7 +47,8 @@ export function SupervisorSardPanel({
   awaitingCount,
   scheduledCount,
   passedCount,
-}: Props & { awaitingCount: number; scheduledCount: number; passedCount: number }) {
+  queue,
+}: Props & { awaitingCount: number; scheduledCount: number; passedCount: number; queue: SardQueueItem[] }) {
   const tabs = useMemo(
     () =>
       filterSubTabs([
@@ -57,7 +59,8 @@ export function SupervisorSardPanel({
           perm: "view_attendance",
           content: (
             <div className="space-y-6">
-              <ActiveSardList />
+              {getSessionRole() === "supervisor" && hasPerm("supervisor", null, "manage_plans") && <SupervisorPlanCompletedPanel />}
+              <ActiveSardList currentQueue={queue} />
               <LateSardList />
             </div>
           ),
@@ -87,7 +90,7 @@ export function SupervisorSardPanel({
           content: <SupervisorPassedPanel />,
         },
       ]),
-    [awaitingCount, scheduledCount, passedCount],
+    [awaitingCount, scheduledCount, passedCount, queue],
   );
 
   return <ManagerSubTabs tabs={tabs} value={section} onValueChange={onSectionChange} />;
@@ -96,8 +99,9 @@ export function SupervisorSardPanel({
 export function SupervisorPlansPanelGroup({
   section,
   onSectionChange,
+  onSardReferral,
   planCompletedCount,
-}: Props & { planCompletedCount: number }) {
+}: Props & { planCompletedCount: number; onSardReferral: () => void }) {
   const tabs = useMemo(
     () =>
       filterSubTabs([
@@ -107,7 +111,7 @@ export function SupervisorPlansPanelGroup({
           icon: GraduationCap,
           roles: ["supervisor"],
           perm: "manage_plans",
-          content: <SupervisorPlansPanel onSardReferral={() => onSectionChange("plan-completed")} />,
+          content: <SupervisorPlansPanel onSardReferral={onSardReferral} />,
         },
         {
           id: "plan-completed",
@@ -119,7 +123,7 @@ export function SupervisorPlansPanelGroup({
           content: <SupervisorPlanCompletedPanel />,
         },
       ]),
-    [planCompletedCount, onSectionChange],
+    [planCompletedCount, onSardReferral],
   );
 
   return <ManagerSubTabs tabs={tabs} value={section} onValueChange={onSectionChange} />;

@@ -56,13 +56,23 @@ export async function fetchStudentPlanSheet(studentId: string): Promise<StudentP
 }
 
 export async function referStudentForSard(studentId: string, assignmentId: string, week: number, manual = false) {
+  return updateSardReferrals<{ created: boolean; item: SardQueueItem | null; sard_queue: SardQueueItem[] }>(
+    "/plans/sard-referral", { student_id: studentId, assignment_id: assignmentId, week, manual },
+  );
+}
+
+export function updateSupervisorSardQueue(input: { week: number } | { forward_id: string }) {
+  return updateSardReferrals<{ created: number; forwarded: boolean; sard_queue: SardQueueItem[] }>("/plans/sard-queue", input);
+}
+
+async function updateSardReferrals<T extends { sard_queue: SardQueueItem[] }>(path: string, input: object): Promise<T> {
   const { flushSardQueue, hasPendingSardWrites, loadSardQueue } = await import("@/lib/mock-data");
   await flushSardQueue().catch(() => undefined);
   const token = getToken();
   const before = JSON.stringify(loadSardQueue());
-  const result = await planFetch<{created: boolean; item: SardQueueItem | null; sard_queue: SardQueueItem[]}>("/plans/sard-referral", {
+  const result = await planFetch<T>(path, {
     method: "POST",
-    body: JSON.stringify({student_id:studentId, assignment_id:assignmentId, week, manual}),
+    body: JSON.stringify(input),
   });
   if (!Array.isArray(result.sard_queue)) throw new Error("تعذّر تأكيد إحالة الطالب للسرد");
   if (token !== getToken()) throw new Error("تغيّرت جلسة الدخول. حدّث قائمة الإحالات.");
@@ -78,10 +88,13 @@ export async function refreshSardReferrals() {
   const token = getToken();
   if (!token || hasPendingSardWrites()) return loadSardQueue();
   const before = JSON.stringify(loadSardQueue());
-  const rows = await planFetch<{ key: string; value: SardQueueItem[] }[]>("/app-state?key=sard_queue");
+  const rows = await planFetch<{ key: string; value: SardQueueItem[] }[]>("/app-state?key=sard_queue", { cache: "no-store" });
   if (token === getToken() && !hasPendingSardWrites() && JSON.stringify(loadSardQueue()) === before) {
     const queue = rows.find(row => row.key === "sard_queue")?.value;
-    if (Array.isArray(queue)) localStorage.setItem("qshatawi_sard_queue_v2", JSON.stringify(queue));
+    if (Array.isArray(queue) && JSON.stringify(queue) !== before) {
+      localStorage.setItem("qshatawi_sard_queue_v2", JSON.stringify(queue));
+      window.dispatchEvent(new Event("qs-sard-referral-confirmed"));
+    }
   }
   return loadSardQueue();
 }

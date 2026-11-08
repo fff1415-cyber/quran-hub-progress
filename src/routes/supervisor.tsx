@@ -163,7 +163,7 @@ export function SupervisorPage() {
       label: "السرد",
       icon: Mic,
       perm: "view_attendance",
-      badge: awaiting.length + scheduled.length,
+      badge: awaiting.length + scheduled.length + planCompleted.length,
       content: (
         <SupervisorSardPanel
           section={section}
@@ -171,6 +171,7 @@ export function SupervisorPage() {
           awaitingCount={awaiting.length}
           scheduledCount={scheduled.length}
           passedCount={passed.length}
+          queue={queue}
         />
       ),
     },
@@ -185,6 +186,7 @@ export function SupervisorPage() {
         <SupervisorPlansPanelGroup
           section={section}
           onSectionChange={setSection}
+          onSardReferral={() => setMainTab("sard")}
           planCompletedCount={planCompleted.length}
         />
       ),

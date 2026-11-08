@@ -7,6 +7,7 @@ import {
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { refreshSardReferrals } from "@/lib/plans-service";
+import { fetchSardRoster } from "@/lib/cloud-sync";
 import { useEvaluationSettings } from "@/contexts/EvaluationSettingsContext";
 import {
   computeReviewScore,
@@ -86,19 +87,29 @@ export function MusammiPage() {
   const taskCount = useStaffTaskCount();
   const [queue, setQueue] = useState<SardQueueItem[]>(() => loadSardQueue());
   const [activeId, setActiveId] = useState<string | null>(null);
-  const halaqat = loadHalaqat();
-  const students = loadStudents();
+  const [roster, setRoster] = useState<Awaited<ReturnType<typeof fetchSardRoster>> | null>(null);
+  const halaqat = roster?.halaqat ?? loadHalaqat();
+  const students = roster?.students ?? loadStudents();
 
   const refresh = () => setQueue(loadSardQueue());
   useEffect(() => {
     if (activeId) return;
     let active = true;
-    const poll = () => void refreshSardReferrals().then(next => { if (active) setQueue(next); }).catch(() => {});
+    const poll = () => void refreshSardReferrals().then(async next => {
+      if (!active) return;
+      setQueue(next);
+      const known = roster?.students ?? loadStudents();
+      const missing = next.filter(item => isMusammiVisible(item) && !known.some(student => student.id === item.studentId));
+      if (missing.length) {
+        const freshRoster = await fetchSardRoster();
+        if (active && missing.some(item => freshRoster.students.some(student => student.id === item.studentId))) setRoster(freshRoster);
+      }
+    }).catch(() => {});
     poll();
     const timer = setInterval(poll, 15000);
     window.addEventListener("focus", poll);
     return () => { active = false; clearInterval(timer); window.removeEventListener("focus", poll); };
-  }, [activeId]);
+  }, [activeId, roster]);
 
   const visible = useMemo(
     () => sortMusammiQueue(queue.filter((q) => isMusammiVisible(q))),
@@ -109,7 +120,7 @@ export function MusammiPage() {
   const activeStudent = active ? students.find((s) => s.id === active.studentId) : null;
   const activeHalaqa = active ? halaqat.find((h) => h.id === active.halaqaId) : null;
 
-  if (active && activeStudent && activeHalaqa) {
+  if (active && activeStudent) {
     return (
       <div className="min-h-screen">
         <Toaster position="top-center" richColors />
@@ -124,7 +135,7 @@ export function MusammiPage() {
             level={activeStudent.level}
             levelType={activeStudent.levelType}
             memorized={activeStudent.memorized}
-            halaqaName={activeHalaqa.name}
+            halaqaName={activeHalaqa?.name ?? "الحلقة"}
             onDone={() => { setActiveId(null); refresh(); }}
           />
         </main>
@@ -156,20 +167,19 @@ export function MusammiPage() {
         {visible.length === 0 ? (
           <div className="glass-card rounded-2xl p-12 text-center">
             <p className="text-muted-foreground">لا يوجد طلاب محالين للسرد حالياً</p>
-            <p className="text-xs text-muted-foreground mt-2">سيظهرون هنا عندما يفعّل المعلم خانة &quot;السرد&quot;</p>
+            <p className="text-xs text-muted-foreground mt-2">يظهر الطالب هنا بعد تحويله من المشرف التعليمي.</p>
           </div>
         ) : (
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {visible.map((q) => {
               const s = students.find((x) => x.id === q.studentId);
               const h = halaqat.find((x) => x.id === q.halaqaId);
-              if (!s || !h) return null;
               const reviewOnly = sardPhase(q) === "review_only";
               return (
-                <button key={q.id} onClick={() => setActiveId(q.id)}
+                <button key={q.id} disabled={!s} onClick={() => setActiveId(q.id)}
                   className="glass-card rounded-2xl p-5 text-right hover:gold-glow hover:border-primary transition-all">
                   <div className="flex items-start justify-between mb-2">
-                    <div className="font-bold text-lg">{s.name}</div>
+                    <div className="font-bold text-lg">{s?.name ?? `طالب (${q.studentId})`}</div>
                     <div className="flex flex-col items-end gap-1">
                       {reviewOnly && (
                         <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-primary/15 text-primary">
@@ -183,18 +193,18 @@ export function MusammiPage() {
                       )}
                     </div>
                   </div>
-                  <div className="text-xs text-muted-foreground">{h.name}</div>
-                  <div className="text-xs text-muted-foreground mt-1">{weekLabel(q.week)} · مستوى {s.level}</div>
+                  <div className="text-xs text-muted-foreground">{h?.name ?? "الحلقة"}</div>
+                  <div className="text-xs text-muted-foreground mt-1">{weekLabel(q.week)}{s ? ` · مستوى ${s.level}` : " · بيانات الطالب قيد التحديث"}</div>
                   {reviewOnly && q.lockedHifzScore != null && (
                     <div className="text-xs text-success mt-1 flex items-center gap-1">
                       <Lock className="w-3 h-3" /> حفظ مثبت: {q.lockedHifzScore}
                     </div>
                   )}
-                  <div className="mt-3 flex items-center gap-2">
+                  {s && <div className="mt-3 flex items-center gap-2">
                     <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${s.levelType === "gold" ? "gold-gradient text-primary-foreground" : "bg-muted text-foreground"}`}>
                       {s.levelType === "gold" ? "ذهبي" : "فضي"}
                     </span>
-                  </div>
+                  </div>}
                 </button>
               );
             })}
