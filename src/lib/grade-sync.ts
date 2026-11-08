@@ -1,17 +1,71 @@
-import { GradeOutbox } from "./grade-outbox";
-import type { GradePacket, PlanEffect } from "./grade-outbox";
+import { assertGradeSnapshot, GradeOutbox } from "./grade-outbox";
+import type { GradePacket, GradeSnapshot, PlanEffect } from "./grade-outbox";
 import type { GradesStore } from "./mock-data";
 import { decodeAuthTokenPayload, getToken } from "./auth-session";
 import { secureGradeSnapshot, secureGradeOperation } from "./secure-data.functions";
 export const GRADE_SAVE_EVENT = "qhp-grade-save-status";
 let localSaveError: { scope: string; message: string } | null = null;
+const snapshots = new Map<string, GradeSnapshot>();
+const checkedSnapshotStorage = new Set<string>();
+function openGradeSnapshots(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("qhp-confirmed-grade-snapshots", 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("snapshots");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+    request.onblocked = () => reject(new Error("تعذّر فتح مخزن نسخة الدرجات في هذا المتصفح"));
+  });
+}
+async function restoreGradeSnapshot(key: string, cid: number): Promise<boolean> {
+  if (typeof indexedDB === "undefined" || checkedSnapshotStorage.has(key)) return false;
+  let database: IDBDatabase | undefined;
+  try {
+    database = await openGradeSnapshots();
+    const transaction = database.transaction("snapshots", "readonly");
+    const stored = await new Promise<GradeSnapshot | undefined>((resolve, reject) => {
+      const request = transaction.objectStore("snapshots").get(key);
+      request.onsuccess = () => resolve(request.result);
+      request.onerror = () => reject(request.error);
+    });
+    if (stored?.context_complex_id === cid) {
+      assertGradeSnapshot(stored);
+      snapshots.set(key, stored);
+      return true;
+    }
+  } catch (error) {
+    // Browsers can block IndexedDB independently of the existing local cache.
+    console.warn("Confirmed grade cache could not be read from IndexedDB:", error);
+  } finally {
+    checkedSnapshotStorage.add(key);
+    database?.close();
+  }
+  return false;
+}
+async function persistGradeSnapshot(key: string, snapshot: GradeSnapshot): Promise<void> {
+  if (typeof indexedDB === "undefined") return;
+  const database = await openGradeSnapshots();
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction("snapshots", "readwrite");
+      transaction.oncomplete = () => resolve();
+      transaction.onabort = () => reject(transaction.error);
+      transaction.onerror = () => reject(transaction.error);
+      transaction.objectStore("snapshots").put(snapshot, key);
+    });
+  } finally { database.close(); }
+}
 function notify() { if (typeof window !== "undefined") { window.dispatchEvent(new Event(GRADE_SAVE_EVENT)); window.dispatchEvent(new Event("qs-grades-changed")); } }
 function identity(): { scope: string; cid: number; token: string } | null {
   const token = getToken(), auth = decodeAuthTokenPayload(token);
   if (!token || !auth?.complexId || !auth.role) return null;
   return { scope: JSON.stringify([auth.complexId, auth.role, auth.accountId ?? [auth.halaqaId, auth.name], auth.studentId]), cid: auth.complexId, token };
 }
-export function currentGradeOutbox(): GradeOutbox | null { const session = identity(); return session && typeof window !== "undefined" ? new GradeOutbox(localStorage, session.scope, () => crypto.randomUUID(), notify) : null; }
+export function currentGradeOutbox(): GradeOutbox | null {
+  const session = identity();
+  if (!session || typeof window === "undefined") return null;
+  return new GradeOutbox(localStorage, session.scope, () => crypto.randomUUID(), notify,
+    typeof indexedDB === "undefined" ? undefined : snapshots);
+}
 export function gradeView(fallback: GradesStore): GradesStore { return currentGradeOutbox()?.view(fallback) ?? fallback; }
 export function gradeLocalSaveError(): string { return localSaveError !== null && localSaveError.scope === (identity()?.scope ?? "unavailable") ? localSaveError.message : ""; }
 export function recordGradeEdit(before: GradesStore, after: GradesStore, plan?: PlanEffect): boolean {
@@ -35,6 +89,10 @@ export function confirmedGradePlanAssignment(student: string): string {
 let serial: Promise<unknown> = Promise.resolve();
 function enqueue<T>(run: () => Promise<T>): Promise<T> { const next = serial.then(run, run); serial = next.catch(() => undefined); return next; }
 async function read(session: NonNullable<ReturnType<typeof identity>>, box: GradeOutbox) {
+  const key = box.prefix + "snapshot";
+  const restored = await restoreGradeSnapshot(key, session.cid);
+  if (identity()?.scope !== session.scope || getToken() !== session.token) throw Error("تغيّرت الجلسة؛ لم تُطبّق استجابة حساب سابق");
+  if (restored) notify();
   const snapshot = await secureGradeSnapshot(session.token, box.snapshot()?.cursor);
   if (identity()?.scope !== session.scope || getToken() !== session.token) throw Error("تغيّرت الجلسة؛ لم تُطبّق استجابة حساب سابق");
   if (snapshot.context_complex_id !== session.cid) throw Error("استجابة الحفظ لا تطابق المجمع الحالي");
@@ -45,6 +103,16 @@ async function read(session: NonNullable<ReturnType<typeof identity>>, box: Grad
     else box.reconcile(cached);
     return box.view({});
   }
+  assertGradeSnapshot(snapshot);
+  if (!snapshots.has(key)) {
+    try { box.accept(snapshot); return box.view({}); }
+    catch (error) {
+      if (typeof indexedDB === "undefined" || !(error instanceof DOMException) || error.name !== "QuotaExceededError") throw error;
+    }
+  }
+  await persistGradeSnapshot(key, snapshot);
+  if (identity()?.scope !== session.scope || getToken() !== session.token) throw Error("تغيّرت الجلسة؛ لم تُطبّق استجابة حساب سابق");
+  snapshots.set(key, snapshot);
   box.accept(snapshot); return box.view({});
 }
 export function refreshConfirmedGrades(): Promise<GradesStore> {

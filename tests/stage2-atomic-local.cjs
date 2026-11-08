@@ -25,4 +25,34 @@ assert.match(text(h.render(()=>Status())),/تعذّر حفظ المسودة/);lo
  const sibling=new outbox.GradeOutbox(localStorage,JSON.stringify([1,'teacher',[1,'fixture'],undefined]));assert.equal(sibling.drafts().length,2,'same-account tabs share independent persisted operation keys');
  auth.decodeAuthTokenPayload=()=>null;assert.throws(()=>sync.recordGradeEdit({},{}),/هوية جلسة الحفظ/);assert.match(sync.gradeLocalSaveError(),/لم يُرسل/);assert.equal(sibling.drafts().length,2,'unidentified session cannot create a shared-cache fallback save');
  console.log('PASS: actual grade save/mutation wrappers preserve plan packet, ignore device clocks, retain prior data on storage failure, display local failure and refuse unmatched receipt; independent tab operations survive');
+ const manager={...auth,decodeAuthTokenPayload:()=>({role:'manager',complexId:1,accountId:'manager-fixture'})};
+ const managerSnapshot={protocol:1,context_complex_id:1,cursor:'server-cursor',value:{history:{1:{value:'x'.repeat(1130000)}}},calendar_context:{known:true,active_semester_id:'fixture-semester'},versions:{}};
+ const oldBytes=JSON.stringify({...managerSnapshot,cursor:'old',value:{history:{1:{value:'cached'}}}});
+ const localKey=new outbox.GradeOutbox(localStorage,JSON.stringify([1,'manager','manager-fixture',undefined])).prefix+'snapshot';
+ localStorage.setItem(localKey,oldBytes);
+ localStorage.setItem=(key,value)=>{if(key===localKey&&value.length>1000000)throw new DOMException("Setting the value of a grade snapshot exceeded the quota.",'QuotaExceededError');return original(key,value);};
+ const snapshotDisk=new Map();
+ let failWrite=false;
+ const idb={close(){},transaction(){
+   const tx={objectStore(){return {
+     get(key){const request={};queueMicrotask(()=>{request.result=snapshotDisk.get(key);request.onsuccess();});return request;},
+     put(value,key){queueMicrotask(()=>{if(failWrite){tx.error=new DOMException('disk denied','QuotaExceededError');tx.onabort();return;}snapshotDisk.set(key,structuredClone(value));tx.oncomplete();});},
+   };}};
+   return tx;
+ }};
+ global.indexedDB={open(){const req={result:idb};queueMicrotask(()=>req.onsuccess());return req;}};
+ const reload=transport=>load('src/lib/grade-sync.ts',{'./grade-outbox':outbox,'./auth-session':manager,'./secure-data.functions':transport});
+ const managerSync=reload({secureGradeSnapshot:async()=>managerSnapshot});
+ assert.throws(()=>new outbox.GradeOutbox(localStorage,JSON.stringify([1,'manager','manager-fixture',undefined])).accept(managerSnapshot),{name:'QuotaExceededError'});
+ assert.equal((await managerSync.refreshConfirmedGrades()).history[1].value.length,1130000);
+ assert.equal(localStorage.getItem(localKey),oldBytes,'confirmed previous local cache remains intact');
+ assert.equal(snapshotDisk.get(localKey).cursor,'server-cursor');
+ const reopened=reload({secureGradeSnapshot:async(_,cursor)=>{assert.equal(cursor,'server-cursor');throw Error('offline');}});
+ await assert.rejects(reopened.refreshConfirmedGrades(),/offline/);
+ assert.equal(reopened.currentGradeOutbox().view({}).history[1].value.length,1130000);
+ failWrite=true;
+ const failed=reload({secureGradeSnapshot:async()=>({...managerSnapshot,cursor:'not-persisted'})});
+ await assert.rejects(failed.refreshConfirmedGrades(),{name:'QuotaExceededError'});
+ assert.equal(failed.currentGradeOutbox().snapshot().cursor,'server-cursor','storage failure preserves last confirmed snapshot');
+ console.log('PASS: production-sized manager grade snapshot survives localStorage quota, reopening and offline access without deleting its previous cache');
 })().catch(error=>{console.error(error);process.exitCode=1;});

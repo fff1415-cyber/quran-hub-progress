@@ -1,0 +1,29 @@
+name: Manager refresh and atomic grade regression
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/lib/grade-outbox.ts'
+      - 'src/lib/grade-sync.ts'
+      - 'tests/stage2-atomic-local.cjs'
+      - '.github/workflows/manager-sync-regression.yml'
+permissions:
+  contents: read
+jobs:
+  refresh:
+    if: github.head_ref == 'fix/manager-sync-storage'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - run: node tests/stage2-atomic-local.cjs && node tests/stage2-roster.cjs && node tests/stage2-atomic-sessions.cjs
+      - run: npx tsc --noEmit
