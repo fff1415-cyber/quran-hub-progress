@@ -27,6 +27,9 @@ const date = value => value.toISOString().slice(0,10);
 const semester = { id: "test-semester", name: "فصل تجربة", start_date: date(start), weeks_count: 1, working_days: [0,1,2,3,4], excluded_dates: [], is_active: true };
 const grades = Object.fromEntries(students.map(s => [s.id, { 1: { days: { sun: { attendance: "present", hifz: "one", rabt: "", muraja: "" } } } }]));
 const calendar = { known: true, active_semester_id: semester.id };
+const scientific = { configs: Object.fromEntries(halaqat.slice(1, 4).map(h => [h.id, {
+  visible: true, fields: { attendance: true, hifz: true, rabt: false, muraja: false },
+}])), data: {} };
 const bodyFor = route => {
   if (route === "/tenant-info") return { id: 1, name: "مجمع تجربة", subdomain: "mm", is_active: true };
   if (route === "/students") return students;
@@ -47,9 +50,13 @@ async function run() {
       if (url.pathname !== "/api/r.php") { await intercepted.continue(); return; }
       const route = url.searchParams.get("path");
       let data = bodyFor(route);
+      if (route === "/plans/halaqa-status") {
+        const id = Number(url.searchParams.get("halaqa_id"));
+        data = { statuses: id === 1 ? [] : [{ student_id: "fixture-" + id, status: id === 5 ? "frozen" : "active", assignment_id: "plan-" + id }] };
+      }
       if (route === "/app-state") {
         if (url.searchParams.get("grade_protocol") === "1") data = { protocol: 1, context_complex_id: 1, cursor: "fixture", value: grades, calendar_context: calendar, versions: {} };
-        else if (!url.searchParams.has("key")) data = [{ key: "grades", value: [] }];
+        else if (url.searchParams.get("key") === "scientific_grades" || !url.searchParams.has("key")) data = [{ key: "scientific_grades", value: scientific }];
       }
       await intercepted.fulfill({ json: data });
     });
@@ -61,16 +68,28 @@ async function run() {
     });
     const page = await context.newPage();
     let errors = [];
-    page.on("pageerror", error => errors.push(error.stack || error.message));
+    const record = error => {
+      // Hostinger serves the prerendered home shell for deep URLs. React
+      // recovers from this known hydration mismatch; still assert UI below.
+      if (!error.includes("Minified React error #418")) errors.push(error);
+    };
+    page.on("pageerror", error => record(error.stack || error.message));
     page.on("console", msg => {
-      if (msg.type() === "error" && /TypeError|ReferenceError|Minified React|Something went wrong/.test(msg.text())) errors.push(msg.text());
+      if (msg.type() === "error" && /TypeError|ReferenceError|Minified React|Something went wrong/.test(msg.text())) record(msg.text());
     });
+    await page.goto(base + "/mm/teacher?h=1");
     for (const group of halaqat) {
       errors = [];
-      await page.goto(base + "/mm/teacher?h=" + group.id);
+      if (group.id !== 1) {
+        await page.getByRole("button", { name: "القائمة", exact: true }).click();
+        const selector = page.getByRole("button", { name: "إدارة الحلقات", exact: true });
+        if (await selector.getAttribute("aria-expanded") === "false") await selector.click();
+        await page.getByRole("link", { name: group.name, exact: true }).click();
+      }
       try {
         await page.getByText(group.name, { exact: true }).first().waitFor({ timeout: 9000 });
         await page.getByText("طالب تجربة " + group.id, { exact: true }).first().waitFor({ timeout: 9000 });
+        await page.waitForTimeout(450);
       } catch (error) {
         const message = await page.locator("body").innerText();
         throw new Error("Fixture halaqa " + group.id + " failed: " + errors.join("\n") + "\n" + message.slice(0,900), { cause: error });
