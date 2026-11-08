@@ -173,6 +173,10 @@ async function run() {
     assert.equal(await refresh.count(), 0);
     assert.equal(await review.count(), 0);
     await page.getByRole("button", { name: "القائمة", exact: true }).click();
+    assert.equal(await review.count(), 0, "no draft panel in the normal drawer");
+    assert.equal(await page.getByText(/سجل المسودات المحلي/).count(), 0);
+    await page.keyboard.press("Escape");
+    await page.goto(base + "/mm/teacher?h=1#local-grade-recovery");
     await review.click();
     await refresh.click();
     await page.getByText("تم التحقق من القيم المحفوظة. ما زالت المسودات متاحة للمراجعة.", { exact: true }).waitFor({ timeout: 9000 });
@@ -181,11 +185,11 @@ async function run() {
     assert.equal(await refresh.count(), 0);
     await page.getByText("سجل المسودات المحلي (1)", { exact: true }).click();
     await page.getByText(/الأسبوع 1 · الأحد · الحضور · متأخر/).waitFor({ timeout: 9000 });
-    await page.keyboard.press("Escape");
     assert.equal(await attendance.inputValue(), "absent", "the confirmed grade wins");
+    await page.goto(base + "/mm/teacher?h=1");
     assert.equal(await review.count(), 0);
     assert.equal(await page.evaluate(() => Object.keys(localStorage).some(k => k.endsWith(":operation:comparison-fixture"))), true);
-    console.log("PASS: clicking compare gives feedback even with unchanged grades and retains the local draft");
+    console.log("PASS: the normal page and drawer hide the draft panel; explicit recovery retains drafts and confirmed grades");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => server.close());

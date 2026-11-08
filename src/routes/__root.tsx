@@ -1,4 +1,6 @@
 import { LegacyGradeRecovery } from "@/components/LegacyGradeRecovery";
+import { GradeDraftArchive, GradeSaveStatus } from "@/components/GradeSaveStatus";
+import { useEffect, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
@@ -7,6 +9,7 @@ import {
   createRootRouteWithContext,
   HeadContent,
   Scripts,
+  useLocation,
 } from "@tanstack/react-router";
 import { isApexBareTenantAppPath, isReservedApexPathSegment, PLATFORM_BRAND, apexDomain, tenantPath } from "@/lib/tenant";
 import { getAuthItem } from "@/lib/auth-session";
@@ -82,13 +85,21 @@ function RootShell({ children }: { children: React.ReactNode }) {
 
 function RootComponent() {
   const { queryClient } = Route.useRouteContext();
+  const recoveryRequested = useLocation({ select: location => location.hash === "local-grade-recovery" });
+  const [clientReady, setClientReady] = useState(false);
+  useEffect(() => setClientReady(true), []);
+  const showGradeRecovery = clientReady && recoveryRequested;
   return (
     <QueryClientProvider client={queryClient}>
       <TenantProvider>
         <EvaluationSettingsProvider>
           <GradeInputSettingsProvider>
             <CloudSyncStatus />
-            <LegacyGradeRecovery />
+            <LegacyGradeRecovery showReview={showGradeRecovery} />
+            {showGradeRecovery && <div className="mx-auto max-w-4xl px-3" dir="rtl">
+              <GradeSaveStatus />
+              <GradeDraftArchive />
+            </div>}
             <Outlet />
           </GradeInputSettingsProvider>
         </EvaluationSettingsProvider>
