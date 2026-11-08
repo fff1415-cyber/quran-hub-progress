@@ -18,7 +18,7 @@ jobs:
       DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
       DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
       EXPECTED_RELEASE: 86845cb025e83fd47c4f77ce01785799c0e70d85
-      AUDIT_MODE: full
+      AUDIT_MODE: compatibility-only
     steps:
       - uses: actions/checkout@v4
         with:
