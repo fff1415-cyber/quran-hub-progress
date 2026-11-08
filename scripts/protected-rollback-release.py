@@ -67,7 +67,7 @@ def live_acceptance():
     status, _ = site('/api/r.php?path=%2Fapp-state&key=grades&grade_protocol=1')
     if status != 401:
         return False
-    for route in ('/tarbawi/record','/scientific-grades/store','/plans/sard-referral'):
+    for route in ('/tarbawi/record','/scientific-grades/store','/plans/sard-referral','/plans/sard-queue'):
         status, _ = site('/api/r.php?' + urllib.parse.urlencode({'path':route}), 'POST')
         if status != 401:
             return False
