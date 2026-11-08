@@ -26,6 +26,13 @@ function gradeValue(value: unknown): string {
 
 export function GradeDraftArchive() {
   const [open, setOpen] = useState(false);
+  const [, redraw] = useState(0);
+  useEffect(() => {
+    const update = () => redraw(value => value + 1);
+    window.addEventListener(GRADE_SAVE_EVENT, update);
+    window.addEventListener("storage", update);
+    return () => { window.removeEventListener(GRADE_SAVE_EVENT, update); window.removeEventListener("storage", update); };
+  }, []);
   const drafts = currentGradeOutbox()?.drafts().filter(draft => draft.status === "archived") ?? [];
   if (!drafts.length) return null;
   const students = open ? loadStudents() : [];

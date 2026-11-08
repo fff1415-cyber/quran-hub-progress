@@ -74,17 +74,10 @@ export class GradeOutbox {
     this.reconcile(snapshot);
     this.changed();
   }
-  /** Close local-only reviews that ask for no change to the confirmed grades. */
-  reconcile(snapshot: GradeSnapshot) {
-    if (!snapshot.calendar_context.known) return;
-    const drafts = this.drafts();
-    const dependencies = new Set(drafts.filter(active).flatMap(draft => draft.dependencies));
-    for (const draft of drafts) {
-      const { packet } = draft;
-      if ((draft.status !== "conflict" && draft.status !== "unbased") ||
-          draft.dependencies.length || dependencies.has(packet.operation_id) ||
-          !equal(packet.calendar_context, snapshot.calendar_context)) continue;
-      const decisions = packet.changes.map(change => {
+  private reconciliationStatus(draft: GradeDraft, snapshot: GradeSnapshot): "reconciled" | "archived" | undefined {
+    const { packet } = draft;
+    if (!equal(packet.calendar_context, snapshot.calendar_context)) return;
+    const decisions = packet.changes.map(change => {
         const saved = at(snapshot.value, change.path);
         if (equal(saved, change.next) || (!saved.present && isEmptyCompensationDefault(change))) return "same";
         if (!saved.present && !change.base.present && change.next.present && change.next.value === "" &&
@@ -93,12 +86,34 @@ export class GradeOutbox {
         // A real change to a previously empty cell still needs review. The
         // absence of a saved grade does not prove that this edit is obsolete.
         return saved.present || change.base.present ? "server" : "unresolved";
-      });
-      if (decisions.every(decision => decision === "same") && !packet.plan) {
-        this.write({ ...draft, status: "reconciled" });
-      } else if (decisions.includes("server") && !decisions.includes("unresolved")) {
-        this.write({ ...draft, status: "archived" });
+    });
+    if (decisions.every(decision => decision === "same") && !packet.plan) return "reconciled";
+    if (decisions.includes("server") && !decisions.includes("unresolved")) return "archived";
+  }
+  reconcile(snapshot: GradeSnapshot) {
+    if (!snapshot.calendar_context.known) return;
+    const drafts = this.drafts();
+    const confirmed = new Set(drafts.filter(draft => draft.status === "confirmed").map(draft => draft.packet.operation_id));
+    for (const root of drafts) {
+      if ((root.status !== "conflict" && root.status !== "unbased") ||
+          root.dependencies.some(id => !confirmed.has(id))) continue;
+      const chain = this.reviewChain(root.packet.operation_id);
+      const blocked = new Set<string>();
+      const settled: GradeDraft[] = [];
+      for (const draft of chain) {
+        // A child of a rejected or unbased packet cannot have been sent:
+        // flush requires every predecessor to be confirmed. Leave previously
+        // attempted requests alone even if an old queue contains such a child.
+        if (draft.status === "pending" && (draft.message || !draft.dependencies.some(id => blocked.has(id)))) break;
+        if (draft.dependencies.some(id => !confirmed.has(id) && !blocked.has(id))) break;
+        const status = this.reconciliationStatus(draft, snapshot);
+        if (!status) break;
+        blocked.add(draft.packet.operation_id);
+        settled.push({ ...draft, status });
       }
+      // Settle children first so an interrupted local write cannot leave
+      // a pending child permanently waiting for an archived parent.
+      if (settled.length === chain.length) for (const draft of settled.reverse()) this.write(draft);
     }
   }
   view(fallback: GradesStore): GradesStore {

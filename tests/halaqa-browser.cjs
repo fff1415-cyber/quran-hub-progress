@@ -171,6 +171,8 @@ async function run() {
     const review = page.getByRole("button", { name: "مراجعة المسودات", exact: true });
     const refresh = page.getByRole("button", { name: "تحديث القيم للمقارنة", exact: true });
     assert.equal(await refresh.count(), 0);
+    assert.equal(await review.count(), 0);
+    await page.getByRole("button", { name: "القائمة", exact: true }).click();
     await review.click();
     await refresh.click();
     await page.getByText("تم التحقق من القيم المحفوظة. ما زالت المسودات متاحة للمراجعة.", { exact: true }).waitFor({ timeout: 9000 });
@@ -178,7 +180,6 @@ async function run() {
     await page.getByRole("button", { name: "طيّ مراجعة المسودات", exact: true }).click();
     assert.equal(await refresh.count(), 0);
     assert.equal(await attendance.inputValue(), "absent", "the confirmed grade wins");
-    await page.getByRole("button", { name: "القائمة", exact: true }).click();
     await page.getByText("سجل المسودات المحلي (1)", { exact: true }).click();
     await page.getByText(/الأسبوع 1 · الأحد · الحضور · متأخر/).waitFor({ timeout: 9000 });
     assert.equal(await page.evaluate(() => Object.keys(localStorage).some(k => k.endsWith(":operation:comparison-fixture"))), true);
