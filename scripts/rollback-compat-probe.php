@@ -94,10 +94,31 @@ try {
     $pdo->rollBack();
     $restored = grade_body(probe('handle_list_app_state',['key'=>'grades']));
     if ($restored !== $before || $writeA !== 200 || $writeB !== 200) throw new RuntimeException('test_incomplete');
+    $stage = 'semester_reset_reproduction';
+    $weeklyBefore = probe('handle_list_app_state',['key'=>'weekly_tests']);
+    $pdo->beginTransaction();
+    $fixtureGrades = [];
+    for ($i=1; $i<=100; $i++) $fixtureGrades['qhp-synthetic-'.$i] = [1=>['days'=>['sun'=>['attendance'=>1]]]];
+    if (probe('handle_set_app_state',[],['key'=>'grades','value'=>$fixtureGrades])->getCode() !== 200 ||
+        probe('handle_set_app_state',[],['key'=>'weekly_tests','value'=>['qhp-synthetic-test'=>['score'=>1]]])->getCode() !== 200) {
+        throw new RuntimeException('bulk_seed_failed');
+    }
+    // The old client sends these two exact requests on a semester mismatch.
+    $gradesReset = probe('handle_set_app_state',[],['key'=>'grades','value'=>(object)[]])->getCode();
+    $weeklyReset = probe('handle_set_app_state',[],['key'=>'weekly_tests','value'=>(object)[]])->getCode();
+    $remainingGrades = count(grade_body(probe('handle_list_app_state',['key'=>'grades'])));
+    $weeklyResult = probe('handle_list_app_state',['key'=>'weekly_tests']);
+    $remainingWeekly = count($weeklyResult->body[0]['value'] ?? []);
+    $pdo->rollBack();
+    if (grade_body(probe('handle_list_app_state',['key'=>'grades'])) !== $before ||
+        probe('handle_list_app_state',['key'=>'weekly_tests'])->body !== $weeklyBefore->body) throw new RuntimeException('bulk_test_not_reverted');
     echo json_encode(['database'=>'isolated_test','old_revision'=>'7e9adf1','reads'=>$reads,
         'existing_atomic_receipts'=>$receiptCount,'old_save_responses'=>[$writeA,$writeB],
         'first_confirmed_edit_lost'=>$after['qhp-synthetic-a']['attendance']===0,
         'second_edit_retained'=>$after['qhp-synthetic-b']['attendance']===1,
+        'semester_reset'=>['synthetic_grade_records_before'=>count($fixtureGrades),'grade_records_after'=>$remainingGrades,
+            'synthetic_weekly_tests_before'=>1,'weekly_tests_after'=>$remainingWeekly,
+            'http_statuses'=>[$gradesReset,$weeklyReset]],
         'isolated_test_transaction_reverted'=>true,'production_writes'=>false], JSON_THROW_ON_ERROR).PHP_EOL;
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
