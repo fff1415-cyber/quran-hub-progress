@@ -47,6 +47,7 @@ import {
   secureListAppState,
   secureSetAppState,
   secureSaveScientificStore,
+  secureSaveScientificConfig,
 } from "./secure-data.functions";
 import { fetchActiveCalendar, loadCachedCalendar } from "./academic-context";
 import { mergeAbsenceAlertRecordFromCloud, ABSENCE_ALERTS_APP_STATE_KEY } from "./semester-absence";
@@ -310,6 +311,7 @@ export async function syncFromCloud(options?: {
         ensureTarbawiSemester(calendar.semester?.id ?? null);
 
         const sardBeforePull = JSON.stringify(loadSardQueue());
+        const scientificConfigBeforePull = scientificConfigGeneration;
         const stateRows = await secureListAppState({ data: { token } });
         const state = new Map(stateRows.map((row) => [row.key, row.value]));
         sessionStorage.setItem("qs_syncing", "1");
@@ -346,7 +348,9 @@ export async function syncFromCloud(options?: {
             saveScientificGradesStore,
           } = await import("./scientific-grades");
           const cloud = state.get("scientific_grades") as import("./scientific-grades").ScientificGradesStore;
-          const merged = mergeScientificGradesStores(cloud, loadScientificGradesStore());
+          const local = loadScientificGradesStore();
+          const merged = mergeScientificGradesStores(cloud, local);
+          merged.configs = scientificConfigBeforePull === scientificConfigGeneration ? cloud.configs ?? {} : local.configs;
           saveScientificGradesStore(merged);
         }
         if (state.has(ABSENCE_ALERTS_APP_STATE_KEY)) {
@@ -490,27 +494,51 @@ export async function pullMergedGrades(): Promise<GradesStore | null> {
   return getToken() ? refreshConfirmedGrades() : null;
 }
 
-let scientificPushQueue: Promise<import("./scientific-grades").ScientificGradesStore> = Promise.resolve({
-  configs: {},
-  data: {},
-  overrides: {},
-});
+let scientificPushQueue: Promise<unknown> = Promise.resolve();
+let scientificConfigGeneration = 0;
+
+function enqueueScientificSave<T>(run: () => Promise<T>): Promise<T> {
+  const next = scientificPushQueue.then(run, run);
+  scientificPushQueue = next.catch(() => undefined);
+  return next;
+}
+
+async function readScientificStore(token: string) {
+  const rows = await secureListAppState({ data: { token, key: "scientific_grades" } });
+  const row = rows.find((item) => item.key === "scientific_grades");
+  if (!row?.revision || (row.value !== null && (typeof row.value !== "object" || Array.isArray(row.value)))) {
+    throw new Error("تعذّر تأكيد سجل الدرجات العلمية قبل الحفظ");
+  }
+  return {
+    revision: row.revision,
+    value: (row.value ?? { configs: {}, data: {}, overrides: {} }) as import("./scientific-grades").ScientificGradesStore,
+  };
+}
+
+export function pushScientificConfig(halaqaId: number, settings: import("./scientific-grades").ScientificGradesConfig) {
+  const token = tokenOrThrow();
+  return enqueueScientificSave(async () => {
+    const { revision } = await readScientificStore(token);
+    if (getToken() !== token) throw new Error("تغيّرت جلسة حفظ إعدادات البرنامج العلمي");
+    const result = await secureSaveScientificConfig(token, revision, halaqaId, settings);
+    if (!result.ok || getToken() !== token) throw new Error("لم تتأكد إعدادات البرنامج العلمي لهذه الجلسة");
+    scientificConfigGeneration++;
+  });
+}
 
 /** Upload local scientific grades after merging with the latest cloud copy. */
 export async function pushMergedScientificGrades(
   local: import("./scientific-grades").ScientificGradesStore,
 ): Promise<import("./scientific-grades").ScientificGradesStore> {
-  const run = async (): Promise<import("./scientific-grades").ScientificGradesStore> => {
+  const token = tokenOrThrow();
+  return enqueueScientificSave(async () => {
     const { mergeScientificGradesStores, saveScientificGradesStore } = await import("./scientific-grades");
-    const token = tokenOrThrow();
-    const rows = await secureListAppState({ data: { token, key: "scientific_grades" } });
-    const row = rows.find((item) => item.key === "scientific_grades");
-    if (!row?.revision || (row.value !== null && (typeof row.value !== "object" || Array.isArray(row.value)))) {
-      throw new Error("تعذّر تأكيد سجل الدرجات العلمية قبل الحفظ");
-    }
-    const cloud = (row.value ?? { configs: {}, data: {}, overrides: {} }) as import("./scientific-grades").ScientificGradesStore;
+    const { value: cloud, revision } = await readScientificStore(token);
     const merged = mergeScientificGradesStores(cloud, local);
-    await secureSaveScientificStore(token, row.revision, merged);
+    merged.configs = cloud.configs ?? {};
+    if (getToken() !== token) throw new Error("تغيّرت جلسة حفظ الدرجات العلمية");
+    await secureSaveScientificStore(token, revision, merged);
+    if (getToken() !== token) return merged;
     const prev = sessionStorage.getItem("qs_syncing");
     sessionStorage.setItem("qs_syncing", "1");
     try {
@@ -520,13 +548,7 @@ export async function pushMergedScientificGrades(
       else sessionStorage.removeItem("qs_syncing");
     }
     return merged;
-  };
-  const next = scientificPushQueue.then(run, run);
-  scientificPushQueue = next.then(
-    (v) => v,
-    () => local,
-  );
-  return next;
+  });
 }
 
 export async function fetchCloudStaffCheckIns(): Promise<import("./staff-attendance").StaffCheckIn[]> {

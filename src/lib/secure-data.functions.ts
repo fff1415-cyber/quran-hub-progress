@@ -193,6 +193,14 @@ export async function secureSaveScientificStore(token: string, base: string, val
   });
 }
 
+export async function secureSaveScientificConfig(token: string, base: string, halaqaId: number, settings: unknown) {
+  return apiFetch<{ ok: boolean }>("/scientific-grades/store", {
+    method: "POST",
+    auth: token,
+    body: JSON.stringify({ scientific_base: base, scientific_config: { halaqaId, settings } }),
+  });
+}
+
 export async function securePatchWeeklyTest({ data }: { data: { token: string; studentId: string; week: number; kind: "muraja" | "rabt"; index: number; result: "" | "pass" | "fail" } }) {
   return apiFetch<{ ok: boolean }>("/weekly-tests/result", {
     method: "POST",

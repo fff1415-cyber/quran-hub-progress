@@ -110,12 +110,35 @@ function app_state_write_tarbawi(PDO $pdo, int $cid, array $input): void
 }
 
 /** Reject stale snapshots of scientific grades and retain history omitted by a legacy client. */
+function app_state_validate_new_scientific_scores(PDO $pdo, int $cid, array $previous, array $next): void
+{
+    $prep = null;
+    foreach (($next['data'] ?? []) as $halaqa => $students) foreach ($students as $student => $weeks)
+    foreach ($weeks as $week => $days) foreach ($days as $day => $scores) {
+        foreach (['hifz','rabt','muraja'] as $field) {
+            $score = $scores[$field] ?? null;
+            $old = $previous['data'][$halaqa][$student][$week][$day][$field] ?? null;
+            if (!is_numeric($score) || (float)$score <= 0 ||
+                (is_numeric($old) && (float)$score === (float)$old) ||
+                ($next['overrides'][$halaqa][$student][$week][$day][$field] ?? false) === true) continue;
+            $prep ??= grade_cells_store($pdo, $cid, 'grades', true);
+            $entry = $prep->{$student}->{$week}->days->{$day}->{$field} ?? null;
+            $earned = $field === 'hifz' ? in_array($entry, ['half','one','two'], true) : $entry === 'pass';
+            if (!$earned) {
+                throw new RuntimeException('لا يوجد تسجيل تحضير مؤكد يستحق الدرجة العلمية. بقي السجل المحفوظ كما هو.', 409);
+            }
+        }
+    }
+}
+
 function app_state_write_preserved_store(PDO $pdo, int $cid, string $key, array $input): void
 {
     $value = $input['value'] ?? null;
-    if (!is_array($value)) throw new RuntimeException('صيغة السجل غير صالحة. لم تتغيّر البيانات.', 409);
+    $configEdit = $key === 'scientific_grades' ? ($input['scientific_config'] ?? null) : null;
+    if (!is_array($value) && !is_array($configEdit)) throw new RuntimeException('صيغة السجل غير صالحة. لم تتغيّر البيانات.', 409);
     $scoped = app_state_tenant_enabled($pdo);
-    $pdo->beginTransaction();
+    $owns = !$pdo->inTransaction();
+    if ($owns) $pdo->beginTransaction();
     try {
         $query = $pdo->prepare('SELECT value FROM app_state WHERE ' . ($scoped ? 'complex_id=? AND ' : '') .
             '`key`=? FOR UPDATE');
@@ -129,10 +152,34 @@ function app_state_write_preserved_store(PDO $pdo, int $cid, string $key, array 
             if (!is_string($base) || !hash_equals($revision, $base)) {
                 throw new RuntimeException('تغيّر سجل الدرجات العلمية أو تعذّر تأكيده. بقي التعديل على جهازك.', 409);
             }
-            if ((!empty($previous['configs']) || !empty($previous['data']) || !empty($previous['overrides'])) &&
+            if (is_array($configEdit)) {
+                $group = $configEdit['halaqaId'] ?? null;
+                $config = $configEdit['settings'] ?? null;
+                if (!is_int($group) || $group <= 0 || !is_array($config) ||
+                    !is_bool($config['visible'] ?? null) || !is_array($config['defaultScores'] ?? null)) {
+                    throw new RuntimeException('صيغة إعدادات البرنامج العلمي غير صالحة.', 400);
+                }
+                foreach (['attendance','hifz','rabt','muraja'] as $field) {
+                    if (!is_bool($config['fields'][$field] ?? null)) {
+                        throw new RuntimeException('حالة بند البرنامج العلمي غير صالحة.', 400);
+                    }
+                }
+                $store = $raw === false ? (object)['data'=>(object)[],'overrides'=>(object)[]] : json_decode($raw);
+                if (!$store instanceof stdClass) throw new RuntimeException('صيغة السجل تحتاج مراجعة.', 409);
+                $configs = $store->configs ?? new stdClass();
+                if ($configs === []) $configs = new stdClass();
+                if (!$configs instanceof stdClass) throw new RuntimeException('صيغة إعدادات البرنامج تحتاج مراجعة.', 409);
+                $configs->{(string)$group} = $config;
+                $store->configs = $configs;
+                $value = $store;
+            } elseif (grade_cells_json($previous['configs'] ?? []) !== grade_cells_json($value['configs'] ?? [])) {
+                throw new RuntimeException('إعدادات البرنامج تغيّرت. حدّث الصفحة قبل إعادة الحفظ.', 409);
+            }
+            if ($configEdit === null && (!empty($previous['configs']) || !empty($previous['data']) || !empty($previous['overrides'])) &&
                 empty($value['configs']) && empty($value['data']) && empty($value['overrides'])) {
                 throw new RuntimeException('رُفض تصفير سجل الدرجات العلمية.', 409);
             }
+            if ($configEdit === null) app_state_validate_new_scientific_scores($pdo, $cid, $previous, $value);
         } else {
             if (!array_is_list($value) || !array_is_list($previous)) {
                 throw new RuntimeException('صيغة سجل التاريخ غير صالحة. لم تتغيّر البيانات.', 409);
@@ -149,9 +196,9 @@ function app_state_write_preserved_store(PDO $pdo, int $cid, string $key, array 
             }
         }
         app_state_upsert($pdo, $key, $value, $scoped ? $cid : null);
-        $pdo->commit();
+        if ($owns) $pdo->commit();
     } catch (Throwable $error) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
+        if ($owns && $pdo->inTransaction()) $pdo->rollBack();
         throw $error;
     }
 }

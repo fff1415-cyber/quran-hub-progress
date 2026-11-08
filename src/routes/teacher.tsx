@@ -111,7 +111,6 @@ import {
   isScientificScoreOverridden,
   loadScientificConfig,
   loadScientificData,
-  reapplyScientificScoresForHalaqa,
   repairScientificHalaqaProgram,
   SCIENTIFIC_GRADES_CHANGED_EVENT,
   finalizeTeacherScientificDayScore,
@@ -821,19 +820,8 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
 
   const handleSciConfigChange = (
     cfg: ScientificGradesConfig,
-    options?: { resetOverrides?: boolean },
   ) => {
     setSciConfig(cfg);
-    const ids = students.map((s) => s.id);
-    if (isScientificProgramEnabled(cfg) && ids.length > 0) {
-      repairScientificHalaqaProgram(halaqaId);
-      const preserveOverrides = !options?.resetOverrides;
-      reapplyScientificScoresForHalaqa(halaqaId, loadGrades(), ids, cfg, {
-        preserveOverrides,
-      });
-      setSciData(loadScientificData(halaqaId));
-      return;
-    }
     setSciData(loadScientificData(halaqaId));
   };
 
@@ -865,8 +853,9 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     if (ids.length === 0) return;
     repairScientificHalaqaProgram(halaqaId);
     const box = currentGradeOutbox();
-    if (box && !box.snapshot()) return;
-    syncScientificScoresFromPrepForHalaqa(halaqaId, box?.snapshot()?.value ?? loadGrades(), ids, cfg);
+    const confirmed = box?.snapshot();
+    if (!confirmed) return;
+    syncScientificScoresFromPrepForHalaqa(halaqaId, confirmed.value, ids, cfg);
     refreshSciData();
   }, [halaqaId, students, refreshSciData]);
 

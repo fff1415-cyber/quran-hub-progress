@@ -102,6 +102,29 @@ async function stop(){
  const currentScience = (await state('scientific_grades')).body[0];
  assert.equal((await state('scientific_grades',{},currentScience.revision)).status,409);
  assert.deepEqual(currentScience.value.data,science.data);
+ const scientificConfig = async (revision, on) => {
+  const response = await fetch(new URL('/scientific-grades/store',base), {
+   method:'POST',headers:{Authorization:'Bearer fixture-teacher','Content-Type':'application/json'},
+   body:JSON.stringify({scientific_base:revision,scientific_config:{halaqaId:1,settings:{
+    visible:on,fields:{attendance:false,hifz:on,rabt:false,muraja:false},defaultScores:{hifz:'8'},
+   }}}),
+  });
+  return response.status;
+ };
+ assert.equal(await scientificConfig(currentScience.revision,true),200);
+ const enabledScience = (await state('scientific_grades')).body[0];
+ assert.equal(enabledScience.value.configs['1'].fields.hifz,true);
+ assert.equal(await scientificConfig(enabledScience.revision,false),200);
+ const disabledScience = (await state('scientific_grades')).body[0];
+ assert.equal(disabledScience.value.configs['1'].fields.hifz,false);
+ assert.deepEqual(disabledScience.value.data,science.data);
+ assert.equal((await state('scientific_grades',enabledScience.value,disabledScience.revision)).status,409);
+ assert.equal((await state('scientific_grades',{
+  ...disabledScience.value,data:{1:{S:{1:{sun:{hifz:'8',rabt:'8',muraja:'8'}}}}},
+ },disabledScience.revision)).status,409,'no preparation means no automatic scientific points');
+ assert.deepEqual((await state('scientific_grades')).body[0],disabledScience);
+ assert.equal(await scientificConfig(disabledScience.revision,true),200);
+ assert.equal((await state('scientific_grades')).body[0].value.configs['1'].fields.hifz,true);
  console.log('PASS: capped history submissions preserve every stored record and stale scientific snapshots cannot replace saved grades');
  const aStore=storage(),bStore=storage(),a=new GradeOutbox(aStore,'teacher',id),b=new GradeOutbox(bStore,'assistant',id);
  a.accept(await request('teacher'));b.accept(await request('assistant'));
@@ -118,6 +141,11 @@ async function stop(){
  edit(a,'hifz','one');edit(b,'muraja','pass');await Promise.all([a.flush(p=>request('teacher',p)),b.flush(p=>request('assistant',p))]);
  let snapshot=await request('teacher');a.accept(snapshot);b.accept(await request('assistant'));
  assert.equal(a.view({}).S[1].days.sun.muraja,'pass');assert.equal(b.view({}).S[1].days.sun.hifz,'one');assert.equal(snapshot.value.historic[8].keep,0);
+ const afterPreparation = (await state('scientific_grades')).body[0];
+ const scoreWrite = {...afterPreparation.value,data:{...afterPreparation.value.data,1:{S:{1:{sun:{hifz:'8',muraja:'6'}}}}}};
+ assert.equal((await state('scientific_grades',scoreWrite,afterPreparation.revision)).status,200);
+ const afterPoints = (await state('scientific_grades')).body[0];
+ assert.equal(afterPoints.value.data['1'].S[1].sun.muraja,'6');
  edit(a,'hifz','two');edit(b,'hifz','half');await a.flush(p=>request('teacher',p));await b.flush(p=>request('assistant',p));assert.equal(b.drafts().at(-1).status,'conflict');assert.equal(b.view({}).S[1].days.sun.hifz,'half');assert.equal((await request('teacher')).value.S[1].days.sun.hifz,'two');
  const conflictingPacket = b.drafts().at(-1).packet;
  b.accept(await request('assistant'));

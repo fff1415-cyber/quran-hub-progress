@@ -147,11 +147,12 @@ export function resolveScientificScore(
       return config.defaultScores.attendance?.[att]?.trim() ?? "";
     }
     case "hifz":
-      return entry.hifz !== "" ? (config.defaultScores.hifz?.trim() ?? "") : "";
+      return entry.hifz === "half" || entry.hifz === "one" || entry.hifz === "two"
+        ? (config.defaultScores.hifz?.trim() ?? "") : "";
     case "rabt":
-      return entry.rabt !== "" ? (config.defaultScores.rabt?.trim() ?? "") : "";
+      return entry.rabt === "pass" ? (config.defaultScores.rabt?.trim() ?? "") : "";
     case "muraja":
-      return entry.muraja !== "" ? (config.defaultScores.muraja?.trim() ?? "") : "";
+      return entry.muraja === "pass" ? (config.defaultScores.muraja?.trim() ?? "") : "";
     default:
       return "";
   }
@@ -210,21 +211,6 @@ export function loadScientificConfig(halaqaId: number): ScientificGradesConfig {
   };
 }
 
-export function pruneDefaultScoresForFields(
-  scores: ScientificDefaultScores,
-  fields: ScientificFieldsConfig,
-): ScientificDefaultScores {
-  const normalized = normalizeDefaultScores(scores);
-  const out: ScientificDefaultScores = {};
-  if (fields.attendance && normalized.attendance) {
-    out.attendance = { ...normalized.attendance };
-  }
-  if (fields.hifz && normalized.hifz?.trim()) out.hifz = normalized.hifz;
-  if (fields.rabt && normalized.rabt?.trim()) out.rabt = normalized.rabt;
-  if (fields.muraja && normalized.muraja?.trim()) out.muraja = normalized.muraja;
-  return out;
-}
-
 /** Validate teacher score setup for enabled fields. Returns Arabic error or null. */
 export function validateDefaultScoresForFields(
   fields: ScientificFieldsConfig,
@@ -253,31 +239,30 @@ export function validateDefaultScoresForFields(
   return null;
 }
 
-export function saveScientificConfig(
+export async function saveScientificConfig(
   halaqaId: number,
   config: ScientificGradesConfig,
-  options?: { resetOverrides?: boolean },
 ) {
-  const store = loadScientificGradesStore();
-  const incoming = pruneDefaultScoresForFields(
-    normalizeDefaultScores(config.defaultScores),
-    config.fields,
-  );
-  store.configs[String(halaqaId)] = {
+  const incoming = normalizeDefaultScores(config.defaultScores);
+  const next = {
     visible: config.visible,
     fields: { ...config.fields },
     defaultScores: incoming,
   };
-  if (options?.resetOverrides && store.overrides?.[String(halaqaId)]) {
-    delete store.overrides[String(halaqaId)];
+  if (hasAuthToken()) {
+    const { pushScientificConfig } = await import("./cloud-sync");
+    await pushScientificConfig(halaqaId, next);
   }
+  const store = loadScientificGradesStore();
+  store.configs[String(halaqaId)] = next;
   const enabled = enabledScientificFields(config.fields);
   if (config.visible && enabled.length > 0) {
     ensureScientificHalaqaProgram(halaqaId, enabled);
   } else {
     removeScientificHalaqaProgram(halaqaId);
   }
-  saveScientificGradesStore(store);
+  localStorage.setItem(KEY, JSON.stringify(store));
+  notifyScientificGradesChanged();
 }
 
 export function loadScientificData(halaqaId: number): ScientificGradesDataStore[string] {
@@ -609,54 +594,6 @@ export function syncScientificScoresFromDayPatch(
   if (changed) saveScientificGradesStore(store);
 }
 
-/** Recompute stored scientific scores from current grades (after teacher saves defaults). */
-export function reapplyScientificScoresForHalaqa(
-  halaqaId: number,
-  grades: GradesStore,
-  studentIds: string[],
-  config: ScientificGradesConfig,
-  options?: { preserveOverrides?: boolean },
-): void {
-  const store = loadScientificGradesStore();
-  let changed = false;
-  if (!options?.preserveOverrides && store.overrides?.[String(halaqaId)]) {
-    delete store.overrides[String(halaqaId)];
-    changed = true;
-  }
-  const data = halaqaDataRoot(store, halaqaId);
-
-  for (const studentId of studentIds) {
-    const weeks = grades[studentId];
-    if (!weeks) continue;
-    for (const [wkStr, week] of Object.entries(weeks)) {
-      const weekNum = Number(wkStr);
-      if (!week?.days) continue;
-      for (const [dayKey, entry] of Object.entries(week.days)) {
-        if (!entry) continue;
-        for (const field of ALL_SCIENTIFIC_FIELDS) {
-          if (
-            syncScientificFieldInStore(
-              store,
-              halaqaId,
-              data,
-              studentId,
-              weekNum,
-              dayKey,
-              config,
-              field,
-              entry,
-            )
-          ) {
-            changed = true;
-          }
-        }
-      }
-    }
-  }
-
-  if (changed) saveScientificGradesStore(store);
-}
-
 /** Sync every prep day → scientific store for this halaqa (all weeks). Keeps manual edits. */
 export function syncScientificScoresFromPrepForHalaqa(
   halaqaId: number,
@@ -666,9 +603,7 @@ export function syncScientificScoresFromPrepForHalaqa(
 ): void {
   const cfg = config ?? loadScientificConfig(halaqaId);
   if (!isScientificProgramEnabled(cfg)) return;
-  reapplyScientificScoresForHalaqa(halaqaId, grades, studentIds, cfg, {
-    preserveOverrides: true,
-  });
+  backfillMissingScientificScoresForHalaqa(halaqaId, grades, studentIds, cfg);
 }
 
 /** Fill empty scientific scores from existing prep — preserves teacher overrides and prior scores. */
@@ -694,6 +629,7 @@ export function backfillMissingScientificScoresForHalaqa(
         if (!entry) continue;
         for (const field of ALL_SCIENTIFIC_FIELDS) {
           if (!config.fields[field]) continue;
+          if (isScientificScoreOverriddenInStore(store, halaqaId, studentId, weekNum, dayKey, field)) continue;
           const existing = getScientificDayScore(data, studentId, weekNum, dayKey, field);
           if (existing.trim() !== "") continue;
           const score = resolveScientificScore(config, field, entry);

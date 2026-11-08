@@ -46,7 +46,7 @@ import {
 
 type Props = {
   halaqaId: number;
-  onConfigChange: (config: ScientificGradesConfig, options?: { resetOverrides?: boolean }) => void;
+  onConfigChange: (config: ScientificGradesConfig) => void;
 };
 
 function cloneDefaultScores(scores: ScientificDefaultScores): ScientificDefaultScores {
@@ -64,6 +64,7 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
   const [config, setConfig] = useState(() => loadScientificConfig(halaqaId));
   const [dialogOpen, setDialogOpen] = useState(false);
   const [disableOpen, setDisableOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
   const [draftFields, setDraftFields] = useState<ScientificFieldsConfig>(() => ({
     ...config.fields,
   }));
@@ -85,10 +86,20 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
     setDialogOpen(true);
   };
 
-  const applyConfig = (next: ScientificGradesConfig, resetOverrides = false) => {
-    setConfig(next);
-    saveScientificConfig(halaqaId, next, resetOverrides ? { resetOverrides: true } : undefined);
-    onConfigChange(next, resetOverrides ? { resetOverrides: true } : undefined);
+  const applyConfig = async (next: ScientificGradesConfig) => {
+    if (saving) return false;
+    setSaving(true);
+    try {
+      await saveScientificConfig(halaqaId, next);
+      setConfig(next);
+      onConfigChange(next);
+      return true;
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "تعذّر تأكيد حفظ إعدادات البرنامج العلمي");
+      return false;
+    } finally {
+      setSaving(false);
+    }
   };
 
   const updateAttendanceScore = (option: (typeof ALL_SCIENTIFIC_ATTENDANCE_OPTIONS)[number], raw: string) => {
@@ -111,30 +122,31 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
     });
   };
 
-  const confirmSetup = () => {
-    const err = validateDefaultScoresForFields(draftFields, draftScores);
+  const confirmSetup = async () => {
+    const anyEnabled = enabledScientificFields(draftFields).length > 0;
+    const err = anyEnabled ? validateDefaultScoresForFields(draftFields, draftScores) : null;
     if (err) {
       toast.error(err);
       return false;
     }
     const next: ScientificGradesConfig = {
-      visible: true,
+      visible: anyEnabled,
       fields: { ...draftFields },
       defaultScores: cloneDefaultScores(draftScores),
     };
-    applyConfig(next, true);
+    if (!(await applyConfig(next))) return;
     setDialogOpen(false);
-    toast.success(isActive ? "تم حفظ إعدادات البرنامج العلمي" : "تم تفعيل البرنامج العلمي");
+    toast.success("تم حفظ إعدادات البرنامج العلمي");
     return true;
   };
 
-  const disableProgram = () => {
+  const disableProgram = async () => {
     const next: ScientificGradesConfig = {
       visible: false,
       fields: defaultScientificFields(),
       defaultScores: {},
     };
-    applyConfig(next);
+    if (!(await applyConfig(next))) return;
     setDisableOpen(false);
     setDialogOpen(false);
   };
@@ -254,10 +266,8 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
             </Button>
             <Button
               type="button"
-              onClick={() => {
-                if (!confirmSetup()) return;
-              }}
-              disabled={enabledScientificFields(draftFields).length === 0}
+              onClick={() => void confirmSetup()}
+              disabled={saving || (!isActive && enabledScientificFields(draftFields).length === 0)}
             >
               {isActive ? "حفظ وإتمام" : "تفعيل وإتمام"}
             </Button>
@@ -278,7 +288,11 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
             <AlertDialogCancel>تراجع</AlertDialogCancel>
             <AlertDialogAction
               className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
-              onClick={disableProgram}
+              disabled={saving}
+              onClick={(event) => {
+                event.preventDefault();
+                void disableProgram();
+              }}
             >
               إيقاف البرنامج
             </AlertDialogAction>

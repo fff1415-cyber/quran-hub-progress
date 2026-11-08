@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { loadGrades, loadStudents, loadHalaqat, GRADES_CHANGED_EVENT } from "@/lib/mock-data";
+import { loadStudents, loadHalaqat, GRADES_CHANGED_EVENT } from "@/lib/mock-data";
+import { currentGradeOutbox } from "@/lib/grade-sync";
 import { gradeViewerSectionLabel, resolveAssistantCode, shouldShowGradeViewerDivider } from "@/lib/halaqa-assistants";
 import { getSessionName } from "@/lib/session-role";
 import type { AcademicCalendar } from "@/lib/academic-context";
@@ -120,7 +121,8 @@ export function TeacherHalaqaProgramsPanel({
     if (!isScientificProgramEnabled(cfg)) return;
     const ids = allStudentIdsKey ? allStudentIdsKey.split(",").filter(Boolean) : [];
     if (ids.length === 0) return;
-    syncScientificScoresFromPrepForHalaqa(halaqaId, loadGrades(), ids, cfg);
+    const confirmed = currentGradeOutbox()?.snapshot();
+    if (confirmed) syncScientificScoresFromPrepForHalaqa(halaqaId, confirmed.value, ids, cfg);
   }, [halaqaId, allStudentIdsKey]);
 
   useEffect(() => {
