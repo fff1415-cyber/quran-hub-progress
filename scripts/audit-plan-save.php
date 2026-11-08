@@ -11,10 +11,15 @@ try {
         [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
     $pdo->exec('SET TRANSACTION READ ONLY'); $pdo->beginTransaction();
     $schema=$pdo->query("SELECT TABLE_NAME,COLUMN_NAME,COLUMN_TYPE FROM information_schema.COLUMNS
-        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('app_state','grade_write_receipts','grade_cell_versions','segment_completions','student_plan_assignments','semesters')")->fetchAll();
+        WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('app_state','grade_operation_receipts','grade_cell_versions','segment_completions','student_plan_assignments','semesters')")->fetchAll();
     $result=['schema'=>$schema];
     $result['events']=$pdo->query("SELECT SUBSTRING_INDEX(`key`,':',1) AS family,COUNT(*) AS total FROM app_state
         WHERE `key` LIKE 'grade_plan_%' GROUP BY family")->fetchAll();
+    $result['recent_by_task']=$pdo->query("SELECT JSON_UNQUOTE(JSON_EXTRACT(value,'$.task_type')) AS task,
+        COUNT(*) AS total, MAX(updated_at) AS last_event
+        FROM app_state WHERE `key` LIKE 'grade_plan_event:%' GROUP BY task")->fetchAll();
+    $result['recent_grade_receipts']=$pdo->query("SELECT COUNT(*) AS total
+        FROM grade_operation_receipts WHERE store_key='grades' AND created_at >= CURRENT_TIMESTAMP - INTERVAL 2 HOUR")->fetchColumn();
     try {
         $result['database_errors']=$pdo->query("SELECT MYSQL_ERRNO, RETURNED_SQLSTATE,COUNT(*) AS total,
             CASE WHEN SQL_TEXT LIKE '%segment_completions%' THEN 'plan_completion'

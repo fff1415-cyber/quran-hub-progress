@@ -153,12 +153,30 @@ function test_legacy_plan_atomic_save(PDO $pdo,int $cid,string $student): array 
     if ($write($packet('two','record'),'teacher')->getCode()!==200) throw new RuntimeException('legacy_atomic_correct_failed');
     [$value,$done]=$read('assistant');sort($done);
     if ($value!=='two' || $done!==$segments) throw new RuntimeException('legacy_atomic_correct_read_failed');
+    $linked = [];
+    foreach (['rabt'=>'assistant','muraja'=>'teacher'] as $task=>$role) {
+        $taskPath = [$student,'1','days',$day,$task];
+        $capture=grade_cells_capture($pdo,$cid,'grades',[$taskPath]);
+        $request = ['operation_id'=>'linked-'.$task.'-'.bin2hex(random_bytes(8)), 'calendar_context'=>$capture['calendar_context'],
+            'changes'=>[$capture['cells'][0]+['next'=>['present'=>true,'value'=>'pass']]],
+            'plan'=>['student_id'=>$student,'expected_assignment_id'=>$assignment,'task_type'=>$task,'action'=>'record',
+                'tap'=>'one','completed_at'=>$date,'cell_path'=>$taskPath]];
+        $written=$write($request,$role);
+        $retry=$write($request,$role);
+        $q=$pdo->prepare('SELECT COUNT(*) FROM segment_completions WHERE student_id=? AND assignment_id=? AND task_type=?');
+        $q->execute([$student,$assignment,$task]);
+        if ($written->getCode()!==200 || ($retry->body['replayed']??false)!==true || (int)$q->fetchColumn()!==1) {
+            throw new RuntimeException('isolated_'.$task.'_write_failed_'.$written->getCode());
+        }
+        $linked[$task]=$written->getCode();
+    }
     $q=$pdo->prepare('SELECT assignment_id FROM segment_completions WHERE id=?');
     $q->execute([$legacy]);
     if ($q->fetchColumn()!==null) throw new RuntimeException('legacy_completion_changed');
     $pdo->rollBack();
     return ['mysql_duplicate_reproduced'=>1062,'linked_hifz_receipt'=>200,'linked_hifz_retry_once'=>true,
-        'linked_hifz_assistant_reads_grade_and_plan'=>true,'linked_hifz_cancel_and_correct'=>true,'legacy_completion_preserved'=>true];
+        'linked_hifz_assistant_reads_grade_and_plan'=>true,'linked_hifz_cancel_and_correct'=>true,'legacy_completion_preserved'=>true,
+        'linked_rabt_muraja_receipts'=>$linked];
 }
 
 function test_scientific_config_and_scores(PDO $pdo,int $cid,string $student): array {
