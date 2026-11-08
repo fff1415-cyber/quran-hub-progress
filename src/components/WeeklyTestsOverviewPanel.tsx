@@ -73,7 +73,7 @@ export function WeeklyTestsOverviewPanel({ readOnly = true, storeOverride }: { r
           <Trophy className="w-5 h-5" /> منافسة الحلقات — الاختبارات الأسبوعية
         </h2>
         <p className="text-xs text-muted-foreground mb-4">
-          {calendar.semester?.name ?? "الفصل الحالي"} · {weekLabel(weekNum)} · {settings.muraja_slots} مراجعة + {settings.rabt_slots} ربط · مسار مستقل عن النسبة الكلية
+          {calendar.semester?.name ?? "الفصل الحالي"} · {weekLabel(weekNum)} · 3 مراجعة + 1 ربط · مسار مستقل عن النسبة الكلية
         </p>
 
         {rankings.length === 0 ? (
@@ -126,8 +126,10 @@ export function WeeklyTestsOverviewPanel({ readOnly = true, storeOverride }: { r
                         <thead>
                           <tr className="text-muted-foreground">
                             <th className="p-2 text-right">الطالب</th>
-                            {Array.from({ length: settings.muraja_slots }, (_, i) => <th key={'muraja-' + i} className="p-2 text-center">مر{i + 1}</th>)}
-                            {Array.from({ length: settings.rabt_slots }, (_, i) => <th key={'rabt-' + i} className="p-2 text-center">ربط{i + 1}</th>)}
+                            <th className="p-2 text-center">مر1</th>
+                            <th className="p-2 text-center">مر2</th>
+                            <th className="p-2 text-center">مر3</th>
+                            <th className="p-2 text-center">ربط</th>
                             <th className="p-2 text-center">أسبوع</th>
                             <th className="p-2 text-center">تراكم</th>
                           </tr>
@@ -145,7 +147,7 @@ export function WeeklyTestsOverviewPanel({ readOnly = true, storeOverride }: { r
                                 {tests.muraja.map((r, idx) => (
                                   <td key={idx} className="p-2 text-center">{WEEKLY_TEST_RESULT_LABEL[r]}</td>
                                 ))}
-                                {(Array.isArray(tests.rabt) ? tests.rabt : [tests.rabt]).map((r, idx) => <td key={"rabt-" + idx} className="p-2 text-center">{WEEKLY_TEST_RESULT_LABEL[r]}</td>)}
+                                <td className="p-2 text-center">{WEEKLY_TEST_RESULT_LABEL[tests.rabt]}</td>
                                 <td className="p-2 text-center">{formatWeeklyTestPercent(ws.percent)}</td>
                                 <td className="p-2 text-center font-bold text-primary">{formatWeeklyTestPercent(cum)}</td>
                               </tr>

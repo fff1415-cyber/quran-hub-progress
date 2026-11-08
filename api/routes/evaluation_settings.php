@@ -69,22 +69,25 @@ function eval_settings_fetch(PDO $pdo, int $complexId): array
         return eval_settings_defaults();
     }
 
-    $columns = eval_settings_columns();
-    if (!table_column_exists($pdo, 'evaluation_settings', 'retry_delay_days')) {
-        $columns = array_values(array_diff($columns, ['retry_delay_days']));
-    }
-    $cols = implode(', ', $columns);
+    $cols = implode(', ', eval_settings_columns());
     $tenants = eval_settings_tenant_enabled($pdo);
 
     if ($tenants) {
         $stmt = $pdo->prepare("SELECT $cols FROM evaluation_settings WHERE complex_id = ? LIMIT 1");
         $stmt->execute([$complexId]);
         $row = $stmt->fetch();
-
+        if (!$row) {
+            $pdo->prepare('INSERT INTO evaluation_settings (complex_id) VALUES (?)')->execute([$complexId]);
+            $stmt->execute([$complexId]);
+            $row = $stmt->fetch();
+        }
     } else {
         $stmt = $pdo->query("SELECT $cols FROM evaluation_settings WHERE id = 1 LIMIT 1");
         $row = $stmt->fetch();
-
+        if (!$row) {
+            $pdo->exec('INSERT INTO evaluation_settings (id) VALUES (1)');
+            $row = $pdo->query("SELECT $cols FROM evaluation_settings WHERE id = 1 LIMIT 1")->fetch();
+        }
     }
     return eval_settings_row($row ?: []);
 }
@@ -135,10 +138,10 @@ function handle_get_evaluation_settings(): void
     $cid = require_complex_id($auth);
     $pdo = db();
     if (!eval_settings_table_exists($pdo)) {
-        json_response(['settings' => eval_settings_defaults(), 'source' => 'defaults', 'context_complex_id' => $cid]);
+        json_response(['settings' => eval_settings_defaults(), 'source' => 'defaults']);
         return;
     }
-    json_response(['settings' => eval_settings_fetch($pdo, $cid), 'source' => 'database', 'context_complex_id' => $cid]);
+    json_response(['settings' => eval_settings_fetch($pdo, $cid), 'source' => 'database']);
 }
 
 function handle_put_evaluation_settings(): void
@@ -157,40 +160,27 @@ function handle_put_evaluation_settings(): void
         error_response('نفّذ migrate-evaluation-settings.sql على قاعدة البيانات أولاً', 503);
     }
 
-    $hasRetryDelay = table_column_exists($pdo, 'evaluation_settings', 'retry_delay_days');
-    if (!$hasRetryDelay && $settings['retry_delay_days'] !== eval_settings_defaults()['retry_delay_days']) {
-        error_response('تعذّر حفظ مدة الإعادة: مخطط الإعدادات الحالي يدعم المدة السابقة فقط (يومان). لم تتغير الإعدادات؛ تغيير المدة يحتاج ترحيلًا معتمدًا.', 503);
-    }
     $tenants = eval_settings_tenant_enabled($pdo);
-    $pdo->beginTransaction();
-    try {
     $sets = [];
     $params = [];
     foreach ($settings as $key => $val) {
-        if ($key === 'retry_delay_days' && !$hasRetryDelay) continue;
         $sets[] = "`$key` = ?";
         $params[] = $val;
     }
 
     if ($tenants) {
-        $pdo->prepare('INSERT IGNORE INTO evaluation_settings (complex_id) VALUES (?)')->execute([$cid]);
+        $check = $pdo->prepare('SELECT complex_id FROM evaluation_settings WHERE complex_id = ? LIMIT 1');
+        $check->execute([$cid]);
+        if (!$check->fetch()) {
+            $pdo->prepare('INSERT INTO evaluation_settings (complex_id) VALUES (?)')->execute([$cid]);
+        }
         $params[] = $cid;
         $sql = 'UPDATE evaluation_settings SET ' . implode(', ', $sets) . ' WHERE complex_id = ?';
     } else {
-        $pdo->exec('INSERT IGNORE INTO evaluation_settings (id) VALUES (1)');
         $params[] = 1;
         $sql = 'UPDATE evaluation_settings SET ' . implode(', ', $sets) . ' WHERE id = ?';
     }
-    $exists = $pdo->prepare($tenants ? 'SELECT 1 FROM evaluation_settings WHERE complex_id = ? FOR UPDATE' : 'SELECT 1 FROM evaluation_settings WHERE id = ? FOR UPDATE');
-    $exists->execute([$tenants ? $cid : 1]);
-    if (!$exists->fetchColumn()) throw new RuntimeException('تعذّر تهيئة صف إعدادات التقييم — لم يتأكد الحفظ');
     $pdo->prepare($sql)->execute($params);
-    $saved = eval_settings_fetch($pdo, $cid);
-    $pdo->commit();
-    } catch (Throwable $error) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        throw $error;
-    }
 
-    json_response(['ok' => true, 'settings' => $saved, 'context_complex_id' => $cid]);
+    json_response(['ok' => true, 'settings' => eval_settings_fetch($pdo, $cid)]);
 }

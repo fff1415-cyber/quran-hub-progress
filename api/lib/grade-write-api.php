@@ -37,6 +37,16 @@ function grade_write_request(PDO $pdo,int $cid,array $packet,array $auth=[]):arr
     $changes=$packet['changes']??null;
     if(!is_array($changes)||count($changes)>100)throw new RuntimeException('دفعة الدرجات غير صالحة أو كبيرة جدًا',400);
     foreach($changes as$change){$path=$change['path']??[];if(!is_array($path)||count($path)>12)throw new RuntimeException('مسار الدرجة غير صالح',400);foreach($path as$part)if(!is_string($part)||strlen($part)>256||in_array($part,['__proto__','constructor','prototype'],true))throw new RuntimeException('مسار الدرجة غير صالح',400);}
+    foreach ($changes as $change) {
+        $path = $change['path'];
+        $weekly = count($path) === 3 && in_array($path[2], ['testMuraja','testRabt','sard','compensationFaces','compensationPlanSegments','compensationMurajaFaces'], true);
+        $day = in_array($path[3] ?? '', ['sun','mon','tue','wed','thu','fri','sat'], true) && ($path[2] ?? '') === 'days';
+        $daily = $day && count($path) === 5 && in_array($path[4], ['attendance','hifz','rabt','muraja','wajib','compensationFaces','hifzPlanSegments'], true);
+        $custom = $day && count($path) === 6 && $path[4] === 'custom';
+        if (!array_is_list($path) || !ctype_digit($path[1] ?? '') || (!$weekly && !$daily && !$custom)) {
+            throw new RuntimeException('يجب أن يستهدف الطلب خانة درجة محددة',400);
+        }
+    }
     $operation=(string)($packet['operation_id']??'');$effect=$packet['plan']??null;
     if($effect!==null){
         if(!is_array($effect))throw new RuntimeException('رابط الإنجاز غير صالح',400);

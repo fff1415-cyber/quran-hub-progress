@@ -1,4 +1,3 @@
-import { patchSearchHref } from "@/lib/navigation-href";
 import type { NavigateOptions } from "@tanstack/react-router";
 import { tenantPath } from "@/lib/tenant";
 import { getAuthItem, decodeAuthTokenPayload } from "@/lib/auth-session";
@@ -13,7 +12,7 @@ export function navigateBySessionRole(navigate: NavigateFn): boolean {
   if (role === "student") {
     const studentId = getAuthItem("qs_student");
     if (!studentId) return false;
-    navigate({ href: patchSearchHref({ s: studentId }, { pathname: tenantPath("/student"), search: "", hash: "" }) });
+    navigate({ to: tenantPath("/student"), search: { s: studentId } });
     return true;
   }
 
@@ -24,28 +23,28 @@ export function navigateBySessionRole(navigate: NavigateFn): boolean {
 
   switch (role) {
     case "manager":
-      navigate({ href: tenantPath("/manager") });
+      navigate({ to: tenantPath("/manager") });
       break;
     case "secretary":
-      navigate({ href: patchSearchHref({ tab: "daily", section: "attendance" }, { pathname: tenantPath("/secretary"), search: "", hash: "" }) });
+      navigate({ to: tenantPath("/secretary"), search: { tab: "daily", section: "attendance" } });
       break;
     case "supervisor":
-      navigate({ href: patchSearchHref({ tab: "sard", section: "sard" }, { pathname: tenantPath("/supervisor"), search: "", hash: "" }) });
+      navigate({ to: tenantPath("/supervisor"), search: { tab: "sard", section: "sard" } });
       break;
     case "program_supervisor":
-      navigate({ href: tenantPath("/program-supervisor") });
+      navigate({ to: tenantPath("/program-supervisor") });
       break;
     case "test_member":
     case "test_chair":
-      navigate({ href: tenantPath("/test-committee") });
+      navigate({ to: tenantPath("/test-committee") });
       break;
     case "musammi":
-      navigate({ href: tenantPath("/musammi") });
+      navigate({ to: tenantPath("/musammi") });
       break;
     case "teacher":
     case "assistant":
       if (!halaqaId) return false;
-      navigate({ href: patchSearchHref({ h: halaqaId }, { pathname: tenantPath("/teacher"), search: "", hash: "" }) });
+      navigate({ to: tenantPath("/teacher"), search: { h: halaqaId } });
       break;
     default:
       return false;

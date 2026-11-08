@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../diagnostics.php';
-
 require_once __DIR__ . '/complex_branding.php';
 
 const KIOSK_DAY_KEYS = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
@@ -599,12 +597,10 @@ function handle_kiosk_check_in(): void
 
     $week['days'][$dayKey]['attendance'] = $attendance;
     $grades[$sid][$weekKey] = $week;
-    if (grade_writes_enabled()) {
-        if (!kiosk_record_atomic_attendance($pdo, $cid, $sid, $weekKey, $dayKey, $attendance)) {
-            json_response(['status'=>'already_checked_in','message'=>'مسجّل مسبقاً اليوم','studentName'=>$student['name']]);return;
-        }
-    } else {
-        kiosk_save_grades($pdo, $cid, $grades);
+    if (!grade_writes_enabled()) error_response('تعذّر تأكيد وضع حفظ الحضور', 503);
+    if (!kiosk_record_atomic_attendance($pdo, $cid, $sid, $weekKey, $dayKey, $attendance)) {
+        json_response(['status'=>'already_checked_in','message'=>'مسجّل مسبقاً اليوم','studentName'=>$student['name']]);
+        return;
     }
 
     if ($attendance === 'late') {
@@ -690,7 +686,7 @@ function handle_kiosk_put_settings(): void
         kiosk_save_settings($pdo, $cid, $next);
     } catch (PDOException $e) {
         if (pdo_is_integrity_violation($e)) {
-            error_response(api_safe_failure_message($e), 409);
+            error_response(pdo_integrity_error_message($e) . ' | ' . pdo_sql_error_detail($e), 409);
         }
         throw $e;
     } catch (InvalidArgumentException $e) {

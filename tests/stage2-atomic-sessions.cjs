@@ -25,8 +25,7 @@ async function stop(){
 (async()=>{
  await start(true);
  const prior=(await (await legacy('teacher')).json())[0].value;
- prior.S[1].days.sun.attendance='late';
- assert.equal((await legacy('teacher',prior)).status,200);
+ assert.equal((await legacy('teacher',prior)).status,409);
  assert.deepEqual((await (await legacy('assistant')).json())[0].value,prior);
  await assert.rejects(request('teacher'),{status:503});
  await assert.rejects(request('assistant',{operation_id:'premature-fixture-write'}),{status:503});
@@ -38,14 +37,84 @@ async function stop(){
   const response=await fetch(base+'?omit_grade_value=1',{headers:{Authorization:'Bearer fixture-'+role}});
   assert.equal(response.status,200);
   const row=(await response.json()).find(r=>r.key==='grades');assert(row);
-  assert.deepEqual(row.value,[],'bulk refresh contains only the grade marker');
+  assert.deepEqual(row.value,prior,'bulk read preserves the legacy display data');
   assert.deepEqual((await request(role)).value,prior,'atomic endpoint still returns exact attendance and historical grades');
  }
  assert.equal((await legacy('teacher',{...prior,historic:{}})).status,409);
  assert.deepEqual((await request('teacher')).value,prior);
- console.log('PASS: legacy writes remain available before activation; atomic writes are fenced before activation, inherit the last saved store, and fence stale legacy replacements afterwards');
+ for (const key of ['grades','weekly_tests']) {
+  for (const value of [{}, [], {stale:{}}]) {
+   const reset = await fetch(base,{method:'POST',headers:{Authorization:'Bearer fixture-teacher','Content-Type':'application/json'},body:JSON.stringify({key,value})});
+   assert.equal(reset.status,409);
+  }
+ }
+ const weekly = (await (await fetch(base+'?key=weekly_tests',{headers:{Authorization:'Bearer fixture-teacher'}})).json())[0].value;
+ assert.deepEqual(weekly,{historic:{8:{muraja:['pass']}}});
+ assert.deepEqual((await request('teacher')).value,prior);
+ console.log('PASS: server rejects stale and empty legacy replacements for both grade and weekly test stores');
+ const tarbawi = async (token, body) => {
+  const url = body?.tarbawi_write_protocol ? new URL('/tarbawi/record',base) : base+(body?'':'?key=tarbawi_program');
+  const response = await fetch(url, {
+   method:body?'POST':'GET', headers:{Authorization:'Bearer fixture-'+token,'Content-Type':'application/json'},
+   body:body?JSON.stringify({key:'tarbawi_program',...body}):undefined,
+  });
+  return {status:response.status,body:await response.json()};
+ };
+ const programEdit = (section,semesterId,base,next) => ({tarbawi_write_protocol:1,value:{section,semesterId,base,next}});
+ const plan = {semesterId:'1',halaqaId:1,status:'draft',items:[{id:'existing'}]};
+ const settings = {semesterId:'1',paragraphTypes:[],weeklyRequiredCount:2,halaqaSpans:{}};
+ const createPlan = programEdit('plans','1',null,plan);
+ assert.equal((await tarbawi('teacher',createPlan)).status,200);
+ assert.equal((await tarbawi('teacher',createPlan)).status,200,'idempotent retry after a lost reply');
+ assert.equal((await tarbawi('manager',programEdit('settingsBySemester','1',null,settings))).status,200);
+ const program = (await tarbawi('manager')).body;
+ assert.equal((await tarbawi('teacher',{value:{plans:{},settingsBySemester:{}}})).status,409);
+ assert.equal((await tarbawi('assistant',programEdit('plans','old',null,{...plan,semesterId:'old',items:[]}))).status,409);
+ assert.equal((await tarbawi('assistant',programEdit('plans','1',null,{...plan,items:[]}))).status,409);
+ assert.deepEqual((await tarbawi('manager')).body,program);
+ const updated = {...plan,items:[...plan.items,{id:'next'}]};
+ assert.equal((await tarbawi('teacher',programEdit('plans','1',plan,updated))).status,200);
+ assert.equal((await tarbawi('assistant',programEdit('plans','1',plan,{...plan,items:[]}))).status,409);
+ const savedProgram = (await tarbawi('manager')).body[0].value;
+ assert.deepEqual(savedProgram.plans['1:1'],updated);
+ assert.equal(savedProgram.settingsBySemester['1'].weeklyRequiredCount,2);
+ console.log('PASS: program record edits preserve other data and reject old bulk, stale semester, and concurrent stale edits');
+ const state = async (key, value, revision) => {
+  const writing = value !== undefined;
+  const url = revision === undefined ? base+(writing?'':'?key='+key) : new URL('/scientific-grades/store',base);
+  const response = await fetch(url,{
+   method:writing?'POST':'GET',headers:{Authorization:'Bearer fixture-manager','Content-Type':'application/json'},
+   body:writing?JSON.stringify({key,value,scientific_base:revision}):undefined,
+  });
+  return {status:response.status,body:await response.json()};
+ };
+ for (const key of ['academic_records','sard_history']) {
+  const history = Array.from({length:501},(_,i)=>({id:'history-'+i}));
+  assert.equal((await state(key,history)).status,200);
+  assert.equal((await state(key,[{id:'new'},...history.slice(0,499)])).status,200);
+  assert.deepEqual((await state(key)).body[0].value,[{id:'new'},...history]);
+ }
+ const science = {configs:{},data:{S:{week:{score:8}}},overrides:{}};
+ const initialRevision = (await state('scientific_grades')).body[0].revision;
+ assert.equal((await state('scientific_grades',science,initialRevision)).status,200);
+ assert.equal((await state('scientific_grades',{},initialRevision)).status,409);
+ assert.equal((await state('scientific_grades',{})).status,409);
+ const currentScience = (await state('scientific_grades')).body[0];
+ assert.equal((await state('scientific_grades',{},currentScience.revision)).status,409);
+ assert.deepEqual(currentScience.value.data,science.data);
+ console.log('PASS: capped history submissions preserve every stored record and stale scientific snapshots cannot replace saved grades');
  const aStore=storage(),bStore=storage(),a=new GradeOutbox(aStore,'teacher',id),b=new GradeOutbox(bStore,'assistant',id);
  a.accept(await request('teacher'));b.accept(await request('assistant'));
+ const staleBefore = a.view({}), staleAfter = structuredClone(staleBefore);
+ staleAfter.S[1].days.sun.attendance = 'late';
+ const staleBox = new GradeOutbox(storage(),'old-semester',id);
+ const oldSnapshot = await request('teacher');
+ staleBox.accept({...oldSnapshot,calendar_context:{known:true,active_semester_id:'previous'}});
+ staleBox.edit(staleBefore,staleAfter);
+ await staleBox.flush(p=>request('teacher',p));
+ assert.equal(staleBox.drafts()[0].status,'conflict');
+ assert.equal(staleBox.drafts()[0].packet.changes[0].next.value,'late');
+ assert.deepEqual((await request('teacher')).value,prior);
  edit(a,'hifz','one');edit(b,'muraja','pass');await Promise.all([a.flush(p=>request('teacher',p)),b.flush(p=>request('assistant',p))]);
  let snapshot=await request('teacher');a.accept(snapshot);b.accept(await request('assistant'));
  assert.equal(a.view({}).S[1].days.sun.muraja,'pass');assert.equal(b.view({}).S[1].days.sun.hifz,'one');assert.equal(snapshot.value.historic[8].keep,0);

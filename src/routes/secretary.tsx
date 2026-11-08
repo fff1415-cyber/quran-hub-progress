@@ -1,4 +1,3 @@
-import { patchSearchHref } from "@/lib/navigation-href";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { loadGrades, loadStudents, loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
@@ -113,11 +112,23 @@ export function SecretaryPage() {
 
   const setMainTab = (tab: string) => {
     const next = resolveMainTab(tab);
-    navigate({ href: patchSearchHref({ tab: next, section: DEFAULT_SECTION[next] }) });
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        tab: next,
+        section: DEFAULT_SECTION[next],
+      }),
+    });
   };
 
   const setSection = (nextSection: string) => {
-    navigate({ href: patchSearchHref({ tab: mainTab, section: nextSection }) });
+    navigate({
+      search: (prev) => ({
+        ...prev,
+        tab: mainTab,
+        section: nextSection,
+      }),
+    });
   };
 
   const tabs: RoleTab[] = [

@@ -1,5 +1,3 @@
-import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
-import { SardQueueRefreshStatus } from "@/components/SardQueueRefreshStatus";
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useMemo, useState, useRef } from "react";
 import {
@@ -9,7 +7,6 @@ import {
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { useEvaluationSettings } from "@/contexts/EvaluationSettingsContext";
-import { snapshotEvaluationRules, validEvaluationRules } from "@/lib/evaluation-rules-snapshot";
 import {
   computeReviewScore,
   emptyReviewSegments,
@@ -91,8 +88,7 @@ export function MusammiPage() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
 
-  const refresh = () => setQueue([...loadSardQueue()]);
-  useInboxRefresh(refresh, { sharedSard: true });
+  const refresh = () => setQueue(loadSardQueue());
 
   const visible = useMemo(
     () => sortMusammiQueue(queue.filter((q) => isMusammiVisible(q))),
@@ -109,7 +105,6 @@ export function MusammiPage() {
         <Toaster position="top-center" richColors />
         <AppHeader title="تقييم السرد" subtitle="مسمّع" />
         <main className="max-w-3xl mx-auto px-4 py-8">
-          <SardQueueRefreshStatus />
           <button onClick={() => setActiveId(null)} className="flex items-center gap-2 text-sm text-primary mb-4">
             <ArrowRight className="w-4 h-4" /> العودة لقائمة السرد
           </button>
@@ -337,7 +332,7 @@ function SardEvaluatorFull({
   halaqaName: string;
   onDone: () => void;
 }) {
-  const { settings, verified, error: settingsError } = useEvaluationSettings();
+  const { settings } = useEvaluationSettings();
   const juzCount = parseMemorizedJuzCount(memorized, level);
   const segmentCount = reviewSegmentCount(juzCount, settings);
   const maxMinutes = maxAllowedMinutes(juzCount, settings);
@@ -360,13 +355,9 @@ function SardEvaluatorFull({
   const merged = computeMergedEvaluation(hifz.score, reviewSegments, settings);
 
   const submitting = useRef(false);
-  const [saving, setSaving] = useState(false);
   const submit = async () => {
     if (submitting.current || loadSardQueue().find(q => q.id === item.id)?.status === "passed") return;
-    if (!verified) { toast.error(settingsError ?? "انتظر تأكيد إعدادات التقييم من الخادم"); return; }
     submitting.current = true;
-    setSaving(true);
-    const evaluationRules = snapshotEvaluationRules(settings);
     try {
       await flushSardQueue();
       const reviewErrors = reviewSegments.map((s) => s.errors);
@@ -374,8 +365,7 @@ function SardEvaluatorFull({
 
       if (hifz.failed) {
         pushSardHistory({
-          id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
-          evaluationRules,
+          id: `sh-${Date.now()}`, studentId: item.studentId, halaqaId: item.halaqaId,
           week: item.week, attempt: item.attempt, result: "failed", percent: 0,
           hifzErrors, hifzWarnings, reviewErrors, reviewWarnings, at: new Date().toISOString(),
         });
@@ -387,7 +377,6 @@ function SardEvaluatorFull({
             scheduledAt: scheduleRetry(settings.retry_delay_days),
             ...resetFullSardAttempt(segmentCount),
           });
-          await flushSardQueue();
           notifyTeacherSard(item.halaqaId, `الطالب ${studentName} رسب في السرد — المحاولة الأولى (إعادة بعد ${settings.retry_delay_days} يوم)`);
           toast.error(`راسب في الحفظ — إعادة السرد (حفظ + مراجعة) بعد ${settings.retry_delay_days} يوم`);
         } else if (item.attempt === 2) {
@@ -395,7 +384,6 @@ function SardEvaluatorFull({
             status: "awaiting_supervisor", attempt: 2,
             hifzErrors, hifzWarnings, reviewErrors, reviewWarnings, finalPercent: 0,
           });
-          await flushSardQueue();
           notifyTeacherSard(item.halaqaId, `الطالب ${studentName} رسب في السرد — المحاولة الثانية (بانتظار موافقة المشرف)`);
           toast.warning("ينتقل للمشرف العلمي للموافقة على محاولة ثالثة");
         } else {
@@ -403,7 +391,6 @@ function SardEvaluatorFull({
             status: "final_failed", finalPercent: 0,
             hifzErrors, hifzWarnings, reviewErrors, reviewWarnings,
           });
-          await flushSardQueue();
           notifyTeacherTransfer(item.studentId, item.halaqaId, item.week, studentName, "رسب في السرد — المحاولة الثالثة — نقل للمدير");
           toast.error("رسوب في الحفظ — نقل إلى الإدارة");
         }
@@ -412,8 +399,7 @@ function SardEvaluatorFull({
       }
 
       if (review.failed) {
-        updateSardItem(item.id, buildReviewOnlyPatch(item, hifz.score, hifzErrors, hifzWarnings, segmentCount, settings.retry_delay_days, evaluationRules));
-        await flushSardQueue();
+        updateSardItem(item.id, buildReviewOnlyPatch(item, hifz.score, hifzErrors, hifzWarnings, segmentCount, settings.retry_delay_days));
         notifyTeacherSard(item.halaqaId, `اجتاز ${studentName} الحفظ (${hifz.score}) — جُدولت المراجعة بعد ${settings.retry_delay_days} يوم`);
         toast.success(`تم تثبيت الحفظ (${hifz.score}) — مراجعة بعد ${settings.retry_delay_days} يوم`);
         onDone();
@@ -444,7 +430,6 @@ function SardEvaluatorFull({
           updateSardItem(item.id, passedSardPatch(advance, merged.percent, "full"));
           pushSardHistory({
             id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
-            evaluationRules,
             week: item.week, attempt: item.attempt,
             result: merged.passed ? "passed" : "failed",
             percent: merged.percent,
@@ -466,7 +451,6 @@ function SardEvaluatorFull({
       } else {
         pushSardHistory({
           id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
-          evaluationRules,
           week: item.week, attempt: item.attempt, result: "failed", percent: merged.percent,
           hifzErrors, hifzWarnings,
           reviewErrors, reviewWarnings, at: new Date().toISOString(),
@@ -475,7 +459,6 @@ function SardEvaluatorFull({
           status: "final_failed", finalPercent: merged.percent, phase: "full",
           hifzErrors, hifzWarnings, reviewErrors, reviewWarnings,
         });
-        await flushSardQueue();
         notifyTeacherTransfer(item.studentId, item.halaqaId, item.week, studentName, `رسب نهائياً في السرد (${merged.percent}%)`);
         toast.error(`رسب نهائياً (${merged.percent}%) — الإدارة تتخذ القرار`);
       }
@@ -483,7 +466,7 @@ function SardEvaluatorFull({
       onDone();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "تعذّر الحفظ");
-    } finally { submitting.current = false; setSaving(false); }
+    } finally { submitting.current = false; }
   };
 
   return (
@@ -494,7 +477,6 @@ function SardEvaluatorFull({
         extra={`حفظ ≈ ${juzCount} جزء · ${segmentCount} مقاطع · ≈ ${maxMinutes} د`}
         badge="سرد كامل (حفظ + مراجعة)"
       />
-      {!verified && <p role="alert" className="text-sm text-destructive">{settingsError ?? "جارٍ تأكيد إعدادات التقييم..."}</p>}
 
       <HifzPanel
         settings={settings} hifzErrors={hifzErrors} hifzWarnings={hifzWarnings}
@@ -523,9 +505,9 @@ function SardEvaluatorFull({
         }
       />
 
-      <button type="button" onClick={() => void submit()} disabled={!verified || saving}
+      <button type="button" onClick={() => void submit()}
         className="w-full py-4 rounded-xl gold-gradient text-primary-foreground font-bold text-lg hover:scale-[1.01] transition-transform gold-glow">
-        {saving ? "جارٍ تأكيد الحفظ..." : "إرسال التقييم"}
+        إرسال التقييم
       </button>
     </div>
   );
@@ -542,11 +524,7 @@ function SardEvaluatorReviewOnly({
   halaqaName: string;
   onDone: () => void;
 }) {
-  const currentSettings = useEvaluationSettings();
-  const hasRules = item.evaluationRules !== undefined;
-  const validRules = validEvaluationRules(item.evaluationRules);
-  const settings = validRules ? item.evaluationRules!.settings : currentSettings.settings;
-  const ready = hasRules ? validRules : currentSettings.verified;
+  const { settings } = useEvaluationSettings();
   const juzCount = parseMemorizedJuzCount(memorized, level);
   const segmentCount = item.reviewSegmentCount ?? reviewSegmentCount(juzCount, settings);
   const lockedHifz = item.lockedHifzScore ?? 0;
@@ -562,12 +540,9 @@ function SardEvaluatorReviewOnly({
   const merged = computeMergedEvaluation(lockedHifz, reviewSegments, settings);
 
   const submitting = useRef(false);
-  const [saving, setSaving] = useState(false);
   const submit = async () => {
     if (submitting.current || loadSardQueue().find(q => q.id === item.id)?.status === "passed") return;
-    if (!ready) { toast.error(hasRules ? "مرجع قواعد المراجعة غير صالح؛ يلزم مراجعته" : currentSettings.error ?? "انتظر تأكيد إعدادات التقييم من الخادم"); return; }
     submitting.current = true;
-    setSaving(true);
     try {
       await flushSardQueue();
       const reviewErrors = reviewSegments.map((s) => s.errors);
@@ -581,7 +556,6 @@ function SardEvaluatorReviewOnly({
           reviewErrors: segs.map((s) => s.errors),
           reviewWarnings: segs.map((s) => s.warnings),
         });
-        await flushSardQueue();
         notifyTeacherSard(item.halaqaId, `رسب ${studentName} في المراجعة — إعادة بعد ${settings.retry_delay_days} يوم (الحفظ مثبت)`);
         toast.warning(`راسب في المراجعة — إعادة بعد ${settings.retry_delay_days} يوم (درجة الحفظ مثبتة)`);
         onDone();
@@ -612,7 +586,6 @@ function SardEvaluatorReviewOnly({
           updateSardItem(item.id, passedSardPatch(advance, merged.percent, "review_only"));
           pushSardHistory({
             id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
-            evaluationRules: validRules ? item.evaluationRules : undefined,
             week: item.week, attempt: item.attempt,
             result: merged.passed ? "passed" : "failed",
             percent: merged.percent,
@@ -636,7 +609,6 @@ function SardEvaluatorReviewOnly({
       } else {
         pushSardHistory({
           id: `sh-${item.id}-${item.attempt}-${item.phase}`, studentId: item.studentId, halaqaId: item.halaqaId,
-          evaluationRules: validRules ? item.evaluationRules : undefined,
           week: item.week, attempt: item.attempt, result: "failed", percent: merged.percent,
           hifzErrors: item.lockedHifzErrors ?? 0, hifzWarnings: item.lockedHifzWarnings ?? 0,
           reviewErrors, reviewWarnings, at: new Date().toISOString(),
@@ -645,7 +617,6 @@ function SardEvaluatorReviewOnly({
           status: "final_failed", finalPercent: merged.percent, phase: "review_only",
           reviewErrors, reviewWarnings,
         });
-        await flushSardQueue();
         notifyTeacherTransfer(item.studentId, item.halaqaId, item.week, studentName, `رسب نهائياً في المراجعة (${merged.percent}%)`);
         toast.error(`رسب نهائياً (${merged.percent}%) — نقل للإدارة`);
       }
@@ -653,7 +624,7 @@ function SardEvaluatorReviewOnly({
       onDone();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "تعذّر الحفظ");
-    } finally { submitting.current = false; setSaving(false); }
+    } finally { submitting.current = false; }
   };
 
   return (
@@ -664,8 +635,6 @@ function SardEvaluatorReviewOnly({
         extra={`مراجعة فقط · ${segmentCount} مقاطع`}
         badge="مراجعة (الحفظ مثبت)"
       />
-      {!hasRules && <p role="status" className="text-sm text-muted-foreground">هذه مراجعة قديمة دون مرجع محفوظ للقواعد؛ لم تُنسب لها قواعد تاريخية بالتخمين.</p>}
-      {!ready && <p role="alert" className="text-sm text-destructive">{hasRules ? "مرجع قواعد المراجعة غير صالح؛ يلزم مراجعته" : currentSettings.error ?? "جارٍ تأكيد إعدادات التقييم..."}</p>}
 
       <div className="p-4 rounded-xl border border-success/40 bg-success/10 flex items-center justify-between">
         <div className="flex items-center gap-2 text-success font-bold">
@@ -690,9 +659,9 @@ function SardEvaluatorReviewOnly({
             : undefined}
       />
 
-      <button type="button" onClick={() => void submit()} disabled={!ready || saving}
+      <button type="button" onClick={() => void submit()}
         className="w-full py-4 rounded-xl gold-gradient text-primary-foreground font-bold text-lg hover:scale-[1.01] transition-transform gold-glow">
-        {saving ? "جارٍ تأكيد الحفظ..." : "إرسال تقييم المراجعة"}
+        إرسال تقييم المراجعة
       </button>
     </div>
   );

@@ -157,6 +157,14 @@ function route_request(string $method, string $path): void
         handle_delete_role_account();
         return;
     }
+    if ($path === '/tarbawi/record' && $method === 'POST') {
+        handle_write_tarbawi_record();
+        return;
+    }
+    if ($path === '/scientific-grades/store' && $method === 'POST') {
+        handle_write_scientific_store();
+        return;
+    }
     if ($path === '/app-state' && $method === 'GET') {
         handle_list_app_state();
         return;

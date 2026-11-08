@@ -2,8 +2,6 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../diagnostics.php';
-
 function semesters_tenant_enabled(PDO $pdo): bool
 {
     return table_column_exists($pdo, 'semesters', 'complex_id');
@@ -194,7 +192,7 @@ function handle_create_semester(): void
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'فشل حفظ الفصل الدراسي: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 500);
+        error_response('فشل حفظ الفصل الدراسي: ' . $e->getMessage(), 500);
     }
 }
 
@@ -312,6 +310,6 @@ function handle_update_active_semester(): void
         if ($pdo->inTransaction()) {
             $pdo->rollBack();
         }
-        error_response($e instanceof PDOException ? api_safe_failure_message($e) : 'فشل تحديث الفصل الدراسي: ' . $e->getMessage(), $e instanceof PDOException ? api_database_error_status($e) : 500);
+        error_response('فشل تحديث الفصل الدراسي: ' . $e->getMessage(), 500);
     }
 }

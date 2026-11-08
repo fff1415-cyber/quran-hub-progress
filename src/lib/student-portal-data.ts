@@ -105,7 +105,7 @@ export function aggregateDailyComplexAttendance(
 export interface PortalAbsenceRow {
   date: string;
   dayKey: string;
-  week?: number;
+  week: number;
   type: "absent" | "excused";
 }
 

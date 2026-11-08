@@ -1,8 +1,7 @@
-import { refreshConfirmedGrades, flushConfirmedGrades } from "./grade-sync";
+import { flushConfirmedGrades, refreshConfirmedGrades } from "./grade-sync";
 // Cloud sync layer — all data via Hostinger PHP API
 import type { GradesStore, Halaqa, LatePermission, MessageTemplateKey, SardHistoryItem, SardQueueItem, Student } from "./mock-data";
 import {
-  saveGrades,
   saveHalaqat,
   saveLatePermissions,
   saveMessageTemplates,
@@ -12,10 +11,9 @@ import {
   saveStudents,
   loadStudents,
   loadHalaqat,
-  loadGrades,
-  mergeGradesStores,
+  ensureGradesSemester,
 } from "./mock-data";
-import { saveWeeklyTestsSettings, saveWeeklyTests } from "./weekly-tests";
+import { saveWeeklyTestsSettings, saveWeeklyTests, ensureWeeklyTestsSemester } from "./weekly-tests";
 import { saveStaffAttendanceSettings, saveStaffCheckIns } from "./staff-attendance";
 import { normalizeExtraAssistants } from "./halaqa-assistants";
 import { saveStudentPortalVisibility, type StudentPortalVisibility } from "./student-portal-settings";
@@ -28,7 +26,7 @@ import {
   type FinancialLedgerStore,
 } from "./financial-ledger";
 import { savePushNotificationSettings, type PushNotificationSettings } from "./push-notification-settings";
-import { saveTarbawiStore, type TarbawiStore, mergeTarbawiStores, loadTarbawiStore } from "./tarbawi-program";
+import { saveTarbawiStore, type TarbawiStore, ensureTarbawiSemester, mergeTarbawiStores, loadTarbawiStore } from "./tarbawi-program";
 import type { AcademicPhaseRecord } from "./academic-record";
 import { saveAcademicRecords } from "./academic-record";
 import type { HalaqaProgramsStore, HalaqaProgramGradesStore } from "./halaqa-programs";
@@ -48,6 +46,7 @@ import {
   secureDeleteRoleAccount,
   secureListAppState,
   secureSetAppState,
+  secureSaveScientificStore,
 } from "./secure-data.functions";
 import { fetchActiveCalendar, loadCachedCalendar } from "./academic-context";
 import { mergeAbsenceAlertRecordFromCloud, ABSENCE_ALERTS_APP_STATE_KEY } from "./semester-absence";
@@ -63,24 +62,12 @@ import {
 export { getToken, setToken, clearToken, hasAuthToken };
 
 const SYNC_FRESH_KEY = "qs_cloud_sync_at";
-export const CLOUD_SYNC_STATUS_EVENT = "qs-cloud-sync-status";
-export type CloudSyncStatus = "idle" | "syncing" | "confirmed" | "failed";
-let cloudSyncStatus: CloudSyncStatus = "idle";
-export function getCloudSyncStatus(): CloudSyncStatus { return cloudSyncStatus; }
-function setCloudSyncStatus(status: CloudSyncStatus): void {
-  cloudSyncStatus = status;
-  if (typeof window !== "undefined") window.dispatchEvent(new Event(CLOUD_SYNC_STATUS_EVENT));
-}
-function syncScope(): string {
-  return JSON.stringify([getActiveComplexId(), getAuthItem("qs_complex"), getAuthItem("qs_account"), getAuthItem("qs_student"), getAuthItem("qs_halaqa"), getAuthItem("qs_role"), !!getToken()]);
-}
-function scopedSyncFreshKey(): string { return SYNC_FRESH_KEY + ":" + syncScope(); }
 /** Skip full roster + app_state pull when synced recently (navigation within session). */
 const SYNC_TTL_MS = 3 * 60 * 1000;
 
 export function isCloudSyncFresh(): boolean {
   if (typeof sessionStorage === "undefined") return false;
-  const raw = sessionStorage.getItem(scopedSyncFreshKey());
+  const raw = sessionStorage.getItem(SYNC_FRESH_KEY);
   if (!raw) return false;
   const at = Number(raw);
   return Number.isFinite(at) && Date.now() - at < SYNC_TTL_MS;
@@ -88,14 +75,13 @@ export function isCloudSyncFresh(): boolean {
 
 export function markCloudSyncFresh(): void {
   if (typeof sessionStorage !== "undefined") {
-    sessionStorage.setItem(scopedSyncFreshKey(), String(Date.now()));
+    sessionStorage.setItem(SYNC_FRESH_KEY, String(Date.now()));
   }
 }
 
 export function invalidateCloudSyncCache(): void {
   if (typeof sessionStorage !== "undefined") {
     sessionStorage.removeItem(SYNC_FRESH_KEY);
-    sessionStorage.removeItem(scopedSyncFreshKey());
   }
 }
 
@@ -266,18 +252,12 @@ export async function fetchHalaqatRoster(complexId?: number): Promise<Halaqa[]> 
 export async function syncFromCloud(options?: {
   force?: boolean;
 }): Promise<{ students: Student[]; halaqat: Halaqa[] } | null> {
-  const token = getToken();
-  const context = syncScope();
-  const current = () => token === getToken() && context === syncScope();
-  const assertCurrent = () => { if (!current()) throw new Error("تغيّرت الجلسة أو المجمع أثناء التحديث"); };
-  let complete = true;
-  let owner: string | null = null;
   try {
     if (!options?.force && isCloudSyncFresh()) {
       return { students: loadStudents(), halaqat: loadHalaqat() };
     }
 
-    setCloudSyncStatus("syncing");
+    const token = getToken();
     let halaqat: Halaqa[];
     let students: Student[];
 
@@ -289,14 +269,16 @@ export async function syncFromCloud(options?: {
       if (hResult.status === "fulfilled") {
         halaqat = (hResult.value as CloudHalaqaRow[]).map(rowToHalaqa);
       } else {
-        complete = false;
-        halaqat = loadHalaqat();
+        halaqat = await fetchHalaqatRoster();
       }
       if (sResult.status === "fulfilled") {
         students = (sResult.value as CloudStudentRow[]).map(rowToStudent);
       } else {
-        complete = false;
-        students = loadStudents();
+        try {
+          students = ((await listPublicStudents()) as CloudStudentRow[]).map(rowToStudent);
+        } catch {
+          students = [];
+        }
       }
     } else {
       const [hResult, sResult] = await Promise.allSettled([
@@ -306,38 +288,32 @@ export async function syncFromCloud(options?: {
       halaqat =
         hResult.status === "fulfilled"
           ? (hResult.value as CloudHalaqaRow[]).map(rowToHalaqa)
-          : (complete = false, loadHalaqat());
+          : [];
       students =
         sResult.status === "fulfilled"
           ? (sResult.value as CloudStudentRow[]).map(rowToStudent)
-          : (complete = false, loadStudents());
-
+          : [];
+      if (halaqat.length === 0) {
+        halaqat = await fetchHalaqatRoster();
+      }
     }
 
-    // A confirmed empty roster is valid; a failed read retains the previous confirmed cache.
-    assertCurrent();
-    saveHalaqat(halaqat);
+    // Persist core roster first — never overwrite existing cache with an empty list.
+    if (halaqat.length > 0) saveHalaqat(halaqat);
     saveStudents(students);
 
     if (token) {
-      let syncStep = "GET /semesters/active";
       try {
-        await fetchActiveCalendar(!loadCachedCalendar());
+        const calendar = await fetchActiveCalendar(!loadCachedCalendar());
+        ensureGradesSemester(calendar.semester?.id ?? null);
+        ensureWeeklyTestsSemester(calendar.semester?.id ?? null);
+        ensureTarbawiSemester(calendar.semester?.id ?? null);
 
         const sardBeforePull = JSON.stringify(loadSardQueue());
-        syncStep = "GET /app-state?omit_grade_value=1";
-        const stateRows = await secureListAppState({ data: { token, omitGradeValue: true } });
+        const stateRows = await secureListAppState({ data: { token } });
         const state = new Map(stateRows.map((row) => [row.key, row.value]));
-        assertCurrent();
-        owner = crypto.randomUUID();
-        sessionStorage.setItem("qs_sync_owner", owner);
         sessionStorage.setItem("qs_syncing", "1");
-        if (state.has("grades")) {
-          syncStep = "GET /app-state?key=grades&grade_protocol=1";
-          await refreshConfirmedGrades();
-          assertCurrent();
-        }
-        syncStep = "apply cached state";
+        await refreshConfirmedGrades();
         if (state.has("weekly_tests")) saveWeeklyTests(state.get("weekly_tests") as import("./weekly-tests").WeeklyTestsStore);
         if (state.has("weekly_tests_settings")) saveWeeklyTestsSettings(state.get("weekly_tests_settings") as import("./weekly-tests").WeeklyTestsSettings);
         if (state.has("staff_attendance_settings")) saveStaffAttendanceSettings(state.get("staff_attendance_settings") as import("./staff-attendance").StaffAttendanceSettings);
@@ -348,7 +324,6 @@ export async function syncFromCloud(options?: {
             saveStaffCheckIns,
           } = await import("./staff-attendance");
           const cloud = state.get("staff_attendance") as import("./staff-attendance").StaffCheckIn[];
-          assertCurrent();
           const merged = mergeStaffCheckIns(cloud, loadStaffCheckIns());
           saveStaffCheckIns(merged, { sync: false });
         }
@@ -360,23 +335,19 @@ export async function syncFromCloud(options?: {
           const { loadAllHalaqaPrograms, mergeHalaqaProgramsStores, saveAllHalaqaPrograms } = await import(
             "./halaqa-programs"
           );
-          assertCurrent();
           const merged = mergeHalaqaProgramsStores(cloud, loadAllHalaqaPrograms());
           saveAllHalaqaPrograms(merged);
         }
         if (state.has("halaqa_program_grades")) saveAllProgramGrades(state.get("halaqa_program_grades") as HalaqaProgramGradesStore);
         if (state.has("scientific_grades")) {
-          syncStep = "merge scientific grade settings";
           const {
             loadScientificGradesStore,
             mergeScientificGradesStores,
             saveScientificGradesStore,
           } = await import("./scientific-grades");
           const cloud = state.get("scientific_grades") as import("./scientific-grades").ScientificGradesStore;
-          assertCurrent();
           const merged = mergeScientificGradesStores(cloud, loadScientificGradesStore());
           saveScientificGradesStore(merged);
-          syncStep = "apply cached state";
         }
         if (state.has(ABSENCE_ALERTS_APP_STATE_KEY)) {
           mergeAbsenceAlertRecordFromCloud(state.get(ABSENCE_ALERTS_APP_STATE_KEY));
@@ -393,6 +364,15 @@ export async function syncFromCloud(options?: {
           const local = loadFinancialLedger();
           const { merged } = mergeFinancialLedgerStores(cloud, local);
           saveFinancialLedger(merged, { sync: false });
+        } else {
+          const local = loadFinancialLedger();
+          if (local.entries.length > 0) {
+            try {
+              await secureSetAppState({ data: { token, key: "financial_ledger", value: local } });
+            } catch {
+              /* ignore — will retry on next save */
+            }
+          }
         }
         if (state.has("tarbawi_program")) {
           const cloud = state.get("tarbawi_program") as TarbawiStore;
@@ -400,27 +380,16 @@ export async function syncFromCloud(options?: {
           const { merged } = mergeTarbawiStores(local, cloud);
           saveTarbawiStore(merged);
         }
-        if (owner && sessionStorage.getItem("qs_sync_owner") === owner) {
-          sessionStorage.removeItem("qs_syncing");
-          sessionStorage.removeItem("qs_sync_owner");
-        }
-
+        sessionStorage.removeItem("qs_syncing");
       } catch (stateErr) {
-        complete = false;
-        if (owner && sessionStorage.getItem("qs_sync_owner") === owner) {
-          sessionStorage.removeItem("qs_syncing");
-          sessionStorage.removeItem("qs_sync_owner");
-        }
-        console.warn("Cloud app-state sync failed (roster kept):", stateErr, { step: syncStep });
+        sessionStorage.removeItem("qs_syncing");
+        console.warn("Cloud app-state sync failed (roster kept):", stateErr);
       }
     }
 
-    assertCurrent();
-    if (complete) { markCloudSyncFresh(); setCloudSyncStatus("confirmed"); }
-    else { invalidateCloudSyncCache(); setCloudSyncStatus("failed"); }
+    markCloudSyncFresh();
     return { students, halaqat };
   } catch (e) {
-    if (current()) { invalidateCloudSyncCache(); setCloudSyncStatus("failed"); }
     console.warn("Cloud sync failed, using local cache:", e);
     return null;
   }
@@ -510,28 +479,15 @@ export async function pushAppState(
 }
 
 export async function fetchCloudGrades(): Promise<GradesStore> {
-  const rows = await secureListAppState({ data: { token: tokenOrThrow(), key: "grades" } });
-  const row = rows.find((r) => r.key === "grades");
-  if (!row || row.value == null || typeof row.value !== "object" || Array.isArray(row.value)) {
-    return {};
-  }
-  return row.value as GradesStore;
-}
-
-/** Durable cell packets are recorded at each local edit, never rebuilt from a whole-store upload. */
-export async function pushMergedGrades(_local: GradesStore): Promise<GradesStore> { return flushConfirmedGrades(); }
-export async function pullMergedGrades(): Promise<GradesStore | null> {
-  if (!getToken()) return null;
   return refreshConfirmedGrades();
 }
 
-export async function fetchCloudScientificGrades(): Promise<import("./scientific-grades").ScientificGradesStore> {
-  const rows = await secureListAppState({ data: { token: tokenOrThrow(), key: "scientific_grades" } });
-  const row = rows.find((r) => r.key === "scientific_grades");
-  if (!row?.value || typeof row.value !== "object" || Array.isArray(row.value)) {
-    return { configs: {}, data: {}, overrides: {} };
-  }
-  return row.value as import("./scientific-grades").ScientificGradesStore;
+export async function pushMergedGrades(_local: GradesStore): Promise<GradesStore> {
+  return flushConfirmedGrades();
+}
+
+export async function pullMergedGrades(): Promise<GradesStore | null> {
+  return getToken() ? refreshConfirmedGrades() : null;
 }
 
 let scientificPushQueue: Promise<import("./scientific-grades").ScientificGradesStore> = Promise.resolve({
@@ -544,14 +500,17 @@ let scientificPushQueue: Promise<import("./scientific-grades").ScientificGradesS
 export async function pushMergedScientificGrades(
   local: import("./scientific-grades").ScientificGradesStore,
 ): Promise<import("./scientific-grades").ScientificGradesStore> {
-  const submitted = JSON.stringify(local);
   const run = async (): Promise<import("./scientific-grades").ScientificGradesStore> => {
-    const { mergeScientificGradesStores, saveScientificGradesStore, loadScientificGradesStore } = await import("./scientific-grades");
-    const cloud = await fetchCloudScientificGrades();
-    const merged = mergeScientificGradesStores(cloud, JSON.parse(submitted) as typeof local);
-    await secureSetAppState({ data: { token: tokenOrThrow(), key: "scientific_grades", value: merged } });
-    // A later local edit is still in progress; this ACK belongs only to the submitted snapshot.
-    if (JSON.stringify(loadScientificGradesStore()) !== submitted) return merged;
+    const { mergeScientificGradesStores, saveScientificGradesStore } = await import("./scientific-grades");
+    const token = tokenOrThrow();
+    const rows = await secureListAppState({ data: { token, key: "scientific_grades" } });
+    const row = rows.find((item) => item.key === "scientific_grades");
+    if (!row?.revision || (row.value !== null && (typeof row.value !== "object" || Array.isArray(row.value)))) {
+      throw new Error("تعذّر تأكيد سجل الدرجات العلمية قبل الحفظ");
+    }
+    const cloud = (row.value ?? { configs: {}, data: {}, overrides: {} }) as import("./scientific-grades").ScientificGradesStore;
+    const merged = mergeScientificGradesStores(cloud, local);
+    await secureSaveScientificStore(token, row.revision, merged);
     const prev = sessionStorage.getItem("qs_syncing");
     sessionStorage.setItem("qs_syncing", "1");
     try {
@@ -592,7 +551,12 @@ let financialLedgerPushQueue: Promise<FinancialLedgerStore> = Promise.resolve({ 
 /** Upload local financial ledger after merging with the latest cloud copy. */
 export async function pushMergedFinancialLedger(local: FinancialLedgerStore): Promise<FinancialLedgerStore> {
   const run = async (): Promise<FinancialLedgerStore> => {
-    const cloud = await fetchCloudFinancialLedger();
+    let cloud: FinancialLedgerStore = { entries: [] };
+    try {
+      cloud = await fetchCloudFinancialLedger();
+    } catch {
+      cloud = { entries: [] };
+    }
     const { merged } = mergeFinancialLedgerStores(cloud, local);
     await secureSetAppState({ data: { token: tokenOrThrow(), key: "financial_ledger", value: merged } });
     const prev = sessionStorage.getItem("qs_syncing");
@@ -618,7 +582,12 @@ export async function pushMergedStaffCheckIns(
 ): Promise<import("./staff-attendance").StaffCheckIn[]> {
   const run = async (): Promise<import("./staff-attendance").StaffCheckIn[]> => {
     const { mergeStaffCheckIns, saveStaffCheckIns } = await import("./staff-attendance");
-    const cloud = await fetchCloudStaffCheckIns();
+    let cloud: import("./staff-attendance").StaffCheckIn[] = [];
+    try {
+      cloud = await fetchCloudStaffCheckIns();
+    } catch {
+      cloud = [];
+    }
     const merged = mergeStaffCheckIns(cloud, local);
     await secureSetAppState({ data: { token: tokenOrThrow(), key: "staff_attendance", value: merged } });
     const prev = sessionStorage.getItem("qs_syncing");

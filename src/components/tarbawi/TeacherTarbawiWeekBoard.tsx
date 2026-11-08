@@ -69,7 +69,7 @@ function buildTableRows(
       rows.push({
         item,
         weekNumber: weekNum,
-        weekTitle: formatWeekOptionLabel(w, weekNum === currentWeekNum),
+        weekTitle: formatWeekOptionLabel(w),
         isFirstInWeek: idx === 0,
         weekRowSpan: weekItems.length,
         isCurrentWeek: weekNum === currentWeekNum,
@@ -105,8 +105,8 @@ function TarbawiPlanTable({
   canReorder: boolean;
   canEditContent: boolean;
   contentChangePending: boolean;
-  contentRevisionIds?: string[];
-  contentRevisionNotes?: Record<string, string>;
+  contentRevisionIds: string[];
+  contentRevisionNotes: Record<string, string>;
   reorderMode: boolean;
   dragItemId: string | null;
   onDragStart: (id: string) => void;

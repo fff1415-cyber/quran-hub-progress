@@ -343,7 +343,7 @@ export function localDeletePlan(planId: string): { assignmentsRemoved: number } 
   const assignments = read<StudentPlanAssignment[]>(KEY_ASSIGNMENTS, []);
   const kept = assignments.filter((a) => a.plan_id !== planId);
   const removed = assignments.length - kept.length;
-  const completions = read<StoredCompletion[]>(KEY_COMPLETIONS, []).filter((c) => c.plan_id !== planId);
+  const completions = read<SegmentCompletion[]>(KEY_COMPLETIONS, []).filter((c) => c.plan_id !== planId);
   write(KEY_PLANS, plans);
   write(KEY_SEGMENTS, segments);
   write(KEY_ASSIGNMENTS, kept);

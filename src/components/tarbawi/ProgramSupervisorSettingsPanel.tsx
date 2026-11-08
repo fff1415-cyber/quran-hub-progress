@@ -7,7 +7,6 @@ import {
   planSpanSelectOptions,
   pushTarbawiStoreCloud,
   saveTarbawiSettings,
-  loadTarbawiStore,
   type TarbawiParagraphType,
   type TarbawiPlanSpan,
   type TarbawiSettings,
@@ -77,7 +76,7 @@ export function ProgramSupervisorSettingsPanel({
   const syncCloud = async () => {
     setCloudBusy(true);
     try {
-      await pushTarbawiStoreCloud(loadTarbawiStore());
+      await pushTarbawiStoreCloud();
       setSettings(getTarbawiSettings(semesterId));
       toast.success("تم حفظ التعديلات");
     } catch (e) {

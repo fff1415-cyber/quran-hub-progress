@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/schema.php';
-require_once __DIR__ . '/diagnostics.php';
-
 /**
  * Multi-tenant helpers — every authenticated request must scope data to one complex.
  *
@@ -202,18 +199,55 @@ function pdo_sql_error_detail(PDOException $e): string
 
 function pdo_is_connection_error(PDOException $e): bool
 {
-    return api_database_error_category($e) === 'connection';
+    $msg = strtolower($e->getMessage());
+    $info = $e->errorInfo ?? [];
+    $driverCode = isset($info[1]) ? (int) $info[1] : 0;
+
+    return in_array($driverCode, [1045, 2002, 2006, 2013], true)
+        || str_contains($msg, 'access denied')
+        || str_contains($msg, 'connection refused')
+        || str_contains($msg, 'server has gone away')
+        || str_contains($msg, 'getaddrinfo failed');
 }
 
 function pdo_is_schema_error(PDOException $e): bool
 {
-    return api_database_error_category($e) === 'schema';
+    $info = $e->errorInfo ?? [];
+    $sqlState = isset($info[0]) ? (string) $info[0] : '';
+    $msg = strtolower($e->getMessage());
+
+    return in_array($sqlState, ['42S02', '42S22', '42000'], true)
+        || str_contains($msg, 'unknown column')
+        || str_contains($msg, "doesn't exist");
 }
 
 /** User-facing PDO message — avoids masking SQL/migration errors as connection failures. */
 function pdo_api_error_message(PDOException $e): string
 {
-    return api_safe_failure_message($e);
+    if (pdo_is_connection_error($e)) {
+        return 'تعذّر الاتصال بقاعدة البيانات — راجع api/config.php (DB_NAME, DB_USER, DB_PASS) في Hostinger';
+    }
+
+    if (pdo_is_schema_error($e)) {
+        $msg = strtolower($e->getMessage());
+        if (str_contains($msg, 'student_plan_assignments')
+            || str_contains($msg, 'education_plans')
+            || str_contains($msg, 'daily_hifz')
+            || str_contains($msg, 'start_muraja_segment')
+            || str_contains($msg, 'plan_start_date')) {
+            return 'جداول الخطط تحتاج تحديثاً — نفّذ database/migrate-plan-daily-faces.sql | ' . pdo_sql_error_detail($e);
+        }
+        if (str_contains($msg, 'complex_id')) {
+            return 'قاعدة البيانات تحتاج migrate-multi-tenant.sql | ' . pdo_sql_error_detail($e);
+        }
+        return 'خطأ في بنية قاعدة البيانات — ' . pdo_sql_error_detail($e);
+    }
+
+    if (pdo_is_integrity_violation($e)) {
+        return pdo_integrity_error_message($e) . ' | ' . pdo_sql_error_detail($e);
+    }
+
+    return 'خطأ في قاعدة البيانات — ' . pdo_sql_error_detail($e);
 }
 
 function tenant_apex_domain(): string

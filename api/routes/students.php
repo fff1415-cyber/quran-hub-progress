@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../schema.php';
-require_once __DIR__ . '/../diagnostics.php';
-
 function students_column_exists(PDO $pdo, string $column): bool
 {
     return table_column_exists($pdo, 'students', $column);
@@ -17,7 +14,30 @@ function students_tenant_enabled(PDO $pdo): bool
 
 function students_ensure_extended_columns(PDO $pdo): void
 {
-    schema_require_columns($pdo, 'students', ['student_phone', 'institute_level', 'phase_number', 'assigned_assistant_code']);
+    if (!students_column_exists($pdo, 'student_phone')) {
+        $pdo->exec(
+            'ALTER TABLE `students`
+             ADD COLUMN `student_phone` VARCHAR(30) NOT NULL DEFAULT \'\' AFTER `parent_phone`'
+        );
+    }
+    if (!students_column_exists($pdo, 'institute_level')) {
+        $pdo->exec(
+            'ALTER TABLE `students`
+             ADD COLUMN `institute_level` VARCHAR(50) NULL DEFAULT NULL AFTER `level_type`'
+        );
+    }
+    if (!students_column_exists($pdo, 'phase_number')) {
+        $pdo->exec(
+            'ALTER TABLE `students`
+             ADD COLUMN `phase_number` INT UNSIGNED NULL DEFAULT NULL AFTER `institute_level`'
+        );
+    }
+    if (!students_column_exists($pdo, 'assigned_assistant_code')) {
+        $pdo->exec(
+            'ALTER TABLE `students`
+             ADD COLUMN `assigned_assistant_code` VARCHAR(50) NULL DEFAULT NULL AFTER `assigned_to`'
+        );
+    }
 }
 
 function handle_list_students_public(): void
@@ -84,7 +104,21 @@ function handle_upsert_students(): void
                 ) VALUES (
                   :id, :complex_id, :name, :halaqa_id, :national_id, :parent_phone, :student_phone,
                   :level, :level_type, :institute_level, :phase_number, :assigned_to, :assigned_assistant_code, :memorized
-                )';
+                )
+                ON DUPLICATE KEY UPDATE
+                  name = VALUES(name),
+                  halaqa_id = VALUES(halaqa_id),
+                  national_id = VALUES(national_id),
+                  parent_phone = VALUES(parent_phone),
+                  student_phone = VALUES(student_phone),
+                  level = VALUES(level),
+                  level_type = VALUES(level_type),
+                  institute_level = VALUES(institute_level),
+                  phase_number = VALUES(phase_number),
+                  assigned_to = VALUES(assigned_to),
+                  assigned_assistant_code = VALUES(assigned_assistant_code),
+                  memorized = VALUES(memorized),
+                  complex_id = VALUES(complex_id)';
     } else {
         $sql = 'INSERT INTO students (id, name, halaqa_id, national_id, parent_phone, student_phone, level, level_type, institute_level, phase_number, assigned_to, assigned_assistant_code, memorized)
                 VALUES (:id, :name, :halaqa_id, :national_id, :parent_phone, :student_phone, :level, :level_type, :institute_level, :phase_number, :assigned_to, :assigned_assistant_code, :memorized)
@@ -103,19 +137,7 @@ function handle_upsert_students(): void
                   memorized = VALUES(memorized)';
     }
     $stmt = $pdo->prepare($sql);
-    if ($tenants) {
-        $byId = $pdo->prepare('SELECT id, complex_id FROM students WHERE id = ? FOR UPDATE');
-        $byNationalId = $pdo->prepare('SELECT id FROM students WHERE complex_id = ? AND national_id = ? FOR UPDATE');
-        $update = $pdo->prepare(
-            'UPDATE students SET name = :name, halaqa_id = :halaqa_id, national_id = :national_id,
-             parent_phone = :parent_phone, student_phone = :student_phone, level = :level,
-             level_type = :level_type, institute_level = :institute_level, phase_number = :phase_number,
-             assigned_to = :assigned_to, assigned_assistant_code = :assigned_assistant_code, memorized = :memorized
-             WHERE id = :id AND complex_id = :complex_id'
-        );
-    }
 
-    $preparedRows = [];
     foreach ($students as $s) {
         $phase = isset($s['phase_number']) ? (int) $s['phase_number'] : null;
         $params = [
@@ -139,42 +161,7 @@ function handle_upsert_students(): void
             }
             $params[':complex_id'] = $cid;
         }
-        $preparedRows[] = $params;
-    }
-
-    try {
-        $pdo->beginTransaction();
-        foreach ($preparedRows as $params) {
-            if ($tenants) {
-                $byId->execute([$params[':id']]);
-                $existing = $byId->fetch(PDO::FETCH_ASSOC);
-                $byId->closeCursor();
-                if ($existing !== false && (int) $existing['complex_id'] !== $cid) {
-                    throw new DomainException('Student identifier conflicts with an existing record');
-                }
-                $targetId = $existing === false ? false : $existing['id'];
-                if ($targetId === false) {
-                    $byNationalId->execute([$cid, $params[':national_id']]);
-                    $targetId = $byNationalId->fetchColumn();
-                    $byNationalId->closeCursor();
-                }
-                if ($targetId !== false) {
-                    $params[':id'] = $targetId;
-                    $update->execute($params);
-                    continue;
-                }
-            }
-            // A concurrent insert can fail safely; never update a duplicate of unknown ownership.
-            $stmt->execute($params);
-        }
-        $pdo->commit();
-    } catch (DomainException $error) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        error_response('Student identifier conflicts with an existing record', 409);
-        return;
-    } catch (Throwable $error) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        error_response(api_safe_failure_message($error, 'students_batch'), api_database_error_status($error));
+        $stmt->execute($params);
     }
 
     json_response(['ok' => true]);

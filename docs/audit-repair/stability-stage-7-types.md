@@ -1,7 +1,0 @@
-# Stage 7 compiler and independent stability candidate
-
-Whole-project `tsc --noEmit` is clean, down from the original 33 errors (five addressed by the stage 5 workbook fix). No ts-ignore, ambient missing-SDK declaration or compiler exclusion was introduced.
-
-Fixes include the weekly-test overview rendering configurable result slots, correct current-week label argument, optional revision props matching existing defaults, an empty SVG tick element, typed stored completion metadata and actual ArrayBuffer-backed push bytes. Unknown ledger tombstones are narrowed; merged transfers retain their complete source identity; old attendance dates remain readable without inventing a semester week. API middleware reads the existing persistent session token. Dynamic tenant routing uses the router's supported relative href API and retains query/hash state. Three unreferenced Supabase scaffold files are preserved as text under docs/legacy-integrations; the application continues using Hostinger PHP/MySQL.
-
-`node tests/stage7-stability.cjs` exercises actual TanStack memory-history navigation, auth middleware/session, weekly overview tables with two or zero rabt slots, transfer merging, malformed tombstones and historical absences. It is not browser/production verification or proof of the outstanding atomic save protocol. Production publication remains gated by restored test access and proven main-only domain isolation.

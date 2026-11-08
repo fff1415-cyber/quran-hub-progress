@@ -24,9 +24,7 @@ const KEY = "qshatawi_academic_records_v1";
 function persistShared(value: AcademicPhaseRecord[]) {
   if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
-  void import("./cloud-sync").then((m) => m.pushAppState("academic_records", value)).catch((error) => {
-    void import("sonner").then(({ toast }) => toast.error(`لم يتأكد حفظ السجل الأكاديمي على الخادم: ${error instanceof Error ? error.message : "تعذّرت المزامنة"}`));
-  });
+  void import("./cloud-sync").then((m) => m.pushAppState("academic_records", value)).catch(() => undefined);
 }
 
 export function loadAcademicRecords(): AcademicPhaseRecord[] {
@@ -36,8 +34,6 @@ export function loadAcademicRecords(): AcademicPhaseRecord[] {
 }
 
 export function saveAcademicRecords(list: AcademicPhaseRecord[]) {
-  const previous = localStorage.getItem(KEY);
-  if (previous && !localStorage.getItem(`${KEY}:before-history-repair`)) localStorage.setItem(`${KEY}:before-history-repair`, previous);
   localStorage.setItem(KEY, JSON.stringify(list));
   persistShared(list);
 }

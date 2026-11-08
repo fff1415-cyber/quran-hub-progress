@@ -193,7 +193,7 @@ export function StudentPortalPersonalSection({
                 <tbody>
                   {absenceRows.map((a, i) => (
                     <tr key={`${a.date}-${a.dayKey}-${i}`} className="border-b border-border/30">
-                      <td className="p-2">{a.date ? formatPortalDate(a.date) : a.week !== undefined ? weekLabel(a.week) : "—"}</td>
+                      <td className="p-2">{a.date ? formatPortalDate(a.date) : weekLabel(a.week)}</td>
                       <td className="p-2 text-muted-foreground">{dayNameAr(a.dayKey)}</td>
                       <td className="p-2">
                         <span className={`px-2 py-0.5 rounded text-xs font-bold ${

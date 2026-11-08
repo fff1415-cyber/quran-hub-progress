@@ -102,7 +102,7 @@ export function downloadHalaqaProgramsWorkbook(
   const sciConfig = loadScientificConfig(halaqaId);
   const sciFields = enabledScientificFields(sciConfig.fields);
   const showSci = isScientificProgramEnabled(sciConfig) && sciFields.length > 0;
-  const workingDayKeys = Array.from(workingDayKeysFromSemester(calendar.semester?.working_days));
+  const workingDayKeys = workingDayKeysFromSemester(calendar.semester);
   const weeks = getSelectableWeeks(calendar).filter(
     (w) => w.end_date >= fromIso && w.start_date <= toIso,
   );

@@ -53,7 +53,8 @@ export async function runPostPassAutomation(payload: SardPassPayload): Promise<P
     sardResult: payload.queueItemId ? { id: payload.queueItemId, percent: payload.percent, phase: payload.phase ?? "full" } : undefined,
   });
   pushAcademicRecord(record);
-  // The server commits the profile phase with its assignment; no independent late PATCH can regress it.
+  if (advance.newGlobalPhase)
+    await syncStudentToGlobalPhase(payload.studentId, advance.newGlobalPhase, advance.newInstituteLevel);
   if (advance.newPlanTitle)
     notifyTeacherHalaqa(
       payload.halaqaId,

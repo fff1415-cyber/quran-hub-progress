@@ -15,7 +15,6 @@ import {
   sumWeekCompensationFaces, compensationRemainingForDay,
   type WeekRecord, type DayEntry, type Student, type GradesStore,
 } from "@/lib/mock-data";
-import { applyPlanInputWithRetry, enqueuePlanApply } from "@/lib/plan-apply-queue";
 import {
   fetchActiveCalendar,
   getSelectableWeeks,
@@ -52,7 +51,7 @@ import {
   Smartphone, Sparkles, Users, X,
 } from "lucide-react";
 import { Toaster, toast } from "sonner";
-import { applyPlanInput, fetchHalaqaPlanStatuses, fetchStudentPlanSheet, lastCompletedHifzSegments, removePlanHifzCompletions, syncCompensationToPlan } from "@/lib/plans-service";
+import { fetchHalaqaPlanStatuses, fetchStudentPlanSheet, syncCompensationToPlan } from "@/lib/plans-service";
 import { checkAndHandlePlanCompletion } from "@/lib/plan-completion";
 import { processAbsenceThresholdAlerts } from "@/lib/semester-absence";
 import { loadComplexFeatures, visibleTeacherTabs, TEACHER_TABS, type TeacherTab } from "@/lib/complex-features";
@@ -60,7 +59,7 @@ import { getToken } from "@/lib/auth-session";
 import { secureListAppState } from "@/lib/secure-data.functions";
 import { COMPLEX_FEATURES_APP_STATE_KEY, saveComplexFeatures, type ComplexFeatures } from "@/lib/complex-features";
 import { changeSharedLatePermission, listSharedLatePermissions, LATE_PERMISSIONS_CHANGED, type SharedLatePermission } from "@/lib/late-permissions-service";
-import type { StudentPlanSheetData, TapValue } from "@/lib/plan-types";
+import type { StudentPlanSheetData } from "@/lib/plan-types";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
 import { AttSelect, CompensationSelect } from "@/components/plans/TeacherGradeInputs";
@@ -70,7 +69,6 @@ import { listStaffTasks, STAFF_TASKS_CHANGED, taskReminders } from "@/lib/staff-
 import { TeacherReportRecommendations } from "@/components/teacher/TeacherReportRecommendations";
 import { sendParentRecommendation } from "@/lib/parent-recommendations";
 import { hifzCheckedValue } from "@/lib/mock-data";
-import { segmentsForTap } from "@/lib/plan-translator";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog";

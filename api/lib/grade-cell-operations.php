@@ -41,10 +41,9 @@ function grade_cells_context(PDO $pdo,int $cid): int
 
 function grade_cells_calendar(PDO $pdo,int $cid,bool $lock): array
 {
-    if(!$lock)return app_state_read_calendar_context($pdo,$cid);
     if(!plans_table_exists($pdo,'semesters'))return ['known'=>false,'active_semester_id'=>null];
     $scoped=table_column_exists($pdo,'semesters','complex_id');
-    $query=$pdo->prepare('SELECT id FROM semesters WHERE is_active=1'.($scoped?' AND complex_id=?':'').' ORDER BY id FOR UPDATE');
+    $query=$pdo->prepare('SELECT id FROM semesters WHERE is_active=1'.($scoped?' AND complex_id=?':'').' ORDER BY id'.($lock?' FOR UPDATE':''));
     $query->execute($scoped?[$cid]:[]);$ids=$query->fetchAll(PDO::FETCH_COLUMN);
     return count($ids)>1?['known'=>false,'active_semester_id'=>null]:['known'=>true,'active_semester_id'=>$ids?(string)$ids[0]:null];
 }

@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../schema.php';
-require_once __DIR__ . '/../diagnostics.php';
-
 function platform_admin_secret(): string
 {
     global $PLATFORM_ADMIN_SECRET_OVERRIDE;
@@ -34,7 +31,28 @@ function complexes_has_is_active(PDO $pdo): bool
 /** Add is_active to complexes if missing (Hostinger one-time auto-migrate). */
 function ensure_complexes_is_active_column(PDO $pdo): void
 {
-    schema_require_columns($pdo, 'complexes', ['is_active']);
+    if (complexes_has_is_active($pdo)) {
+        return;
+    }
+    try {
+        $pdo->exec(
+            'ALTER TABLE `complexes`
+             ADD COLUMN `is_active` TINYINT(1) NOT NULL DEFAULT 1
+             AFTER `contact_phone`'
+        );
+        $pdo->exec('UPDATE `complexes` SET `is_active` = 1');
+    } catch (PDOException $e) {
+        if (complexes_has_is_active($pdo)) {
+            return;
+        }
+        if (str_contains($e->getMessage(), 'Duplicate column')) {
+            return;
+        }
+        error_response(
+            'تعذّر إضافة عمود is_active — نفّذ database/migrate-platform-admin.sql في phpMyAdmin',
+            503
+        );
+    }
 }
 
 function assert_complex_exists(PDO $pdo, int $complexId): array

@@ -2,7 +2,8 @@
  * البرنامج التربوي — planning + approval + weekly execution.
  */
 import { pushNotification } from "@/lib/mock-data";
-import { hasAuthToken } from "@/lib/auth-session";
+import { decodeAuthTokenPayload, getToken } from "@/lib/auth-session";
+import { toast } from "sonner";
 
 export interface TarbawiParagraphType {
   id: string;
@@ -126,26 +127,10 @@ function normalizeSettings(raw: TarbawiSettings): TarbawiSettings {
   };
 }
 
-const PLAN_STATUS_RANK: Record<TarbawiPlanStatus, number> = {
-  draft: 0,
-  rejected: 1,
-  needs_revision: 1,
-  submitted: 2,
-  approved: 3,
-};
-
-function pickMergedPlan(localPlan: TarbawiHalaqaPlan, cloudPlan: TarbawiHalaqaPlan): TarbawiHalaqaPlan {
-  if (localPlan.updatedAt > cloudPlan.updatedAt) return localPlan;
-  if (cloudPlan.updatedAt > localPlan.updatedAt) return cloudPlan;
-  return PLAN_STATUS_RANK[localPlan.status] >= PLAN_STATUS_RANK[cloudPlan.status]
-    ? localPlan
-    : cloudPlan;
-}
-
 function normalizeStore(raw: TarbawiStore): TarbawiStore {
   const settingsBySemester: Record<string, TarbawiSettings> = {};
   for (const [semId, s] of Object.entries(raw.settingsBySemester ?? {})) {
-    if (s) settingsBySemester[semId] = normalizeSettings({ ...s, semesterId: semId });
+    if (s) settingsBySemester[semId] = s;
   }
   return { settingsBySemester, plans: raw.plans ?? {} };
 }
@@ -164,41 +149,92 @@ function readStore(): TarbawiStore {
 function writeStore(store: TarbawiStore): void {
   if (typeof window === "undefined") return;
   localStorage.setItem(KEY_STORE, JSON.stringify(store));
-  if (hasAuthToken() && sessionStorage.getItem("qs_syncing") !== "1") {
-    void pushTarbawiStoreCloud(store).catch((e) => {
-      console.warn("tarbawi_program cloud sync failed:", e);
-    });
-  }
 }
 
-export async function pushTarbawiStoreCloud(store: TarbawiStore): Promise<void> {
-  const { pushAppState, getToken } = await import("./cloud-sync");
+const PLAN_STATUS_RANK: Record<TarbawiPlanStatus, number> = {
+  draft: 0, rejected: 1, needs_revision: 1, submitted: 2, approved: 3,
+};
+
+type TarbawiEdit = {
+  semesterId: string;
+  section: keyof TarbawiStore;
+  base: TarbawiSettings | TarbawiHalaqaPlan | null;
+  next: TarbawiSettings | TarbawiHalaqaPlan;
+};
+
+function draftKey(token: string | null = getToken()): string {
+  const session = decodeAuthTokenPayload(token);
+  if (!session?.complexId || !session.role) throw new Error("سجّل الدخول لتأكيد حفظ البرنامج التربوي");
+  return `${KEY_STORE}:drafts:${session.complexId}:${session.role}:${session.accountId ?? session.halaqaId ?? ""}`;
+}
+
+function readDrafts(key: string): Record<string, TarbawiEdit> {
+  return JSON.parse(localStorage.getItem(key) ?? "{}");
+}
+
+let saving: Promise<void> = Promise.resolve();
+
+export function pushTarbawiStoreCloud(): Promise<void> {
   const token = getToken();
-  if (!token) {
-    await pushAppState("tarbawi_program", store);
+  if (!token) return Promise.reject(new Error("سجّل الدخول لتأكيد حفظ البرنامج التربوي"));
+  const run = saving.catch(() => {}).then(async () => {
+    const key = draftKey(token);
+    const { secureSaveTarbawiRecord } = await import("./secure-data.functions");
+    let rejection: unknown;
+    for (const [id, edit] of Object.entries(readDrafts(key))) {
+      try {
+        const response = await secureSaveTarbawiRecord(token, edit);
+        if (!response.ok) throw new Error("لم يؤكد الخادم الحفظ");
+        const latest = readDrafts(key);
+        if (JSON.stringify(latest[id]) === JSON.stringify(edit)) {
+          if (getToken() === token) {
+            const store = readStore();
+            const record = id.slice(edit.section.length + 1);
+            if (edit.section === "plans") store.plans[record] = edit.next as TarbawiHalaqaPlan;
+            else store.settingsBySemester[record] = edit.next as TarbawiSettings;
+            writeStore(store);
+          }
+          delete latest[id];
+        } else if (latest[id]) latest[id].base = edit.next;
+        localStorage.setItem(key, JSON.stringify(latest));
+      } catch (error) {
+        rejection ??= error;
+      }
+    }
+    if (rejection) throw rejection;
+  });
+  saving = run;
+  return run;
+}
+
+function queueTarbawiEdit(record: string, edit: TarbawiEdit): void {
+  try {
+    const key = draftKey();
+    const drafts = readDrafts(key);
+    const id = `${edit.section}:${record}`;
+    if (drafts[id]) edit.base = drafts[id].base;
+    drafts[id] = edit;
+    localStorage.setItem(key, JSON.stringify(drafts));
+  } catch (error) {
+    toast.error(error instanceof Error ? error.message : "تعذّر تجهيز تعديل البرنامج التربوي للحفظ");
     return;
   }
-  try {
-    const { secureListAppState } = await import("./secure-data.functions");
-    const rows = await secureListAppState({ data: { token } });
-    const row = rows.find((r) => r.key === "tarbawi_program");
-    const cloud = (row?.value as TarbawiStore) ?? { settingsBySemester: {}, plans: {} };
-    const { merged } = mergeTarbawiStores(store, cloud);
-    await pushAppState("tarbawi_program", merged);
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem("qs_syncing", "1");
-      localStorage.setItem(KEY_STORE, JSON.stringify(merged));
-      sessionStorage.removeItem("qs_syncing");
-    }
-  } catch {
-    await pushAppState("tarbawi_program", store);
-  }
+  const retry = () => {
+    void pushTarbawiStoreCloud().catch((error: unknown) => {
+      toast.error("لم يتأكد حفظ البرنامج التربوي. بقي التعديل على هذا الجهاز.", {
+        id: "tarbawi-save",
+        description: error instanceof Error ? error.message : undefined,
+        action: { label: "إعادة المحاولة", onClick: retry },
+      });
+    });
+  };
+  retry();
 }
 
-/** Calendar changes do not erase plans belonging to any semester. */
 export function ensureTarbawiSemester(semesterId: string | null): boolean {
   if (typeof window === "undefined" || !semesterId) return false;
   const prev = localStorage.getItem(KEY_SEMESTER);
+  if (prev !== semesterId) localStorage.setItem(KEY_SEMESTER, semesterId);
   return prev !== null && prev !== semesterId;
 }
 
@@ -210,40 +246,26 @@ export function loadTarbawiStore(): TarbawiStore {
   return readStore();
 }
 
-/** Merge local + cloud — local wins when newer; never silently drop unsynced local edits. */
+/** Keep the old local comparison for records that predate the durable edit queue. */
 export function mergeTarbawiStores(
   local: TarbawiStore,
   cloud: TarbawiStore,
-): { merged: TarbawiStore; pushToCloud: boolean } {
+): { merged: TarbawiStore } {
   const l = normalizeStore(local);
   const c = normalizeStore(cloud);
-  const settingsBySemester: Record<string, TarbawiSettings> = { ...c.settingsBySemester };
-  const plans: Record<string, TarbawiHalaqaPlan> = { ...c.plans };
-  let pushToCloud = false;
-
-  for (const [semId, localSettings] of Object.entries(l.settingsBySemester)) {
-    const cloudSettings = c.settingsBySemester[semId];
-    const localTs = localSettings.updatedAt ?? "";
-    const cloudTs = cloudSettings?.updatedAt ?? "";
-    if (!cloudSettings || localTs >= cloudTs) {
-      settingsBySemester[semId] = localSettings;
-      if (!cloudSettings || localTs > cloudTs) pushToCloud = true;
+  const settingsBySemester = { ...l.settingsBySemester, ...c.settingsBySemester };
+  const plans = { ...l.plans, ...c.plans };
+  for (const [id, settings] of Object.entries(l.settingsBySemester)) {
+    if ((settings.updatedAt ?? "") >= (c.settingsBySemester[id]?.updatedAt ?? "")) settingsBySemester[id] = settings;
+  }
+  for (const [id, plan] of Object.entries(l.plans)) {
+    const confirmed = c.plans[id];
+    if (!confirmed || plan.updatedAt > confirmed.updatedAt ||
+        (plan.updatedAt === confirmed.updatedAt && PLAN_STATUS_RANK[plan.status] >= PLAN_STATUS_RANK[confirmed.status])) {
+      plans[id] = plan;
     }
   }
-
-  for (const [key, localPlan] of Object.entries(l.plans)) {
-    const cloudPlan = c.plans[key];
-    if (!cloudPlan) {
-      plans[key] = localPlan;
-      pushToCloud = true;
-    } else {
-      const winner = pickMergedPlan(localPlan, cloudPlan);
-      plans[key] = winner;
-      if (winner === localPlan && localPlan.updatedAt >= cloudPlan.updatedAt) pushToCloud = true;
-    }
-  }
-
-  return { merged: { settingsBySemester, plans }, pushToCloud };
+  return { merged: { settingsBySemester, plans } };
 }
 
 export function defaultTarbawiSettings(semesterId: string): TarbawiSettings {
@@ -256,14 +278,16 @@ export function defaultTarbawiSettings(semesterId: string): TarbawiSettings {
 }
 
 export function getTarbawiSettings(semesterId: string): TarbawiSettings {
-  const store = readStore();
-  const saved = store.settingsBySemester[semesterId];
-  if (saved) return { ...saved };
+  const saved = readDraft("settingsBySemester", semesterId)?.next as TarbawiSettings | undefined
+    ?? readStore().settingsBySemester[semesterId];
+  if (saved) return normalizeSettings({ ...saved, semesterId });
   return defaultTarbawiSettings(semesterId);
 }
 
 export function saveTarbawiSettings(settings: TarbawiSettings): TarbawiSettings {
   const store = readStore();
+  const cached = store.settingsBySemester[settings.semesterId];
+  const base = cached?.updatedAt === settings.updatedAt ? cached ?? null : null;
   const normalized = normalizeSettings({
     ...settings,
     semesterId: settings.semesterId,
@@ -271,6 +295,7 @@ export function saveTarbawiSettings(settings: TarbawiSettings): TarbawiSettings 
   });
   store.settingsBySemester[settings.semesterId] = normalized;
   writeStore(store);
+  queueTarbawiEdit(settings.semesterId, { semesterId: settings.semesterId, section: "settingsBySemester", base, next: normalized });
   return normalized;
 }
 
@@ -301,15 +326,27 @@ export function emptyTarbawiPlan(semesterId: string, halaqaId: number): TarbawiH
 export function getTarbawiPlan(semesterId: string, halaqaId: number): TarbawiHalaqaPlan {
   const store = readStore();
   const key = planKey(semesterId, halaqaId);
-  return store.plans[key] ?? emptyTarbawiPlan(semesterId, halaqaId);
+  const draft = readDraft("plans", key)?.next as TarbawiHalaqaPlan | undefined;
+  return draft ?? store.plans[key] ?? emptyTarbawiPlan(semesterId, halaqaId);
+}
+
+function readDraft(section: keyof TarbawiStore, record: string): TarbawiEdit | undefined {
+  try {
+    return readDrafts(draftKey())[`${section}:${record}`];
+  } catch {
+    return undefined;
+  }
 }
 
 export function saveTarbawiPlan(plan: TarbawiHalaqaPlan): TarbawiHalaqaPlan {
   const store = readStore();
   const key = planKey(plan.semesterId, plan.halaqaId);
+  const cached = store.plans[key];
+  const base = cached?.updatedAt === plan.updatedAt ? cached ?? null : null;
   const next = { ...plan, updatedAt: new Date().toISOString() };
   store.plans[key] = next;
   writeStore(store);
+  queueTarbawiEdit(key, { semesterId: plan.semesterId, section: "plans", base, next });
   return next;
 }
 

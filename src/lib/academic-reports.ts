@@ -1,4 +1,3 @@
-import { isHifzChecked } from "@/lib/mock-data";
 import type { AcademicCalendar } from "@/lib/academic-context";
 import { generateAcademicWeeks, parseISODate } from "@/lib/calendar-generator";
 import { holidayDateStrings } from "@/lib/semester-holidays";
@@ -173,7 +172,7 @@ function studentTotals(
       }
       continue;
     }
-    if (isHifzChecked(entry.hifz)) {
+    if (entry.hifz) {
       totals.hifzRecorded++;
       totals.hifzFaces += hifzFacesFromTap(entry.hifz);
     }

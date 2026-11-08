@@ -23,7 +23,7 @@ export function useLiveGrades(): [GradesStore, (g: GradesStore) => void] {
 
     window.addEventListener(GRADES_CHANGED_EVENT, applyLocal);
     const onStorage = (e: StorageEvent) => {
-      if (e.key === "qshatawi_grades_v2" || e.key?.startsWith("qhp_grade_outbox_v1:")) applyLocal();
+      if (e.key === "qshatawi_grades_v2") applyLocal();
     };
     window.addEventListener("storage", onStorage);
 
@@ -44,8 +44,8 @@ export function useLiveGrades(): [GradesStore, (g: GradesStore) => void] {
       if (cancelled) return;
       if (document.hidden) return;
       try {
-        const { pushMergedGrades } = await import("@/lib/cloud-sync");
-        const next = await pushMergedGrades(loadGrades());
+        const { pullMergedGrades } = await import("@/lib/cloud-sync");
+        const next = await pullMergedGrades();
         if (!cancelled && next) {
           setGrades((prev) => (prev === next ? prev : next));
         }
@@ -77,7 +77,6 @@ export function useLiveGrades(): [GradesStore, (g: GradesStore) => void] {
     };
     document.addEventListener("visibilitychange", onResume);
     window.addEventListener("focus", onResume);
-    window.addEventListener("online", onResume);
 
     return () => {
       cancelled = true;
@@ -86,7 +85,6 @@ export function useLiveGrades(): [GradesStore, (g: GradesStore) => void] {
       window.removeEventListener("storage", onStorage);
       document.removeEventListener("visibilitychange", onResume);
       window.removeEventListener("focus", onResume);
-      window.removeEventListener("online", onResume);
       bc?.close();
     };
   }, []);

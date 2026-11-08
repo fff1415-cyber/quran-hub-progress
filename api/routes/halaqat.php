@@ -2,9 +2,6 @@
 
 declare(strict_types=1);
 
-require_once __DIR__ . '/../schema.php';
-require_once __DIR__ . '/../diagnostics.php';
-
 function halaqat_tenant_enabled(PDO $pdo): bool
 {
     return table_column_exists($pdo, 'halaqat', 'complex_id');
@@ -12,7 +9,12 @@ function halaqat_tenant_enabled(PDO $pdo): bool
 
 function halaqat_ensure_extra_assistants_column(PDO $pdo): void
 {
-    schema_require_columns($pdo, 'halaqat', ['extra_assistants']);
+    if (!table_column_exists($pdo, 'halaqat', 'extra_assistants')) {
+        $pdo->exec(
+            'ALTER TABLE `halaqat`
+             ADD COLUMN `extra_assistants` JSON NULL DEFAULT NULL AFTER `assistant_code`'
+        );
+    }
 }
 
 function halaqat_encode_extra_assistants($raw): ?string
@@ -139,8 +141,8 @@ function handle_upsert_halaqat(): void
     }
     $stmt = $pdo->prepare($sql);
 
-    $preparedRows = [];
-    foreach ($halaqat as $h) {
+    try {
+        foreach ($halaqat as $h) {
             $name = trim((string) ($h['name'] ?? ''));
             if ($name === '') {
                 error_response('اسم الحلقة مطلوب');
@@ -163,15 +165,10 @@ function handle_upsert_halaqat(): void
             if ($tenants) {
                 $params[':complex_id'] = $cid;
             }
-            $preparedRows[] = $params;
-    }
-    try {
-        $pdo->beginTransaction();
-        foreach ($preparedRows as $params) $stmt->execute($params);
-        $pdo->commit();
-    } catch (Throwable $error) {
-        if ($pdo->inTransaction()) $pdo->rollBack();
-        error_response(api_safe_failure_message($error, 'halaqat_batch'), api_database_error_status($error));
+            $stmt->execute($params);
+        }
+    } catch (PDOException $e) {
+        error_response('فشل حفظ الحلقة في قاعدة البيانات', 500);
     }
 
     json_response(['ok' => true]);

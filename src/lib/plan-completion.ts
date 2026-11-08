@@ -1,4 +1,3 @@
-import { planHifzProgress } from "@/lib/plan-progress";
 import { enqueuePlanCompleted, loadSardQueue, type Student } from "@/lib/mock-data";
 import { fetchStudentPlanSheet } from "@/lib/plans-service";
 import { notifyTeacherHalaqa } from "@/lib/teacher-notifications";
@@ -6,7 +5,14 @@ import { notifyTeacherHalaqa } from "@/lib/teacher-notifications";
 export function isPlanHifzComplete(
   sheet: Awaited<ReturnType<typeof fetchStudentPlanSheet>>,
 ): boolean {
-  return planHifzProgress(sheet).complete;
+  if (!sheet.assignment || !sheet.plan || sheet.segments.length === 0) return false;
+  const start = sheet.assignment.start_segment_index;
+  const visible = sheet.segments.filter((s) => s.segment_index >= start);
+  if (visible.length === 0) return false;
+  const hifzDone = new Set(
+    sheet.completions.filter((c) => c.task_type === "hifz").map((c) => c.segment_index),
+  );
+  return visible.every((s) => hifzDone.has(s.segment_index));
 }
 
 function alreadyQueuedForPlan(studentId: string): boolean {

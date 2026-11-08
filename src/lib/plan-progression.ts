@@ -39,16 +39,15 @@ export async function completePlanAndAdvance(
 
   if (!sheet.plan || !sheet.assignment) throw new Error("لا توجد خطة حالية مؤكدة للطالب");
 
-  const assignmentTrack = sheet.plan.track;
-  const plans = await fetchPlans(assignmentTrack);
-  const currentGlobal = globalPhaseFromPlanLevel(assignmentTrack, sheet.plan.level_number, plans);
+  const plans = await fetchPlans(track);
+  const currentGlobal = globalPhaseFromPlanLevel(track, sheet.plan.level_number, plans);
   if (currentGlobal === null) throw new Error("مرحلة الخطة الحالية غير صالحة");
 
-  const legacy = legacyGlobalPhaseFromPlanLevel(assignmentTrack, sheet.plan.level_number);
+  const legacy = legacyGlobalPhaseFromPlanLevel(track, sheet.plan.level_number);
   const effectivePhase = options?.studentPhase && options.studentPhase === legacy && options.studentPhase !== currentGlobal
     ? options.studentPhase
     : currentGlobal;
-  if (effectivePhase >= maxGlobalPhase(assignmentTrack)) {
+  if (effectivePhase >= maxGlobalPhase(track)) {
     return result; // Keep the final plan visible for the supervisor.
   }
 

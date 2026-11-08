@@ -1,4 +1,3 @@
-import { fetchWithTimeout } from "@/lib/request-timeout";
 // Client-side API layer — Hostinger PHP + MySQL backend
 
 import { buildRphpUrl } from "@/lib/api-base";
@@ -26,7 +25,7 @@ async function apiFetch<T>(
   options: RequestInit & { auth?: string } = {},
 ): Promise<T> {
   const { auth, headers, ...rest } = options;
-  const res = await fetchWithTimeout(apiUrl(path), {
+  const res = await fetch(apiUrl(path), {
     ...rest,
     headers: {
       "Content-Type": "application/json",
@@ -45,7 +44,7 @@ async function apiFetch<T>(
     }
   }
   if (!res.ok) {
-    throw Object.assign(new Error((body as { error?: string }).error ?? `HTTP ${res.status}`), { status: res.status });
+    throw new Error((body as { error?: string }).error ?? `HTTP ${res.status}`);
   }
   return body as T;
 }
@@ -162,11 +161,10 @@ export async function secureDeleteRoleAccount({ data }: { data: { token: string;
 }
 
 // ---------- SHARED APP STATE ----------
-export async function secureListAppState({ data }: { data: { token: string; key?: string; omitGradeValue?: boolean } }) {
-  const q = data.key ? `?key=${encodeURIComponent(data.key)}` : data.omitGradeValue ? "?omit_grade_value=1" : "";
-  return apiFetch<{ key: string; value: unknown }[]>(`/app-state${q}`, {
+export async function secureListAppState({ data }: { data: { token: string; key?: string } }) {
+  const q = data.key ? `?key=${encodeURIComponent(data.key)}` : "";
+  return apiFetch<{ key: string; value: unknown; revision?: string }[]>(`/app-state${q}`, {
     method: "GET",
-    cache: "no-store",
     auth: data.token,
   });
 }
@@ -176,6 +174,22 @@ export async function secureSetAppState({ data }: { data: { token: string; key: 
     method: "POST",
     auth: data.token,
     body: JSON.stringify({ key: data.key, value: data.value }),
+  });
+}
+
+export async function secureSaveTarbawiRecord(token: string, edit: unknown) {
+  return apiFetch<{ ok: boolean }>("/tarbawi/record", {
+    method: "POST",
+    auth: token,
+    body: JSON.stringify({ tarbawi_write_protocol: 1, value: edit }),
+  });
+}
+
+export async function secureSaveScientificStore(token: string, base: string, value: unknown) {
+  return apiFetch<{ ok: boolean }>("/scientific-grades/store", {
+    method: "POST",
+    auth: token,
+    body: JSON.stringify({ scientific_base: base, value }),
   });
 }
 

@@ -1,4 +1,3 @@
-import { patchSearchHref } from "@/lib/navigation-href";
 import { useEffect, useMemo, useState } from "react";
 import { loadHalaqat } from "@/lib/mock-data";
 import type { AcademicCalendar } from "@/lib/academic-context";
@@ -135,7 +134,7 @@ export function ProgramSupervisorPage() {
           tabs={tabs}
           defaultTab="monitor"
           activeTab={tab}
-          onTabChange={(t) => navigate({ href: patchSearchHref({ tab: t }) })}
+          onTabChange={(t) => navigate({ search: (prev) => ({ ...prev, tab: t }) })}
           header={
             <RolePageHeader
               icon={ClipboardList}

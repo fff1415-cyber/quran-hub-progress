@@ -1,4 +1,3 @@
-import { planHifzProgress } from "@/lib/plan-progress";
 import { useMemo } from "react";
 import type { StudentPlanSheetData } from "@/lib/plan-types";
 import {
@@ -49,7 +48,13 @@ export function StudentPlanSheet({
     [currentSeg, completions],
   );
 
-  const progressPct = useMemo(() => planHifzProgress({ assignment, plan, segments, completions }).percent, [assignment, plan, segments, completions]);
+  const progressPct = useMemo(() => {
+    if (segments.length === 0) return 0;
+    const hifzDone = new Set(
+      completions.filter((c) => c.task_type === "hifz").map((c) => c.segment_index),
+    ).size;
+    return Math.round((hifzDone / segments.length) * 100);
+  }, [segments, completions]);
 
   if (loading) {
     return (

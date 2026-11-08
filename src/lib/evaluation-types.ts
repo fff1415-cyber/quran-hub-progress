@@ -23,13 +23,6 @@ export interface SegmentTally {
   warnings: number;
 }
 
-/** Rules actually used for a future recorded attempt; no inference for legacy scores. */
-export interface EvaluationRulesSnapshot {
-  reference: string;
-  adoptedAt: string;
-  settings: EvaluationSettings;
-}
-
 export interface EvaluationResult {
   hifzScore: number;
   reviewScore: number;

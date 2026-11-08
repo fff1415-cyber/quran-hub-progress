@@ -1,5 +1,3 @@
-import { SardQueueRefreshStatus } from "@/components/SardQueueRefreshStatus";
-import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { useEffect, useMemo, useState } from "react";
 import {
   loadSardQueue, loadStudents, loadHalaqat, isLateSard, notifyLateSard, sortMusammiQueue,
@@ -12,7 +10,6 @@ import { AlertTriangle, Mic } from "lucide-react";
 /** Late-sard list (>2 days pending). Auto-notifies manager once per item. */
 export function LateSardList() {
   const [queue, setQueue] = useState<SardQueueItem[]>([]);
-  useInboxRefresh(()=>{setQueue([...loadSardQueue()]);}, { sharedSard: true });
   const students = loadStudents();
   const halaqat = loadHalaqat();
 
@@ -26,7 +23,6 @@ export function LateSardList() {
 
   return (
     <section className="glass-card rounded-2xl p-6">
-      <SardQueueRefreshStatus />
       <h2 className="text-lg font-bold text-warning mb-3 flex items-center gap-2">
         <AlertTriangle className="w-5 h-5" />
         المتأخرون عن السرد ({late.length})
@@ -63,8 +59,7 @@ export function LateSardList() {
 
 /** Active sard queue (pending + approved_third + scheduled-ready). Read-only. */
 export function ActiveSardList() {
-  const [queue,setQueue] = useState(() => loadSardQueue());
-  useInboxRefresh(()=>setQueue([...loadSardQueue()]), { sharedSard: true });
+  const [queue] = useState(() => loadSardQueue());
   const students = loadStudents();
   const halaqat = loadHalaqat();
 
@@ -75,7 +70,6 @@ export function ActiveSardList() {
 
   return (
     <section className="glass-card rounded-2xl p-6">
-      <SardQueueRefreshStatus />
       <h2 className="text-lg font-bold text-primary mb-3 flex items-center gap-2">
         <Mic className="w-5 h-5" />
         قائمة السرد الحالية ({visible.length})

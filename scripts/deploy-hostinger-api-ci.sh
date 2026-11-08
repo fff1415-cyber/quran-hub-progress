@@ -9,7 +9,7 @@ REMOTE="${3:-}"
 MAX_ATTEMPTS="${4:-3}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-LOCAL="${API_DEPLOY_LOCAL:-${ROOT}/api/}"
+LOCAL="${ROOT}/api/"
 
 if [ -z "$SSH_USER" ] || [ -z "$SERVER" ] || [ -z "$REMOTE" ]; then
   echo "Usage: FTP_PASSWORD=... bash scripts/deploy-hostinger-api-ci.sh USER SERVER REMOTE/ [attempts]"
@@ -28,7 +28,7 @@ RSYNC_SSH=(sshpass -e ssh "${SSH_OPTS[@]}")
 attempt=1
 while [ "$attempt" -le "$MAX_ATTEMPTS" ]; do
   echo "API rsync attempt ${attempt}/${MAX_ATTEMPTS} → ${SSH_USER}@${SERVER}:${REMOTE}"
-  if rsync -avz --exclude=config.php -e "${RSYNC_SSH[*]}" "$LOCAL" "${SSH_USER}@${SERVER}:${REMOTE}"; then
+  if rsync -avz --delete --exclude=config.php -e "${RSYNC_SSH[*]}" "$LOCAL" "${SSH_USER}@${SERVER}:${REMOTE}"; then
     echo "API rsync OK"
     exit 0
   fi

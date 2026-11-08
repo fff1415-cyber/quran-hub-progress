@@ -3,7 +3,7 @@ import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { InboxItemActions } from "@/components/role-workspace/InboxItemActions";
 import {
   loadStudents, loadHalaqat, loadGrades, loadNotifications,
-  loadTransfersForRole, type Notification,
+  loadTransfersForRole, updateNotification, type Notification,
 } from "@/lib/mock-data";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { studentReportPercentages, formatOverallPercent } from "@/lib/semester-grading";
@@ -72,9 +72,10 @@ export function ForwardedTransfersPanel({ role }: { role: "secretary" | "supervi
         byName: actorName,
         text: actionText,
         at: new Date().toISOString(),
-      }, { read: true, transferStatus: "closed" });
+      });
+      updateNotification(n.id, { read: true, transferStatus: "closed" });
       refresh();
-      toast.success("تم تسجيل الإجراء وإغلاق الحالة على هذا الجهاز");
+      toast.success("تم تسجيل الإجراء وإغلاق الحالة");
     } catch (e) {
       refresh();
       toast.error(e instanceof Error ? e.message : "فشل التحديث");

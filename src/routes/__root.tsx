@@ -1,7 +1,6 @@
-import { LegacyGradeRecovery } from "@/components/LegacyGradeRecovery";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { GradeDraftArchive, GradeSaveStatus } from "@/components/GradeSaveStatus";
 import { useEffect, useState } from "react";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import {
   Outlet,
   Link,
@@ -16,7 +15,6 @@ import { getAuthItem } from "@/lib/auth-session";
 import { EvaluationSettingsProvider } from "@/contexts/EvaluationSettingsContext";
 import { GradeInputSettingsProvider } from "@/contexts/GradeInputSettingsContext";
 import { TenantProvider } from "@/contexts/TenantContext";
-import { CloudSyncStatus } from "@/components/CloudSyncStatus";
 
 import appCss from "../styles.css?url";
 
@@ -88,15 +86,12 @@ function RootComponent() {
   const recoveryRequested = useLocation({ select: location => location.hash === "local-grade-recovery" });
   const [clientReady, setClientReady] = useState(false);
   useEffect(() => setClientReady(true), []);
-  const showGradeRecovery = clientReady && recoveryRequested;
   return (
     <QueryClientProvider client={queryClient}>
       <TenantProvider>
         <EvaluationSettingsProvider>
           <GradeInputSettingsProvider>
-            <CloudSyncStatus />
-            <LegacyGradeRecovery showReview={showGradeRecovery} />
-            {showGradeRecovery && <div className="mx-auto max-w-4xl px-3" dir="rtl">
+            {clientReady && recoveryRequested && <div dir="rtl">
               <GradeSaveStatus />
               <GradeDraftArchive />
             </div>}

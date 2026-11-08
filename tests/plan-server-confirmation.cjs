@@ -10,14 +10,12 @@ global.localStorage = {
 
 let localAssignments = 0;
 const deps = {
-  '@/lib/request-timeout': { fetchWithTimeout: (...args) => global.fetch(...args) },
   '@/lib/api-base': { buildRphpUrl: path => `https://example.test${path}` },
   '@/lib/cloud-sync': { getToken: () => 'token' },
   '@/lib/plans-store': { localGetStudentSheet: () => ({ assignment: localAssignments ? { id: 'browser-only' } : null, plan: { title: 'محلية' } }) },
   '@/lib/student-phase-promote': { syncStudentPhaseFromPlan: async () => {} },
   '@/lib/plan-translator': { compensationHifzSegmentTarget: () => 0, compensationHifzTap: () => 'one' },
 };
-deps['@/lib/plan-response-cache']=require('./independent-test-support.cjs').load('src/lib/plan-response-cache.ts',{'@/lib/cloud-sync':deps['@/lib/cloud-sync'],'@/lib/tenant':{getActiveComplexId:()=>1},'@/lib/mock-data':{hasPendingSardWrites:()=>false}});
 const service = {};
 const code = ts.transpileModule(fs.readFileSync('src/lib/plans-service.ts', 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },

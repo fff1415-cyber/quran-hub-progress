@@ -132,10 +132,6 @@ function normalizeDefaultScores(raw: unknown): ScientificDefaultScores {
   return out;
 }
 
-function isRecordedScientificHifz(value: unknown): boolean {
-  return value === "half" || value === "one" || value === "two";
-}
-
 /** Resolve the manager-configured score for one field given the day's entry. */
 export function resolveScientificScore(
   config: ScientificGradesConfig,
@@ -151,7 +147,7 @@ export function resolveScientificScore(
       return config.defaultScores.attendance?.[att]?.trim() ?? "";
     }
     case "hifz":
-      return isRecordedScientificHifz(entry.hifz) ? (config.defaultScores.hifz?.trim() ?? "") : "";
+      return entry.hifz !== "" ? (config.defaultScores.hifz?.trim() ?? "") : "";
     case "rabt":
       return entry.rabt !== "" ? (config.defaultScores.rabt?.trim() ?? "") : "";
     case "muraja":
@@ -467,7 +463,7 @@ function clearScientificOverridesForPatchInStore(
   patch: Partial<DayEntry>,
 ): boolean {
   let changed = false;
-  if ("hifz" in patch && (patch.hifz === "" || isRecordedScientificHifz(patch.hifz))) {
+  if ("hifz" in patch) {
     changed =
       clearScientificScoreOverrideInStore(store, halaqaId, studentId, weekNum, dayKey, "hifz") ||
       changed;
@@ -519,11 +515,6 @@ function syncScientificFieldInStore(
       "",
     );
     return overrideChanged || dataChanged;
-  }
-  // Incomplete/corrupt prep is not an instruction to recalculate or erase a stored score.
-  // The explicit empty value still follows the existing user-clear behavior.
-  if (field === "hifz" && entry.hifz !== "" && !isRecordedScientificHifz(entry.hifz)) {
-    return false;
   }
   // Manual edits stay until the matching prep field changes (see clearScientificOverridesForPatchInStore).
   if (isScientificScoreOverriddenInStore(store, halaqaId, studentId, weekNum, dayKey, field)) {
@@ -744,22 +735,9 @@ export function setTeacherScientificDayScore(
   field: ScientificGradeField,
   value: string,
 ): void {
-  const store = loadScientificGradesStore();
-  const data = halaqaDataRoot(store, halaqaId);
-  let changed = writeScientificDayScoreInPlace(data, studentId, weekNum, dayKey, field, value);
-  if (value.trim() === "") {
-    // An explicit empty value survives merging with an older cloud value; absence cannot express a clear.
-    const week = data[studentId][weekNum];
-    const day = week[dayKey] ?? (week[dayKey] = {});
-    if (!Object.prototype.hasOwnProperty.call(day, field) || day[field] !== "") {
-      day[field] = "";
-      changed = true;
-    }
-  }
-  const overridden = isScientificScoreOverriddenInStore(store, halaqaId, studentId, weekNum, dayKey, field);
-  // Publish the value and override together: event listeners must never see a manual value without its guard.
-  setScientificScoreOverrideInStore(store, halaqaId, studentId, weekNum, dayKey, field);
-  if (changed || !overridden) saveScientificGradesStore(store);
+  setScientificDayScore(halaqaId, studentId, weekNum, dayKey, field, value);
+  // Mark overridden even when clearing — prevents auto-backfill from refilling while retyping.
+  setScientificScoreOverride(halaqaId, studentId, weekNum, dayKey, field);
 }
 
 /**
@@ -850,13 +828,6 @@ export function studentScientificPeriodTotals(
   return totals;
 }
 
-export function scientificPeriodAssessmentCount(data: ScientificGradesDataStore[string], studentId: string, weekNums: number[], fields: ScientificGradeField[], dayKeys?: string[]): number {
-  let count = 0;
-  for (const wn of weekNums) for (const [dayKey, cell] of Object.entries(data[studentId]?.[wn] ?? {}))
-    if (!dayKeys || dayKeys.includes(dayKey)) for (const field of fields) if (parseScientificScore(cell[field]) !== null) count++;
-  return count;
-}
-
 /** Best-case points per working day from manager defaults (for cumulative % denominator). */
 export function scientificDailyMaxPossible(config: ScientificGradesConfig): number {
   const fields = enabledScientificFields(config.fields);
@@ -894,14 +865,14 @@ export function isScientificProgramId(id: string): boolean {
 }
 
 function mergeDefaultScores(
-  base: ScientificDefaultScores | undefined,
-  overlay: ScientificDefaultScores | undefined,
+  base: ScientificDefaultScores,
+  overlay: ScientificDefaultScores,
 ): ScientificDefaultScores {
   const out: ScientificDefaultScores = { ...base };
-  if (overlay?.hifz?.trim()) out.hifz = overlay.hifz.trim();
-  if (overlay?.rabt?.trim()) out.rabt = overlay.rabt.trim();
-  if (overlay?.muraja?.trim()) out.muraja = overlay.muraja.trim();
-  const att: ScientificAttendanceScores = { ...base?.attendance, ...overlay?.attendance };
+  if (overlay.hifz?.trim()) out.hifz = overlay.hifz.trim();
+  if (overlay.rabt?.trim()) out.rabt = overlay.rabt.trim();
+  if (overlay.muraja?.trim()) out.muraja = overlay.muraja.trim();
+  const att: ScientificAttendanceScores = { ...(base.attendance ?? {}), ...(overlay.attendance ?? {}) };
   if (Object.keys(att).length > 0) out.attendance = att;
   else delete out.attendance;
   return out;

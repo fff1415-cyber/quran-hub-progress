@@ -1,6 +1,3 @@
-import { useConfirmedSardAction } from "@/hooks/use-confirmed-sard-action";
-import { SardQueueRefreshStatus } from "@/components/SardQueueRefreshStatus";
-import { useInboxRefresh } from "@/hooks/use-inbox-refresh";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
@@ -289,8 +286,7 @@ export function SecretarySardPanel() {
   const halaqat = loadHalaqat();
   const students = loadStudents();
   const templates = loadMessageTemplates();
-  const [queue,setQueue] = useState(() => loadSardQueue());
-  useInboxRefresh(()=>setQueue([...loadSardQueue()]), { sharedSard: true });
+  const [queue] = useState(() => loadSardQueue());
   const passedSard = useMemo(() => queue.filter((q) => q.status === "passed"), [queue]);
   const finalFailed = useMemo(() => queue.filter((q) => q.status === "final_failed"), [queue]);
 
@@ -409,9 +405,7 @@ export function SupervisorPlanCompletedPanel() {
   const [queue, setQueue] = useState(() => loadSardQueue());
   const students = loadStudents();
   const halaqat = loadHalaqat();
-  const refresh = () => setQueue([...loadSardQueue()]);
-  useInboxRefresh(refresh, { sharedSard: true });
-  const { run: confirmSard, saving, error: saveError } = useConfirmedSardAction(refresh);
+  const refresh = () => setQueue(loadSardQueue());
 
   useEffect(() => {
     const timer = setInterval(() => setQueue(loadSardQueue()), 5000);
@@ -420,19 +414,20 @@ export function SupervisorPlanCompletedPanel() {
 
   const completed = queue.filter((q) => q.status === "plan_completed");
 
-  const forward = (id: string, studentName: string, halaqaId: number, planTitle?: string) => confirmSard(
-    () => !!forwardPlanToSard(id),
-    () => {
-      notifyTeacherHalaqa(halaqaId, `حُوّل ${studentName} للسرد${planTitle ? ` — ${planTitle}` : ""}`, "sard");
-      toast.success(`تم تحويل ${studentName} لقائمة المسمّع`);
-    },
-  );
+  const forward = (id: string, studentName: string, halaqaId: number, planTitle?: string) => {
+    const item = forwardPlanToSard(id);
+    if (!item) return;
+    notifyTeacherHalaqa(
+      halaqaId,
+      `حُوّل ${studentName} للسرد${planTitle ? ` — ${planTitle}` : ""}`,
+      "sard",
+    );
+    toast.success(`تم تحويل ${studentName} لقائمة المسمّع`);
+    refresh();
+  };
 
   return (
     <section className="glass-card rounded-2xl p-6">
-      <SardQueueRefreshStatus />
-      {saving && <p role="status" className="text-sm text-muted-foreground">جارٍ تأكيد الحفظ…</p>}
-      {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
       <h2 className="text-lg font-bold text-primary mb-2 flex items-center gap-2">
         <GraduationCap className="w-5 h-5" />
         أتمّوا الخطة التعليمية ({completed.length})
@@ -463,7 +458,7 @@ export function SupervisorPlanCompletedPanel() {
                 </div>
                 <button
                   type="button"
-                  disabled={saving} onClick={() => forward(q.id, s.name, s.halaqaId, q.planTitle)}
+                  onClick={() => forward(q.id, s.name, s.halaqaId, q.planTitle)}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm"
                 >
                   <Send className="w-4 h-4" /> تحويل للسرد
@@ -481,12 +476,10 @@ export function SupervisorApprovalsPanel() {
   const [queue, setQueue] = useState(() => loadSardQueue());
   const students = loadStudents();
   const halaqat = loadHalaqat();
-  const refresh = () => setQueue([...loadSardQueue()]);
-  useInboxRefresh(refresh, { sharedSard: true });
-  const { run: confirmSard, saving, error: saveError } = useConfirmedSardAction(refresh);
+  const refresh = () => setQueue(loadSardQueue());
   const awaiting = queue.filter((q) => q.status === "awaiting_supervisor");
 
-  const approveThird = (id: string, name: string, halaqaId: number) => confirmSard(() => {
+  const approveThird = (id: string, name: string, halaqaId: number) => {
     updateSardItem(id, {
       status: "approved_third",
       attempt: 3,
@@ -500,17 +493,14 @@ export function SupervisorApprovalsPanel() {
       lockedHifzWarnings: undefined,
       reviewSegmentCount: undefined,
     });
-  }, () => {
     pushNotification({ message: `وافق المشرف على محاولة ثالثة — ${name}`, type: "sard" });
     notifyTeacherHalaqa(halaqaId, `وافق المشرف على محاولة سرد ثالثة — ${name}`, "sard");
     toast.success("تمت الموافقة");
-  });
+    refresh();
+  };
 
   return (
     <section className="glass-card rounded-2xl p-6">
-      <SardQueueRefreshStatus />
-      {saving && <p role="status" className="text-sm text-muted-foreground">جارٍ تأكيد الحفظ…</p>}
-      {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
       <h2 className="text-lg font-bold text-primary mb-4">موافقات المحاولة الثالثة ({awaiting.length})</h2>
       {awaiting.length === 0 ? (
         <p className="text-muted-foreground text-center py-8 text-sm">لا توجد طلبات</p>
@@ -526,7 +516,7 @@ export function SupervisorApprovalsPanel() {
                   <div className="font-bold">{s.name}</div>
                   <div className="text-xs text-muted-foreground">{h.name} · {weekLabel(q.week)}</div>
                 </div>
-                <button disabled={saving} onClick={() => approveThird(q.id, s.name, s.halaqaId)}
+                <button onClick={() => approveThird(q.id, s.name, s.halaqaId)}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg gold-gradient text-primary-foreground font-bold text-sm">
                   <Check className="w-4 h-4" /> السماح بمحاولة ثالثة
                 </button>
@@ -543,14 +533,11 @@ export function SupervisorForceRetryPanel() {
   const [queue, setQueue] = useState(() => loadSardQueue());
   const students = loadStudents();
   const halaqat = loadHalaqat();
-  const refresh = () => setQueue([...loadSardQueue()]);
-  useInboxRefresh(refresh, { sharedSard: true });
-  const { run: confirmSard, saving, error: saveError } = useConfirmedSardAction(refresh);
   const scheduled = queue.filter((q) => isSupervisorForceRetryCandidate(q));
 
   const forceImmediate = (item: typeof scheduled[number], name: string) => {
     const kind = forceRetryKind(item);
-    return confirmSard(() => { updateSardItem(item.id, buildForceImmediatePatch(item)); }, () => {
+    updateSardItem(item.id, buildForceImmediatePatch(item));
     pushNotification({
       message: kind === "review"
         ? `سمح المشرف بإعادة مراجعة فورية — ${name}`
@@ -558,14 +545,11 @@ export function SupervisorForceRetryPanel() {
       type: "sard",
     });
     toast.success(kind === "review" ? "تم — يمكن للمسمّع إجراء المراجعة فوراً" : "تم — يمكن للمسمّع البدء فوراً");
-    });
+    setQueue(loadSardQueue());
   };
 
   return (
     <section className="glass-card rounded-2xl p-6">
-      <SardQueueRefreshStatus />
-      {saving && <p role="status" className="text-sm text-muted-foreground">جارٍ تأكيد الحفظ…</p>}
-      {saveError && <p role="alert" className="text-sm text-destructive">{saveError}</p>}
       <h2 className="text-lg font-bold text-primary mb-2">إعادة فورية ({scheduled.length})</h2>
       <p className="text-xs text-muted-foreground mb-4">السماح بإعادة السرد أو المراجعة دون انتظار يومين</p>
       {scheduled.length === 0 ? (
@@ -585,7 +569,7 @@ export function SupervisorForceRetryPanel() {
                     {h.name} · {weekLabel(q.week)} · {kind === "review" ? "انتظار إعادة المراجعة" : "انتظار إعادة السرد"}
                   </div>
                 </div>
-                <button disabled={saving} onClick={() => forceImmediate(q, s.name)}
+                <button onClick={() => forceImmediate(q, s.name)}
                   className="flex items-center gap-2 px-4 py-2 rounded-lg bg-warning/20 text-warning border border-warning/30 font-bold text-sm">
                   <Clock className="w-4 h-4" /> {kind === "review" ? "المراجعة الآن" : "الإعادة الآن"}
                 </button>
@@ -601,13 +585,11 @@ export function SupervisorForceRetryPanel() {
 export function SupervisorPassedPanel() {
   const students = loadStudents();
   const halaqat = loadHalaqat();
-  const [queue,setQueue] = useState(() => loadSardQueue());
-  useInboxRefresh(()=>setQueue([...loadSardQueue()]), { sharedSard: true });
+  const [queue] = useState(() => loadSardQueue());
   const passedSard = queue.filter((q) => q.status === "passed");
 
   return (
     <section className="glass-card rounded-2xl p-6">
-      <SardQueueRefreshStatus />
       <h2 className="text-lg font-bold text-success mb-4">المجتازون ({passedSard.length})</h2>
       {passedSard.length === 0 ? (
         <p className="text-muted-foreground text-center py-6 text-sm">لا يوجد مجتازون</p>

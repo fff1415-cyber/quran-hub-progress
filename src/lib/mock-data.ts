@@ -225,9 +225,7 @@ const KEY_LATE_PERMISSIONS = "qshatawi_late_permissions_v2";
 function persistShared(key: "grades" | "sard_queue" | "sard_history" | "message_templates", value: unknown) {
   if (typeof window === "undefined" || !hasAuthToken()) return;
   if (sessionStorage.getItem("qs_syncing") === "1") return;
-  void import("./cloud-sync").then((m) => m.pushAppState(key, value)).catch((error) => {
-    if (key === "sard_history") void import("sonner").then(({ toast }) => toast.error(`لم يتأكد حفظ تاريخ السرد على الخادم: ${error instanceof Error ? error.message : "تعذّرت المزامنة"}`));
-  });
+  void import("./cloud-sync").then((m) => m.pushAppState(key, value)).catch(() => undefined);
 }
 
 const GRADES_CLOUD_DEBOUNCE_MS = 800;
@@ -292,31 +290,7 @@ export function mergeDayEntryPatch(base: DayEntry, patch: Partial<DayEntry>): Da
   };
 }
 
-/** Compare JSON records without treating object key order as a data change. */
-function sameStoredGradeValue(a: unknown, b: unknown): boolean {
-  if (a === b) return true;
-  if (!a || !b || typeof a !== "object" || typeof b !== "object" || Array.isArray(a) !== Array.isArray(b)) return false;
-  const left = a as Record<string, unknown>, right = b as Record<string, unknown>;
-  const keys = Object.keys(left);
-  return keys.length === Object.keys(right).length && keys.every(key => Object.prototype.hasOwnProperty.call(right, key) && sameStoredGradeValue(left[key], right[key]));
-}
-
-/** Preserve unsupported fields; never select a historical linkage by guessing between conflicting copies. */
-function retainUnrecognizedGradeFields(a: object, b: object, known: readonly string[]): Record<string, unknown> {
-  const left = a as Record<string, unknown>, right = b as Record<string, unknown>, retained: Record<string, unknown> = {};
-  for (const key of new Set([...Object.keys(left), ...Object.keys(right)])) {
-    if (known.includes(key)) continue;
-    const hasLeft = Object.prototype.hasOwnProperty.call(left, key), hasRight = Object.prototype.hasOwnProperty.call(right, key);
-    if (hasLeft && hasRight && !sameStoredGradeValue(left[key], right[key])) throw new Error("تعارضت بيانات محفوظة غير معروفة؛ بقيت النسختان دون استبدال أو ربط بالتخمين");
-    retained[key] = structuredClone(hasRight ? right[key] : left[key]);
-  }
-  return retained;
-}
-
 function mergeDayEntries(a: DayEntry | undefined, b: DayEntry | undefined): DayEntry {
-  if (!a && b) return structuredClone(b);
-  if (a && !b) return structuredClone(a);
-  if (a && b && sameStoredGradeValue(a, b)) return structuredClone(a);
   const left = a ?? emptyDayEntry();
   const right = b ?? emptyDayEntry();
   const pickHifzPlanSegments = (): number[] | undefined => {
@@ -361,7 +335,6 @@ function mergeDayEntries(a: DayEntry | undefined, b: DayEntry | undefined): DayE
     if (ts > 0) fieldTouchedAt[key] = ts;
   }
   return {
-    ...retainUnrecognizedGradeFields(left, right, [...DAY_GRADE_FIELDS, "hifzPlanSegments", "custom", "fieldTouchedAt", "touchedAt"]),
     attendance: pick("attendance") as DayEntry["attendance"],
     hifz: pick("hifz") as HifzValue,
     rabt: pick("rabt") as DayEntry["rabt"],
@@ -384,9 +357,6 @@ function weekMaxTouchedAt(w: WeekRecord): number {
 }
 
 function mergeWeekRecords(a: WeekRecord | undefined, b: WeekRecord | undefined): WeekRecord {
-  if (!a && b) return structuredClone(b);
-  if (a && !b) return structuredClone(a);
-  if (a && b && sameStoredGradeValue(a, b)) return structuredClone(a);
   const left = a ?? emptyWeek();
   const right = b ?? emptyWeek();
   const dayKeys = new Set([...Object.keys(left.days), ...Object.keys(right.days)]);
@@ -405,7 +375,6 @@ function mergeWeekRecords(a: WeekRecord | undefined, b: WeekRecord | undefined):
   const newerWeek = weekMaxTouchedAt(right) >= weekMaxTouchedAt(left) ? right : left;
   const segs = newerWeek.compensationPlanSegments ?? [];
   return {
-    ...retainUnrecognizedGradeFields(left, right, ["days", "testMuraja", "testRabt", "sard", "compensationFaces", "compensationMurajaFaces", "compensationPlanSegments"]),
     days,
     testMuraja: left.testMuraja || right.testMuraja,
     testRabt: left.testRabt || right.testRabt,
@@ -642,16 +611,14 @@ function mergeNotificationPair(a: Notification, b: Notification): Notification {
   const secondary = rankA >= rankB ? b : a;
   const tdP = primary.transferData;
   const tdS = secondary.transferData;
-  const transferData = tdP ?? tdS;
   return {
     ...secondary,
     ...primary,
     read: a.read || b.read,
     transferStatus: primary.transferStatus ?? secondary.transferStatus,
     targetRole: primary.targetRole ?? secondary.targetRole,
-    transferData: transferData
+    transferData: tdP || tdS
       ? {
-          ...transferData,
           ...(tdS ?? {}),
           ...(tdP ?? {}),
           actions: mergeTransferActions(tdS?.actions, tdP?.actions),
@@ -669,19 +636,15 @@ export function mergeNotifications(cloud: Notification[], local: Notification[])
     byId.set(n.id, prev ? mergeNotificationPair(prev, n) : n);
   }
   return Array.from(byId.values())
-    .sort((x, y) => y.createdAt.localeCompare(x.createdAt));
+    .sort((x, y) => y.createdAt.localeCompare(x.createdAt))
+    .slice(0, 200);
 }
 
 export const NOTIFICATIONS_CHANGED_EVENT = "qshatawi:notifications-changed";
 
 function writeNotificationsLocal(list: Notification[]) {
   if (typeof window === "undefined") return;
-  const backupKey = `${KEY_NOTIFICATIONS}:before-history-repair`;
-  if (localStorage.getItem(backupKey) === null) {
-    const original = localStorage.getItem(KEY_NOTIFICATIONS);
-    if (original !== null) localStorage.setItem(backupKey, original);
-  }
-  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list));
+  localStorage.setItem(KEY_NOTIFICATIONS, JSON.stringify(list.slice(0, 200)));
   window.dispatchEvent(new Event(NOTIFICATIONS_CHANGED_EVENT));
 }
 
@@ -699,7 +662,7 @@ export function pushNotification(n: Omit<Notification, "id" | "createdAt" | "rea
     createdAt: new Date().toISOString(),
     read: false,
   });
-  writeNotificationsLocal(list);
+  writeNotificationsLocal(list.slice(0, 200));
 }
 
 export function saveNotifications(list: Notification[]) {
@@ -786,7 +749,6 @@ export interface AttendanceArchiveItem {
   type: "absent" | "late" | "excused";
   date: string;            // ISO yyyy-mm-dd
   dayKey: string;          // sun/mon/..
-  week?: number;          // optional in historical rows; never inferred from another semester
   acknowledgedAt: string;
   acknowledgedBy: string;
 }
@@ -827,7 +789,6 @@ export type SardStatus =
 export type SardPhase = "full" | "review_only";
 
 export interface SardQueueItem {
-  evaluationRules?: import("@/lib/evaluation-types").EvaluationRulesSnapshot;
   assignmentId?: string;
   archiveReason?: string;
   id: string;
@@ -868,7 +829,6 @@ export function loadSardQueue(): SardQueueItem[] {
   const raw = localStorage.getItem(KEY_SARD_QUEUE);
   return raw ? JSON.parse(raw) : [];
 }
-export const SARD_QUEUE_CHANGED_EVENT = "qs-sard-queue-changed";
 let sardWrites: Promise<void> = Promise.resolve();
 let pendingSardWrites = 0;
 export function hasPendingSardWrites(): boolean { return pendingSardWrites > 0; }
@@ -878,7 +838,6 @@ export function saveSardQueue(q: SardQueueItem[]) {
   const syncing = sessionStorage.getItem("qs_syncing") === "1";
   if (syncing && hasPendingSardWrites()) return;
   localStorage.setItem(KEY_SARD_QUEUE, JSON.stringify(q));
-  window.dispatchEvent(new Event(SARD_QUEUE_CHANGED_EVENT));
   if (syncing || !hasAuthToken()) return;
   const changes = q.filter(item => JSON.stringify(item) !== JSON.stringify(previous.find(p => p.id === item.id)))
     .map(item => ({ item, base: previous.find(p => p.id === item.id) ?? null }));
@@ -894,7 +853,6 @@ export function saveSardQueue(q: SardQueueItem[]) {
   void write.catch(async () => {
     if (JSON.stringify(loadSardQueue()) === JSON.stringify(q)) {
       localStorage.setItem(KEY_SARD_QUEUE, JSON.stringify(previous));
-      window.dispatchEvent(new Event(SARD_QUEUE_CHANGED_EVENT));
     }
     const { toast } = await import("sonner");
     toast.error("تعذّر حفظ تحديث السرد أو تغيّر من جهاز آخر — حدّث الصفحة قبل المحاولة");
@@ -1046,7 +1004,6 @@ export function notifyLateSard(students: Student[]) {
 }
 
 export interface SardHistoryItem {
-  evaluationRules?: import("@/lib/evaluation-types").EvaluationRulesSnapshot;
   id: string;
   studentId: string;
   halaqaId: number;
@@ -1065,19 +1022,12 @@ export function loadSardHistory(): SardHistoryItem[] {
   const raw = localStorage.getItem(KEY_SARD_HISTORY);
   return raw ? JSON.parse(raw) : [];
 }
-function retainSardHistoryBeforeRepair() {
-  const previous = localStorage.getItem(KEY_SARD_HISTORY);
-  if (previous && !localStorage.getItem(`${KEY_SARD_HISTORY}:before-history-repair`)) localStorage.setItem(`${KEY_SARD_HISTORY}:before-history-repair`, previous);
-}
 export function pushSardHistory(h: SardHistoryItem) {
-  retainSardHistoryBeforeRepair();
   const list = loadSardHistory().filter(item => item.id !== h.id);
   list.unshift(h);
-  localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list));
-  persistShared("sard_history", list);
+  saveSardHistory(list);
 }
 export function saveSardHistory(list: SardHistoryItem[]) {
-  retainSardHistoryBeforeRepair();
   localStorage.setItem(KEY_SARD_HISTORY, JSON.stringify(list));
   persistShared("sard_history", list);
 }
@@ -1091,8 +1041,8 @@ export function hifzCheckedValue(levelType: Student["levelType"]): HifzValue {
   return levelType === "gold" ? "one" : "half";
 }
 
-export function isHifzChecked(hifz: unknown): boolean {
-  return hifz === "half" || hifz === "one" || hifz === "two";
+export function isHifzChecked(hifz: HifzValue): boolean {
+  return hifz !== "";
 }
 
 export const COMPENSATION_FACE_OPTIONS: { value: number; label: string }[] = [
@@ -1163,7 +1113,7 @@ export function dayScore(d: DayEntry, isTalqeen: boolean, levelType?: Student["l
   const att = d.attendance === "present" ? 15 : d.attendance === "late" ? 10 : d.attendance === "excused" ? 5 : 0;
   if (isTalqeen) return att + (d.wajib ? 15 : 0);
   const hifzSlot = levelType === "gold" ? HIFZ_SCORES.one : HIFZ_SCORES.half;
-  const hifz = isHifzChecked(d.hifz) ? hifzSlot : 0;
+  const hifz = d.hifz !== "" ? hifzSlot : 0;
   const rabt = d.rabt === "pass" ? 15 : d.rabt === "fail" ? 5 : 0;
   const mur = d.muraja === "pass" ? 15 : d.muraja === "fail" ? 5 : 0;
   return att + hifz + rabt + mur;
@@ -1236,7 +1186,7 @@ export function studentStats(studentId: string, grades: GradesStore): StudentSta
       if (e.attendance === "late") stats.lateCount++;
       else if (e.attendance === "absent") stats.absentCount++;
       else if (e.attendance === "excused") stats.excusedCount++;
-      if (isHifzChecked(e.hifz)) stats.hifzCount++;
+      if (e.hifz) stats.hifzCount++;
       if (e.rabt === "pass") stats.rabtPass++;
       else if (e.rabt === "fail") stats.rabtFail++;
       if (e.muraja === "pass") stats.murajaPass++;
