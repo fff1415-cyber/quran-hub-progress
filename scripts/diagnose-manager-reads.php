@@ -35,6 +35,34 @@ function summarize_manager_response(mixed $value, string $label): array {
     if ($label === 'atomic_grades') $out['valid_snapshot'] = ($value['protocol'] ?? null) === 1 && $value['value'] instanceof stdClass && ($value['calendar_context']['known'] ?? null) === true;
     return $out;
 }
+function inspect_halaqa_shapes(PDO $pdo, int $cid): array {
+    $sql = $pdo->prepare('SELECT h.id, COUNT(s.id) AS students FROM halaqat h LEFT JOIN students s ON s.complex_id=h.complex_id AND s.halaqa_id=h.id WHERE h.complex_id=? GROUP BY h.id ORDER BY h.id');
+    $sql->execute([$cid]); $groups = [];
+    foreach ($sql->fetchAll() as $row) $groups[(int)$row['id']] = ['students'=>(int)$row['students'],'weeks'=>0,
+        'without_days'=>0,'nonobject_weeks'=>0,'empty_or_missing_days'=>0,'nonobject_day_entries'=>0,'weekly_only'=>0,'active_assignments'=>0];
+    $sql = $pdo->prepare("SELECT s.id,s.halaqa_id,(SELECT COUNT(*) FROM student_plan_assignments a WHERE a.student_id=s.id AND a.status IN ('active','frozen')) AS active_assignments FROM students s WHERE s.complex_id=?");
+    $sql->execute([$cid]); $students = $sql->fetchAll();
+    $store = grade_write_snapshot($pdo,$cid)['value'];
+    foreach ($students as $student) {
+        $group = (int)$student['halaqa_id'];
+        if (!isset($groups[$group])) continue;
+        $groups[$group]['active_assignments'] += (int)$student['active_assignments'];
+        $weeks = $store->{$student['id']} ?? null;
+        if (!is_object($weeks) && !is_array($weeks)) continue;
+        foreach ($weeks as $week) {
+            $groups[$group]['weeks']++;
+            if (!is_object($week)) { $groups[$group]['nonobject_weeks']++; continue; }
+            if (!isset($week->days)) {
+                $groups[$group]['without_days']++;
+                if (isset($week->compensationFaces)||isset($week->compensationMurajaFaces)||isset($week->testMuraja)||isset($week->testRabt)||isset($week->sard)) $groups[$group]['weekly_only']++;
+                continue;
+            }
+            if (count((array)$week->days) < 5) $groups[$group]['empty_or_missing_days']++;
+            foreach ((array)$week->days as $day) if (!is_object($day)) $groups[$group]['nonobject_day_entries']++;
+        }
+    }
+    return $groups;
+}
 try {
     $root = $argv[1];
     $expected = $argv[2] ?? '';
@@ -82,11 +110,12 @@ try {
         $report[$label] = $result + ['elapsed_ms'=>round((hrtime(true)-$started)/1000000,1)];
     }
     $receipts = (int) $pdo->query("SELECT COUNT(*) FROM grade_operation_receipts WHERE store_key='grades' AND operation_id REGEXP '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$'")->fetchColumn();
+    $halaqaShapes = inspect_halaqa_shapes($pdo, (int) $ids[0]);
     $pdo->rollBack();
     $success = !array_filter($report, static fn($result) => $result['status'] !== 200)
         && ($report['app_state_compact']['stores']['grades']['bytes'] ?? null) === 2
         && $report['atomic_grades']['valid_snapshot'] === true;
-    echo json_encode(['status'=>'manager_read_probe','published_sha'=>$expected,'compact_and_atomic_reads_verified'=>$success,'results'=>$report,'confirmed_browser_receipts'=>$receipts,'production_writes'=>false], JSON_THROW_ON_ERROR) . "\n";
+    echo json_encode(['status'=>'manager_read_probe','published_sha'=>$expected,'compact_and_atomic_reads_verified'=>$success,'results'=>$report,'confirmed_browser_receipts'=>$receipts,'halaqa_shapes'=>$halaqaShapes,'production_writes'=>false], JSON_THROW_ON_ERROR) . "\n";
     if (!$success) exit(1);
 } catch (Throwable $error) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
