@@ -80,10 +80,85 @@ function test_safe_legacy_restore(PDO $pdo, int $cid, array $reads): void {
     $more = test_safe_legacy_login_and_transitions($pdo,$cid,$id);
     $GLOBALS['stage'] = 'scientific_config_and_scores';
     $scientific = test_scientific_config_and_scores($pdo,$cid,$id);
+    $GLOBALS['stage'] = 'legacy_plan_atomic_save';
+    $plan = test_legacy_plan_atomic_save($pdo,$cid,$id);
     echo json_encode(['database'=>'isolated_test','reads'=>$reads,'teacher_and_assistant_write'=>[200,200],
         'receipt_replayed'=>true,'stale_status'=>$staleStatus,'empty_replacements'=>$bulk,
         'tarbawi_rejections'=>$tarbawiStatuses,'tarbawi_preserved'=>true,
-        'historical_values_unchanged'=>true,'synthetic_changes_reverted'=>true,'production_writes'=>false]+$more+$scientific,JSON_THROW_ON_ERROR).PHP_EOL;
+        'historical_values_unchanged'=>true,'synthetic_changes_reverted'=>true,'production_writes'=>false]+$more+$scientific+$plan,JSON_THROW_ON_ERROR).PHP_EOL;
+}
+
+function test_legacy_plan_atomic_save(PDO $pdo,int $cid,string $student): array {
+    $q=$pdo->prepare("SELECT ep.id FROM education_plans ep JOIN plan_segments ps ON ps.plan_id=ep.id WHERE ep.complex_id=? AND ep.track='gold' GROUP BY ep.id HAVING COUNT(*)>=3 LIMIT 1");
+    $q->execute([$cid]);$plan=$q->fetchColumn();
+    $q=$pdo->prepare('SELECT segment_index FROM plan_segments WHERE plan_id=? ORDER BY segment_index LIMIT 3');
+    $q->execute([$plan]);$segments=array_map('intval',$q->fetchAll(PDO::FETCH_COLUMN));
+    $q=$pdo->prepare('SELECT id FROM halaqat WHERE complex_id=? LIMIT 1');
+    $q->execute([$cid]);$group=(int)$q->fetchColumn();
+    $q=$pdo->prepare('SELECT start_date,working_days,excluded_dates FROM semesters WHERE complex_id=? AND is_active=1');
+    $q->execute([$cid]);$semester=$q->fetch();
+    $start=new DateTimeImmutable($semester['start_date']);
+    $weekStart=$start->modify('-'.$start->format('w').' days');
+    $holidays=array_map(static fn($day)=>is_string($day)?$day:($day['date']??''),json_decode($semester['excluded_dates'],true)??[]);
+    $date=$day=null;
+    foreach (json_decode($semester['working_days'],true) as $offset) {
+        $candidate=$weekStart->modify('+'.(int)$offset.' days')->format('Y-m-d');
+        if ($candidate<$semester['start_date'] || in_array($candidate,$holidays,true)) continue;
+        $date=$candidate;$day=['sun','mon','tue','wed','thu','fri','sat'][(int)$offset];break;
+    }
+    if (!$date || !$group || count($segments)!==3) throw new RuntimeException('plan_regression_fixture_missing');
+    $assignment=new_uuid();$legacy=new_uuid();
+    $pdo->beginTransaction();
+    $pdo->prepare("INSERT INTO students(id,complex_id,name,halaqa_id,national_id) VALUES (?,?,?,?,'')")->execute([$student,$cid,$student,$group]);
+    $pdo->prepare('INSERT INTO student_plan_assignments(id,student_id,plan_id,start_segment_index) VALUES (?,?,?,?)')
+        ->execute([$assignment,$student,$plan,$segments[0]]);
+    $insert=$pdo->prepare("INSERT INTO segment_completions(id,student_id,plan_id,segment_index,task_type,completed_at,recorded_by,assignment_id) VALUES(?,?,?,?,'hifz',?,'Fixture',?)");
+    $insert->execute([$legacy,$student,$plan,$segments[0],$date,null]);
+    try {
+        $insert->execute([new_uuid(),$student,$plan,$segments[0],$date,$assignment]);
+        throw new RuntimeException('legacy_collision_not_reproduced');
+    } catch (PDOException $e) {
+        if ((int)($e->errorInfo[1]??0)!==1062) throw $e;
+    }
+    $path=[$student,'1','days',$day,'hifz'];
+    $packet=static function(string $value,string $action) use($pdo,$cid,$path,$student,$assignment,$date): array {
+        $capture=grade_cells_capture($pdo,$cid,'grades',[$path]);
+        return ['operation_id'=>'legacy-plan-fixture-'.bin2hex(random_bytes(8)),'calendar_context'=>$capture['calendar_context'],
+            'changes'=>[$capture['cells'][0]+['next'=>['present'=>true,'value'=>$value]]],
+            'plan'=>['student_id'=>$student,'expected_assignment_id'=>$assignment,'task_type'=>'hifz','action'=>$action,
+                'tap'=>$value==='two'?'two':'one','completed_at'=>$date,'cell_path'=>$path]];
+    };
+    $write=static function(array $packet,string $role) use($cid,$group): ProbeResponse {
+        $GLOBALS['testAuth']=['role'=>$role,'complexId'=>$cid,'halaqaId'=>$group,'name'=>'Fixture'];
+        return probe('handle_set_app_state',[],['key'=>'grades','grade_write_protocol'=>1,'value'=>$packet]);
+    };
+    $read=static function(string $role) use($cid,$group,$student,$path): array {
+        $GLOBALS['testAuth']=['role'=>$role,'complexId'=>$cid,'halaqaId'=>$group];
+        $grade=probe('handle_list_app_state',['key'=>'grades','grade_protocol'=>'1']);
+        $sheet=probe('handle_student_plan_sheet',['student_id'=>$student]);
+        if ($grade->getCode()!==200 || $sheet->getCode()!==200) throw new RuntimeException('plan_or_grade_read_failed');
+        return [grade_cells_at($grade->body['value'],$path)['value']??null,array_map('intval',array_column($sheet->body['completions'],'segment_index'))];
+    };
+    $first=$packet('one','record');
+    $receipt=$write($first,'teacher');
+    $retry=$write($first,'teacher');
+    [$value,$done]=$read('assistant');sort($done);
+    if ($receipt->getCode()!==200 || ($receipt->body['operation_id']??null)!==$first['operation_id'] ||
+        ($retry->body['replayed']??false)!==true || $value!=='one' || $done!==array_slice($segments,0,2)) {
+        throw new RuntimeException('legacy_atomic_receipt_failed');
+    }
+    if ($write($packet('','undo'),'assistant')->getCode()!==200 || $read('teacher')!==['',[$segments[0]]]) {
+        throw new RuntimeException('legacy_atomic_cancel_failed');
+    }
+    if ($write($packet('two','record'),'teacher')->getCode()!==200) throw new RuntimeException('legacy_atomic_correct_failed');
+    [$value,$done]=$read('assistant');sort($done);
+    if ($value!=='two' || $done!==$segments) throw new RuntimeException('legacy_atomic_correct_read_failed');
+    $q=$pdo->prepare('SELECT assignment_id FROM segment_completions WHERE id=?');
+    $q->execute([$legacy]);
+    if ($q->fetchColumn()!==null) throw new RuntimeException('legacy_completion_changed');
+    $pdo->rollBack();
+    return ['mysql_duplicate_reproduced'=>1062,'linked_hifz_receipt'=>200,'linked_hifz_retry_once'=>true,
+        'linked_hifz_assistant_reads_grade_and_plan'=>true,'linked_hifz_cancel_and_correct'=>true,'legacy_completion_preserved'=>true];
 }
 
 function test_scientific_config_and_scores(PDO $pdo,int $cid,string $student): array {
