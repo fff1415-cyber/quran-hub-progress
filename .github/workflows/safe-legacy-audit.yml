@@ -48,4 +48,4 @@ jobs:
           DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
           git fetch --no-tags origin +refs/heads/release/supervisor-manual-sard:refs/remotes/origin/release/supervisor-manual-sard
-          python3 scripts/protected-rollback-release.py publish 6b539113e0405e6d64230e7ec036951c28d440d4 4753027158028035ea068048c712f6f994688ccc
+          python3 scripts/protected-rollback-release.py publish 6b539113e0405e6d64230e7ec036951c28d440d4 a40a5b9cd131e452c69e9fea0d91e49a8da677f8
