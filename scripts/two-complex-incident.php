@@ -13,9 +13,6 @@ function read_archive(string $file): array {
     $table = null;
     $done = false;
     // Decode mysqldump literals in memory. No dump statement is executed.
-    $literal = <<<'REGEX'
-~\G\s*(?:'((?:[^'\\\\]|\\\\.|'')*)'|((?:NULL|0x[0-9a-f]*|[-+]?[0-9]+(?:\.[0-9]+)?(?:e[-+]?[0-9]+)?)))([,\)])~is
-REGEX;
     try {
         while (($line = gzgets($h)) !== false) {
             if (str_starts_with($line,'-- Dump completed')) $done = true;
@@ -28,26 +25,54 @@ REGEX;
             if (str_starts_with($line,') ENGINE=')) $table = null;
             if (!preg_match('/^INSERT INTO `([a-z0-9_]+)` VALUES\s*/i',$line,$m) || !in_array($m[1],TABLES,true)) continue;
             $name = $m[1];
+            while (!str_ends_with(rtrim($line),';')) {
+                $more = gzgets($h);
+                if ($more===false) throw new RuntimeException('insert_incomplete_'.$name);
+                $line .= $more;
+            }
             $i = strlen($m[0]);
             do {
-                if (($line[$i++] ?? '') !== '(') throw new RuntimeException('tuple_open');
+                $i += strspn($line," \r\n\t",$i);
+                if (($line[$i++] ?? '') !== '(') throw new RuntimeException('tuple_open_'.$name);
                 $row = [];
                 do {
-                    if (!preg_match($literal,$line,$p,PREG_UNMATCHED_AS_NULL,$i)) throw new RuntimeException('tuple_literal');
-                    $i += strlen($p[0]);
-                    if ($p[1] !== null) {
-                        $v = preg_replace_callback("~''|\\\\(.)~s", static fn($a) =>
-                            $a[0]==="''" ? "'" : (['0'=>"\0",'n'=>"\n",'r'=>"\r",'t'=>"\t",'b'=>"\x08",'Z'=>"\x1a"][$a[1]] ?? $a[1]),$p[1]);
+                    $i += strspn($line," \r\n\t",$i);
+                    if (substr($line,$i,8)==="_binary'") $i+=7;
+                    if (substr($line,$i,2)==="b'") $i++;
+                    if (($line[$i]??'')==="'") {
+                        $i++;
+                        $v='';
+                        while ($i<strlen($line)) {
+                            $n=strcspn($line,"'\\",$i);
+                            $v.=substr($line,$i,$n);
+                            $i+=$n;
+                            $end=$line[$i++]??'';
+                            if ($end==="'") {
+                                if (($line[$i]??'')==="'") {$v.="'";$i++;continue;}
+                                break;
+                            }
+                            if ($end!=="\\" || $i>=strlen($line)) throw new RuntimeException('tuple_quote_'.$name);
+                            $esc=$line[$i++];
+                            $v.=['0'=>"\0",'n'=>"\n",'r'=>"\r",'t'=>"\t",'b'=>"\x08",'Z'=>"\x1a"][$esc]??$esc;
+                        }
                     } else {
-                        $v = $p[2]==='NULL' ? null : (str_starts_with($p[2],'0x') ? hex2bin(substr($p[2],2)) : $p[2]);
+                        $length=strcspn($line,',)',$i);
+                        $raw=trim(substr($line,$i,$length));$i+=$length;
+                        if (!preg_match('/^(?:NULL|0x[0-9a-f]*|[-+]?[0-9]+(?:\.[0-9]+)?(?:e[-+]?[0-9]+)?)$/iD',$raw)) {
+                            throw new RuntimeException('tuple_literal_'.$name);
+                        }
+                        $v = $raw==='NULL' ? null : (str_starts_with($raw,'0x') ? hex2bin(substr($raw,2)) : $raw);
                     }
                     $row[] = $v;
-                } while ($p[3]===',');
-                if (count($columns[$name] ?? [])!==count($row)) throw new RuntimeException('tuple_columns');
+                    $i += strspn($line," \r\n\t",$i);
+                    $delimiter=$line[$i++]??'';
+                } while ($delimiter===',');
+                if ($delimiter!==')' || count($columns[$name] ?? [])!==count($row)) throw new RuntimeException('tuple_columns_'.$name);
                 $tables[$name][] = array_combine($columns[$name],$row);
+                $i += strspn($line," \r\n\t",$i);
                 $separator = $line[$i++] ?? '';
             } while ($separator===',');
-            if ($separator!==';') throw new RuntimeException('tuple_end');
+            if ($separator!==';') throw new RuntimeException('tuple_end_'.$name);
         }
     } finally { gzclose($h); }
     if (!$done || !isset($tables['app_state'],$tables['complexes'],$tables['students'])) throw new RuntimeException('incomplete_dump');
