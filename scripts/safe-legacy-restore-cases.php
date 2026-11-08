@@ -51,7 +51,9 @@ function test_safe_legacy_restore(PDO $pdo, int $cid, array $reads): void {
     $GLOBALS['stage'] = 'tarbawi_preservation';
     $tarbawiBefore = probe('handle_list_app_state',['key'=>'tarbawi_program'])->body;
     $semester = $calendar['active_semester_id'];
-    $tarbawi = static fn(array $packet) => probe('handle_set_app_state',[],['key'=>'tarbawi_program']+$packet);
+    $tarbawi = static fn(array $packet) => isset($packet['tarbawi_write_protocol'])
+        ? probe('handle_write_tarbawi_record',[],$packet)
+        : probe('handle_set_app_state',[],['key'=>'tarbawi_program']+$packet);
     $settings = ['semesterId'=>$semester,'paragraphTypes'=>[],'weeklyRequiredCount'=>2,'halaqaSpans'=>[]];
     $programPlan = ['semesterId'=>$semester,'halaqaId'=>2000000000,'status'=>'draft','items'=>[['id'=>$id]]];
     $edit = static fn(string $section, string $sem, ?array $base, array $next) =>
