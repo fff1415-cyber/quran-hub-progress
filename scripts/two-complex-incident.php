@@ -169,6 +169,82 @@ function store_diff(array $before,array $after,string $key): array {
         'backup_updated'=>$before['state_times'][$key]??null,'current_updated'=>$after['state_times'][$key]??null];
 }
 
+function recorded_summary(array $grades,array $roster,array $groups): array {
+    $out=['fields'=>[],'weeks'=>[],'rostered_students_with_entries'=>0,'unrostered_students_with_entries'=>0,'groups'=>[]];
+    foreach ($grades as $student=>$weeks) {
+        $has=false;
+        $group=$roster[$student]??null;
+        foreach ($weeks as $week=>$record) {
+            foreach (($record['days']??[]) as $day) foreach (['attendance','hifz','rabt','muraja'] as $field) {
+                $v=$day[$field]??null;
+                if (!is_string($v) || $v==='') continue;
+                $has=true;
+                $out['fields'][$field]=($out['fields'][$field]??0)+1;
+                $out['weeks'][$week]=($out['weeks'][$week]??0)+1;
+                if ($group!==null) $out['groups'][$groups[$group]??'غير مصنف']=($out['groups'][$groups[$group]??'غير مصنف']??0)+1;
+            }
+            foreach (['testMuraja','testRabt'] as $field) {
+                $found=[];cell_map($record[$field]??[],[$field],$found);
+                $n=count($found)+(is_scalar($record[$field]??null) && $record[$field]!=='' ? 1 : 0);
+                if ($n) $out['fields'][$field]=($out['fields'][$field]??0)+$n;
+            }
+        }
+        if ($has) $out[$group===null?'unrostered_students_with_entries':'rostered_students_with_entries']++;
+    }
+    ksort($out['weeks'],SORT_NUMERIC);
+    return $out;
+}
+
+function live_read(string $root,array $ids,array $fresh): array {
+    require_once $root.'/api/config.php';
+    require_once $root.'/api/tenant.php';
+    require_once $root.'/api/auth.php';
+    require_once $root.'/api/routes/app_state.php';
+    require_once $root.'/api/routes/plans.php';
+    if (DB_NAME!=='u112851217_msht_io') throw new RuntimeException('live_database_scope');
+    $pdo=new PDO('mysql:host='.DB_HOST.(defined('DB_PORT')?';port='.DB_PORT:'').';dbname='.DB_NAME.';charset='.DB_CHARSET,
+        DB_USER,DB_PASS,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
+    $pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();
+    $views=[];
+    foreach (array_unique($ids) as $id) {
+        $q=$pdo->prepare('SELECT id,name,subdomain FROM complexes WHERE id=?');
+        $q->execute([$id]);$tenant=$q->fetch();
+        $q=$pdo->prepare('SELECT id,name FROM halaqat WHERE complex_id=?');
+        $q->execute([$id]);$groups=[];$labels=[];
+        foreach ($q as $g) {
+            $label='غير مذكور في اسم الحلقة';
+            foreach (array_keys($ids) as $name) if (str_contains($g['name'],$name)) $label=$name;
+            $groups[$g['id']]=$label;$labels[$label]=($labels[$label]??0)+1;
+        }
+        $snapshot=grade_write_snapshot($pdo,(int)$id);
+        $raw=json_decode(json_encode($snapshot['value'],JSON_THROW_ON_ERROR),true,512,JSON_THROW_ON_ERROR);
+        $current=tenant_view($fresh,$id);
+        $before=$current['stores']['grades']??[];
+        $q=$pdo->prepare('SELECT id FROM role_accounts WHERE complex_id=? AND role=\'manager\' LIMIT 1');
+        $q->execute([$id]);$account=$q->fetchColumn();
+        $token=generate_token(['role'=>'manager','complexId'=>(int)$id,'accountId'=>$account,'exp'=>time()*1000+90000]);
+        $http=[];
+        foreach (['grades&grade_protocol=1','weekly_tests'] as $resource) {
+            $url='https://msht.io/api/r.php?path=%2Fapp-state&key='.$resource;
+            $context=stream_context_create(['http'=>['method'=>'GET','timeout'=>12,'ignore_errors'=>true,'follow_location'=>0,
+                'header'=>"Authorization: Bearer ".$token."\r\nAccept: application/json\r\nCache-Control: no-cache\r\n"]]);
+            $payload=@file_get_contents($url,false,$context);
+            $status=0;
+            if (preg_match('/^HTTP\/[^ ]+ (\d+)/',$http_response_header[0]??'',$match)) $status=(int)$match[1];
+            $body=is_string($payload)?json_decode($payload,true):null;
+            $cells=[];
+            cell_map($resource==='weekly_tests'?($body[0]['value']??[]):($body['value']??[]),[],$cells);
+            $http[$resource]=['status'=>$status,'scope'=>$body['context_complex_id']??null,'cells'=>count($cells),
+                'matches_live_grade_snapshot'=>$resource==='weekly_tests'?null:($body['value']??null)===$raw];
+        }
+        $views[$id]=['tenant'=>$tenant,'halaqa_name_labels'=>$labels,'snapshot_context'=>$snapshot['context_complex_id'],
+            'snapshot_matches_emergency_archive'=>$raw===$before,'http'=>$http,
+            'recorded'=>recorded_summary($raw,$current['roster'],$groups)];
+    }
+    $pdo->rollBack();
+    return $views;
+}
+
 $stage='scope';
 try {
     $root=$argv[1]??'';
@@ -229,8 +305,10 @@ try {
         }
         $timeline[$id]=$row;
     }
+    $stage='live_read';
+    $live=live_read($root,$ids,$fresh);
     echo json_encode(['status'=>'comparison_complete','release'=>trim(file_get_contents($root.'/deploy-sha.txt')),
-        'baseline'=>BASE,'current_backup'=>$currentId,'production_writes'=>false,'complexes'=>$out,'timeline'=>$timeline],
+        'baseline'=>BASE,'current_backup'=>$currentId,'production_writes'=>false,'complexes'=>$out,'timeline'=>$timeline,'live'=>$live],
         JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR).PHP_EOL;
 } catch(Throwable $e) {
     echo json_encode(['status'=>'comparison_failed','stage'=>$stage,'reason'=>$e instanceof RuntimeException?$e->getMessage():get_class($e)]).PHP_EOL;
