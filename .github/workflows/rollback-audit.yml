@@ -9,6 +9,9 @@ jobs:
     if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    concurrency:
+      group: hostinger-independent-test-restoration
+      cancel-in-progress: false
     env:
       DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
       DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
@@ -17,7 +20,13 @@ jobs:
       EXPECTED_RELEASE: 86845cb025e83fd47c4f77ce01785799c0e70d85
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - name: Preserve exact deployed code and inspect production aggregates read only
         run: python3 scripts/rollback-audit.py
       - name: Create and verify the private production database archive
         run: python3 scripts/create-private-db-backup.py
+      - name: Restore the private archive only to the separate test database and verify hashes
+        run: python3 scripts/restore-hostinger-test.py
+      - name: Test pinned legacy handlers against the fresh restored copy
+        run: python3 scripts/rollback-compat-probe.py
