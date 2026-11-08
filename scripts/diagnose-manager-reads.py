@@ -1,11 +1,13 @@
 """Execute deployed read handlers inside a database read-only transaction."""
 import ipaddress
+import json
 import os
 import pathlib
 import re
 import shlex
 import subprocess
 import tempfile
+from concurrent.futures import ThreadPoolExecutor
 
 user = os.environ['DEPLOY_USER'].strip().split('@')[0]
 host = str(ipaddress.IPv4Address(os.environ['DEPLOY_HOST'].strip()))
@@ -27,3 +29,16 @@ with tempfile.TemporaryDirectory() as folder:
     print(result.stdout, end='')
     if result.returncode:
         raise SystemExit('Manager read probe did not complete')
+
+report = json.loads(result.stdout)
+def check_entry(page):
+    response = subprocess.check_output(['curl','-sS','--connect-timeout','12','--max-time','18',
+        '--resolve','msht.io:443:'+host,'-w','\n%{http_code}','https://msht.io'+page], stderr=subprocess.DEVNULL)
+    html, code = response.rsplit(b'\n',1)
+    return {'status': int(code), 'published_entry': ('<!-- qhp-grade-release:'+candidate+' -->').encode() in html,
+        'server_error_page': b'Something went wrong on our end' in html}
+
+pages = ['/mm/manager', *['/mm/teacher?h='+str(int(value)) for value in report['halaqa_shapes']]]
+with ThreadPoolExecutor(max_workers=3) as executor:
+    checks = dict(zip(pages, executor.map(check_entry,pages)))
+print(json.dumps({'status':'halaqa_public_entry_reads','routes':checks,'production_writes':False}))
