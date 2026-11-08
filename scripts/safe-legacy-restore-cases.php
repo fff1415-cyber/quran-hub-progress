@@ -129,12 +129,12 @@ function test_scientific_config_and_scores(PDO $pdo,int $cid,string $student): a
     if ($write(['scientific_base'=>$program['revision'],'scientific_config'=>['halaqaId'=>$realGroup,'settings'=>$projectConfig]])!==200) {
         throw new RuntimeException('attendance_config_fixture');
     }
-    $mark = static function (string $field,string $value) use ($pdo,$cid,$student): void {
-        $path = [$student,'1','days','mon',$field];
+    $mark = static function (string $field,string $value,string $day='mon',string $role='teacher') use ($pdo,$cid,$student,$realGroup): void {
+        $path = [$student,'1','days',$day,$field];
         $capture = grade_cells_capture($pdo,$cid,'grades',[$path]);
         $change = $capture['cells'][0]+['next'=>['present'=>true,'value'=>$value]];
         grade_write_request($pdo,$cid,['operation_id'=>'fixture-'.bin2hex(random_bytes(8)),
-            'calendar_context'=>$capture['calendar_context'],'changes'=>[$change]]);
+            'calendar_context'=>$capture['calendar_context'],'changes'=>[$change]],['role'=>$role,'complexId'=>$cid,'halaqaId'=>$realGroup]);
     };
     $mark('attendance','present');
     $present = $read()['value']['data'][$realGroup][$student][1]['mon'];
@@ -158,6 +158,16 @@ function test_scientific_config_and_scores(PDO $pdo,int $cid,string $student): a
         $write(['scientific_base'=>$cleared['revision'],'value'=>$staleAttendance])!==409) {
         throw new RuntimeException('attendance_projection_regression');
     }
+    foreach (['attendance'=>'present','hifz'=>'one','rabt'=>'pass','muraja'=>'pass'] as $field=>$value) {
+        $mark($field,$value,'tue','teacher');
+        if ((grade_write_snapshot($pdo,$cid)['value']->{$student}->{'1'}->days->tue->{$field}??null)!==$value) {
+            throw new RuntimeException('registration_not_visible_in_test_database');
+        }
+        $mark($field,'','tue','assistant');
+        if ((grade_write_snapshot($pdo,$cid)['value']->{$student}->{'1'}->days->tue->{$field}??null)!=='') {
+            throw new RuntimeException('cancellation_not_visible_in_test_database');
+        }
+    }
     $pdo->rollBack();
     if ([$enabled,$disabled,$reenabled,$stale,$noPrep,$failedPrep,$earned] !== [200,200,200,409,409,409,200] ||
         $offRead['value']['configs'][$group]['fields']['hifz'] !== false ||
@@ -168,7 +178,8 @@ function test_scientific_config_and_scores(PDO $pdo,int $cid,string $student): a
     }
     return ['scientific_config_on_off_on'=>[200,200,200], 'stale_settings'=>409,
         'scientific_missing_and_failed_prep'=>[409,409], 'scientific_earned'=>200, 'scientific_history_unchanged'=>true,
-        'attendance_only'=>true,'clear_preserves_confirmed_and_manual_scores'=>true,'stale_attendance_rejected'=>409];
+        'attendance_only'=>true,'clear_preserves_confirmed_and_manual_scores'=>true,'stale_attendance_rejected'=>409,
+        'four_grade_cancellations_persist_in_isolated_database'=>true];
 }
 
 function test_safe_legacy_login_and_transitions(PDO $pdo,int $cid,string $fixture): array {
