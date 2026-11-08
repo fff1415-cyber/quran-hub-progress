@@ -57,6 +57,16 @@ const planRequired = "هذه الدرجة مرتبطة بخطة؛ يلزم تس�
     box.resolve(id, false);
     assert.equal(box.view({})["synthetic-student"][10].days.sun.rabt, "pass");
     assert.deepEqual(box.drafts().at(-1).packet, original.packet, "the original local packet survives choosing the server value");
+    const attendanceId = "old-attendance-" + cid;
+    const attendanceDraft = { ...original, packet: { ...original.packet, operation_id: attendanceId, changes: [
+      { path: path("attendance"), base: { present: false }, next: { present: true, value: "present" } },
+      original.packet.changes[1],
+    ] }, order: 4 };
+    persistent.setItem(box.prefix + "operation:" + attendanceId, JSON.stringify(attendanceDraft));
+    assert.equal(box.reviewRequiresPlan(attendanceId), false, "the rejection was caused by a placeholder only");
+    box.resolve(attendanceId, true);
+    assert.deepEqual(box.drafts().at(-1).packet.changes.map(c => c.path), [path("attendance")]);
+    assert.deepEqual(box.drafts().find(d => d.packet.operation_id === attendanceId).packet, attendanceDraft.packet);
     for (const task of ["rabt", "muraja"]) for (const next of ["", "fail"]) {
       const calls = [];
       const view = PlanAwareTaskCell({ task, student: { levelType: "gold" }, hasPlan: true,

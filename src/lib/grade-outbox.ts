@@ -33,7 +33,8 @@ function isEmptyCompensationDefault(edit: GradeEdit): boolean {
 }
 const planRequiredMessage = "هذه الدرجة مرتبطة بخطة؛ يلزم تسجيل الدرجة والإنجاز معًا، ولم يُحفظ جزء منفرد";
 function requiresPlanReview(draft: GradeDraft): boolean {
-  return !!draft.packet.plan || draft.message === planRequiredMessage;
+  return !!draft.packet.plan || (draft.message === planRequiredMessage && draft.packet.changes.some(change =>
+    !isEmptyCompensationDefault(change) && ["hifz", "rabt", "muraja", "compensationFaces"].includes(change.path.at(-1) ?? "")));
 }
 function changesBetween(before: unknown, after: unknown, path: string[] = []): GradeEdit[] {
   if (equal(before, after)) return [];
