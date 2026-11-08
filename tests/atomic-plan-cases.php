@@ -25,7 +25,7 @@ function atomicPlanCases(PDO $pdo):void {
     $eventKey='grade_plan_event:'.hash('sha256','plan-review-record');$q=$pdo->prepare('SELECT value FROM app_state WHERE complex_id=1 AND `key`=?');$q->execute([$eventKey]);$event=$q->fetchColumn();
     grade_write_request($pdo,1,$packet('plan-review-undo','sun','rabt','fail','undo'),$auth);
     $q->execute([$eventKey]);check($q->fetchColumn()===$event && count(json_decode($event,true)['rows'])===1&&(int)$pdo->query("SELECT COUNT(*) FROM segment_completions WHERE task_type='rabt'")->fetchColumn()===0,'undo reverses only the known projection and preserves the complete original event/rows permanently');
-    $comp=static function(string $id,string $day,float $faces)use($pdo):array{$p=['planned','1','days',$day,'compensationFaces'];$s=grade_cells_capture($pdo,1,'grades',[$p]);return ['operation_id'=>$id,'calendar_context'=>$s['calendar_context'],'changes'=>[gradeCellChange($s,0,$faces)],'plan'=>['student_id'=>'planned','expected_assignment_id'=>'assignment','task_type'=>'hifz','action'=>'compensation','tap'=>'one','completed_at'=>$day==='mon'?'2026-10-05':'2026-10-06','cell_path'=>$p]];};
+    $comp=static function(string $id,string $day,float $faces,string $student='planned',string $assignment='assignment')use($pdo):array{$p=[$student,'1','days',$day,'compensationFaces'];$s=grade_cells_capture($pdo,1,'grades',[$p]);return ['operation_id'=>$id,'calendar_context'=>$s['calendar_context'],'changes'=>[gradeCellChange($s,0,$faces)],'plan'=>['student_id'=>$student,'expected_assignment_id'=>$assignment,'task_type'=>'hifz','action'=>'compensation','tap'=>'one','completed_at'=>$day==='mon'?'2026-10-05':'2026-10-06','cell_path'=>$p]];};
     $firstComp=$comp('plan-compensation-first','mon',1.0);$otherDay=$comp('plan-compensation-other','tue',0.5);
     grade_write_request($pdo,1,$firstComp,$auth);grade_write_request($pdo,1,$otherDay,$auth);grade_write_request($pdo,1,$firstComp,$auth);
     $view=json_decode(gradeCellRaw($pdo,1),true);check($view['planned'][1]['compensationFaces']==1.5&&count($view['planned'][1]['compensationPlanSegments'])===1,'independent compensation days derive one current weekly total and preserve the existing gold floor rule without duplicate completions');
@@ -63,4 +63,13 @@ function atomicPlanCases(PDO $pdo):void {
     check($pdo->query("SELECT * FROM segment_completions WHERE student_id='legacy-plan'")->fetchAll()===[$legacyRow]&&
         json_decode(gradeCellRaw($pdo,1),true)['legacy-plan'][1]['days']['mon']['hifz']==='',
         'reversing the new grade removes only its linked completion');
+    $compensation=$comp('plan-legacy-compensation','mon',1.0,'legacy-plan','legacy-assignment');
+    grade_write_request($pdo,1,$compensation,$auth);
+    check(grade_write_request($pdo,1,$compensation,$auth)['replayed'] &&
+        json_decode(gradeCellRaw($pdo,1),true)['legacy-plan'][1]['compensationPlanSegments']===[2] &&
+        (int)$pdo->query("SELECT COUNT(*) FROM segment_completions WHERE student_id='legacy-plan'")->fetchColumn()===2,
+        'compensation advances past valid legacy progress and replays without duplicating it');
+    grade_write_request($pdo,1,$comp('plan-legacy-compensation-reduce','mon',0.0,'legacy-plan','legacy-assignment'),$auth);
+    check($pdo->query("SELECT * FROM segment_completions WHERE student_id='legacy-plan'")->fetchAll()===[$legacyRow],
+        'reducing compensation preserves the original legacy completion');
 }

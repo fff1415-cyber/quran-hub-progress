@@ -39,28 +39,13 @@ function grade_plan_effect(PDO $pdo,int $cid,array $auth,array $effect,string $o
         $q=$pdo->prepare('SELECT segment_index FROM plan_segments WHERE plan_id=? ORDER BY segment_index');$q->execute([$assignment['plan_id']]);$segments=array_map('intval',$q->fetchAll(PDO::FETCH_COLUMN));
         // Use the same progress as the plan sheet. A legacy completion made
         // during this assignment already occupies its segment and stays intact.
-        $q=$pdo->prepare('SELECT segment_index,task_type FROM segment_completions WHERE student_id=? AND plan_id=?
-            AND (assignment_id=? OR (assignment_id IS NULL AND created_at>=?))');
-        $q->execute([$student,$assignment['plan_id'],$expected,$assignment['assigned_at']]);
-        $done=$q->fetchAll();
+        $done=grade_plan_current_progress($pdo,$student,$assignment);
         $hifz=array_map('intval',array_column(array_filter($done,static fn($r)=>$r['task_type']==='hifz'),'segment_index'));
         $taskDone=array_map('intval',array_column(array_filter($done,static fn($r)=>$r['task_type']===$task),'segment_index'));
         if($task==='hifz')$next=plans_next_hifz_segments_for_tap($assignment['track'],$tap,(int)$assignment['start_segment_index'],$segments,$hifz);
         else{$segment=plans_next_segment_for_task($task,(int)$assignment['start_segment_index'],$assignment['start_muraja_segment']===null?null:(int)$assignment['start_muraja_segment'],(int)$assignment['level_number'],$segments,$hifz,$taskDone);$next=$segment===null?[]:[$segment];}
         if(!$next)throw new RuntimeException('لا توجد مقاطع متاحة؛ لم تُحفظ الدرجة وحدها',409);
-        foreach($next as$segment){
-            $id='gc-'.bin2hex(random_bytes(16));
-            // Ordinary INSERT never rebinds a historical row through ON DUPLICATE KEY UPDATE.
-            try {
-                $pdo->prepare('INSERT INTO segment_completions(id,student_id,plan_id,segment_index,task_type,completed_at,recorded_by,assignment_id) VALUES(?,?,?,?,?,?,?,?)')
-                    ->execute([$id,$student,$assignment['plan_id'],$segment,$task,$date,(string)($auth['name']??'المعلم'),$expected]);
-            } catch (PDOException $error) {
-                if ((int)($error->errorInfo[1]??0)!==1062 ||
-                    !str_contains((string)($error->errorInfo[2]??''),'uk_completion')) throw $error;
-                throw new RuntimeException('المقطع مرتبط بإنجاز سابق لا يخص التعيين الحالي. بقيت الدرجة مسودة والإنجاز السابق محفوظًا.',409,$error);
-            }
-            $q=$pdo->prepare('SELECT * FROM segment_completions WHERE id=?');$q->execute([$id]);$rows[]=$q->fetch();
-        }
+        foreach($next as $segment) $rows[]=grade_plan_insert_completion($pdo,$student,$assignment,$segment,$task,$date,$auth);
     }else throw new RuntimeException('إجراء الإنجاز غير صالح',400);
     $event=['operation_id'=>$operation,'assignment_id'=>$expected,'student_id'=>$student,'plan_id'=>$assignment['plan_id'],'task_type'=>$task,'cell_path'=>$path,'action'=>$action,'rows'=>$rows,'previous_operation'=>$previous['operation_id']??null];
     $eventKey='grade_plan_event:'.hash('sha256',$operation);
@@ -72,6 +57,32 @@ function grade_plan_effect(PDO $pdo,int $cid,array $auth,array $effect,string $o
         grade_cells_record_version($pdo,grade_cells_context($pdo,$cid),'grades',[...$base,'hifzPlanSegments'],$operation);
         grade_cells_record_version($pdo,grade_cells_context($pdo,$cid),'grades',[...$base,'hifzPlanAssignmentId'],$operation);
     }
+}
+
+/** A legacy completion recorded during this assignment occupies its original segment. */
+function grade_plan_current_progress(PDO $pdo,string $student,array $assignment): array
+{
+    $q=$pdo->prepare('SELECT segment_index,task_type FROM segment_completions WHERE student_id=? AND plan_id=?
+        AND (assignment_id=? OR (assignment_id IS NULL AND created_at>=?))');
+    $q->execute([$student,$assignment['plan_id'],$assignment['id'],$assignment['assigned_at']]);
+    return $q->fetchAll();
+}
+
+function grade_plan_insert_completion(PDO $pdo,string $student,array $assignment,int $segment,string $task,string $date,array $auth): array
+{
+    $id='gc-'.bin2hex(random_bytes(16));
+    // An ordinary insert cannot rebind a historical completion.
+    try {
+        $pdo->prepare('INSERT INTO segment_completions(id,student_id,plan_id,segment_index,task_type,completed_at,recorded_by,assignment_id) VALUES(?,?,?,?,?,?,?,?)')
+            ->execute([$id,$student,$assignment['plan_id'],$segment,$task,$date,(string)($auth['name']??'المعلم'),$assignment['id']]);
+    } catch (PDOException $error) {
+        if ((int)($error->errorInfo[1]??0)!==1062 ||
+            !str_contains((string)($error->errorInfo[2]??''),'uk_completion')) throw $error;
+        throw new RuntimeException('المقطع مرتبط بإنجاز سابق لا يخص التعيين الحالي. بقيت الدرجة مسودة والإنجاز السابق محفوظًا.',409,$error);
+    }
+    $q=$pdo->prepare('SELECT * FROM segment_completions WHERE id=?');
+    $q->execute([$id]);
+    return $q->fetch();
 }
 
 function grade_plan_assert_cell_date(PDO $pdo,int $cid,array $path,string $date):void {
@@ -100,12 +111,16 @@ function grade_plan_compensation(PDO $pdo,int $cid,array $auth,array $effect,str
     foreach($rows as$row){$q=$pdo->prepare('SELECT * FROM segment_completions WHERE id=? AND assignment_id=? FOR UPDATE');$q->execute([$row['id'],$assignment['id']]);if(grade_cells_json($q->fetch())!==grade_cells_json($row))throw new RuntimeException('تغيّر إنجاز التعويض؛ بقيت المسودة للمراجعة',409);}
     if($target<count($rows)){$removed=array_splice($rows,$target);foreach($removed as$row)$pdo->prepare('DELETE FROM segment_completions WHERE id=? AND assignment_id=?')->execute([$row['id'],$assignment['id']]);}
     $date=$effect['completed_at']??'';$parts=explode('-',$date);if(!preg_match('/^\d{4}-\d{2}-\d{2}$/D',$date)||!checkdate((int)($parts[1]??0),(int)($parts[2]??0),(int)($parts[0]??0)))throw new RuntimeException('تاريخ التعويض غير صالح',400);
-    while(count($rows)<$target){
+    if(count($rows)<$target){
         $q=$pdo->prepare('SELECT segment_index FROM plan_segments WHERE plan_id=? ORDER BY segment_index');$q->execute([$assignment['plan_id']]);$segments=array_map('intval',$q->fetchAll(PDO::FETCH_COLUMN));
-        $q=$pdo->prepare("SELECT segment_index FROM segment_completions WHERE student_id=? AND plan_id=? AND assignment_id=? AND task_type='hifz'");$q->execute([$student,$assignment['plan_id'],$assignment['id']]);$done=array_map('intval',$q->fetchAll(PDO::FETCH_COLUMN));
-        $next=plans_next_hifz_segments_for_tap($assignment['track'],$assignment['track']==='gold'?'one':'half',(int)$assignment['start_segment_index'],$segments,$done);if(count($next)!==1)throw new RuntimeException('لا توجد مقاطع كافية للتعويض؛ لم يُحفظ جزء منفرد',409);
-        $id='gc-'.bin2hex(random_bytes(16));$pdo->prepare('INSERT INTO segment_completions(id,student_id,plan_id,segment_index,task_type,completed_at,recorded_by,assignment_id)VALUES(?,?,?,?,?,?,?,?)')->execute([$id,$student,$assignment['plan_id'],$next[0],'hifz',$date,(string)($auth['name']??'المعلم'),$assignment['id']]);
-        $q=$pdo->prepare('SELECT * FROM segment_completions WHERE id=?');$q->execute([$id]);$rows[]=$q->fetch();
+        $progress=grade_plan_current_progress($pdo,$student,$assignment);
+        $done=array_map('intval',array_column(array_filter($progress,static fn($r)=>$r['task_type']==='hifz'),'segment_index'));
+        while(count($rows)<$target){
+            $next=plans_next_hifz_segments_for_tap($assignment['track'],$assignment['track']==='gold'?'one':'half',(int)$assignment['start_segment_index'],$segments,$done);
+            if(count($next)!==1)throw new RuntimeException('لا توجد مقاطع كافية للتعويض؛ لم يُحفظ جزء منفرد',409);
+            $rows[]=grade_plan_insert_completion($pdo,$student,$assignment,$next[0],'hifz',$date,$auth);
+            $done[]=$next[0];
+        }
     }
     $event=['operation_id'=>$operation,'assignment_id'=>$assignment['id'],'student_id'=>$student,'plan_id'=>$assignment['plan_id'],'action'=>'compensation','cell_path'=>$path,'rows'=>$rows,'removed_rows'=>$removed,'previous_operation'=>$previous['operation_id']??null];
     app_state_upsert($pdo,'grade_plan_event:'.hash('sha256',$operation),$event,$scoped?$cid:null);app_state_upsert($pdo,$key,$event+['status'=>'active'],$scoped?$cid:null);
