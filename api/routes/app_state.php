@@ -492,7 +492,10 @@ function handle_set_app_state(): void
         try {
             $receipt = grade_write_request(db(), $cid, is_array($input['value'] ?? null) ? $input['value'] : [], $auth);
         } catch (PDOException $error) {
-            error_response('لم يؤكد الخادم حفظ الدرجة. بقيت المسودة على الجهاز.', 503);
+            $reference = api_log_failure($error, 'atomic_grade_write');
+            $driverCode = (int) ($error->errorInfo[1] ?? 0);
+            error_response('لم يؤكد الخادم حفظ الدرجة. بقيت المسودة على الجهاز. مرجع الخطأ: '
+                . $reference . ($driverCode > 0 ? ' / ' . $driverCode : ''), 503);
         } catch (RuntimeException $error) {
             $status = in_array($error->getCode(), [400,409], true) ? $error->getCode() : 409;
             error_response($error->getMessage(), $status);
