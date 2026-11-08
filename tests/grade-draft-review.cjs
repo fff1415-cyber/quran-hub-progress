@@ -97,6 +97,26 @@ const planRequired = "هذه الدرجة مرتبطة بخطة؛ يلزم تس�
     box.resolve(attendanceId, true);
     assert.deepEqual(box.drafts().at(-1).packet.changes.map(c => c.path), [path("attendance")]);
     assert.deepEqual(box.drafts().find(d => d.packet.operation_id === attendanceId).packet, attendanceDraft.packet);
+    const legacyEmpty = { path: path("hifz", "mon"), base: { present: false }, next: { present: true, value: "" } };
+    const addDraft = (suffix, changes, status = "conflict", extra = {}) => {
+      const id = cid + "-" + suffix;
+      const packet = { operation_id: id, calendar_context, changes, ...extra };
+      persistent.setItem(box.prefix + "operation:" + id, JSON.stringify({ packet, order: 8, dependencies: [], status }));
+      return id;
+    };
+    const empty = addDraft("empty", [legacyEmpty, original.packet.changes[1]]);
+    const realClear = addDraft("clear", [original.packet.changes[0]]);
+    const knownPlan = addDraft("plan", [legacyEmpty], "conflict", { plan: effect });
+    const uncertainReceipt = addDraft("pending", [legacyEmpty], "pending");
+    const priorSemester = addDraft("prior-semester", [legacyEmpty], "conflict", {
+      calendar_context: { known: true, active_semester_id: "previous" },
+    });
+    snapshot(changed);
+    const byId = id => box.drafts().find(d => d.packet.operation_id === id);
+    assert.equal(byId(empty).status, "reconciled");
+    assert.deepEqual(byId(empty).packet.changes[0], legacyEmpty);
+    for (const id of [realClear, knownPlan, priorSemester]) assert.equal(byId(id).status, "conflict");
+    assert.equal(byId(uncertainReceipt).status, "pending");
     for (const task of ["rabt", "muraja"]) for (const next of ["", "fail"]) {
       const calls = [];
       const view = PlanAwareTaskCell({ task, student: { levelType: "gold" }, hasPlan: true,

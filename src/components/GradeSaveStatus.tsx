@@ -41,8 +41,7 @@ export function GradeSaveStatus() {
   const conflicts = unresolved.filter(d => d.status !== "pending");
   const pending = unresolved.filter(d => d.status === "pending");
   const students = reviewOpen ? loadStudents() : [];
-  const confirmed = drafts.some(d => d.status === "confirmed");
-  if (!unresolved.length && !confirmed && !localError) return null;
+  if (!unresolved.length && !localError) return null;
   const run = async (kind: NonNullable<typeof busy>, action: () => Promise<unknown>) => {
     if (actionInProgress.current) return;
     actionInProgress.current = true;
@@ -62,7 +61,7 @@ export function GradeSaveStatus() {
   };
   return <section aria-live="polite" className="border-b bg-secondary/40 p-3 text-sm" dir="rtl">
     {localError && <p role="alert">{localError}</p>}
-    <p>{unresolved.length ? `مسودات على هذا الجهاز: ${conflicts.length} للمراجعة، و${pending.length} بانتظار تأكيد الحفظ.` : drafts.every(d => d.status === "confirmed") ? "أكد الخادم جميع عمليات تسجيل الدرجات المرسلة." : "لا توجد مسودات بانتظار التأكيد."}</p>
+    {unresolved.length > 0 && <p>{`مسودات على هذا الجهاز: ${conflicts.length} للمراجعة، و${pending.length} بانتظار تأكيد الحفظ.`}</p>}
     {unresolved.length > 0 && <button type="button" aria-expanded={reviewOpen}
       aria-controls="grade-save-review" className="min-h-11 rounded border px-3"
       onClick={() => setReviewOpen(open => !open)}>
