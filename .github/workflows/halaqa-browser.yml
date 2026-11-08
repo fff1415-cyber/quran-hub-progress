@@ -5,6 +5,23 @@ on:
 permissions:
   contents: read
 jobs:
+  grade-draft-review:
+    if: github.head_ref == 'fix/grade-draft-review'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+      - run: npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+      - run: node tests/grade-draft-review.cjs && node tests/stage2-atomic-local.cjs && node tests/stage2-atomic-sessions.cjs && php tests/stage3-atomic-plan.php
+      - run: npx tsc --noEmit && npm run build:hostinger
   halaqa:
     if: github.head_ref == 'fix/halaqa-render'
     runs-on: ubuntu-24.04
