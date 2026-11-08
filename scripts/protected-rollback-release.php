@@ -22,7 +22,7 @@ try {
     }
     require $stage . '/grade-release-entry.php';
     $manifest = json_decode(file_get_contents($stage . '/api.json'), true, 512, JSON_THROW_ON_ERROR);
-    if (!is_array($manifest) || count($manifest) < 1 || count($manifest) > 80) throw new RuntimeException('release_manifest');
+    if (!is_array($manifest) || !array_is_list($manifest) || count($manifest) > 80) throw new RuntimeException('release_manifest');
     $items = [];
     foreach ($manifest as $row) {
         $relative = $row['path'] ?? '';
@@ -116,7 +116,7 @@ try {
             foreach ($assets as $destination=>$source) grade_release_atomic($destination, file_get_contents($source));
             grade_release_check_assets($root, $html);
             try {
-                grade_release_publish_api($root, array_values($items));
+                if ($items) grade_release_publish_api($root, array_values($items));
                 $tag = GRADE_RELEASE_TAG . '<!-- qhp-grade-release:' . $target . ' -->';
                 grade_release_atomic($entry, str_replace('</head>', $tag . '</head>', $html));
                 grade_release_atomic($marker, $target . "\n");

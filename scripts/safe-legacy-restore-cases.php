@@ -138,7 +138,10 @@ function test_scientific_config_and_scores(PDO $pdo,int $cid,string $student): a
     };
     $mark('attendance','present');
     $present = $read()['value']['data'][$realGroup][$student][1]['mon'];
-    if ($present !== ['attendance'=>'9']) throw new RuntimeException('attendance_awarded_task');
+    $rawDay = (array)(grade_write_snapshot($pdo,$cid)['value']->{$student}->{'1'}->days->mon??[]);
+    if ($present !== ['attendance'=>'9'] || $rawDay !== ['attendance'=>'present']) {
+        throw new RuntimeException('attendance_awarded_task');
+    }
     $mark('hifz','one');
     // Simulate an old automatic result plus a real teacher override on the same day.
     $legacy = grade_cells_store($pdo,$cid,'scientific_grades',true);
