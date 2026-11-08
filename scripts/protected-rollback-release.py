@@ -82,6 +82,7 @@ changes = git('diff', '--name-status', '--no-renames', base, target, '--', 'api/
 if git('diff', '--name-only', base, target, '--', 'public/', '.env.hostinger'):
     raise SystemExit('Unexpected shared public files or hosting configuration changes')
 retired = 'api/lib/plan-profile.php'
+retire_profile = 'D\t' + retired in changes
 with tempfile.TemporaryDirectory() as temp:
     tmp = pathlib.Path(temp)
     package = tmp / 'package'
@@ -100,7 +101,7 @@ with tempfile.TemporaryDirectory() as temp:
         subprocess.run(['php','-l',str(dest)], check=True, stdout=subprocess.DEVNULL)
         records.append({'path':path.removeprefix('api/'),'beforeSha256':digest(old),'sha256':digest(new)})
     (package/'api.json').write_text(json.dumps(records))
-    (package/'retired-sha.txt').write_text(digest(git('show', base+':'+retired)))
+    (package/'retired-sha.txt').write_text(digest(git('show', base+':'+retired)) if retire_profile else '')
     (package/'index.html').write_bytes((client/'index.html').read_bytes())
     for path in ('grade-release-entry.php','protected-rollback-release.php'):
         (package/path).write_bytes((repo/'scripts'/path).read_bytes())

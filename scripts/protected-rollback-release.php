@@ -40,6 +40,7 @@ try {
     }
     $entry = $root . '/index.html';
     $html = file_get_contents($stage . '/index.html');
+    $retiredHash = trim(file_get_contents($stage . '/retired-sha.txt'));
     $lock = grade_release_lock($private . '/grade-cutover.lock');
     if (stream_get_contents($lock, 2) !== '1') throw new RuntimeException('existing_atomic_floor_required');
 
@@ -68,8 +69,8 @@ try {
         if ($live !== $target) throw new RuntimeException('release_finish_marker');
         $obsolete = $root . '/api/' . $profile;
         $expected = trim(file_get_contents($stage . '/retired-sha.txt'));
-        if (realpath($obsolete) !== $obsolete || hash_file('sha256',$obsolete) !== $expected ||
-            is_link($backup . '/retired-plan-profile.php') || !rename($obsolete, $backup . '/retired-plan-profile.php')) {
+        if ($expected !== '' && (realpath($obsolete) !== $obsolete || hash_file('sha256',$obsolete) !== $expected ||
+            is_link($backup . '/retired-plan-profile.php') || !rename($obsolete, $backup . '/retired-plan-profile.php'))) {
             throw new RuntimeException('release_retire_legacy_dependency');
         }
     } else {
@@ -82,7 +83,7 @@ try {
             }
         }
         $obsolete = $root . '/api/' . $profile;
-        if (realpath($obsolete) !== $obsolete || hash_file('sha256',$obsolete) !== trim(file_get_contents($stage . '/retired-sha.txt'))) {
+        if ($retiredHash !== '' && (realpath($obsolete) !== $obsolete || hash_file('sha256',$obsolete) !== $retiredHash)) {
             throw new RuntimeException('release_baseline_retired_hash');
         }
         if (realpath($root . '/assets') !== $root . '/assets') throw new RuntimeException('release_assets_path');

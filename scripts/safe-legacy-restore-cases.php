@@ -78,10 +78,56 @@ function test_safe_legacy_restore(PDO $pdo, int $cid, array $reads): void {
     }
     $GLOBALS['stage'] = 'login_and_transitions';
     $more = test_safe_legacy_login_and_transitions($pdo,$cid,$id);
+    $GLOBALS['stage'] = 'scientific_config_and_scores';
+    $scientific = test_scientific_config_and_scores($pdo,$cid,$id);
     echo json_encode(['database'=>'isolated_test','reads'=>$reads,'teacher_and_assistant_write'=>[200,200],
         'receipt_replayed'=>true,'stale_status'=>$staleStatus,'empty_replacements'=>$bulk,
         'tarbawi_rejections'=>$tarbawiStatuses,'tarbawi_preserved'=>true,
-        'historical_values_unchanged'=>true,'synthetic_changes_reverted'=>true,'production_writes'=>false]+$more,JSON_THROW_ON_ERROR).PHP_EOL;
+        'historical_values_unchanged'=>true,'synthetic_changes_reverted'=>true,'production_writes'=>false]+$more+$scientific,JSON_THROW_ON_ERROR).PHP_EOL;
+}
+
+function test_scientific_config_and_scores(PDO $pdo,int $cid,string $student): array {
+    $GLOBALS['testAuth'] = ['role'=>'teacher','complexId'=>$cid,'halaqaId'=>2000000000];
+    $read = static fn()=>probe('handle_list_app_state',['key'=>'scientific_grades'])->body[0];
+    $write = static fn(array $payload)=>probe('handle_write_scientific_store',[],$payload)->getCode();
+    $before = $read();
+    $grades = grade_body(probe('handle_list_app_state',['key'=>'grades']));
+    $pdo->beginTransaction();
+    $group = 2000000000;
+    $config = ['visible'=>true,'fields'=>['attendance'=>false,'hifz'=>true,'rabt'=>true,'muraja'=>true],
+        'defaultScores'=>['hifz'=>'11','rabt'=>'7','muraja'=>'5']];
+    $edit = static fn(array $state,array $settings)=>$write(['scientific_base'=>$state['revision'],
+        'scientific_config'=>['halaqaId'=>$group,'settings'=>$settings]]);
+    $enabled = $edit($before,$config);
+    $on = $read();
+    $off = $config;
+    $off['fields']['hifz'] = false;
+    $disabled = $edit($on,$off);
+    $offRead = $read();
+    $stale = $write(['scientific_base'=>$offRead['revision'],'value'=>$on['value']]);
+    $reenabled = $edit($offRead,$config);
+    $afterConfig = $read();
+    $next = $afterConfig['value'];
+    $next['data'][$group][$student][1]['sun'] = ['hifz'=>'11','rabt'=>'7','muraja'=>'5'];
+    $noPrep = $write(['scientific_base'=>$afterConfig['revision'],'value'=>$next]);
+    $prep = grade_cells_store($pdo,$cid,'grades',true);
+    $prep->{$student} = (object)['1'=>(object)['days'=>(object)['sun'=>(object)['hifz'=>'one','rabt'=>'fail','muraja'=>'fail']]]];
+    app_state_upsert($pdo,'grades',$prep,$cid);
+    $failedPrep = $write(['scientific_base'=>$afterConfig['revision'],'value'=>$next]);
+    $prep->{$student}->{'1'}->days->sun->rabt = 'pass';
+    $prep->{$student}->{'1'}->days->sun->muraja = 'pass';
+    app_state_upsert($pdo,'grades',$prep,$cid);
+    $earned = $write(['scientific_base'=>$afterConfig['revision'],'value'=>$next]);
+    $pdo->rollBack();
+    if ([$enabled,$disabled,$reenabled,$stale,$noPrep,$failedPrep,$earned] !== [200,200,200,409,409,409,200] ||
+        $offRead['value']['configs'][$group]['fields']['hifz'] !== false ||
+        $afterConfig['value']['configs'][$group]['fields']['hifz'] !== true ||
+        ($afterConfig['value']['data'] ?? []) !== ($before['value']['data'] ?? []) ||
+        $read()!==$before || grade_body(probe('handle_list_app_state',['key'=>'grades']))!==$grades) {
+        throw new RuntimeException('scientific_regression');
+    }
+    return ['scientific_config_on_off_on'=>[200,200,200], 'stale_settings'=>409,
+        'scientific_missing_and_failed_prep'=>[409,409], 'scientific_earned'=>200, 'scientific_history_unchanged'=>true];
 }
 
 function test_safe_legacy_login_and_transitions(PDO $pdo,int $cid,string $fixture): array {
