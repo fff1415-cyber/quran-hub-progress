@@ -39,15 +39,28 @@ function inspect_halaqa_shapes(PDO $pdo, int $cid): array {
     $sql = $pdo->prepare('SELECT h.id, COUNT(s.id) AS students FROM halaqat h LEFT JOIN students s ON s.complex_id=h.complex_id AND s.halaqa_id=h.id WHERE h.complex_id=? GROUP BY h.id ORDER BY h.id');
     $sql->execute([$cid]); $groups = [];
     foreach ($sql->fetchAll() as $row) $groups[(int)$row['id']] = ['students'=>(int)$row['students'],'weeks'=>0,
-        'without_days'=>0,'nonobject_weeks'=>0,'empty_or_missing_days'=>0,'nonobject_day_entries'=>0,'weekly_only'=>0,'active_assignments'=>0];
+        'without_days'=>0,'nonobject_weeks'=>0,'empty_or_missing_days'=>0,'nonobject_day_entries'=>0,'weekly_only'=>0,'active_assignments'=>0,
+        'current_week_missing'=>0,'placeholder_changes_if_snapshot_pending'=>0];
     $sql = $pdo->prepare("SELECT s.id,s.halaqa_id,(SELECT COUNT(*) FROM student_plan_assignments a WHERE a.student_id=s.id AND a.status IN ('active','frozen')) AS active_assignments FROM students s WHERE s.complex_id=?");
     $sql->execute([$cid]); $students = $sql->fetchAll();
-    $store = grade_write_snapshot($pdo,$cid)['value'];
+    $snapshot = grade_write_snapshot($pdo,$cid);
+    $store = $snapshot['value'];
+    $semesterId = $snapshot['calendar_context']['active_semester_id'] ?? null;
+    $today = (new DateTimeImmutable('now', new DateTimeZone('Asia/Riyadh')))->format('Y-m-d');
+    $lookup = $pdo->prepare('SELECT week_number FROM academic_weeks WHERE semester_id=? AND start_date<=? ORDER BY start_date DESC LIMIT 1');
+    $lookup->execute([$semesterId, $today]);
+    $current = (int) ($lookup->fetchColumn() ?: 1);
+    $lookup = $pdo->prepare('SELECT working_days FROM semesters WHERE id=? LIMIT 1');
+    $lookup->execute([$semesterId]);
+    $working = json_decode((string)$lookup->fetchColumn(), true);
+    $workingCount = is_array($working) && count($working) > 0 ? count($working) : 5;
     foreach ($students as $student) {
         $group = (int)$student['halaqa_id'];
         if (!isset($groups[$group])) continue;
         $groups[$group]['active_assignments'] += (int)$student['active_assignments'];
         $weeks = $store->{$student['id']} ?? null;
+        $groups[$group]['placeholder_changes_if_snapshot_pending'] += $workingCount + 2;
+        if (!isset(((array)$weeks)[$current])) $groups[$group]['current_week_missing']++;
         if (!is_object($weeks) && !is_array($weeks)) continue;
         foreach ($weeks as $week) {
             $groups[$group]['weeks']++;
