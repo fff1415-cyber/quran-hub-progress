@@ -46,4 +46,4 @@ jobs:
           DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
         run: |
           git fetch --no-tags origin +refs/heads/release/linked-memorization-save:refs/remotes/origin/release/linked-memorization-save
-          python3 scripts/protected-rollback-release.py publish 484c404fed5f950e4868138d1039a45115c6f0b9 24182cf33a9f1e714c6c0427e5c28e6d08f3ee6c
+          python3 scripts/protected-rollback-release.py publish 24182cf33a9f1e714c6c0427e5c28e6d08f3ee6c 6b539113e0405e6d64230e7ec036951c28d440d4
