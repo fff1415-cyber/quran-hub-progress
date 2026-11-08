@@ -49,6 +49,7 @@ const planRequired = "هذه الدرجة مرتبطة بخطة؛ يلزم تس�
     });
     const ui = text(h.render(() => GradeSaveStatus()));
     assert.match(ui, /لم يؤكد الخادم حفظها/);
+    assert.match(ui, /الأسبوع 10 · الأحد · الربط — مسودتك: فارغ، المحفوظ: مجتاز/);
     assert.doesNotMatch(ui, /اعتماد مسودتي بعد المقارنة|compensationFaces/);
     assert.deepEqual(box.reviewChanges(id).map(c => c.path), [path("rabt")]);
     assert.throws(() => box.resolve(id, true), /مرتبطة بخطة/);

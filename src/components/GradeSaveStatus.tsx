@@ -2,6 +2,28 @@ import { useEffect, useState } from "react";
 import { currentGradeOutbox, flushConfirmedGrades, refreshConfirmedGrades, GRADE_SAVE_EVENT, gradeLocalSaveError } from "@/lib/grade-sync";
 import { loadStudents } from "@/lib/mock-data";
 
+const dayLabels: Record<string, string> = {
+  sun: "الأحد", mon: "الاثنين", tue: "الثلاثاء", wed: "الأربعاء", thu: "الخميس", fri: "الجمعة", sat: "السبت",
+};
+const fieldLabels: Record<string, string> = {
+  attendance: "الحضور", hifz: "الحفظ", rabt: "الربط", muraja: "المراجعة", wajib: "الواجب",
+  compensationFaces: "تعويض الحفظ", compensationMurajaFaces: "تعويض المراجعة",
+};
+const valueLabels: Record<string, string> = {
+  "": "فارغ", pass: "مجتاز", fail: "غير مجتاز", present: "حاضر", absent: "غائب",
+  late: "متأخر", excused: "مستأذن", half: "نصف وجه", one: "وجه", two: "وجهان",
+};
+function gradeLocation(path: string[]): string {
+  const [, week, scope, day, field] = path;
+  if (scope === "days" && dayLabels[day] && fieldLabels[field]) return `الأسبوع ${week} · ${dayLabels[day]} · ${fieldLabels[field]}`;
+  if (path.length === 3 && fieldLabels[scope]) return `الأسبوع ${week} · ${fieldLabels[scope]}`;
+  return path.slice(1).join(" / ");
+}
+function gradeValue(value: unknown): string {
+  if (typeof value === "string" && Object.hasOwn(valueLabels, value)) return valueLabels[value];
+  return JSON.stringify(value) ?? "غير موجود";
+}
+
 export function GradeSaveStatus() {
   const [, redraw] = useState(0), [error, setError] = useState("");
   useEffect(() => {
@@ -32,7 +54,7 @@ export function GradeSaveStatus() {
       <ul>{changes.map((change, i) => {
         let saved: unknown = box?.snapshot()?.value;
         for (const part of change.path) saved = saved && typeof saved === "object" ? (saved as Record<string, unknown>)[part] : undefined;
-        return <li key={i}>{students.find(s => s.id === change.path[0])?.name ?? "الطالب"} · {change.path.slice(1).join(" / ")} — مسودتك: {JSON.stringify(change.next.present ? change.next.value : "إزالة")}، المحفوظ: {JSON.stringify(saved) ?? "غير موجود"}</li>;
+        return <li key={i}>{students.find(s => s.id === change.path[0])?.name ?? "الطالب"} · {gradeLocation(change.path)} — مسودتك: {change.next.present ? gradeValue(change.next.value) : "إزالة"}، المحفوظ: {gradeValue(saved)}</li>;
       })}</ul>
       {needsPlan && <p>أبقِ القيمة المحفوظة إذا أردت إعادة التسجيل من جدول التحضير؛ سيُراجَع ارتباط الدرجة بالإنجاز قبل حفظهما معًا.</p>}
       {!needsPlan && changes.length > 0 && <button className="underline ml-3" onClick={() => void run(async () => { box?.resolve(id, true); await flushConfirmedGrades(); })}>اعتماد مسودتي بعد المقارنة</button>}
