@@ -221,6 +221,8 @@ function live_read(string $root,array $ids,array $fresh): array {
         $raw=json_decode(json_encode($snapshot['value'],JSON_THROW_ON_ERROR),true,512,JSON_THROW_ON_ERROR);
         $current=tenant_view($fresh,$id);
         $before=$current['stores']['grades']??[];
+        $liveView=$current;
+        $liveView['stores']['grades']=$raw;
         $q=$pdo->prepare('SELECT week_number,start_date,end_date FROM academic_weeks WHERE semester_id=? AND start_date<=? AND end_date>=?');
         $today=(new DateTimeImmutable('now',new DateTimeZone('Asia/Riyadh')))->format('Y-m-d');
         $q->execute([$current['active']['id'],$today,$today]);$todayWeeks=$q->fetchAll();
@@ -243,6 +245,8 @@ function live_read(string $root,array $ids,array $fresh): array {
         }
         $views[$id]=['tenant'=>$tenant,'halaqa_name_labels'=>$labels,'snapshot_context'=>$snapshot['context_complex_id'],
             'snapshot_matches_emergency_archive'=>$raw===$before,'http'=>$http,
+            'grade_delta_since_emergency_backup'=>array_intersect_key(store_diff($current,$liveView,'grades'),
+                array_flip(['missing_cells','new_cells','changed_cells'])),
             'riyadh_date'=>$today,'calendar_rows_today'=>$todayWeeks,
             'recorded'=>recorded_summary($raw,$current['roster'],$groups)];
     }
