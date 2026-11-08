@@ -112,6 +112,15 @@ try {
     $pdo->rollBack();
     if (grade_body(probe('handle_list_app_state',['key'=>'grades'])) !== $before ||
         probe('handle_list_app_state',['key'=>'weekly_tests'])->body !== $weeklyBefore->body) throw new RuntimeException('bulk_test_not_reverted');
+    $stage = 'tarbawi_reset_reproduction';
+    $tarbawiBefore = probe('handle_list_app_state',['key'=>'tarbawi_program'])->body;
+    $pdo->beginTransaction();
+    $test = ['settingsBySemester'=>['synthetic-semester'=>['active'=>true]],'plans'=>['synthetic-plan'=>['done'=>true]]];
+    $testSeed = probe('handle_set_app_state',[],['key'=>'tarbawi_program','value'=>$test])->getCode();
+    $reset = probe('handle_set_app_state',[],['key'=>'tarbawi_program','value'=>['settingsBySemester'=>(object)[],'plans'=>(object)[]]])->getCode();
+    $tarbawiAfter = probe('handle_list_app_state',['key'=>'tarbawi_program'])->body[0]['value'] ?? [];
+    $pdo->rollBack();
+    if ($testSeed !== 200 || probe('handle_list_app_state',['key'=>'tarbawi_program'])->body !== $tarbawiBefore) throw new RuntimeException('tarbawi_test_not_reverted');
     echo json_encode(['database'=>'isolated_test','old_revision'=>'7e9adf1','reads'=>$reads,
         'existing_atomic_receipts'=>$receiptCount,'old_save_responses'=>[$writeA,$writeB],
         'first_confirmed_edit_lost'=>$after['qhp-synthetic-a']['attendance']===0,
@@ -119,6 +128,8 @@ try {
         'semester_reset'=>['synthetic_grade_records_before'=>count($fixtureGrades),'grade_records_after'=>$remainingGrades,
             'synthetic_weekly_tests_before'=>1,'weekly_tests_after'=>$remainingWeekly,
             'http_statuses'=>[$gradesReset,$weeklyReset]],
+        'tarbawi_reset'=>['http_status'=>$reset,'synthetic_plans_before'=>1,'synthetic_plans_after'=>count($tarbawiAfter['plans'] ?? []),
+            'current_tenant_has_tarbawi_store'=>count($tarbawiBefore)>0],
         'isolated_test_transaction_reverted'=>true,'production_writes'=>false], JSON_THROW_ON_ERROR).PHP_EOL;
 } catch (Throwable $e) {
     if (isset($pdo) && $pdo->inTransaction()) $pdo->rollBack();
