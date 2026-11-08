@@ -15,6 +15,7 @@ function check(bool $ok,string $message):void {if(!$ok)throw new RuntimeExceptio
 require __DIR__.'/../api/routes/app_state.php';require __DIR__.'/../api/routes/plans.php';require_once __DIR__.'/../api/lib/grade-cell-operations.php';require __DIR__.'/grade-cell-cases.php';
 function gradeCellsSeed(bool $scoped=true):PDO {
     $pdo=new GradeCellsDatabase();$pdo->exec($scoped?'CREATE TABLE app_state(complex_id INTEGER NOT NULL,`key` TEXT NOT NULL,value TEXT,UNIQUE(complex_id,`key`))':'CREATE TABLE app_state(`key` TEXT PRIMARY KEY,value TEXT)');
+    $pdo->exec('CREATE TABLE students(id TEXT PRIMARY KEY,complex_id INTEGER,halaqa_id INTEGER)');
     $pdo->exec('CREATE TABLE semesters(id INTEGER PRIMARY KEY,complex_id INTEGER,is_active INTEGER); INSERT INTO semesters VALUES(1,1,1),(2,1,0),(3,2,1)');
     $pdo->exec('CREATE TABLE grade_cell_versions(context_id INTEGER NOT NULL,store_key TEXT NOT NULL,path_sha256 TEXT NOT NULL,path_json TEXT NOT NULL,direct_version TEXT,subtree_version TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(context_id,store_key,path_sha256)); CREATE TABLE grade_operation_receipts(context_id INTEGER NOT NULL,store_key TEXT NOT NULL,operation_id TEXT NOT NULL,input_sha256 TEXT NOT NULL,applied_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(context_id,store_key,operation_id))');
     return $pdo;

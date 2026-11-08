@@ -312,6 +312,7 @@ export async function syncFromCloud(options?: {
 
         const sardBeforePull = JSON.stringify(loadSardQueue());
         const scientificConfigBeforePull = scientificConfigGeneration;
+        const scientificDataBeforePull = scientificDataGeneration;
         const stateRows = await secureListAppState({ data: { token } });
         const state = new Map(stateRows.map((row) => [row.key, row.value]));
         sessionStorage.setItem("qs_syncing", "1");
@@ -341,7 +342,7 @@ export async function syncFromCloud(options?: {
           saveAllHalaqaPrograms(merged);
         }
         if (state.has("halaqa_program_grades")) saveAllProgramGrades(state.get("halaqa_program_grades") as HalaqaProgramGradesStore);
-        if (state.has("scientific_grades")) {
+        if (state.has("scientific_grades") && scientificDataBeforePull === scientificDataGeneration) {
           const {
             loadScientificGradesStore,
             mergeScientificGradesStores,
@@ -349,7 +350,7 @@ export async function syncFromCloud(options?: {
           } = await import("./scientific-grades");
           const cloud = state.get("scientific_grades") as import("./scientific-grades").ScientificGradesStore;
           const local = loadScientificGradesStore();
-          const merged = mergeScientificGradesStores(cloud, local);
+          const merged = mergeScientificGradesStores(local, cloud);
           merged.configs = scientificConfigBeforePull === scientificConfigGeneration ? cloud.configs ?? {} : local.configs;
           saveScientificGradesStore(merged);
         }
@@ -496,6 +497,7 @@ export async function pullMergedGrades(): Promise<GradesStore | null> {
 
 let scientificPushQueue: Promise<unknown> = Promise.resolve();
 let scientificConfigGeneration = 0;
+let scientificDataGeneration = 0;
 
 function enqueueScientificSave<T>(run: () => Promise<T>): Promise<T> {
   const next = scientificPushQueue.then(run, run);
@@ -513,6 +515,19 @@ async function readScientificStore(token: string) {
     revision: row.revision,
     value: (row.value ?? { configs: {}, data: {}, overrides: {} }) as import("./scientific-grades").ScientificGradesStore,
   };
+}
+
+export function refreshScientificFromCloud(token: string) {
+  return enqueueScientificSave(async () => {
+    const { value: confirmed } = await readScientificStore(token);
+    if (getToken() !== token) return;
+    const { loadScientificGradesStore, mergeScientificGradesStores, saveScientificGradesStore } = await import("./scientific-grades");
+    if (getToken() !== token) return;
+    const merged = mergeScientificGradesStores(loadScientificGradesStore(), confirmed);
+    merged.configs = confirmed.configs ?? {};
+    scientificDataGeneration++;
+    saveScientificGradesStore(merged, { sync: false });
+  });
 }
 
 export function pushScientificConfig(halaqaId: number, settings: import("./scientific-grades").ScientificGradesConfig) {

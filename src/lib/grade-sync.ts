@@ -45,7 +45,11 @@ async function read(session: NonNullable<ReturnType<typeof identity>>, box: Grad
     else box.reconcile(cached);
     return box.view({});
   }
-  box.accept(snapshot); return box.view({});
+  box.accept(snapshot);
+  // Preparation and its scientific projection commit together. Read both before
+  // refreshing the program totals; a failed read cannot undo the grade receipt.
+  await import("./cloud-sync").then((cloud) => cloud.refreshScientificFromCloud(session.token)).catch(() => undefined);
+  return box.view({});
 }
 export function refreshConfirmedGrades(): Promise<GradesStore> {
   const session = identity(), box = currentGradeOutbox();

@@ -9,7 +9,6 @@ import {
   mergeDayEntryPatch,
   mutateStudentWeek,
   flushGradesToCloudSoon,
-  GRADES_CHANGED_EVENT,
   weekPercentage, loadNotifications, pushNotification,
   ensureGradesSemester,
   sumWeekCompensationFaces, compensationRemainingForDay,
@@ -104,7 +103,6 @@ import {
   ScientificGradesToolbar,
 } from "@/components/teacher/ScientificGradesToolbar";
 import {
-  syncScientificScoresFromPrepForHalaqa,
   enabledScientificFields,
   getScientificDayScore,
   isScientificProgramEnabled,
@@ -825,7 +823,6 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     setSciData(loadScientificData(halaqaId));
   };
 
-  const gradesBackfillTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sciRefreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const refreshSciData = useCallback(() => {
@@ -836,50 +833,17 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }, 150);
   }, [halaqaId]);
 
-  const sciFieldsKey = useMemo(
-    () => enabledScientificFields(sciConfig.fields).join(","),
-    [sciConfig.fields],
-  );
-
   useEffect(() => {
     setSciConfig(loadScientificConfig(halaqaId));
     setSciData(loadScientificData(halaqaId));
   }, [halaqaId]);
 
-  const syncSciScoresFromPrep = useCallback(() => {
-    const cfg = loadScientificConfig(halaqaId);
-    if (!isScientificProgramEnabled(cfg)) return;
-    const ids = students.map((s) => s.id);
-    if (ids.length === 0) return;
+  useEffect(() => {
     repairScientificHalaqaProgram(halaqaId);
-    const box = currentGradeOutbox();
-    const confirmed = box?.snapshot();
-    if (!confirmed) return;
-    syncScientificScoresFromPrepForHalaqa(halaqaId, confirmed.value, ids, cfg);
-    refreshSciData();
-  }, [halaqaId, students, refreshSciData]);
-
-  useEffect(() => {
-    syncSciScoresFromPrep();
-  }, [syncSciScoresFromPrep, sciFieldsKey, studentIdsKey]);
-
-  useEffect(() => {
-    const onGradesChanged = () => {
-      if (sessionStorage.getItem("qs_syncing") === "1") return;
-      if (gradesBackfillTimerRef.current) clearTimeout(gradesBackfillTimerRef.current);
-      gradesBackfillTimerRef.current = setTimeout(() => {
-        gradesBackfillTimerRef.current = null;
-        if (sessionStorage.getItem("qs_syncing") === "1") return;
-        syncSciScoresFromPrep();
-      }, 300);
-    };
-    window.addEventListener(GRADES_CHANGED_EVENT, onGradesChanged);
     return () => {
-      if (gradesBackfillTimerRef.current) clearTimeout(gradesBackfillTimerRef.current);
       if (sciRefreshTimerRef.current) clearTimeout(sciRefreshTimerRef.current);
-      window.removeEventListener(GRADES_CHANGED_EVENT, onGradesChanged);
     };
-  }, [syncSciScoresFromPrep]);
+  }, [halaqaId]);
 
   useEffect(() => {
     const onSciChanged = () => {
@@ -895,7 +859,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       window.removeEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onSciChanged);
       window.removeEventListener("storage", onStorage);
     };
-  }, [syncSciScoresFromPrep, halaqaId, refreshSciData]);
+  }, [halaqaId, refreshSciData]);
 
   const updateSciScore = (
     studentId: string,

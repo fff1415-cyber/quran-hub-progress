@@ -1,6 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
-import { loadStudents, loadHalaqat, GRADES_CHANGED_EVENT } from "@/lib/mock-data";
-import { currentGradeOutbox } from "@/lib/grade-sync";
+import { loadStudents, loadHalaqat } from "@/lib/mock-data";
 import { gradeViewerSectionLabel, resolveAssistantCode, shouldShowGradeViewerDivider } from "@/lib/halaqa-assistants";
 import { getSessionName } from "@/lib/session-role";
 import type { AcademicCalendar } from "@/lib/academic-context";
@@ -40,7 +39,6 @@ import {
   loadScientificConfig,
   loadScientificData,
   repairScientificHalaqaProgram,
-  syncScientificScoresFromPrepForHalaqa,
   SCIENTIFIC_FIELD_LABELS,
   SCIENTIFIC_GRADES_CHANGED_EVENT,
   type ScientificGradeField,
@@ -111,41 +109,9 @@ export function TeacherHalaqaProgramsPanel({
 
   const selectableWeeks = useMemo(() => getSelectableWeeks(calendar), [calendar]);
 
-  const allStudentIdsKey = useMemo(
-    () => allStudents.map((s) => s.id).sort().join(","),
-    [allStudents],
-  );
-
-  const syncScientificFromPrep = useCallback(() => {
-    const cfg = repairScientificHalaqaProgram(halaqaId);
-    if (!isScientificProgramEnabled(cfg)) return;
-    const ids = allStudentIdsKey ? allStudentIdsKey.split(",").filter(Boolean) : [];
-    if (ids.length === 0) return;
-    const confirmed = currentGradeOutbox()?.snapshot();
-    if (confirmed) syncScientificScoresFromPrepForHalaqa(halaqaId, confirmed.value, ids, cfg);
-  }, [halaqaId, allStudentIdsKey]);
-
   useEffect(() => {
-    syncScientificFromPrep();
-  }, [syncScientificFromPrep]);
-
-  useEffect(() => {
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const scheduleSync = () => {
-      if (timer) clearTimeout(timer);
-      timer = setTimeout(() => {
-        timer = null;
-        syncScientificFromPrep();
-      }, 300);
-    };
-    window.addEventListener(GRADES_CHANGED_EVENT, scheduleSync);
-    window.addEventListener(HALAQA_PROGRAMS_CHANGED_EVENT, scheduleSync);
-    return () => {
-      if (timer) clearTimeout(timer);
-      window.removeEventListener(GRADES_CHANGED_EVENT, scheduleSync);
-      window.removeEventListener(HALAQA_PROGRAMS_CHANGED_EVENT, scheduleSync);
-    };
-  }, [syncScientificFromPrep]);
+    repairScientificHalaqaProgram(halaqaId);
+  }, [halaqaId]);
 
   const refreshPrograms = () => {
     setPrograms(loadHalaqaPrograms(halaqaId));

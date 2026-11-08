@@ -192,10 +192,10 @@ export function loadScientificGradesStore(): ScientificGradesStore {
   }
 }
 
-export function saveScientificGradesStore(store: ScientificGradesStore) {
+export function saveScientificGradesStore(store: ScientificGradesStore, options?: { sync: false }) {
   localStorage.setItem(KEY, JSON.stringify(store));
   notifyScientificGradesChanged();
-  persist(store);
+  if (options?.sync !== false) persist(store);
 }
 
 export function loadScientificConfig(halaqaId: number): ScientificGradesConfig {

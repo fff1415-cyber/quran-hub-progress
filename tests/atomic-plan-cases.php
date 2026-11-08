@@ -4,7 +4,7 @@ if(!function_exists('require_complex_id')){function require_complex_id(array $au
 if(!function_exists('error_response')){function error_response(string $message,int $status=400):never{throw new RuntimeException($message,$status);}}
 if(!function_exists('assert_row_belongs_to_complex')){function assert_row_belongs_to_complex(?int $actual,int $expected):void{if($actual!==$expected)error_response('Forbidden tenant',403);}}
 function atomicPlanCases(PDO $pdo):void {
-    $pdo->exec("CREATE TABLE students(id VARCHAR(50) PRIMARY KEY,complex_id INT,halaqa_id INT);INSERT INTO students VALUES('planned',1,1);
+    $pdo->exec("INSERT INTO students VALUES('planned',1,1);
     CREATE TABLE education_plans(id VARCHAR(36) PRIMARY KEY,complex_id INT,track VARCHAR(10),level_number INT);INSERT INTO education_plans VALUES('plan',1,'gold',1001);
     CREATE TABLE student_plan_assignments(id VARCHAR(36) PRIMARY KEY,student_id VARCHAR(50),plan_id VARCHAR(36),status VARCHAR(20),start_segment_index INT,start_muraja_segment INT);INSERT INTO student_plan_assignments VALUES('assignment','planned','plan','active',1,NULL);
     CREATE TABLE plan_segments(plan_id VARCHAR(36),segment_index INT);INSERT INTO plan_segments VALUES('plan',1),('plan',2),('plan',3);

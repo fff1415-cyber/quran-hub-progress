@@ -110,20 +110,24 @@ function app_state_write_tarbawi(PDO $pdo, int $cid, array $input): void
 }
 
 /** Reject stale snapshots of scientific grades and retain history omitted by a legacy client. */
-function app_state_validate_new_scientific_scores(PDO $pdo, int $cid, array $previous, array $next): void
+function app_state_validate_new_scientific_scores(stdClass $prep, array $previous, array $next): void
 {
-    $prep = null;
     foreach (($next['data'] ?? []) as $halaqa => $students) foreach ($students as $student => $weeks)
     foreach ($weeks as $week => $days) foreach ($days as $day => $scores) {
-        foreach (['hifz','rabt','muraja'] as $field) {
+        foreach (['attendance','hifz','rabt','muraja'] as $field) {
             $score = $scores[$field] ?? null;
             $old = $previous['data'][$halaqa][$student][$week][$day][$field] ?? null;
-            if (!is_numeric($score) || (float)$score <= 0 ||
+            if (!is_numeric($score) ||
                 (is_numeric($old) && (float)$score === (float)$old) ||
                 ($next['overrides'][$halaqa][$student][$week][$day][$field] ?? false) === true) continue;
-            $prep ??= grade_cells_store($pdo, $cid, 'grades', true);
             $entry = $prep->{$student}->{$week}->days->{$day}->{$field} ?? null;
-            $earned = $field === 'hifz' ? in_array($entry, ['half','one','two'], true) : $entry === 'pass';
+            $earned = match ($field) {
+                'attendance' => ($expected = grade_cells_scientific_default(
+                    (object)json_decode(app_state_json_encode($next['configs'][$halaqa] ?? [])), 'attendance', $entry
+                )) !== null && (float)$expected === (float)$score,
+                'hifz' => in_array($entry,['half','one','two'],true),
+                default => $entry==='pass',
+            };
             if (!$earned) {
                 throw new RuntimeException('لا يوجد تسجيل تحضير مؤكد يستحق الدرجة العلمية. بقي السجل المحفوظ كما هو.', 409);
             }
@@ -140,6 +144,8 @@ function app_state_write_preserved_store(PDO $pdo, int $cid, string $key, array 
     $owns = !$pdo->inTransaction();
     if ($owns) $pdo->beginTransaction();
     try {
+        // Both writers lock preparation before scientific scores.
+        $prep = $key==='scientific_grades' && $configEdit===null ? grade_cells_store($pdo,$cid,'grades',true) : null;
         $query = $pdo->prepare('SELECT value FROM app_state WHERE ' . ($scoped ? 'complex_id=? AND ' : '') .
             '`key`=? FOR UPDATE');
         $query->execute($scoped ? [$cid, $key] : [$key]);
@@ -179,7 +185,7 @@ function app_state_write_preserved_store(PDO $pdo, int $cid, string $key, array 
                 empty($value['configs']) && empty($value['data']) && empty($value['overrides'])) {
                 throw new RuntimeException('رُفض تصفير سجل الدرجات العلمية.', 409);
             }
-            if ($configEdit === null) app_state_validate_new_scientific_scores($pdo, $cid, $previous, $value);
+            if ($prep !== null) app_state_validate_new_scientific_scores($prep, $previous, $value);
         } else {
             if (!array_is_list($value) || !array_is_list($previous)) {
                 throw new RuntimeException('صيغة سجل التاريخ غير صالحة. لم تتغيّر البيانات.', 409);

@@ -167,6 +167,7 @@ function grade_cells_apply(PDO $pdo,int $cid,string $key,string $operation,array
             grade_cells_record_version($pdo,$context,$key,$paths[$i],$operation);
         }
         if($effect)$effect($store);
+        if($key==='grades') grade_cells_project_scientific($pdo,$cid,$store,$changes);
         if(!$pdo->inTransaction())throw new RuntimeException('انتهت معاملة الدرجة قبل تثبيتها؛ لم يكتمل الحفظ',409);
         app_state_upsert($pdo,$key,$store,app_state_tenant_enabled($pdo)?$cid:null);
         $pdo->prepare('INSERT INTO grade_operation_receipts(context_id,store_key,operation_id,input_sha256) VALUES(?,?,?,?)')->execute([$context,$key,$operation,$hash]);
@@ -181,4 +182,72 @@ function grade_cells_apply(PDO $pdo,int $cid,string $key,string $operation,array
         }
         throw $error;
     }
+}
+
+function grade_cells_scientific_default(object $config, string $field, mixed $entry): ?string
+{
+    if (($config->fields->{$field} ?? false) !== true) return null;
+    $score = $config->defaultScores->{$field} ?? null;
+    if ($field === 'attendance') {
+        if (!in_array($entry,['present','late','excused','absent'],true)) return null;
+        $score = is_object($score) ? ($score->{$entry} ?? null) : ($entry==='present' ? $score : null);
+    } elseif ($field==='hifz' ? !in_array($entry,['half','one','two'],true) : $entry!=='pass') {
+        return null;
+    }
+    return is_numeric($score) ? (string)$score : null;
+}
+
+/** Project only the day and fields touched by this confirmed preparation write. */
+function grade_cells_project_scientific(PDO $pdo, int $cid, stdClass $grades, array $changes): void
+{
+    $fields = ['attendance','hifz','rabt','muraja'];
+    $dayChanges = array_filter($changes, static fn(array $change): bool =>
+        count($change['path'])===5 && $change['path'][2]==='days' && in_array($change['path'][4],$fields,true));
+    if (!$dayChanges) return;
+    $store = grade_cells_store($pdo,$cid,'scientific_grades',true);
+    if (empty((array)($store->configs ?? []))) return;
+    $scoped = table_column_exists($pdo,'students','complex_id');
+    $query = $pdo->prepare('SELECT halaqa_id FROM students WHERE id=?'.($scoped ? ' AND complex_id=?' : ''));
+    $groups = [];
+    $changed = false;
+    foreach ($dayChanges as $change) {
+        [$student,$week,,$day,$field] = $change['path'];
+        if (!array_key_exists($student,$groups)) {
+            $query->execute($scoped ? [$student,$cid] : [$student]);
+            $groups[$student] = (string)$query->fetchColumn();
+        }
+        $group = $groups[$student];
+        $config = $store->configs->{$group} ?? null;
+        if (!is_object($config)) continue;
+        $entry = $grades->{$student}->{$week}->days->{$day} ?? new stdClass();
+        $oldPrep = $change['base']['value'] ?? null;
+        $nextPrep = $entry->{$field} ?? null;
+        $updates = [$field=>grade_cells_scientific_default($config,$field,$nextPrep)];
+        $prior = [$field=>grade_cells_scientific_default($config,$field,$oldPrep)];
+        if ($field==='attendance' && in_array($oldPrep,['present','late','excused','absent'],true) &&
+            ($nextPrep===null || $nextPrep==='')) {
+            foreach (['hifz','rabt','muraja'] as $task) {
+                if (property_exists($entry,$task)) continue;
+                $updates[$task] = null;
+                $prior[$task] = grade_cells_scientific_default($config,$task,$task==='hifz' ? 'one' : 'pass');
+            }
+        }
+        foreach ($updates as $target=>$score) {
+            if (($store->overrides->{$group}->{$student}->{$week}->{$day}->{$target} ?? false) === true) continue;
+            $existing = $store->data->{$group}->{$student}->{$week}->{$day}->{$target} ?? '';
+            if ($existing!=='' && (!is_numeric($existing) || !is_numeric($prior[$target]) ||
+                (float)$existing!==(float)$prior[$target])) continue;
+            $next = $score ?? '';
+            if ((string)$existing===$next) continue;
+            $parent = $store;
+            foreach (['data',$group,$student,$week,$day] as $key) {
+                if (!isset($parent->{$key}) || $parent->{$key}===[]) $parent->{$key} = new stdClass();
+                if (!is_object($parent->{$key})) continue 2;
+                $parent = $parent->{$key};
+            }
+            $parent->{$target} = $next;
+            $changed = true;
+        }
+    }
+    if ($changed) app_state_upsert($pdo,'scientific_grades',$store,app_state_tenant_enabled($pdo)?$cid:null);
 }

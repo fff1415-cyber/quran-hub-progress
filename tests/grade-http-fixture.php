@@ -25,6 +25,7 @@ function json_response(mixed $value):never{header('Content-Type: application/jso
 require __DIR__.'/../api/routes/router.php';
 if(PHP_SAPI==='cli'){
  $pdo->exec('CREATE TABLE app_state(complex_id INTEGER NOT NULL,`key` TEXT NOT NULL,value TEXT,UNIQUE(complex_id,`key`));CREATE TABLE semesters(id INTEGER PRIMARY KEY,complex_id INTEGER,is_active INTEGER);INSERT INTO semesters VALUES(1,1,1);CREATE TABLE grade_cell_versions(context_id INTEGER,store_key TEXT,path_sha256 TEXT,path_json TEXT,direct_version TEXT,subtree_version TEXT,updated_at TEXT DEFAULT CURRENT_TIMESTAMP,PRIMARY KEY(context_id,store_key,path_sha256));CREATE TABLE grade_operation_receipts(context_id INTEGER,store_key TEXT,operation_id TEXT,input_sha256 TEXT,PRIMARY KEY(context_id,store_key,operation_id))');
+ $pdo->exec("CREATE TABLE students(id TEXT PRIMARY KEY,complex_id INTEGER,halaqa_id INTEGER);INSERT INTO students VALUES('S',1,1)");
  app_state_upsert($pdo,'grades',json_decode('{"S":{"1":{"days":{"sun":{"hifz":"","muraja":"","attendance":""}}}},"historic":{"8":{"keep":0}}}'),1);
  app_state_upsert($pdo,'weekly_tests',json_decode('{"historic":{"8":{"muraja":["pass"]}}}'),1);
  app_state_upsert($pdo,'grade_plan_event:fixture',(object)['internal'=>'fixture-preserved'],1);exit;
