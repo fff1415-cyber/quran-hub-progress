@@ -54,6 +54,10 @@ const planRequired = "هذه الدرجة مرتبطة بخطة؛ يلزم تس�
       "@/lib/grade-sync": sync,
     });
     const render = () => h.render(GradeSaveStatus);
+    const reviewButton = () => find(render(), el => el.type === "button" && Object.hasOwn(el.props, "aria-expanded"))[0];
+    assert.equal(reviewButton().props["aria-expanded"], false);
+    assert.doesNotMatch(text(render()), /مسودتك:|تحديث القيم للمقارنة/);
+    reviewButton().props.onClick();
     const refreshButton = () => find(render(), el => el.type === "button" && /تحديث القيم للمقارنة/.test(text(el)))[0];
     const ui = text(render());
     assert.match(ui, /لم يؤكد الخادم حفظها/);
@@ -74,6 +78,9 @@ const planRequired = "هذه الدرجة مرتبطة بخطة؛ يلزم تس�
     await flush();
     assert.match(text(render()), /تعذّر تحديث القيم للمقارنة؛ بقيت المسودات كما هي/);
     assert.equal(writes, 0);
+    reviewButton().props.onClick();
+    assert.doesNotMatch(text(render()), /مسودتك:/);
+    assert.deepEqual(box.drafts().at(-1), original);
     assert.deepEqual(box.reviewChanges(id).map(c => c.path), [path("rabt")]);
     assert.throws(() => box.resolve(id, true), /مرتبطة بخطة/);
     assert.deepEqual(box.drafts().at(-1), original);
