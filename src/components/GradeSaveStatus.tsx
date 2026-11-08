@@ -29,6 +29,7 @@ export function GradeSaveStatus() {
   const actionInProgress = useRef(false);
   const [busy, setBusy] = useState<"refresh" | "save" | "review" | null>(null);
   const [notice, setNotice] = useState("");
+  const [reviewOpen, setReviewOpen] = useState(false);
   useEffect(() => {
     const update = () => redraw(n => n + 1);
     window.addEventListener(GRADE_SAVE_EVENT, update); window.addEventListener("storage", update);
@@ -36,9 +37,12 @@ export function GradeSaveStatus() {
   }, []);
   const box = currentGradeOutbox(), drafts = box?.drafts() ?? [];
   const localError = gradeLocalSaveError();
-  if (!drafts.length && !localError) return null;
   const unresolved = drafts.filter(d => ["pending", "unbased", "conflict"].includes(d.status));
-  const conflicts = unresolved.filter(d => d.status !== "pending"), students = loadStudents();
+  const conflicts = unresolved.filter(d => d.status !== "pending");
+  const pending = unresolved.filter(d => d.status === "pending");
+  const students = reviewOpen ? loadStudents() : [];
+  const confirmed = drafts.some(d => d.status === "confirmed");
+  if (!unresolved.length && !confirmed && !localError) return null;
   const run = async (kind: NonNullable<typeof busy>, action: () => Promise<unknown>) => {
     if (actionInProgress.current) return;
     actionInProgress.current = true;
@@ -58,25 +62,35 @@ export function GradeSaveStatus() {
   };
   return <section aria-live="polite" className="border-b bg-secondary/40 p-3 text-sm" dir="rtl">
     {localError && <p role="alert">{localError}</p>}
-    <p>{unresolved.length ? `لديك ${unresolved.length} عملية محفوظة على هذا الجهاز لم يؤكدها الخادم؛ أبقِ هذا المتصفح وبياناته حتى التأكيد.` : drafts.every(d => d.status === "confirmed") ? "أكد الخادم جميع عمليات تسجيل الدرجات المرسلة." : "لا توجد مسودات بانتظار التأكيد. بقيت القيم المحفوظة للعمليات التي اخترت عدم اعتمادها."}</p>
-    {unresolved.length > 0 && <div className="flex flex-wrap gap-2 py-1">
+    <p>{unresolved.length ? `مسودات على هذا الجهاز: ${conflicts.length} للمراجعة، و${pending.length} بانتظار تأكيد الحفظ.` : drafts.every(d => d.status === "confirmed") ? "أكد الخادم جميع عمليات تسجيل الدرجات المرسلة." : "لا توجد مسودات بانتظار التأكيد."}</p>
+    {unresolved.length > 0 && <button type="button" aria-expanded={reviewOpen}
+      aria-controls="grade-save-review" className="min-h-11 rounded border px-3"
+      onClick={() => setReviewOpen(open => !open)}>
+      {reviewOpen ? "طيّ مراجعة المسودات" : "مراجعة المسودات"}
+    </button>}
+    {(busy || notice || error) && <div>
+      {busy === "refresh" && !reviewOpen && <p role="status">جارٍ تحديث القيم للمقارنة…</p>}
+      {notice && <p role="status">{notice}</p>}
+      {error && <p role="alert">{error}</p>}
+    </div>}
+    {reviewOpen && unresolved.length > 0 && <div id="grade-save-review" className="space-y-2">
+    <p>احتفظ ببيانات هذا المتصفح حتى تراجع المسودات أو يتأكد حفظها.</p>
+    <div className="flex flex-wrap gap-2 py-1">
       <button type="button" disabled={busy !== null} className="min-h-11 rounded border px-3 disabled:opacity-60" onClick={() => void run("refresh", refreshConfirmedGrades)}>
         {busy === "refresh" ? "جارٍ تحديث القيم للمقارنة…" : "تحديث القيم للمقارنة"}
       </button>
-      {unresolved.some(d => d.status === "pending") && <button type="button" disabled={busy !== null} className="min-h-11 rounded border px-3 disabled:opacity-60" onClick={() => void run("save", flushConfirmedGrades)}>
+      {pending.length > 0 && <button type="button" disabled={busy !== null} className="min-h-11 rounded border px-3 disabled:opacity-60" onClick={() => void run("save", flushConfirmedGrades)}>
         {busy === "save" ? "جارٍ التحقق من الحفظ…" : "إعادة محاولة الحفظ"}
       </button>}
-    </div>}
-    {notice && <p role="status">{notice}</p>}
-    {error && <p role="alert">{error}</p>}
-    {[...new Set(unresolved.filter(d => d.status === "pending").map(d => d.message).filter(Boolean))].map(message => <p key={message}>{message}</p>)}
+    </div>
+    {[...new Set(pending.map(d => d.message).filter(Boolean))].map(message => <p key={message}>{message}</p>)}
     {conflicts.map(draft => {
       const id = draft.packet.operation_id;
       const changes = box?.reviewChanges(id) ?? draft.packet.changes;
       const needsPlan = box?.reviewRequiresPlan(id);
       return <details key={id} className="mt-2">
-      <summary>مسودة تحتاج مراجعة — لم يؤكد الخادم حفظها</summary>
-      {changes.length === 0 && <p>تحتوي هذه المسودة على خانات فارغة أُنشئت تلقائيًا؛ لا يوجد تعديل درجات لإرساله.</p>}
+      <summary>{changes.length === 0 ? "مسودة قديمة تحتوي على خانات تلقائية" : "مسودة تحتاج مراجعة — لم يؤكد الخادم حفظها"}</summary>
+      {changes.length === 0 && <p>هذه المسودة لا تحتوي على تعديل درجات قابل للإرسال.</p>}
       <ul>{changes.map((change, i) => {
         let saved: unknown = box?.snapshot()?.value;
         for (const part of change.path) saved = saved && typeof saved === "object" ? (saved as Record<string, unknown>)[part] : undefined;
@@ -84,8 +98,9 @@ export function GradeSaveStatus() {
       })}</ul>
       {needsPlan && <p>أبقِ القيمة المحفوظة إذا أردت إعادة التسجيل من جدول التحضير؛ سيُراجَع ارتباط الدرجة بالإنجاز قبل حفظهما معًا.</p>}
       {!needsPlan && changes.length > 0 && <button type="button" disabled={busy !== null} className="underline ml-3" onClick={() => void run("review", async () => { box?.resolve(id, true); await flushConfirmedGrades(); })}>اعتماد مسودتي بعد المقارنة</button>}
-      <button type="button" disabled={busy !== null} className="underline" onClick={() => void run("review", async () => { box?.resolve(id, false); })}>استخدام القيمة المحفوظة</button>
+      <button type="button" disabled={busy !== null} className="underline" onClick={() => void run("review", async () => { box?.resolve(id, false); })}>{changes.length === 0 ? "إغلاق هذه المسودة المحلية" : "استخدام القيمة المحفوظة"}</button>
       {draft.message && <p>{draft.message}</p>}
     </details>; })}
+    </div>}
   </section>;
 }

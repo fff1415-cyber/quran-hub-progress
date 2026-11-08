@@ -6,7 +6,7 @@ permissions:
   contents: read
 jobs:
   grade-draft-review:
-    if: github.head_ref == 'fix/grade-draft-review' || github.head_ref == 'fix/grade-comparison-feedback'
+    if: github.head_ref == 'fix/grade-draft-review' || github.head_ref == 'fix/grade-comparison-feedback' || github.head_ref == 'fix/grade-review-panel'
     runs-on: ubuntu-24.04
     timeout-minutes: 8
     steps:
@@ -25,7 +25,7 @@ jobs:
         if: github.head_ref == 'fix/grade-draft-review'
       - run: npx tsc --noEmit && npm run build:hostinger
   halaqa:
-    if: github.head_ref == 'fix/halaqa-render' || github.head_ref == 'fix/grade-comparison-feedback'
+    if: github.head_ref == 'fix/halaqa-render' || github.head_ref == 'fix/grade-comparison-feedback' || github.head_ref == 'fix/grade-review-panel'
     runs-on: ubuntu-24.04
     timeout-minutes: 12
     steps:

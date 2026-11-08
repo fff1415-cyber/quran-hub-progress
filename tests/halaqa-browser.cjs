@@ -158,10 +158,15 @@ async function run() {
       }));
       window.dispatchEvent(new Event("qhp-grade-save-status"));
     });
+    const review = page.getByRole("button", { name: "مراجعة المسودات", exact: true });
     const refresh = page.getByRole("button", { name: "تحديث القيم للمقارنة", exact: true });
+    assert.equal(await refresh.count(), 0);
+    await review.click();
     await refresh.click();
     await page.getByText("تم التحقق من القيم المحفوظة. ما زالت المسودات متاحة للمراجعة.", { exact: true }).waitFor({ timeout: 9000 });
     assert.equal(receipts.size, 1);
+    await page.getByRole("button", { name: "طيّ مراجعة المسودات", exact: true }).click();
+    assert.equal(await refresh.count(), 0);
     assert.equal(await page.evaluate(() => Object.keys(localStorage).some(k => k.endsWith(":operation:comparison-fixture"))), true);
     console.log("PASS: clicking compare gives feedback even with unchanged grades and retains the local draft");
   } finally { await browser.close(); }
