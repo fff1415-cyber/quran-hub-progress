@@ -139,6 +139,22 @@ function test_legacy_plan_atomic_save(PDO $pdo,int $cid,string $student): array 
         if ($grade->getCode()!==200 || $sheet->getCode()!==200) throw new RuntimeException('plan_or_grade_read_failed');
         return [grade_cells_at($grade->body['value'],$path)['value']??null,array_map('intval',array_column($sheet->body['completions'],'segment_index'))];
     };
+    $compPath=[$student,'1','days',$day,'compensationFaces'];
+    $makeComp=static function (float $faces) use ($pdo,$cid,$compPath,$student,$assignment,$date): array {
+        $capture=grade_cells_capture($pdo,$cid,'grades',[$compPath]);
+        return ['operation_id'=>'legacy-comp-fixture-'.bin2hex(random_bytes(8)), 'calendar_context'=>$capture['calendar_context'],
+            'changes'=>[$capture['cells'][0]+['next'=>['present'=>true,'value'=>$faces]]],
+            'plan'=>['student_id'=>$student,'expected_assignment_id'=>$assignment,'task_type'=>'hifz','action'=>'compensation',
+                'tap'=>'one','completed_at'=>$date,'cell_path'=>$compPath]];
+    };
+    $comp=$makeComp(1.0);
+    $compReceipt=$write($comp,'teacher');
+    $compReplay=$write($comp,'assistant');
+    $compSegments=grade_cells_at(grade_cells_store($pdo,$cid,'grades',false),[$student,'1','compensationPlanSegments']);
+    if ($compReceipt->getCode()!==200 || ($compReplay->body['replayed']??false)!==true ||
+        ($compSegments['value']??null)!==[$segments[1]] || $write($makeComp(0.0),'assistant')->getCode()!==200) {
+        throw new RuntimeException('legacy_compensation_atomic_receipt_failed');
+    }
     $first=$packet('one','record');
     $receipt=$write($first,'teacher');
     $retry=$write($first,'teacher');
@@ -176,7 +192,7 @@ function test_legacy_plan_atomic_save(PDO $pdo,int $cid,string $student): array 
     $pdo->rollBack();
     return ['mysql_duplicate_reproduced'=>1062,'linked_hifz_receipt'=>200,'linked_hifz_retry_once'=>true,
         'linked_hifz_assistant_reads_grade_and_plan'=>true,'linked_hifz_cancel_and_correct'=>true,'legacy_completion_preserved'=>true,
-        'linked_rabt_muraja_receipts'=>$linked];
+        'linked_rabt_muraja_receipts'=>$linked,'legacy_compensation_receipt_replayed'=>true];
 }
 
 function test_scientific_config_and_scores(PDO $pdo,int $cid,string $student): array {
