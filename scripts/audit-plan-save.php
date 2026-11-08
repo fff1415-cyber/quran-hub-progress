@@ -10,20 +10,36 @@ try {
     $pdo=new PDO('mysql:host='.DB_HOST.';dbname='.DB_NAME.';charset='.DB_CHARSET,DB_USER,DB_PASS,
         [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
     $pdo->exec('SET TRANSACTION READ ONLY'); $pdo->beginTransaction();
+    $cid=(int)$pdo->query("SELECT id FROM complexes WHERE subdomain='mm'")->fetchColumn();
+    if ($cid<1) throw new RuntimeException('mm_not_found');
     $schema=$pdo->query("SELECT TABLE_NAME,COLUMN_NAME,COLUMN_TYPE FROM information_schema.COLUMNS
         WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME IN ('app_state','grade_operation_receipts','grade_cell_versions','segment_completions','student_plan_assignments','semesters')")->fetchAll();
-    $result=['schema'=>$schema];
+    $result=['scope'=>'mm','db_utc_now'=>$pdo->query('SELECT UTC_TIMESTAMP()')->fetchColumn(),
+        'sql_mode'=>$pdo->query('SELECT @@sql_mode')->fetchColumn(),'schema'=>$schema];
     $result['events']=$pdo->query("SELECT SUBSTRING_INDEX(`key`,':',1) AS family,COUNT(*) AS total FROM app_state
         WHERE `key` LIKE 'grade_plan_%' GROUP BY family")->fetchAll();
-    $result['recent_by_task']=$pdo->query("SELECT JSON_UNQUOTE(JSON_EXTRACT(value,'$.task_type')) AS task,
+    $q=$pdo->prepare("SELECT JSON_UNQUOTE(JSON_EXTRACT(value,'$.task_type')) AS task,
         COUNT(*) AS total, MAX(updated_at) AS last_event
-        FROM app_state WHERE `key` LIKE 'grade_plan_event:%' GROUP BY task")->fetchAll();
+        FROM app_state WHERE complex_id=? AND `key` LIKE 'grade_plan_event:%' GROUP BY task");
+    $q->execute([$cid]); $result['mm_tasks']=$q->fetchAll();
+    $q=$pdo->prepare("SELECT `key`,OCTET_LENGTH(value) AS bytes,updated_at FROM app_state
+        WHERE complex_id=? AND `key` IN ('grades','scientific_grades','sard_queue')");
+    $q->execute([$cid]); $result['mm_store_sizes']=$q->fetchAll();
+    $result['max_packet']=(int)$pdo->query('SELECT @@max_allowed_packet')->fetchColumn();
+    $result['triggers']=$pdo->query("SELECT EVENT_OBJECT_TABLE,EVENT_MANIPULATION,ACTION_TIMING FROM information_schema.TRIGGERS
+        WHERE TRIGGER_SCHEMA=DATABASE() AND EVENT_OBJECT_TABLE IN ('segment_completions','app_state','grade_operation_receipts','grade_cell_versions')")->fetchAll();
+    $result['foreign_keys']=$pdo->query("SELECT TABLE_NAME,COLUMN_NAME,REFERENCED_TABLE_NAME,REFERENCED_COLUMN_NAME FROM information_schema.KEY_COLUMN_USAGE
+        WHERE TABLE_SCHEMA=DATABASE() AND REFERENCED_TABLE_NAME IS NOT NULL
+        AND TABLE_NAME IN ('segment_completions','app_state','grade_operation_receipts','grade_cell_versions')")->fetchAll();
+    foreach (['grade-plan-effect','grade-cell-operations','grade-write-api'] as $file)
+        $result['runtime_hashes'][$file]=hash_file('sha256',$root.'/api/lib/'.$file.'.php');
     $receiptTime = array_values(array_filter($schema, static fn($row) =>
         $row['TABLE_NAME']==='grade_operation_receipts' && preg_match('/^(?:timestamp|datetime)/', $row['COLUMN_TYPE'])));
     if (count($receiptTime)===1 && preg_match('/^[a-z_]+$/', $receiptTime[0]['COLUMN_NAME'])) {
         $column = $receiptTime[0]['COLUMN_NAME'];
-        $result['recent_grade_receipts']=$pdo->query("SELECT COUNT(*) FROM grade_operation_receipts
-            WHERE store_key='grades' AND `$column` >= CURRENT_TIMESTAMP - INTERVAL 2 HOUR")->fetchColumn();
+        $q=$pdo->prepare("SELECT COUNT(*) AS total,MAX(`$column`) AS last_receipt FROM grade_operation_receipts
+            WHERE context_id=? AND store_key='grades' AND `$column` >= CURRENT_TIMESTAMP - INTERVAL 2 HOUR");
+        $q->execute([$cid]); $result['mm_recent_receipts']=$q->fetch();
     }
     try {
         $result['database_errors']=$pdo->query("SELECT MYSQL_ERRNO, RETURNED_SQLSTATE,COUNT(*) AS total,
