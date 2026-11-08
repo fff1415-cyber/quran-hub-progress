@@ -8,9 +8,6 @@ jobs:
   acceptance:
     if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    concurrency:
-      group: hostinger-production
-      cancel-in-progress: false
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -41,11 +38,3 @@ jobs:
           php tests/backend-sard-regression.php
           node tests/plan-server-confirmation.cjs
           npm run build:hostinger
-      - name: Publish and verify supervisor sard referral
-        env:
-          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
-          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
-          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-        run: |
-          git fetch --no-tags origin +refs/heads/release/supervisor-manual-sard:refs/remotes/origin/release/supervisor-manual-sard
-          python3 scripts/protected-rollback-release.py publish 6b539113e0405e6d64230e7ec036951c28d440d4 a40a5b9cd131e452c69e9fea0d91e49a8da677f8
