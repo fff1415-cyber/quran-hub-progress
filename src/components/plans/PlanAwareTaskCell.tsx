@@ -32,6 +32,7 @@ export function PlanAwareTaskCell({
       <HifzTaskInput
         value={hifzValue}
         levelType={student.levelType}
+        goldOnly={hasPlan && student.levelType === "gold"}
         disabled={disabled}
         onChange={(v) => {
           if (hasPlan && onPlanHifzChange) {
