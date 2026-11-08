@@ -26,7 +26,9 @@ const end = new Date(start);
 end.setUTCDate(end.getUTCDate() + 6);
 const date = value => value.toISOString().slice(0,10);
 const semester = { id: "test-semester", name: "فصل تجربة", start_date: date(start), weeks_count: 1, working_days: [0,1,2,3,4], excluded_dates: [], is_active: true };
-const grades = Object.fromEntries(students.map(s => [s.id, { 1: { days: { sun: { attendance: "present", hifz: "one", rabt: "", muraja: "" } } } }]));
+const grades = Object.fromEntries(students.map(s => [s.id, { 1: { days: Object.fromEntries(
+  ["sun", "mon", "tue", "wed", "thu"].map(day => [day, { attendance: day === "sun" ? "present" : "", hifz: day === "sun" ? "one" : "", rabt: "", muraja: "", wajib: false }]),
+) } }]));
 const calendar = { known: true, active_semester_id: semester.id };
 const receipts = new Map();
 const scientific = { configs: Object.fromEntries(halaqat.slice(1, 4).map(h => [h.id, {
@@ -76,7 +78,8 @@ async function run() {
           assert.equal(receipts.get(packet.operation_id), checksum);
           data = { ok: true, operation_id: packet.operation_id, input_sha256: checksum, replayed };
         } else if (url.searchParams.get("grade_protocol") === "1") data = { protocol: 1, context_complex_id: 1, cursor: "fixture-" + receipts.size, value: grades, calendar_context: calendar, versions: {} };
-        else if (url.searchParams.get("key") === "scientific_grades" || !url.searchParams.has("key")) data = [{ key: "scientific_grades", value: scientific }];
+        else if (!url.searchParams.has("key")) data = [{ key: "grades", value: [] }, { key: "scientific_grades", value: scientific }];
+        else if (url.searchParams.get("key") === "scientific_grades") data = [{ key: "scientific_grades", value: scientific }];
       }
       await intercepted.fulfill({ json: data });
     });
@@ -117,9 +120,14 @@ async function run() {
       assert.deepEqual(errors, [], "No uncaught errors in halaqa " + group.id);
       if (group.id === 1) {
         const attendance = page.getByRole("row").filter({ hasText: "طالب تجربة 1" }).getByRole("combobox").first();
+        await page.waitForFunction(() => Object.keys(localStorage).some(key => key.startsWith("qhp_grade_outbox_v1:") && key.endsWith(":snapshot")));
         assert.equal(await attendance.inputValue(), "present");
         await attendance.selectOption("absent");
-        await page.getByText("أكد الخادم جميع عمليات تسجيل الدرجات المرسلة.").waitFor({ timeout: 10000 });
+        try { await page.getByText("أكد الخادم جميع عمليات تسجيل الدرجات المرسلة.").waitFor({ timeout: 10000 }); }
+        catch (error) {
+          console.error("Synthetic pending operations:", await page.evaluate(() => Object.entries(localStorage).filter(([key]) => key.startsWith("qhp_grade_outbox_v1:") && key.includes(":operation:")).map(([,value]) => JSON.parse(value))));
+          throw error;
+        }
         assert.equal(receipts.size, 1);
         console.log("PASS: attendance edit used one atomic receipt before switching groups");
       }
