@@ -1,4 +1,5 @@
 const assert = require("node:assert/strict");
+const { createHash } = require("node:crypto");
 const { createServer } = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -27,6 +28,7 @@ const date = value => value.toISOString().slice(0,10);
 const semester = { id: "test-semester", name: "فصل تجربة", start_date: date(start), weeks_count: 1, working_days: [0,1,2,3,4], excluded_dates: [], is_active: true };
 const grades = Object.fromEntries(students.map(s => [s.id, { 1: { days: { sun: { attendance: "present", hifz: "one", rabt: "", muraja: "" } } } }]));
 const calendar = { known: true, active_semester_id: semester.id };
+const receipts = new Map();
 const scientific = { configs: Object.fromEntries(halaqat.slice(1, 4).map(h => [h.id, {
   visible: true, fields: { attendance: true, hifz: true, rabt: false, muraja: false },
 }])), data: {} };
@@ -55,7 +57,25 @@ async function run() {
         data = { statuses: id === 1 ? [] : [{ student_id: "fixture-" + id, status: id === 5 ? "frozen" : "active", assignment_id: "plan-" + id }] };
       }
       if (route === "/app-state") {
-        if (url.searchParams.get("grade_protocol") === "1") data = { protocol: 1, context_complex_id: 1, cursor: "fixture", value: grades, calendar_context: calendar, versions: {} };
+        if (intercepted.request().method() === "POST") {
+          const body = intercepted.request().postDataJSON();
+          if (body.key !== "grades") { await intercepted.fulfill({ json: { ok: true } }); return; }
+          assert.equal(body.grade_write_protocol, 1);
+          const packet = body.value;
+          const checksum = createHash("sha256").update(JSON.stringify(packet)).digest("hex");
+          const replayed = receipts.has(packet.operation_id);
+          if (!replayed) {
+            for (const change of packet.changes) {
+              assert.deepEqual(change.path, ["fixture-1", "1", "days", "sun", "attendance"]);
+              assert.deepEqual(change.base, { present: true, value: "present" });
+              assert.deepEqual(change.next, { present: true, value: "absent" });
+              grades["fixture-1"][1].days.sun.attendance = change.next.value;
+            }
+            receipts.set(packet.operation_id, checksum);
+          }
+          assert.equal(receipts.get(packet.operation_id), checksum);
+          data = { ok: true, operation_id: packet.operation_id, input_sha256: checksum, replayed };
+        } else if (url.searchParams.get("grade_protocol") === "1") data = { protocol: 1, context_complex_id: 1, cursor: "fixture-" + receipts.size, value: grades, calendar_context: calendar, versions: {} };
         else if (url.searchParams.get("key") === "scientific_grades" || !url.searchParams.has("key")) data = [{ key: "scientific_grades", value: scientific }];
       }
       await intercepted.fulfill({ json: data });
@@ -95,8 +115,22 @@ async function run() {
         throw new Error("Fixture halaqa " + group.id + " failed: " + errors.join("\n") + "\n" + message.slice(0,900), { cause: error });
       }
       assert.deepEqual(errors, [], "No uncaught errors in halaqa " + group.id);
+      if (group.id === 1) {
+        const attendance = page.getByRole("row").filter({ hasText: "طالب تجربة 1" }).getByRole("combobox").first();
+        assert.equal(await attendance.inputValue(), "present");
+        await attendance.selectOption("absent");
+        await page.getByText("أكد الخادم جميع عمليات تسجيل الدرجات المرسلة.").waitFor({ timeout: 10000 });
+        assert.equal(receipts.size, 1);
+        console.log("PASS: attendance edit used one atomic receipt before switching groups");
+      }
       console.log("PASS: browser rendered roster and grades for halaqa", group.id);
     }
+    await page.goto(base + "/mm/teacher?h=1");
+    const attendance = page.getByRole("row").filter({ hasText: "طالب تجربة 1" }).getByRole("combobox").first();
+    await attendance.waitFor({ timeout: 9000 });
+    assert.equal(await attendance.inputValue(), "absent");
+    assert.equal(receipts.size, 1);
+    console.log("PASS: reopening the first halaqa shows the confirmed attendance without a duplicate write");
   } finally { await browser.close(); }
 }
 run().catch(error => { console.error(error); process.exitCode = 1; }).finally(() => server.close());
