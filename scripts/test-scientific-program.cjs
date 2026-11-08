@@ -32,4 +32,13 @@ const active = {fixture:{1:{mon:{attendance:'9',hifz:'11',rabt:'7',muraja:'5'}}}
 const cleared = {fixture:{1:{mon:{attendance:'',hifz:'11',rabt:'',muraja:'5'}}}};
 assert.equal(lib.studentScientificWeekTotals(active,'fixture',1,allFields).total,32);
 assert.equal(lib.studentScientificWeekTotals(cleared,'fixture',1,allFields).total,16);
+const noStandard = () => ({ earned:0, maxPossible:0, filledSlots:0 });
+const combined = load('src/lib/halaqa-program-combined-totals.ts',{
+  '@/lib/scientific-grades':lib,
+  '@/lib/halaqa-programs':{studentAllProgramsWeekTotals:noStandard},
+});
+const totalsConfig = {...config,fields:{...config.fields,attendance:true},
+  defaultScores:{...config.defaultScores,attendance:{present:'9'}}};
+assert.equal(combined.buildCombinedProgramTotals([],{},'fixture',[1],active,allFields,['mon'],totalsConfig).percent,100);
+assert.equal(combined.buildCombinedProgramTotals([],{},'fixture',[1],cleared,allFields,['mon'],totalsConfig).percent,50);
 console.log('PASS: incomplete or failed preparation earns no points, and existing scores are not rewritten during display sync');
