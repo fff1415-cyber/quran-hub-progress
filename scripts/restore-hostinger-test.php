@@ -26,5 +26,5 @@ try{
 }catch(Throwable $error){
  if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();
  $reason=$error instanceof RuntimeException&&!$error instanceof PDOException&&preg_match('/^[a-z_]+$/D',$error->getMessage())?$error->getMessage():null;
- echo json_encode(['status'=>'restore_incomplete','stage'=>$stage,'reason'=>$reason,'errno'=>$error instanceof PDOException?(int)($error->errorInfo[1]??0):null,'production_writes'=>false])."\n";exit(1);
+ echo json_encode(['status'=>'restore_incomplete','stage'=>$stage,'reason'=>$reason,'format'=>$error instanceof QhpDumpFormatException?$error->shape:null,'errno'=>$error instanceof PDOException?(int)($error->errorInfo[1]??0):null,'production_writes'=>false])."\n";exit(1);
 }

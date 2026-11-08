@@ -1,6 +1,10 @@
 <?php
 declare(strict_types=1);
 
+final class QhpDumpFormatException extends RuntimeException {
+    public function __construct(public readonly array $shape,string $fixtureLine=''){parent::__construct('unsupported_dump_statement_'.$shape['kind'].$fixtureLine);}
+}
+
 function qhp_restore_identity(PDO $pdo,string $target):void {
     if($pdo->query('SELECT DATABASE()')->fetchColumn()!==$target)throw new RuntimeException('wrong_test_database');
     $scoped=false;
@@ -43,17 +47,19 @@ function qhp_restore_rows(string $sql):array {
     throw new RuntimeException('dump_insert_missing_terminator');
 }
 function qhp_restore_archive(string $file,?PDO $write=null):array {
-    $h=gzopen($file,'rb');if(!$h)throw new RuntimeException('archive_unreadable');$result=[];$dropped=[];$create='';$complete=false;
+    $h=gzopen($file,'rb');if(!$h)throw new RuntimeException('archive_unreadable');$result=[];$dropped=[];$create='';$complete=false;$lineNumber=0;
     try{while(($line=gzgets($h))!==false){
-        $line=rtrim($line," \t\r\n");
-        if($create!==''){$create.="\n".$line;if(!str_ends_with($line,';'))continue;$line=$create;$create='';}
+        ++$lineNumber;$line=rtrim($line," \t\r\n");
+        if($create!==''){$create.="\n".$line;if(!str_ends_with($line,';'))continue;$line=$create;$create='';}else{$line=ltrim($line," \t");}
         if($line===''||str_starts_with($line,'--')){if(str_starts_with($line,'-- Dump completed'))$complete=true;continue;}
+        if(preg_match('/^;+$/D',$line)||preg_match('/^\/\*(?!M?!)[^\r\n]*\*\/\s*;?$/D',$line))continue;
         if(preg_match('/^\/\*M?!999999.*enable the sandbox mode.*\*\/$/D',$line))continue;
         if(preg_match('/^\/\*M?![0-9]{5,6}\s+SET\s+[^\r\n]+\*\/\s*;?$/iD',$line)){
             if(preg_match('/\b(?:GLOBAL|GTID|SQL_LOG_BIN)\b/i',$line))throw new RuntimeException('unsupported_global_dump_directive');continue;
         }
         // The exporter can also emit bare session/setup directives. Do not replay them.
         if(preg_match('/^SET\s+[^\r\n]+;$/iD',$line))continue;
+        if(preg_match('/^(?:COMMIT|START TRANSACTION(?: WITH CONSISTENT SNAPSHOT)?);$/iD',$line))continue;
         // The --events/--routines exporter emits these delimiters even for empty sections.
         // Actual triggers, routines, events and any associated executable statements remain refused.
         if(preg_match('/^DELIMITER\s+;{1,2}$/D',$line))continue;
@@ -73,7 +79,8 @@ function qhp_restore_archive(string $file,?PDO $write=null):array {
             $rows=qhp_restore_rows($line);foreach($rows as$row)$result[$m[1]]['rows'][]=$row;if($write)$write->exec($line);continue;
         }
         $kind='other';foreach(['versioned'=>'/^\/\*/','use'=>'/^\s*USE\b/i','insert'=>'/^\s*INSERT\b/i','create'=>'/^\s*CREATE\b/i','drop'=>'/^\s*DROP\b/i','set'=>'/^\s*SET\b/i','delimiter'=>'/^\s*DELIMITER\b/i','lock'=>'/^\s*(?:UN)?LOCK\b/i']as$type=>$pattern)if(preg_match($pattern,$line)){$kind=$type;break;}
-        throw new RuntimeException('unsupported_dump_statement_'.$kind.(getenv('QHP_RESTORE_FIXTURE')==='1'?': '.substr($line,0,160):''));
+        preg_match_all('/\b(?:SELECT|UPDATE|DELETE|CREATE|DROP|INSERT|REPLACE|ALTER|SET|USE|FLUSH|COMMIT|ROLLBACK|START|TRANSACTION|TRIGGER|FUNCTION|PROCEDURE|VIEW|EVENT|DEFINER|DELIMITER|RENAME|REVOKE|GRANT|CHARSET|TABLE|RESET|LOCK|UNLOCK|IF|END|BEGIN|ROLLUP)\b/i',$line,$words);
+        throw new QhpDumpFormatException(['kind'=>$kind,'line'=>$lineNumber,'first_byte'=>ord($line[0]),'length'=>strlen($line),'sql_keywords'=>array_values(array_unique(array_map('strtoupper',array_slice($words[0],0,20)))),'tables_parsed'=>count($result)],getenv('QHP_RESTORE_FIXTURE')==='1'?': '.substr($line,0,160):'');
     }}finally{gzclose($h);}
     if(!$complete||$create!==''||!$result||array_keys($dropped)!==array_keys($result))throw new RuntimeException('incomplete_plain_dump');
     foreach($result as&$table){sort($table['rows']);$table['row_count']=count($table['rows']);$table['data_sha256']=hash('sha256',implode('',$table['rows']));unset($table['rows']);}unset($table);ksort($result);return $result;
