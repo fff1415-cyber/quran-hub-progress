@@ -8,9 +8,6 @@ jobs:
   acceptance:
     if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    concurrency:
-      group: hostinger-production
-      cancel-in-progress: false
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -41,18 +38,3 @@ jobs:
           php tests/backend-sard-regression.php
           node tests/plan-server-confirmation.cjs
           npm run build:hostinger
-      - name: Verify compensation and grade writes on the isolated MariaDB restore
-        env:
-          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
-          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
-          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          QHP_SAFE_LEGACY_CANDIDATE: '1'
-        run: python3 scripts/rollback-compat-probe.py
-      - name: Publish and verify compensation grade fix
-        env:
-          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
-          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
-          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-        run: |
-          git fetch --no-tags origin +refs/heads/release/atomic-compensation-legacy-progress:refs/remotes/origin/release/atomic-compensation-legacy-progress
-          python3 scripts/protected-rollback-release.py publish d01b8b10d966ba3177e33bff9fe20f2e035f9198 2fb035f9932de580bf42af9557d38c46fdb0c862
