@@ -2,7 +2,8 @@ const assert=require('node:assert/strict');const {load,storage,hooks,jsx,text}=r
 function fullStorage(){const s=storage();return {...s,get length(){return s.data.size},key:i=>[...s.data.keys()][i]??null};}
 global.window=new EventTarget();global.localStorage=fullStorage();global.sessionStorage=storage();
 const outbox=load('src/lib/grade-outbox.ts',{}),auth={getToken:()=> 'fixture-session',decodeAuthTokenPayload:()=>({role:'teacher',complexId:1,halaqaId:1,name:'fixture'}),hasAuthToken:()=>true};
-const sync=load('src/lib/grade-sync.ts',{'./grade-outbox':outbox,'./auth-session':auth,'./secure-data.functions':{}});
+const transport={};
+const sync=load('src/lib/grade-sync.ts',{'./grade-outbox':outbox,'./auth-session':auth,'./secure-data.functions':transport});
 const mock=load('src/lib/mock-data.ts',{'@/lib/auth-session':auth,'./grade-sync':sync,'./cloud-sync':{pushMergedGrades:async()=>({})}});
 const legacy=JSON.stringify({S:{1:{days:{sun:{hifz:'two'}}}}});
 localStorage.setItem('qshatawi_grades_v2',legacy);localStorage.setItem('qshatawi_grades_semester_id','legacy-period');
@@ -23,6 +24,11 @@ assert.match(text(h.render(()=>Status())),/تعذّر حفظ المسودة/);lo
  await assert.rejects(box.flush(async()=>({ok:true,operation_id:'wrong-receipt',input_sha256:'a'.repeat(64)})),/لم يؤكد/);assert.equal(box.drafts()[0].status,'pending');
  const before=box.view({}),after=structuredClone(before);after.S[1].days.sun.rabt='pass';box.edit(before,after);
  const sibling=new outbox.GradeOutbox(localStorage,JSON.stringify([1,'teacher',[1,'fixture'],undefined]));assert.equal(sibling.drafts().length,2,'same-account tabs share independent persisted operation keys');
+ const conflict='المقطع مرتبط بإنجاز سابق';
+ transport.secureGradeOperation=async()=>{throw Object.assign(Error(conflict),{status:409});};
+ transport.secureGradeSnapshot=async()=>box.snapshot();
+ await assert.rejects(sync.flushConfirmedGrades(),new RegExp(conflict));
+ assert.ok(box.drafts().some(draft=>draft.packet.plan&&draft.message===conflict));
  auth.decodeAuthTokenPayload=()=>null;assert.throws(()=>sync.recordGradeEdit({},{}),/هوية جلسة الحفظ/);assert.match(sync.gradeLocalSaveError(),/لم يُرسل/);assert.equal(sibling.drafts().length,2,'unidentified session cannot create a shared-cache fallback save');
  console.log('PASS: actual grade save/mutation wrappers preserve plan packet, ignore device clocks, retain prior data on storage failure, display local failure and refuse unmatched receipt; independent tab operations survive');
 })().catch(error=>{console.error(error);process.exitCode=1;});
