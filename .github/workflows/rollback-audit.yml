@@ -1,0 +1,23 @@
+name: Preserve current site for rollback audit
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  preserve:
+    if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+      DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+      DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+      DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      EXPECTED_RELEASE: 86845cb025e83fd47c4f77ce01785799c0e70d85
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preserve exact deployed code and inspect production aggregates read only
+        run: python3 scripts/rollback-audit.py
+      - name: Create and verify the private production database archive
+        run: python3 scripts/create-private-db-backup.py
