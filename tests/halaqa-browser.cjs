@@ -156,9 +156,15 @@ async function run() {
       if (!key) throw Error("Synthetic grade snapshot is unavailable");
       localStorage.setItem(key.replace(/snapshot$/, "operation:comparison-fixture"), JSON.stringify({
         packet: { operation_id: "comparison-fixture", calendar_context: { known: true, active_semester_id: "test-semester" }, changes: [
-          { path: ["fixture-1", "1", "days", "sun", "attendance"], base: { present: true, value: "absent" }, next: { present: true, value: "late" } },
+          { path: ["fixture-1", "1", "days", "fri", "attendance"], base: { present: false }, next: { present: true, value: "late" } },
         ] },
         order: 2, status: "unbased", dependencies: [],
+      }));
+      localStorage.setItem(key.replace(/snapshot$/, "operation:archive-fixture"), JSON.stringify({
+        packet: { operation_id: "archive-fixture", calendar_context: { known: true, active_semester_id: "test-semester" }, changes: [
+          { path: ["fixture-1", "1", "days", "sun", "attendance"], base: { present: true, value: "present" }, next: { present: true, value: "late" } },
+        ] },
+        order: 3, status: "conflict", dependencies: [],
       }));
       window.dispatchEvent(new Event("qhp-grade-save-status"));
     });
@@ -171,6 +177,10 @@ async function run() {
     assert.equal(receipts.size, 1);
     await page.getByRole("button", { name: "طيّ مراجعة المسودات", exact: true }).click();
     assert.equal(await refresh.count(), 0);
+    assert.equal(await attendance.inputValue(), "absent", "the confirmed grade wins");
+    await page.getByRole("button", { name: "القائمة", exact: true }).click();
+    await page.getByText("سجل المسودات المحلي (1)", { exact: true }).click();
+    await page.getByText(/الأسبوع 1 · الأحد · الحضور · متأخر/).waitFor({ timeout: 9000 });
     assert.equal(await page.evaluate(() => Object.keys(localStorage).some(k => k.endsWith(":operation:comparison-fixture"))), true);
     console.log("PASS: clicking compare gives feedback even with unchanged grades and retains the local draft");
   } finally { await browser.close(); }

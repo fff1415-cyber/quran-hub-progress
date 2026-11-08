@@ -115,7 +115,10 @@ const planRequired = "هذه الدرجة مرتبطة بخطة؛ يلزم تس�
     const byId = id => box.drafts().find(d => d.packet.operation_id === id);
     assert.equal(byId(empty).status, "reconciled");
     assert.deepEqual(byId(empty).packet.changes[0], legacyEmpty);
-    for (const id of [realClear, knownPlan, priorSemester]) assert.equal(byId(id).status, "conflict");
+    assert.equal(byId(realClear).status, "archived");
+    assert.deepEqual(byId(realClear).packet.changes, [original.packet.changes[0]]);
+    assert.equal(box.view({})["synthetic-student"][10].days.sun.rabt, "pass");
+    for (const id of [knownPlan, priorSemester]) assert.equal(byId(id).status, "conflict");
     assert.equal(byId(uncertainReceipt).status, "pending");
     for (const task of ["rabt", "muraja"]) for (const next of ["", "fail"]) {
       const calls = [];

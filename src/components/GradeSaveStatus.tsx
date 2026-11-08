@@ -24,6 +24,25 @@ function gradeValue(value: unknown): string {
   return JSON.stringify(value) ?? "غير موجود";
 }
 
+export function GradeDraftArchive() {
+  const [open, setOpen] = useState(false);
+  const drafts = currentGradeOutbox()?.drafts().filter(draft => draft.status === "archived") ?? [];
+  if (!drafts.length) return null;
+  const students = open ? loadStudents() : [];
+  return <details className="px-3 py-2 text-sm" onToggle={event => setOpen(event.currentTarget.open)}>
+    <summary className="cursor-pointer">سجل المسودات المحلي ({drafts.length})</summary>
+    {open && <div className="mt-2 space-y-2">
+      <p>أُبقيت القيم التي أكدها الخادم. هذه نسخ من المسودات على هذا الجهاز.</p>
+      {drafts.map(draft => <ul className="rounded border p-2" key={draft.packet.operation_id}>
+        {draft.packet.changes.map((change, index) => <li key={index}>
+          {students.find(student => student.id === change.path[0])?.name ?? "الطالب"} · {gradeLocation(change.path)}
+          {" · "}{change.next.present ? gradeValue(change.next.value) : "إزالة"}
+        </li>)}
+      </ul>)}
+    </div>}
+  </details>;
+}
+
 export function GradeSaveStatus() {
   const [, redraw] = useState(0), [error, setError] = useState("");
   const actionInProgress = useRef(false);
