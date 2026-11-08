@@ -9,6 +9,9 @@ jobs:
     if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    concurrency:
+      group: hostinger-production
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
@@ -33,5 +36,14 @@ jobs:
           node tests/stage2-atomic-local.cjs
           node tests/stage2-atomic-sessions.cjs
           node tests/tarbawi-local.cjs
+          node ../scripts/test-scientific-program.cjs
           php tests/stage3-atomic-plan.php
           npm run build:hostinger
+      - name: Publish and verify the scientific settings and scores fix
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          git fetch --no-tags origin +refs/heads/release/scientific-scores-hotfix:refs/remotes/origin/release/scientific-scores-hotfix
+          python3 scripts/protected-rollback-release.py publish ba66ab01b661d6e019ad4826b0aabc675c5dbbd1 0ff38a91d8fce7ba2c80374ec48a8a58dae6b533
