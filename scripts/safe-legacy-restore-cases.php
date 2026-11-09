@@ -167,13 +167,6 @@ function test_legacy_plan_atomic_save(PDO $pdo,int $cid,string $student): array 
     $pdo->prepare('INSERT INTO student_plan_assignments(id,student_id,plan_id,start_segment_index) VALUES (?,?,?,?)')
         ->execute([$assignment,$student,$plan,$segments[0]]);
     $insert=$pdo->prepare("INSERT INTO segment_completions(id,student_id,plan_id,segment_index,task_type,completed_at,recorded_by,assignment_id) VALUES(?,?,?,?,'hifz',?,'Fixture',?)");
-    $insert->execute([$legacy,$student,$plan,$segments[0],$date,null]);
-    try {
-        $insert->execute([new_uuid(),$student,$plan,$segments[0],$date,$assignment]);
-        throw new RuntimeException('legacy_collision_not_reproduced');
-    } catch (PDOException $e) {
-        if ((int)($e->errorInfo[1]??0)!==1062) throw $e;
-    }
     $path=[$student,'1','days',$day,'hifz'];
     $packet=static function(string $value,string $action) use($pdo,$cid,$path,$student,$assignment,$date): array {
         $capture=grade_cells_capture($pdo,$cid,'grades',[$path]);
@@ -186,6 +179,31 @@ function test_legacy_plan_atomic_save(PDO $pdo,int $cid,string $student): array 
         $GLOBALS['testAuth']=['role'=>$role,'complexId'=>$cid,'halaqaId'=>$group,'name'=>'Fixture'];
         return probe('handle_set_app_state',[],['key'=>'grades','grade_write_protocol'=>1,'value'=>$packet]);
     };
+    if (getenv('QHP_DAILY_WITHOUT_SEGMENT')==='1') {
+        $rabtPath=[$student,'1','days',$day,'rabt'];
+        $makeDaily=static function (string $value,string $action) use ($pdo,$cid,$student,$assignment,$date,$rabtPath): array {
+            $capture=grade_cells_capture($pdo,$cid,'grades',[$rabtPath]);
+            return ['operation_id'=>'isolated-daily-'.bin2hex(random_bytes(8)), 'calendar_context'=>$capture['calendar_context'],
+                'changes'=>[$capture['cells'][0]+['next'=>['present'=>true,'value'=>$value]]],
+                'plan'=>['student_id'=>$student,'expected_assignment_id'=>$assignment,'task_type'=>'rabt','action'=>$action,
+                    'tap'=>'one','completed_at'=>$date,'cell_path'=>$rabtPath]];
+        };
+        $daily=$makeDaily('pass','record');
+        if ($write($daily,'teacher')->getCode()!==200 || ($write($daily,'assistant')->body['replayed']??false)!==true ||
+            (grade_cells_at(grade_cells_store($pdo,$cid,'grades',false),$rabtPath)['value']??null)!=='pass' ||
+            $write($makeDaily('','undo'),'assistant')->getCode()!==200) throw new RuntimeException('isolated_daily_mark_without_segment_failed');
+        $q=$pdo->prepare('SELECT COUNT(*) FROM segment_completions WHERE student_id=?');
+        $q->execute([$student]);
+        if ((int)$q->fetchColumn()!==0) throw new RuntimeException('isolated_daily_mark_created_completion');
+        echo "PASS: isolated MariaDB daily mark, receipt retry and cancellation with zero invented completions\n";
+    }
+    $insert->execute([$legacy,$student,$plan,$segments[0],$date,null]);
+    try {
+        $insert->execute([new_uuid(),$student,$plan,$segments[0],$date,$assignment]);
+        throw new RuntimeException('legacy_collision_not_reproduced');
+    } catch (PDOException $e) {
+        if ((int)($e->errorInfo[1]??0)!==1062) throw $e;
+    }
     $read=static function(string $role) use($cid,$group,$student,$path): array {
         $GLOBALS['testAuth']=['role'=>$role,'complexId'=>$cid,'halaqaId'=>$group];
         $grade=probe('handle_list_app_state',['key'=>'grades','grade_protocol'=>'1']);

@@ -33,6 +33,8 @@ if os.environ.get('QHP_SAFE_LEGACY_CANDIDATE') == '1':
     probe = probe.replace('declare(strict_types=1);', "declare(strict_types=1);\ndefine('QHP_GRADE_WRITES_V1', true);\ndefine('QHP_TEST_TOKEN_SECRET', bin2hex(random_bytes(32)));", 1)
     if os.environ.get('QHP_PERCENTAGE_SAMPLE') == '1':
         probe = probe.replace('declare(strict_types=1);', "declare(strict_types=1);\nputenv('QHP_PERCENTAGE_SAMPLE=1');", 1)
+    if os.environ.get('QHP_DAILY_WITHOUT_SEGMENT') == '1':
+        probe = probe.replace('declare(strict_types=1);', "declare(strict_types=1);\nputenv('QHP_DAILY_WITHOUT_SEGMENT=1');", 1)
 else:
     pieces.extend(subprocess.check_output(['git','show',old+':'+name]) for name in paths)
 loaded = ''.join("eval(substr(base64_decode('" + base64.b64encode(piece).decode() + "'),5));\n" for piece in pieces)
