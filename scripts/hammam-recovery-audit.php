@@ -4,6 +4,25 @@ if (PHP_SAPI !== 'cli') exit(1);
 umask(0077);
 const TABLES = ['complexes','halaqat','students','app_state','semesters','academic_weeks','education_plans',
     'student_plan_assignments','segment_completions','grade_cell_versions','grade_operation_receipts','role_accounts'];
+const NOVEMBER_2_CELL_HASH='e9adec78411e077393675252b4c7cf935a31ec45ccff0095b23047b5b6c02a81';
+
+function read_hammam_cells(array $grades): array {
+    $cells=[];
+    foreach($grades as $student=>$weeks) foreach($weeks as $week=>$programs)
+    foreach($programs as $program=>$slots) foreach($slots as $slot=>$value) {
+        if($value===null || $value==='')continue;
+        if(!is_string($value))throw new RuntimeException('unexpected_grade_label');
+        $cells[implode('|',[$student,$week,$program,$slot])]=$value;
+    }
+    return $cells;
+}
+
+function hammam_cell_hash(array $cells): string {
+    $lines=[];
+    foreach($cells as $key=>$value)$lines[]=$key.'|'.$value;
+    sort($lines,SORT_STRING);
+    return hash('sha256',implode("\n",$lines));
+}
 
 function read_archive(string $file): array {
     $h = gzopen($file,'rb');
@@ -107,7 +126,57 @@ function hammam_summary(array $tables): array {
     ksort($weeks);
     $roster=array_filter($tables['students'],static fn($s)=>(string)$s['complex_id']===$cid&&(string)$s['halaqa_id']===$hid);
     return ['count'=>$nonempty,'explicit_blanks'=>$blank,'weeks'=>$weeks,'semester'=>$semesters,'programs'=>count($registry),
-        'roster'=>count($roster),'store_updated'=>$row['updated_at']??null,'cid'=>$cid];
+        'roster'=>count($roster),'store_updated'=>$row['updated_at']??null,'cid'=>$cid,'hid'=>$hid,
+        'grades'=>$grades,'registry'=>$registry,'studentIds'=>array_column($roster,'id')];
+}
+
+function verify_selective_restore_on_test(string $home,array $live,array $old): array {
+    $config=$home.'/.qhp-private/msht-test.php';
+    if(realpath($config)!==$config || (fileperms($config)&0077)!==0)throw new RuntimeException('test_config_scope');
+    $settings=qhp_load_private_test_config((string)file_get_contents($config));
+    if($settings['database']!=='u112851217_msht_test' || $settings['user']===DB_USER)throw new RuntimeException('isolated_database_required');
+    $test=new PDO('mysql:host='.$settings['host'].';dbname='.$settings['database'].';charset=utf8mb4',
+        $settings['user'],$settings['password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
+    if($test->query('SELECT DATABASE()')->fetchColumn()!=='u112851217_msht_test')throw new RuntimeException('test_database_identity');
+    if($old['semester']!==$live['semester'] || $old['hid']!==$live['hid'])throw new RuntimeException('test_scope_mismatch');
+    $cid=$live['cid'];$hid=$live['hid'];
+    $row=$test->prepare("SELECT value FROM app_state WHERE complex_id=? AND `key`='halaqa_program_grades'");
+    $others=$test->prepare("SELECT complex_id,`key`,SHA2(value,256) AS digest FROM app_state WHERE NOT (complex_id=? AND `key`='halaqa_program_grades') ORDER BY complex_id,`key`");
+    $read=static function(PDOStatement $stmt)use($cid){$stmt->execute([$cid]);return $stmt->fetchColumn();};
+    $readOthers=static function()use($others,$cid){$others->execute([$cid]);return $others->fetchAll();};
+    $raw=$read($row);
+    $store=json_decode($raw,true,512,JSON_THROW_ON_ERROR);
+    if(($store[$hid]??[])!==$live['grades'])throw new RuntimeException('test_snapshot_drift');
+    $beforeOthers=$readOthers();
+    $programs=array_column($live['registry'],null,'id');
+    $students=array_fill_keys($live['studentIds'],true);
+    $candidate=read_hammam_cells($old['grades']);
+    $added=0;$occupied=0;$incompatible=0;
+    foreach($candidate as $key=>$value){
+        [$student,$week,$program,$slot]=explode('|',$key);
+        if(!isset($students[$student]))continue;
+        $leaf=$store[$hid][$student][$week][$program]??[];
+        if(array_key_exists($slot,$leaf)){ $occupied++;continue; }
+        $config=$programs[$program]??null;
+        if(!$config || ($config['active']??true)===false || !in_array($slot,$config['weekdays']??[],true) ||
+            !in_array($value,array_column($config['levels']??[],'label'),true)){ $incompatible++;continue; }
+        $store[$hid][$student][$week][$program][$slot]=$value;$added++;
+    }
+    if($added===0)throw new RuntimeException('no_simulation_cells');
+    $test->beginTransaction();
+    try {
+        $update=$test->prepare("UPDATE app_state SET value=? WHERE complex_id=? AND `key`='halaqa_program_grades' AND BINARY value=BINARY ?");
+        $update->execute([json_encode($store,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),$cid,$raw]);
+        if($update->rowCount()!==1)throw new RuntimeException('test_compare_and_swap');
+        $after=json_decode($read($row),true,512,JSON_THROW_ON_ERROR);
+        if($after!==$store || $readOthers()!==$beforeOthers)throw new RuntimeException('test_unrelated_state_changed');
+        $beforeCells=read_hammam_cells($live['grades']);$afterCells=read_hammam_cells($after[$hid]);
+        if(array_intersect_key($afterCells,$beforeCells)!==$beforeCells || count($afterCells)!==count($beforeCells)+$added)
+            throw new RuntimeException('test_nonempty_cell_changed');
+    } finally { $test->rollBack(); }
+    if($read($row)!==$raw || $readOthers()!==$beforeOthers)throw new RuntimeException('test_rollback_incomplete');
+    return ['simulated_added'=>$added,'existing_untouched'=>$occupied,'incompatible'=>$incompatible,
+        'other_stores_unchanged'=>true,'isolated_transaction_rolled_back'=>true,'production_writes'=>false];
 }
 
 try {
@@ -154,18 +223,22 @@ try {
         if(!preg_match('/^2026110[2-9]T[0-9]{6}Z-[a-f0-9]+$/D',$id))continue;
         $day=substr($id,0,8);$selected[$day][]=$path;
     }
-    $timeline=[];
+    $timeline=[];$exactOld=null;
     foreach($selected as $paths){
         sort($paths,SORT_STRING);
-        foreach(array_unique([$paths[0],end($paths)]) as $path){
+        foreach(substr(basename(dirname($paths[0])),0,8)==='20261109' ? $paths : array_unique([$paths[0],end($paths)]) as $path){
             $manifest=json_decode(file_get_contents($path),true,512,JSON_THROW_ON_ERROR);
             $file=dirname($path).'/production.sql.gz';
             if(realpath($file)!==$file || !hash_equals($manifest['sha256']??'',hash_file('sha256',$file)))continue;
-            $timeline[basename(dirname($path))]=hammam_summary(read_archive($file));
+            $archive=hammam_summary(read_archive($file));
+            if(hammam_cell_hash(read_hammam_cells($archive['grades']))===NOVEMBER_2_CELL_HASH)$exactOld=$archive;
+            $timeline[basename(dirname($path))]=array_diff_key($archive,array_flip(['grades','registry','studentIds','hid']));
         }
     }
-    echo json_encode(['status'=>'read_only_recovery_evidence','live'=>$live,'journal'=>$journal,'log_settings'=>$vars,
-        'binlogs'=>$binlogs,'history_tables'=>$possibleHistory,'archives'=>$timeline],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE).PHP_EOL;
+    $simulation=$exactOld ? verify_selective_restore_on_test($match[1],$live,$exactOld) : ['matched_exact_november_2_source'=>false];
+    echo json_encode(['status'=>'read_only_recovery_evidence','live'=>array_diff_key($live,array_flip(['grades','registry','studentIds','hid'])),
+        'journal'=>$journal,'log_settings'=>$vars,'binlogs'=>$binlogs,'history_tables'=>$possibleHistory,'archives'=>$timeline,
+        'isolated_simulation'=>$simulation],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE).PHP_EOL;
 } catch(Throwable $error) {
     if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();
     echo json_encode(['status'=>'recovery_audit_failed','class'=>get_class($error),

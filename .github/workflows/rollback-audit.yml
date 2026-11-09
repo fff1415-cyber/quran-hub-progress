@@ -19,13 +19,14 @@ jobs:
       DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
       EXPECTED_RELEASE: 4e8cfc813651d36f49a3c1ed5ddb9561a5442eab
       HAMMAM_RECOVERY_AUDIT: '1'
+      HAMMAM_FRESH_BACKUP: '0'
     steps:
       - uses: actions/checkout@v4
       - name: Create a fresh private production backup
-        if: env.HAMMAM_RECOVERY_AUDIT == '1'
+        if: env.HAMMAM_FRESH_BACKUP == '1'
         run: python3 scripts/create-private-db-backup.py
       - name: Restore and verify the archive only in the independent test database
-        if: env.HAMMAM_RECOVERY_AUDIT == '1'
+        if: env.HAMMAM_FRESH_BACKUP == '1'
         run: python3 scripts/restore-hostinger-test.py
       - name: Trace the grading history with production reads only
         if: env.HAMMAM_RECOVERY_AUDIT == '1'
