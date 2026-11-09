@@ -22,6 +22,7 @@ const grades = load("semester-grading");
 const weeklyTests = load("weekly-tests");
 const { dayScore, weekPercentage } = load("mock-data");
 const { buildWeeklyReport } = load("weekly-report-history");
+const { buildCombinedProgramTotals, elapsedProgramDays } = load("halaqa-program-combined-totals");
 
 const complete = { attendance: "present", hifz: "one", rabt: "pass", muraja: "pass", wajib: false };
 const calendar = {
@@ -72,4 +73,22 @@ assert.equal(grades.studentWeekOverallPercentage("S",false,saturday,1,"gold",sat
 const weekly = { S: { 1:{muraja:["pass"],rabt:"pass"}, 2:{muraja:["pass"],rabt:["pass"]} } };
 assert.equal(weeklyTests.scoreWeeklyTests(weekly.S[1]).percent,55.6);
 assert.equal(weeklyTests.cumulativeWeeklyTestsPercent(weekly,"S",9),12.3);
+
+const scientific = { S: {
+  1: { sun: { hifz: "10" }, mon: { hifz: "10" }, tue: { hifz: "10" }, wed: { hifz: "10" } },
+  2: { sun: { hifz: "0" }, mon: { hifz: "10" } },
+} };
+const programCalendar = { ...calendar, operationalDate: "2026-09-27" };
+const config = { visible: true, fields: { hifz: true }, defaultScores: { hifz: "10" } };
+const elapsed = elapsedProgramDays(programCalendar, [1, 2]);
+assert.deepEqual(elapsed, { 1: ["sun", "mon", "tue"], 2: ["sun"] });
+const originalScientific = JSON.stringify(scientific);
+const programTotals = weeks => buildCombinedProgramTotals([], {}, "S", weeks, scientific, ["hifz"], elapsed, config);
+assert.equal(programTotals([1]).percent, 100, "earlier scores remain visible; a holiday is excluded from both sides");
+assert.equal(programTotals([2]).percent, 0, "future scores do not contribute");
+assert.equal(programTotals([2]).hasData, true, "an actual zero is still a recorded grade");
+assert.deepEqual([...programTotals([2]).scientificRecordedFields], ["hifz"]);
+assert.equal(programTotals([3]).scientificRecordedFields.size, 0, "missing weeks have no recorded zero");
+assert.equal(programTotals([1, 2]).percent, 75);
+assert.equal(JSON.stringify(scientific), originalScientific);
 console.log("PASS: calendar, holidays, sparse grades, compensation, reports and weekly test rounding; grade inputs unchanged");

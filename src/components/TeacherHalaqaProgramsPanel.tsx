@@ -3,11 +3,9 @@ import { loadStudents, loadHalaqat } from "@/lib/mock-data";
 import { gradeViewerSectionLabel, resolveAssistantCode, shouldShowGradeViewerDivider } from "@/lib/halaqa-assistants";
 import { getSessionName } from "@/lib/session-role";
 import type { AcademicCalendar } from "@/lib/academic-context";
-import {
-  formatWeekOptionLabel,
-  getSelectableWeeks,
-  workingDayKeysFromSemester,
-} from "@/lib/academic-context";
+import { formatWeekOptionLabel, getSelectableWeeks } from "@/lib/academic-context";
+import { getToken } from "@/lib/auth-session";
+import { refreshScientificFromCloud } from "@/lib/cloud-sync";
 import {
   defaultNewProgram,
   HALAQA_PROGRAMS_CHANGED_EVENT,
@@ -25,7 +23,7 @@ import {
   type ProgramLevel,
   type ProgramScheduleMode,
 } from "@/lib/halaqa-programs";
-import { buildCombinedProgramTotals } from "@/lib/halaqa-program-combined-totals";
+import { buildCombinedProgramTotals, elapsedProgramDays } from "@/lib/halaqa-program-combined-totals";
 import { downloadHalaqaProgramsWorkbook } from "@/lib/halaqa-programs-export";
 import {
   filterStandardPrograms,
@@ -38,7 +36,6 @@ import {
   isScientificProgramEnabled,
   loadScientificConfig,
   loadScientificData,
-  repairScientificHalaqaProgram,
   SCIENTIFIC_FIELD_LABELS,
   SCIENTIFIC_GRADES_CHANGED_EVENT,
   type ScientificGradeField,
@@ -97,6 +94,7 @@ export function TeacherHalaqaProgramsPanel({
   const [exportOpen, setExportOpen] = useState(false);
   const [fromDate, setFromDate] = useState(calendar.semester?.start_date ?? calendar.operationalDate);
   const [toDate, setToDate] = useState(calendar.operationalDate);
+  const [historyStatus, setHistoryStatus] = useState<"loading" | "ready" | "failed">("ready");
 
   const allStudents = useMemo(
     () => loadStudents().filter((s) => s.halaqaId === halaqaId),
@@ -108,9 +106,22 @@ export function TeacherHalaqaProgramsPanel({
   );
 
   const selectableWeeks = useMemo(() => getSelectableWeeks(calendar), [calendar]);
+  const daysByWeek = useMemo(
+    () => elapsedProgramDays(calendar, selectableWeeks.map(week => week.week_number)),
+    [calendar, selectableWeeks],
+  );
+  const hasPrograms = programs.length > 0 || isScientificProgramEnabled(loadScientificConfig(halaqaId));
 
   useEffect(() => {
-    repairScientificHalaqaProgram(halaqaId);
+    const token = getToken();
+    if (!token) return;
+    let active = true;
+    setHistoryStatus("loading");
+    void refreshScientificFromCloud(token).then(
+      () => { if (active) setHistoryStatus("ready"); },
+      () => { if (active) setHistoryStatus("failed"); },
+    );
+    return () => { active = false; };
   }, [halaqaId]);
 
   const refreshPrograms = () => {
@@ -119,6 +130,7 @@ export function TeacherHalaqaProgramsPanel({
 
   useEffect(() => {
     refreshPrograms();
+    setGrades(loadProgramGrades(halaqaId));
     const onProgramsChanged = () => refreshPrograms();
     const onSciChanged = () => refreshPrograms();
     window.addEventListener(HALAQA_PROGRAMS_CHANGED_EVENT, onProgramsChanged);
@@ -221,7 +233,7 @@ export function TeacherHalaqaProgramsPanel({
       toast.error("لا يوجد طلاب");
       return;
     }
-    if (programs.length === 0) {
+    if (!hasPrograms) {
       toast.error("لا توجد برامج");
       return;
     }
@@ -230,7 +242,7 @@ export function TeacherHalaqaProgramsPanel({
     toast.success("تم تصدير برامج الحلقة");
   };
 
-  if (programs.length === 0 && !canManagePrograms) {
+  if (!hasPrograms && !canManagePrograms && historyStatus === "ready") {
     return (
       <div className="glass-card rounded-2xl p-10 text-center text-muted-foreground">
         <BookOpen className="w-10 h-10 mx-auto mb-3 opacity-50" />
@@ -305,6 +317,8 @@ export function TeacherHalaqaProgramsPanel({
         </div>
       </div>
 
+      {historyStatus === "loading" && <p role="status">جارٍ تحميل درجات البرنامج العلمي…</p>}
+      {historyStatus === "failed" && <p role="status">تعذّر تحديث درجات البرنامج العلمي من الخادم. تُعرض البيانات المتاحة على هذا الجهاز.</p>}
       {mode === "setup" && canManagePrograms && !readOnly ? (
         <ProgramSetupSection
           programs={loadHalaqaProgramsAll(halaqaId).filter((p) => p.active !== false && !isScientificHalaqaProgram(p))}
@@ -322,7 +336,7 @@ export function TeacherHalaqaProgramsPanel({
           weekNum={weekNum}
           calendar={calendar}
           selectableWeeks={selectableWeeks}
-          workingDayKeys={[...workingDayKeysFromSemester(calendar.semester?.working_days)]}
+          daysByWeek={daysByWeek}
           onWeekChange={onWeekChange}
         />
       ) : (
@@ -339,7 +353,7 @@ export function TeacherHalaqaProgramsPanel({
           readOnly={readOnly}
           onWeekChange={onWeekChange}
           onCellChange={setCell}
-          workingDayKeys={[...workingDayKeysFromSemester(calendar.semester?.working_days)]}
+          daysByWeek={daysByWeek}
         />
       )}
 
@@ -600,7 +614,7 @@ function ProgramFillSection({
   readOnly,
   onWeekChange,
   onCellChange,
-  workingDayKeys,
+  daysByWeek,
 }: {
   halaqaId: number;
   programs: HalaqaProgram[];
@@ -614,7 +628,7 @@ function ProgramFillSection({
   readOnly: boolean;
   onWeekChange: (n: number) => void;
   onCellChange: (studentId: string, programId: string, slotKey: string, value: string) => void;
-  workingDayKeys: string[];
+  daysByWeek: Record<number, string[]>;
 }) {
   const standardPrograms = useMemo(() => filterStandardPrograms(programs), [programs]);
   const scientificProgram = useMemo(() => findScientificProgram(programs), [programs]);
@@ -646,7 +660,8 @@ function ProgramFillSection({
     return () => window.removeEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, onScientificChanged);
   }, [refreshScientificData]);
 
-  if (programs.length === 0) {
+  const showScientific = isScientificProgramEnabled(sciConfig) && sciFields.length > 0;
+  if (programs.length === 0 && !showScientific) {
     return (
       <div className="glass-card rounded-2xl p-8 text-center text-muted-foreground">
         <p>لا توجد برامج — انتقل إلى «إعداد البرامج» لإنشاء برنامج</p>
@@ -654,9 +669,6 @@ function ProgramFillSection({
     );
   }
 
-  const formatTotal = (n: number) => (Number.isFinite(n) && n !== 0 ? String(n) : n === 0 ? "0" : "—");
-
-  const showScientific = isScientificProgramEnabled(sciConfig) && sciFields.length > 0;
   const halaqa = loadHalaqat().find((h) => h.id === halaqaId);
   const assistantCode = halaqa && viewerRole === "assistant" ? resolveAssistantCode(halaqa, getSessionName()) : undefined;
   const columnCount = 1 + standardPrograms.reduce((sum, p) => sum + programSlots(p).length, 0) +
@@ -770,7 +782,7 @@ function ProgramFillSection({
                 [weekNum],
                 sciData,
                 sciFields,
-                workingDayKeys,
+                daysByWeek,
                 sciConfig,
               );
               const cumulative = buildCombinedProgramTotals(
@@ -780,7 +792,7 @@ function ProgramFillSection({
                 cumulativeWeekNums,
                 sciData,
                 sciFields,
-                workingDayKeys,
+                daysByWeek,
                 sciConfig,
               );
               return (
@@ -811,14 +823,14 @@ function ProgramFillSection({
                           key={`${s.id}-sci-w-${field}`}
                           className="p-1 border-r border-border/30 text-center text-xs font-bold bg-emerald-500/10"
                         >
-                          {formatTotal(weekly.sciTotals![field])}
+                          {weekly.scientificRecordedFields.has(field) ? weekly.sciTotals![field] : "—"}
                         </td>
                       ))}
                       <td className="p-1 border-r border-border/30 text-center text-xs font-bold bg-emerald-500/15">
-                        {formatTotal(weekly.sciTotals.total)}
+                        {weekly.scientificRecordedFields.size ? weekly.sciTotals.total : "—"}
                       </td>
                       <td className="p-1 border-r border-border/30 text-center text-xs font-bold bg-emerald-500/10">
-                        {formatTotal(cumulative.sciTotals.total)}
+                        {cumulative.scientificRecordedFields.size ? cumulative.sciTotals.total : "—"}
                       </td>
                     </>
                   )}
@@ -832,7 +844,7 @@ function ProgramFillSection({
                       percentAvailable={weekly.hasPercent}
                       programs={weekly.programBreakdown}
                       scientific={
-                        showScientific && weekly.sciTotals
+                        showScientific && weekly.sciTotals && weekly.scientificRecordedFields.size
                           ? { name: scientificProgram?.name ?? SCIENTIFIC_PROGRAM_NAME, earned: weekly.sciTotals.total }
                           : null
                       }
@@ -850,7 +862,7 @@ function ProgramFillSection({
                       percentAvailable={cumulative.hasPercent}
                       programs={cumulative.programBreakdown}
                       scientific={
-                        showScientific && cumulative.sciTotals
+                        showScientific && cumulative.sciTotals && cumulative.scientificRecordedFields.size
                           ? { name: scientificProgram?.name ?? SCIENTIFIC_PROGRAM_NAME, earned: cumulative.sciTotals.total }
                           : null
                       }
@@ -944,7 +956,7 @@ function ProgramsTotalsBreakdown({
                   <div className="text-[9px] text-muted-foreground leading-tight mt-0.5">مجموع نقاط</div>
                 </div>
                 <span className="text-sm font-bold shrink-0 text-emerald-700 dark:text-emerald-400">
-                  {scientific.earned > 0 ? scientific.earned : "—"}
+                  {scientific.earned}
                 </span>
               </li>
             )}

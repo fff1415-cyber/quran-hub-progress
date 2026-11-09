@@ -37,7 +37,7 @@ type Props = {
   weekNum: number;
   calendar: AcademicCalendar;
   selectableWeeks: ReturnType<typeof getSelectableWeeks>;
-  workingDayKeys: string[];
+  daysByWeek: Record<number, string[]>;
   onWeekChange: (n: number) => void;
 };
 
@@ -151,7 +151,7 @@ export function HalaqaProgramAchievementChart({
   weekNum,
   calendar,
   selectableWeeks,
-  workingDayKeys,
+  daysByWeek,
   onWeekChange,
 }: Props) {
   const [view, setView] = useState<"weekly" | "cumulative">("weekly");
@@ -190,7 +190,7 @@ export function HalaqaProgramAchievementChart({
         weekNums,
         sciData,
         sciFields,
-        workingDayKeys,
+        daysByWeek,
         sciConfig,
       );
     },
@@ -202,7 +202,7 @@ export function HalaqaProgramAchievementChart({
       grades,
       sciData,
       sciFields,
-      workingDayKeys,
+      daysByWeek,
       sciConfig,
     ],
   );
