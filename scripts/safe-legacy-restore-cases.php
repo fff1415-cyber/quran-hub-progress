@@ -1,4 +1,53 @@
 <?php
+function test_program_cell_protection(PDO $pdo): void {
+    $cid=(int)$pdo->query("SELECT id FROM complexes WHERE subdomain='m6'")->fetchColumn();
+    $q=$pdo->prepare("SELECT value FROM app_state WHERE complex_id=? AND `key`='halaqa_programs'");
+    $q->execute([$cid]);$registry=json_decode($q->fetchColumn(),true,512,JSON_THROW_ON_ERROR);
+    $q=$pdo->prepare("SELECT id,halaqa_id FROM students WHERE complex_id=?");
+    $q->execute([$cid]);$fixture=null;
+    foreach($q->fetchAll() as $student) {
+        foreach($registry[$student['halaqa_id']]??[] as $program) {
+            if(($program['kind']??'')==='scientific'||($program['active']??true)===false||count($program['weekdays']??[])<2||!isset($program['levels'][0]['label']))continue;
+            $fixture=[$student,$program];break 2;
+        }
+    }
+    if(!$fixture)throw new RuntimeException('isolated_program_fixture_missing');
+    [$student,$program]=$fixture;
+    $key='halaqa_program_grades';
+    $paths=array_map(static fn($slot)=>[(string)$student['halaqa_id'],$student['id'],'1',$program['id'],$slot],array_slice($program['weekdays'],0,2));
+    $query=['key'=>$key,'grade_protocol'=>'1'];
+    $GLOBALS['testAuth']=['role'=>'teacher','complexId'=>$cid,'halaqaId'=>(int)$student['halaqa_id']];
+    $a=probe('handle_list_app_state',$query)->body;
+    $GLOBALS['testAuth']['role']='assistant';
+    $b=probe('handle_list_app_state',$query)->body;
+    $original=grade_cells_json($a['value']);
+    $make=static function(array $path,array $snapshot,array $next)use($pdo,$cid,$key):array {
+        return ['operation_id'=>'test-program-'.bin2hex(random_bytes(8)),'calendar_context'=>$snapshot['calendar_context'],
+            'changes'=>[['path'=>$path,'base'=>grade_cells_at($snapshot['value'],$path,true),
+                'stamp'=>grade_cells_stamp($pdo,$cid,$key,$path,false),'next'=>$next]]];
+    };
+    $post=static fn(array $packet)=>probe('handle_set_app_state',[],['key'=>$key,'grade_write_protocol'=>1,'value'=>$packet]);
+    $packets=[$make($paths[0],$a,['present'=>true,'value'=>$program['levels'][0]['label']]),
+        $make($paths[1],$b,['present'=>true,'value'=>$program['levels'][0]['label']])];
+    $pdo->beginTransaction();
+    try{
+        $GLOBALS['testAuth']['role']='teacher';$first=$post($packets[0])->getCode();
+        $GLOBALS['testAuth']['role']='assistant';$second=$post($packets[1])->getCode();
+        $legacy=probe('handle_set_app_state',[],['key'=>$key,'value'=>[]])->getCode();
+        $current=probe('handle_list_app_state',$query)->body;
+        if($first!==200||$second!==200||$legacy!==409||
+            !grade_cells_at($current['value'],$paths[0],true)['present']||!grade_cells_at($current['value'],$paths[1],true)['present'])
+            throw new RuntimeException('isolated_program_cell_protection_failed');
+        $cancel=$make($paths[0],$current,['present'=>false]);
+        if($post($cancel)->getCode()!==200||empty($post($cancel)->body['replayed'])||
+            grade_cells_at(probe('handle_list_app_state',$query)->body['value'],$paths[0],true)['present'])
+            throw new RuntimeException('isolated_program_cancel_failed');
+    } finally { if($pdo->inTransaction())$pdo->rollBack(); }
+    if(grade_cells_json(probe('handle_list_app_state',$query)->body['value'])!==$original)
+        throw new RuntimeException('isolated_program_test_not_reverted');
+    echo json_encode(['isolated_program_two_sessions'=>[200,200],'legacy_whole_store_after_two_writes'=>409,
+        'cancel_and_retry'=>true,'test_transaction_rolled_back'=>true,'production_writes'=>false]).PHP_EOL;
+}
 function verify_teacher_program_history(PDO $pdo): void {
     $previousAuth = $GLOBALS['testAuth'];
     $pdo->exec('SET TRANSACTION READ ONLY');
