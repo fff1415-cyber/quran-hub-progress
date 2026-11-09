@@ -36,9 +36,11 @@ const noStandard = () => ({ earned:0, maxPossible:0, filledSlots:0 });
 const combined = load('src/lib/halaqa-program-combined-totals.ts',{
   '@/lib/scientific-grades':lib,
   '@/lib/halaqa-programs':{studentAllProgramsWeekTotals:noStandard},
+  '@/lib/calendar-generator':load('src/lib/calendar-generator.ts',{}),
+  '@/lib/semester-holidays':load('src/lib/semester-holidays.ts',{}),
 });
 const totalsConfig = {...config,fields:{...config.fields,attendance:true},
   defaultScores:{...config.defaultScores,attendance:{present:'9'}}};
-assert.equal(combined.buildCombinedProgramTotals([],{},'fixture',[1],active,allFields,['mon'],totalsConfig).percent,100);
-assert.equal(combined.buildCombinedProgramTotals([],{},'fixture',[1],cleared,allFields,['mon'],totalsConfig).percent,50);
+assert.equal(combined.buildCombinedProgramTotals([],{},'fixture',[1],active,allFields,{1:['mon']},totalsConfig).percent,100);
+assert.equal(combined.buildCombinedProgramTotals([],{},'fixture',[1],cleared,allFields,{1:['mon']},totalsConfig).percent,50);
 console.log('PASS: incomplete or failed preparation earns no points, and existing scores are not rewritten during display sync');

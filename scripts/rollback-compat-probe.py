@@ -29,7 +29,7 @@ if os.environ.get('QHP_SAFE_LEGACY_CANDIDATE') == '1':
     pieces.append(('<?php\n' + auth[auth.index('function base64url_encode'):auth.index('function require_auth')] +
                    auth[auth.index('function new_uuid'):]).replace('TOKEN_SECRET', 'QHP_TEST_TOKEN_SECRET').encode())
     pieces.append(pathlib.Path('scripts/safe-legacy-restore-cases.php').read_bytes())
-    probe = probe.replace("$stage = 'stale_write_reproduction';", "$stage = 'candidate_restore_cases'; test_safe_legacy_restore($pdo,$cid,$reads); exit(0);", 1)
+    probe = probe.replace("$stage = 'stale_write_reproduction';", "$stage = 'candidate_program_history'; verify_teacher_program_history($pdo); $stage = 'candidate_restore_cases'; test_safe_legacy_restore($pdo,$cid,$reads); exit(0);", 1)
     probe = probe.replace('declare(strict_types=1);', "declare(strict_types=1);\ndefine('QHP_GRADE_WRITES_V1', true);\ndefine('QHP_TEST_TOKEN_SECRET', bin2hex(random_bytes(32)));", 1)
     if os.environ.get('QHP_PERCENTAGE_SAMPLE') == '1':
         probe = probe.replace('declare(strict_types=1);', "declare(strict_types=1);\nputenv('QHP_PERCENTAGE_SAMPLE=1');", 1)

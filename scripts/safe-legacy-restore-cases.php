@@ -1,4 +1,38 @@
 <?php
+function verify_teacher_program_history(PDO $pdo): void {
+    $pdo->exec('SET TRANSACTION READ ONLY');
+    $pdo->beginTransaction();
+    try {
+        $complex = (int)$pdo->query("SELECT id FROM complexes WHERE subdomain='m6'")->fetchColumn();
+        if (!$complex) throw new RuntimeException('m6_missing_in_restore');
+        $statuses = [];
+        foreach (['teacher', 'assistant'] as $role) {
+            $GLOBALS['testAuth'] = ['role'=>$role,'complexId'=>$complex,'name'=>'Isolated program fixture'];
+            $response = probe('handle_list_app_state',['key'=>'scientific_grades']);
+            $statuses[$role] = $response->getCode();
+            if ($response->getCode() !== 200 || empty($response->body[0]['revision'])) {
+                throw new RuntimeException('scientific_history_not_readable');
+            }
+            $weekCounts = [];
+            foreach ($response->body[0]['value']['data'] ?? [] as $halaqa) {
+                foreach ($halaqa as $student) {
+                    foreach ($student as $week => $days) {
+                        foreach ($days as $marks) {
+                            foreach ($marks as $mark) {
+                                if ($mark !== '' && $mark !== null) $weekCounts[$week] = ($weekCounts[$week] ?? 0) + 1;
+                            }
+                        }
+                    }
+                }
+            }
+            if (empty($weekCounts[1]) || empty($weekCounts[10])) throw new RuntimeException('historical_weeks_missing');
+        }
+        ksort($weekCounts);
+        echo json_encode(['m6_scientific_history'=>$weekCounts,'reads'=>$statuses,'database'=>'isolated_test'],JSON_THROW_ON_ERROR).PHP_EOL;
+    } finally {
+        $pdo->rollBack();
+    }
+}
 // Appended to the isolated-restore probe after the read checks. Runs only on
 // its verified test PDO; all synthetic changes are in an outer transaction.
 function test_safe_legacy_restore(PDO $pdo, int $cid, array $reads): void {
