@@ -3,12 +3,12 @@
  * Silver: ½ hifz = full hifz slot; Gold: 1 hifz = full hifz slot; excess can exceed 100%.
  */
 
-import { generateAcademicWeeks } from "@/lib/calendar-generator";
-import type { AcademicCalendar, SemesterDayRef } from "@/lib/academic-context";
+import { generateAcademicWeeks, generateWeekDaySlots } from "@/lib/calendar-generator";
+import type { AcademicCalendar, ActiveSemester, SemesterDayRef } from "@/lib/academic-context";
 import { holidayDateStrings } from "@/lib/semester-holidays";
 import { isoDateToDayKey } from "@/lib/operational-date";
 import type { DayEntry, GradesStore, HifzValue, Student } from "@/lib/mock-data";
-import { DAYS, weekPercentage, compensationPoints, sumWeekCompensationFaces, type WeekRecord } from "@/lib/mock-data";
+import { DAYS, weekPercentage, compensationPoints, isHifzChecked, type WeekRecord } from "@/lib/mock-data";
 
 export interface DailyGradeWeights {
   attendance_present: number;
@@ -97,7 +97,7 @@ export function dayScoreBreakdown(
   }
 
   const hifzMax = hifzFullMax(levelType, weights);
-  const hifzEarned = d.hifz !== "" ? hifzMax : 0;
+  const hifzEarned = isHifzChecked(d.hifz) ? hifzMax : 0;
   const rabtEarned = d.rabt === "pass" ? weights.rabt_pass : d.rabt === "fail" ? weights.rabt_fail : 0;
   const rabtMax = weights.rabt_pass;
   const murEarned = d.muraja === "pass" ? weights.muraja_pass : d.muraja === "fail" ? weights.muraja_fail : 0;
@@ -107,6 +107,48 @@ export function dayScoreBreakdown(
     earned: attEarned + hifzEarned + rabtEarned + murEarned,
     max: attMax + hifzMax + rabtMax + murMax,
   };
+}
+
+function semesterInput(semester: ActiveSemester) {
+  return {
+    startDate: semester.start_date,
+    weeksCount: semester.weeks_count,
+    workingDays: semester.working_days,
+    excludedDates: holidayDateStrings(semester.excluded_dates),
+  };
+}
+
+function calendarWeekDays(calendar: Pick<AcademicCalendar, "semester" | "operationalDate">, week: number) {
+  const semester = calendar.semester;
+  if (!semester?.start_date || week < 1 || week > semester.weeks_count) return { working: [], elapsed: [] };
+  const working = generateWeekDaySlots(semesterInput(semester), week).filter((day) => day.isWorking);
+  return { working, elapsed: working.filter((day) => day.iso <= calendar.operationalDate) };
+}
+
+function periodWeekScore(
+  week: WeekRecord | undefined,
+  workingDayCount: number,
+  elapsedDayKeys: string[],
+  levelType: Student["levelType"],
+  isTalqeen: boolean,
+  weights: DailyGradeWeights,
+): DayScoreBreakdown {
+  let earned = 0;
+  let max = 0;
+  for (const key of elapsedDayKeys) {
+    const part = dayScoreBreakdown(week?.days?.[key], levelType, isTalqeen, weights);
+    earned += part.earned;
+    max += part.max;
+  }
+  if (!isTalqeen && week && elapsedDayKeys.length) {
+    // Undated legacy bonuses can be attributed only once the working week has elapsed.
+    const hasDaily = Object.values(week.days ?? {}).some((day) => day?.compensationFaces !== undefined);
+    const faces = hasDaily
+      ? elapsedDayKeys.reduce((sum, key) => sum + (week.days?.[key]?.compensationFaces ?? 0), 0)
+      : elapsedDayKeys.length === workingDayCount ? week.compensationFaces ?? 0 : 0;
+    earned += compensationPoints(faces, levelType);
+  }
+  return { earned, max };
 }
 
 /** Elapsed working days in the active semester up to calendar operational date. */
@@ -192,8 +234,8 @@ export function isDayFullyComplete(
   isTalqeen: boolean,
 ): boolean {
   const d = entry ?? EMPTY_DAY;
-  if (isTalqeen) return dayAttendanceDone(d) && d.wajib;
-  return dayAttendanceDone(d) && !!d.hifz && d.rabt === "pass" && d.muraja === "pass";
+  if (isTalqeen) return dayAttendanceDone(d) && d.wajib === true;
+  return dayAttendanceDone(d) && isHifzChecked(d.hifz) && d.rabt === "pass" && d.muraja === "pass";
 }
 
 export interface SemesterDayCompletionReport {
@@ -272,7 +314,7 @@ export function semesterDayCompletionReport(
     else if (d.attendance === "absent") absentDays += 1;
     else if (d.attendance === "excused") excusedDays += 1;
     if (dayAttendanceDone(d)) attComplete += 1;
-    if (d.hifz) hifzComplete += 1;
+    if (isHifzChecked(d.hifz)) hifzComplete += 1;
     if (d.rabt === "pass") rabtComplete += 1;
     if (d.muraja === "pass") murComplete += 1;
     if (d.wajib) wajibComplete += 1;
@@ -310,7 +352,7 @@ function lookupDayEntry(
   studentId: string,
   day: SemesterDayRef,
 ): DayEntry | undefined {
-  return grades[studentId]?.[day.weekNumber]?.days[day.dayKey];
+  return grades[studentId]?.[day.weekNumber]?.days?.[day.dayKey];
 }
 
 /** Semester cumulative overall % — can exceed 100. */
@@ -322,31 +364,20 @@ export function semesterOverallPercentage(
   calendar: AcademicCalendar,
   weights: DailyGradeWeights = DEFAULT_DAILY_GRADE_WEIGHTS,
 ): number {
-  const days = getElapsedSemesterDays(calendar);
-  if (days.length === 0) {
+  const semester = calendar.semester;
+  if (!semester?.start_date) {
     return fallbackWeeklyAverage(studentId, isTalqeen, grades, levelType);
   }
 
   let earned = 0;
   let max = 0;
-  const weekNumsSeen = new Set<number>();
-  for (const day of days) {
-    const part = dayScoreBreakdown(lookupDayEntry(grades, studentId, day), levelType, isTalqeen, weights);
+  for (const week of generateAcademicWeeks(semesterInput(semester))) {
+    const elapsedKeys = week.workingDayDates.filter((date) => date <= calendar.operationalDate).map(isoDateToDayKey);
+    const part = periodWeekScore(grades[studentId]?.[week.weekNumber], week.workingDayDates.length, elapsedKeys, levelType, isTalqeen, weights);
     earned += part.earned;
     max += part.max;
-    weekNumsSeen.add(day.weekNumber);
   }
-
-  if (!isTalqeen) {
-    for (const wn of weekNumsSeen) {
-      const week = grades[studentId]?.[wn];
-      const comp = sumWeekCompensationFaces(week);
-      if (comp > 0) earned += compensationPoints(comp, levelType);
-    }
-  }
-
-  if (max <= 0) return 0;
-  return Math.round((earned / max) * 1000) / 10;
+  return ratioPct(earned, max);
 }
 
 export function halaqaSemesterAverage(
@@ -387,7 +418,7 @@ export interface StudentWeekReport {
 
 function ratioPct(earned: number, max: number): number {
   if (max <= 0) return 0;
-  return Math.round((earned / max) * 1000) / 10;
+  return Math.round((earned * 1000) / max) / 10;
 }
 
 function accumulateComponentTotals(
@@ -406,7 +437,7 @@ function accumulateComponentTotals(
     return;
   }
   const hifzMax = hifzFullMax(levelType, weights);
-  acc.hifzE += d.hifz !== "" ? hifzMax : 0;
+  acc.hifzE += isHifzChecked(d.hifz) ? hifzMax : 0;
   acc.hifzM += hifzMax;
   acc.murE += d.muraja === "pass" ? weights.muraja_pass : d.muraja === "fail" ? weights.muraja_fail : 0;
   acc.murM += weights.muraja_pass;
@@ -442,9 +473,15 @@ export function studentWeekOverallPercentage(
   isTalqeen: boolean,
   grades: GradesStore,
   weekNum: number,
-  levelType?: Student["levelType"],
+  levelType: Student["levelType"] = "silver",
+  calendar?: Pick<AcademicCalendar, "semester" | "operationalDate"> | null,
+  weights: DailyGradeWeights = DEFAULT_DAILY_GRADE_WEIGHTS,
 ): number {
-  return weekPercentage(grades[studentId]?.[weekNum], isTalqeen, levelType);
+  const week = grades[studentId]?.[weekNum];
+  if (!calendar?.semester?.start_date) return weekPercentage(week, isTalqeen, levelType);
+  const { working, elapsed } = calendarWeekDays(calendar, weekNum);
+  const { earned, max } = periodWeekScore(week, working.length, elapsed.map((day) => day.dayKey), levelType, isTalqeen, weights);
+  return max > 0 ? Math.round((earned * 100) / max) : 0;
 }
 
 /** Component % for a single academic week (current week on portal). */
@@ -457,18 +494,18 @@ export function studentWeekComponentPercentages(
   weekNum: number,
   weights: DailyGradeWeights = DEFAULT_DAILY_GRADE_WEIGHTS,
 ): ComponentPercentages {
-  const days = getElapsedSemesterDays(calendar).filter((d) => d.weekNumber === weekNum);
+  const { elapsed } = calendarWeekDays(calendar, weekNum);
+  const week = grades[studentId]?.[weekNum];
   const acc = { attE: 0, attM: 0, hifzE: 0, hifzM: 0, murE: 0, murM: 0, rabE: 0, rabM: 0, wajE: 0, wajM: 0 };
 
-  if (days.length > 0) {
-    for (const day of days) {
-      accumulateComponentTotals(lookupDayEntry(grades, studentId, day), levelType, isTalqeen, weights, acc);
+  if (calendar.semester?.start_date) {
+    for (const day of elapsed) {
+      accumulateComponentTotals(week?.days?.[day.dayKey], levelType, isTalqeen, weights, acc);
     }
   } else {
-    const week = grades[studentId]?.[weekNum];
     if (week) {
       for (const d of DAYS) {
-        accumulateComponentTotals(week.days[d.key], levelType, isTalqeen, weights, acc);
+        accumulateComponentTotals(week.days?.[d.key], levelType, isTalqeen, weights, acc);
       }
     }
   }
@@ -493,7 +530,7 @@ export function studentWeekReportPercentages(
 ): StudentWeekReport {
   return {
     weekNumber: weekNum,
-    weekOverall: studentWeekOverallPercentage(studentId, isTalqeen, grades, weekNum, levelType),
+    weekOverall: studentWeekOverallPercentage(studentId, isTalqeen, grades, weekNum, levelType, calendar, weights),
     components: studentWeekComponentPercentages(studentId, levelType, isTalqeen, grades, calendar, weekNum, weights),
   };
 }
@@ -508,7 +545,7 @@ export function studentReportPercentages(
 ): StudentReportPercentages {
   return {
     overall: semesterOverallPercentage(studentId, levelType, isTalqeen, grades, calendar, weights),
-    weekOverall: studentWeekOverallPercentage(studentId, isTalqeen, grades, calendar.currentWeekNumber, levelType),
+    weekOverall: studentWeekOverallPercentage(studentId, isTalqeen, grades, calendar.currentWeekNumber, levelType, calendar, weights),
     components: semesterComponentPercentages(studentId, levelType, isTalqeen, grades, calendar, weights),
   };
 }
@@ -518,10 +555,11 @@ export function halaqaWeekAverage(
   isTalqeen: boolean,
   grades: GradesStore,
   weekNum: number,
+  calendar?: AcademicCalendar,
 ): number {
   if (students.length === 0) return 0;
   const sum = students.reduce(
-    (acc, s) => acc + studentWeekOverallPercentage(s.id, isTalqeen, grades, weekNum, s.levelType),
+    (acc, s) => acc + studentWeekOverallPercentage(s.id, isTalqeen, grades, weekNum, s.levelType, calendar),
     0,
   );
   return Math.round((sum / students.length) * 10) / 10;

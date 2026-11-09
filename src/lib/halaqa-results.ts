@@ -150,6 +150,7 @@ function computeStudentResult(
     grades,
     weekNum,
     student.levelType,
+    calendar,
   );
   const overallSemesterPct = semesterOverallPercentage(
     student.id,

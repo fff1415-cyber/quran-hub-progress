@@ -9,7 +9,7 @@ import {
   mergeDayEntryPatch,
   mutateStudentWeek,
   flushGradesToCloudSoon,
-  weekPercentage, loadNotifications, pushNotification,
+  loadNotifications, pushNotification,
   ensureGradesSemester,
   sumWeekCompensationFaces, compensationRemainingForDay,
   type WeekRecord, type DayEntry, type Student, type GradesStore,
@@ -75,6 +75,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import {
   halaqaSemesterAverage,
   formatOverallPercent,
+  studentWeekOverallPercentage,
 } from "@/lib/semester-grading";
 import { TeacherGradesExport } from "@/components/TeacherGradesExport";
 import { StaffAttendanceCheckInButton } from "@/components/StaffAttendanceCheckInButton";
@@ -1611,7 +1612,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         <tbody>
           {students.map((s, studentIndex) => {
             const w = ensureWeekDays(grades[s.id]?.[weekNum] ?? emptyWeek(workingKeysList), workingKeysList);
-            const weekPct = weekPercentage(w, isTalqeen, s.levelType);
+            const weekPct = studentWeekOverallPercentage(s.id, isTalqeen, grades, weekNum, s.levelType, calendar);
             const startsSection = shouldShowGradeViewerDivider(s, students[studentIndex - 1], viewerRole, halaqa, assistantCode);
             return (
               <React.Fragment key={s.id}>

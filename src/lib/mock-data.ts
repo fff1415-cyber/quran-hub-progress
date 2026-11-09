@@ -1071,7 +1071,7 @@ export function sumWeekCompensationFaces(
   let sum = 0;
   let sawDaily = false;
   for (const key of defaultWorkingDayKeys(workingDayKeys)) {
-    const v = w.days[key]?.compensationFaces;
+    const v = w.days?.[key]?.compensationFaces;
     if (v !== undefined) {
       sawDaily = true;
       sum += v;
@@ -1114,7 +1114,7 @@ export function dayScore(d: DayEntry, isTalqeen: boolean, levelType?: Student["l
   const att = d.attendance === "present" ? 15 : d.attendance === "late" ? 10 : d.attendance === "excused" ? 5 : 0;
   if (isTalqeen) return att + (d.wajib ? 15 : 0);
   const hifzSlot = levelType === "gold" ? HIFZ_SCORES.one : HIFZ_SCORES.half;
-  const hifz = d.hifz !== "" ? hifzSlot : 0;
+  const hifz = isHifzChecked(d.hifz) ? hifzSlot : 0;
   const rabt = d.rabt === "pass" ? 15 : d.rabt === "fail" ? 5 : 0;
   const mur = d.muraja === "pass" ? 15 : d.muraja === "fail" ? 5 : 0;
   return att + hifz + rabt + mur;
@@ -1136,7 +1136,7 @@ export function weekPercentage(
   let total = 0;
   const maxPerDay = maxDayScore(isTalqeen, levelType);
   DAYS.forEach((d) => {
-    const entry = w.days[d.key];
+    const entry = w.days?.[d.key];
     if (entry) total += dayScore(entry, isTalqeen, levelType);
   });
   if (!isTalqeen) {

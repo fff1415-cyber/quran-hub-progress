@@ -65,14 +65,14 @@ export function buildWeeklyReport(
     halaqat: halaqat.map((h) => {
       const members = students.filter((s) => s.halaqaId === h.id);
       return { id: h.id, name: h.name, studentCount: members.length,
-        percentage: halaqaWeekAverage(members, h.isTalqeen, grades, weekNumber) };
+        percentage: halaqaWeekAverage(members, h.isTalqeen, grades, weekNumber, calendar) };
     }),
     attendance: { present, total, percentage: total ? Math.round(present / total * 1000) / 10 : 0 },
     honorBoard: students.map((s) => {
       const h = byHalaqa.get(s.halaqaId);
       if (!h) return null;
       return { id: s.id, name: s.name, halaqaName: h.name,
-        percentage: studentWeekOverallPercentage(s.id, h.isTalqeen, grades, weekNumber, s.levelType) };
+        percentage: studentWeekOverallPercentage(s.id, h.isTalqeen, grades, weekNumber, s.levelType, calendar) };
     }).filter((row): row is NonNullable<typeof row> => row !== null)
       .sort((a, b) => b.percentage - a.percentage).slice(0, 15),
   };

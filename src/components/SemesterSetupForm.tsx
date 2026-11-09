@@ -7,11 +7,12 @@ import {
 } from "@/lib/calendar-generator";
 import { getToken } from "@/lib/cloud-sync";
 import { secureCreateSemester, secureGetActiveSemester } from "@/lib/secure-data.functions";
-import { clearCalendarCache, fetchActiveCalendar } from "@/lib/academic-context";
+import { clearCalendarCache, fetchActiveCalendar, type ActiveSemester } from "@/lib/academic-context";
 import { resetGradesForNewSemester } from "@/lib/mock-data";
 import { resetWeeklyTestsForNewSemester } from "@/lib/weekly-tests";
 import {
   holidayDateStrings,
+  parseSemesterHolidays,
   serializeSemesterHolidays,
   type SemesterHoliday,
 } from "@/lib/semester-holidays";
@@ -40,11 +41,6 @@ import { toast } from "sonner";
 
 const DEFAULT_WORKING_DAYS = [0, 1, 2, 3, 4];
 
-interface ActiveSemesterSnapshot {
-  name: string;
-  weeks_count: number;
-}
-
 export function SemesterSetupForm() {
   const [name, setName] = useState("");
   const [startDate, setStartDate] = useState("");
@@ -54,7 +50,7 @@ export function SemesterSetupForm() {
   const [preview, setPreview] = useState<GeneratedAcademicWeek[] | null>(null);
   const [previewing, setPreviewing] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [activeSemester, setActiveSemester] = useState<ActiveSemesterSnapshot | null>(null);
+  const [activeSemester, setActiveSemester] = useState<ActiveSemester | null>(null);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
 
   const serializedHolidays = useMemo(() => serializeSemesterHolidays(holidays), [holidays]);
@@ -73,8 +69,12 @@ export function SemesterSetupForm() {
         return;
       }
       setActiveSemester({
+        id: String(sem.id ?? ""),
         name: sem.name,
+        start_date: String(sem.start_date ?? ""),
         weeks_count: Number(sem.weeks_count ?? 18) || 18,
+        working_days: Array.isArray(sem.working_days) ? sem.working_days.map(Number) : DEFAULT_WORKING_DAYS,
+        excluded_dates: parseSemesterHolidays(sem.excluded_dates),
       });
     } catch {
       setActiveSemester(null);
@@ -185,7 +185,14 @@ export function SemesterSetupForm() {
       }
 
       setPreview(weeks);
-      setActiveSemester({ name: name.trim(), weeks_count: result.weeks_count });
+      setActiveSemester({
+        id: result.id,
+        name: name.trim(),
+        start_date: startDate,
+        weeks_count: result.weeks_count,
+        working_days: workingDays,
+        excluded_dates: holidays,
+      });
       toast.success(`تم اعتماد الفصل «${name.trim()}» — بدء فصل جديد (${result.weeks_count} أسبوعاً)`);
     } catch (e) {
       toast.error(e instanceof Error ? e.message : "فشل اعتماد الفصل الدراسي");
@@ -205,7 +212,7 @@ export function SemesterSetupForm() {
 
   const handleExportAndContinue = () => {
     if (activeSemester) {
-      const ok = exportSemesterGradesExcel(activeSemester.name, activeSemester.weeks_count);
+      const ok = exportSemesterGradesExcel(activeSemester);
       if (ok) toast.success(`تم تصدير درجات «${activeSemester.name}»`);
       else toast.error("لا توجد بيانات للتصدير");
     }

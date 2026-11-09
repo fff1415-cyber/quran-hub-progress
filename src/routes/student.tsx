@@ -153,7 +153,7 @@ export function StudentPage() {
     if (!calendar) return halaqat.map((h) => ({ halaqa: h, pct: 0 }));
     return halaqat.map((h) => {
       const hs = students.filter((s) => s.halaqaId === h.id);
-      const pct = halaqaWeekAverage(hs, h.isTalqeen, grades, weekNum);
+      const pct = halaqaWeekAverage(hs, h.isTalqeen, grades, weekNum, calendar);
       return { halaqa: h, pct };
     });
   }, [halaqat, students, grades, calendar, weekNum]);
@@ -167,7 +167,7 @@ export function StudentPage() {
         return {
           student: s,
           halaqa: h,
-          pct: studentWeekOverallPercentage(s.id, h.isTalqeen, grades, weekNum, s.levelType),
+          pct: studentWeekOverallPercentage(s.id, h.isTalqeen, grades, weekNum, s.levelType, calendar),
         };
       })
       .filter((x): x is NonNullable<typeof x> => !!x)
