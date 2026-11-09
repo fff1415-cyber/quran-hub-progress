@@ -37,27 +37,3 @@ jobs:
           node tests/stage2-atomic-sessions.cjs
           php tests/stage3-atomic-plan.php
           npm run build:hostinger
-      - name: Preserve a fresh private database backup without writing to production data
-        env:
-          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
-          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
-          DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
-          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-        run: |
-          git fetch --no-tags origin release/grade-outbox-quota
-          test "$(git rev-parse FETCH_HEAD)" = '4eb275ef00092ea07cd15f0983c6b256efdeaac8'
-          test "$(git diff --name-only 3a5ee4f7fcfcd5bf7490ca4e8db3d10b26fbb333 FETCH_HEAD)" = 'src/components/GradeSaveStatus.tsx'
-          test "$(curl -fsS --max-time 20 https://msht.io/deploy-sha.txt)" = '5d3998e74f1f705ae05838d7bbb6a3db3266374a'
-          python3 scripts/create-private-db-backup.py
-      - name: Publish the exact browser-only storage fix with code fallback
-        env:
-          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
-          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
-          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          BASE_RELEASE: 5d3998e74f1f705ae05838d7bbb6a3db3266374a
-          TARGET_RELEASE: 4eb275ef00092ea07cd15f0983c6b256efdeaac8
-        run: |
-          git fetch --no-tags origin release/grade-outbox-quota
-          test "$(git rev-parse FETCH_HEAD)" = "$TARGET_RELEASE"
-          test -z "$(git diff --name-only "$BASE_RELEASE" "$TARGET_RELEASE" -- api/ public/ .env.hostinger)"
-          python3 scripts/protected-rollback-release.py publish "$BASE_RELEASE" "$TARGET_RELEASE"
