@@ -62,6 +62,10 @@ export function GradeSaveStatus() {
     return () => { window.removeEventListener(GRADE_SAVE_EVENT, update); window.removeEventListener("storage", update); };
   }, []);
   const box = currentGradeOutbox(), drafts = box?.drafts() ?? [];
+  const outboxScope = box?.prefix;
+  useEffect(() => {
+    if (outboxScope) void currentGradeOutbox()?.hydrate();
+  }, [outboxScope]);
   const localError = gradeLocalSaveError();
   const volatile = box?.volatileDrafts() ?? [];
   const unresolved = drafts.filter(d => ["pending", "unbased", "conflict"].includes(d.status));
