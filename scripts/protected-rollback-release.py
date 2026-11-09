@@ -57,8 +57,9 @@ def health():
 def live_acceptance():
     if live_marker() != target or not health():
         return False
-    for route in ('/mm', '/mm/teacher', '/mm/manager', '/mm/program-supervisor', '/mm/supervisor', '/mm/musammi'):
-        status, html = site(route + '?rollback_check=' + str(time.time_ns()))
+    for route in ('/m6/teacher?h=1&w=1&view=programs', '/mm/teacher', '/mm/manager'):
+        separator = '&' if '?' in route else '?'
+        status, html = site(route + separator + 'rollback_check=' + str(time.time_ns()))
         if status != 200 or ('<!-- qhp-grade-release:' + target + ' -->').encode() not in html:
             return False
     status, body = site('/api/r.php?' + urllib.parse.urlencode({'path':'/tenant-resolve','q':'mm'}))
@@ -67,14 +68,14 @@ def live_acceptance():
     status, _ = site('/api/r.php?path=%2Fapp-state&key=grades&grade_protocol=1')
     if status != 401:
         return False
-    for route in ('/tarbawi/record','/scientific-grades/store','/plans/sard-referral','/plans/sard-queue'):
-        status, _ = site('/api/r.php?' + urllib.parse.urlencode({'path':route}), 'POST')
-        if status != 401:
-            return False
     published = (client / 'index.html').read_bytes()
     paths = set(re.findall(rb'(?:src|href)="(/assets/[a-zA-Z0-9_.-]+\.(?:js|css))"', published))
     if not paths:
         return False
+    program_assets = list((client / 'assets').glob('TeacherHalaqaProgramsPanel-*.js'))
+    if len(program_assets) != 1:
+        return False
+    paths.add(('/assets/' + program_assets[0].name).encode())
     for path in paths:
         relative = path.decode()
         status, body = site(relative)

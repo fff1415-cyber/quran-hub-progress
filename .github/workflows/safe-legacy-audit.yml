@@ -9,6 +9,9 @@ jobs:
     if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    concurrency:
+      group: hostinger-production
+      cancel-in-progress: false
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,3 +42,15 @@ jobs:
           node tests/plan-server-confirmation.cjs
           node tests/grade-percentages-calendar.cjs
           npm run build:hostinger
+      - name: Publish the tested frontend only with automatic code rollback
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          BASE_RELEASE: 1c86b492ae4f7815219ad040cfb8e92658da59a6
+          TARGET_RELEASE: 4e8cfc813651d36f49a3c1ed5ddb9561a5442eab
+        run: |
+          git fetch --no-tags origin release/teacher-program-weekly-history
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET_RELEASE"
+          test -z "$(git diff --name-only "$BASE_RELEASE" "$TARGET_RELEASE" -- api/ public/ .env.hostinger)"
+          python3 scripts/protected-rollback-release.py publish "$BASE_RELEASE" "$TARGET_RELEASE"
