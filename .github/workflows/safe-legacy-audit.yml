@@ -8,6 +8,9 @@ jobs:
   acceptance:
     if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
+    concurrency:
+      group: hostinger-production
+      cancel-in-progress: false
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
@@ -39,3 +42,12 @@ jobs:
           node tests/plan-server-confirmation.cjs
           node tests/grade-percentages-calendar.cjs
           npm run build:hostinger
+      - name: Publish the teacher follow-up display only
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          git fetch --no-tags origin +refs/heads/release/teacher-followup-dropdown:refs/remotes/origin/release/teacher-followup-dropdown
+          test "$(git diff --name-only c455422a308ec3c91bdaefa66389ef18794e9c41 1c86b492ae4f7815219ad040cfb8e92658da59a6)" = 'src/components/teacher/TeacherStudentFollowupAlerts.tsx'
+          python3 scripts/protected-rollback-release.py publish c455422a308ec3c91bdaefa66389ef18794e9c41 1c86b492ae4f7815219ad040cfb8e92658da59a6
