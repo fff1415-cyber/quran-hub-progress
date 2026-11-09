@@ -83,6 +83,9 @@ def live_acceptance():
     return True
 
 if mode == 'revert':
+    if live_marker() == base and health():
+        print('LIVE_OK previous code already active')
+        raise SystemExit(0)
     if live_marker() != target:
         raise SystemExit('Refusing rollback because the live release has moved')
     with tempfile.TemporaryDirectory() as temp:
