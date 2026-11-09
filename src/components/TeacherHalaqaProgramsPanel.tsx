@@ -90,7 +90,6 @@ export function TeacherHalaqaProgramsPanel({
   const [programs, setPrograms] = useState<HalaqaProgram[]>(() => loadHalaqaPrograms(halaqaId));
   const programGrades = useProgramGradeCells(halaqaId, calendar.semester?.id ?? null);
   const { grades } = programGrades;
-  const legacyGrades = loadProgramGrades(halaqaId);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<HalaqaProgram | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
@@ -306,7 +305,6 @@ export function TeacherHalaqaProgramsPanel({
       </div>
 
       {historyStatus === "loading" && <p role="status">جارٍ تحميل درجات البرنامج العلمي…</p>}
-      {historyStatus === "failed" && <p role="status">تعذّر تحديث درجات البرنامج العلمي من الخادم. تُعرض البيانات المتاحة على هذا الجهاز.</p>}
       {programGrades.busy && <p role="status">جارٍ تأكيد درجات البرامج…</p>}
       {programGrades.error && <p role="alert">{programGrades.error}</p>}
       {programGrades.error && <Button onClick={programGrades.refresh}>تحديث درجات البرامج</Button>}
@@ -314,13 +312,6 @@ export function TeacherHalaqaProgramsPanel({
         <p>بقيت {programGrades.draftCount} مسودة على هذا الجهاز. تُعرض الدرجات المؤكدة في الجدول.</p>
         <Button disabled={programGrades.busy} onClick={programGrades.retry}>إعادة محاولة الحفظ</Button>
       </div>}
-      {Object.keys(legacyGrades).length > 0 && <details>
-        <summary>درجات البرامج المحفوظة على هذا الجهاز من الإصدار السابق</summary>
-        <a download="program-grade-local-backup.json"
-          href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(legacyGrades))}`}>
-          تنزيل النسخة المحلية للمراجعة
-        </a>
-      </details>}
       {mode === "setup" && canManagePrograms && !readOnly ? (
         <ProgramSetupSection
           programs={loadHalaqaProgramsAll(halaqaId).filter((p) => p.active !== false && !isScientificHalaqaProgram(p))}
