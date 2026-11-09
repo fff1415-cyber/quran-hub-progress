@@ -18,7 +18,7 @@ jobs:
       DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
       DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
       EXPECTED_RELEASE: 1c86b492ae4f7815219ad040cfb8e92658da59a6
-      AUDIT_MODE: preserve-before-teacher-program-repair
+      AUDIT_MODE: compatibility-only
     steps:
       - uses: actions/checkout@v4
         with:
