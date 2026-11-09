@@ -14,7 +14,8 @@ import {
 import { formatWeekOptionLabel, getSelectableWeeks, isWeekDayClosed } from "@/lib/academic-context";
 import { studentWeekOverallPercentage } from "@/lib/semester-grading";
 import { AttSelect, CompensationSelect } from "@/components/plans/TeacherGradeInputs";
-import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
+import { PlanAwareTaskCell, PlanGradeAvailabilityNote } from "@/components/plans/PlanAwareTaskCell";
+import type { GradePlanAvailability } from "@/lib/plan-types";
 import { ScientificGradeInput, ScientificGradesToolbar } from "@/components/teacher/ScientificGradesToolbar";
 import { SemesterBreakdownPopover } from "@/components/teacher/SemesterBreakdownPopover";
 import {
@@ -76,6 +77,7 @@ type Props = {
   onTransferReasonChange: (v: string) => void;
   onSubmitTransfer: () => void;
   planStudentIds: Set<string>;
+  planAvailability: Record<string, GradePlanAvailability>;
   frozenPlanStudentIds: Set<string>;
   planLinkedIds: Set<string>;
   onOpenPlanSheet: (s: Student) => void;
@@ -183,6 +185,7 @@ export function TeacherMobileDayBoard({
   onTransferReasonChange,
   onSubmitTransfer,
   planStudentIds,
+  planAvailability,
   frozenPlanStudentIds,
   planLinkedIds,
   onOpenPlanSheet,
@@ -467,6 +470,7 @@ export function TeacherMobileDayBoard({
 
                 {/* Row 2: attendance · hifz · rabt · muraja */}
                 <div className="px-1.5 py-1.5">
+                  {!isTalqeen && <PlanGradeAvailabilityNote availability={planAvailability[s.id]} />}
                   {isTalqeen ? (
                     <div className="flex gap-1">
                       <TaskColumn

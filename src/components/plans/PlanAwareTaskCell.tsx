@@ -1,6 +1,25 @@
-import type { PlanTaskType } from "@/lib/plan-types";
+import type { GradePlanAvailability, PlanTaskType } from "@/lib/plan-types";
 import { type HifzValue, type Student } from "@/lib/mock-data";
 import { HifzTaskInput, PassFail } from "@/components/plans/TeacherGradeInputs";
+
+export const planGradeTaskLabels = { hifz: "الحفظ", rabt: "الربط", muraja: "المراجعة" };
+
+export function PlanGradeAvailabilityNote({ availability }: { availability?: GradePlanAvailability }) {
+  if (!availability) return null;
+  const messages = (Object.keys(planGradeTaskLabels) as PlanTaskType[]).flatMap(task => {
+    switch (availability[task]) {
+      case "complete":
+        return task === "hifz" ? ["اكتملت مقاطع الحفظ في الخطة"] : [`${planGradeTaskLabels[task]}: أُنجزت المقاطع المتاحة`];
+      case "awaiting_hifz":
+        return [`${planGradeTaskLabels[task]}: بانتظار تسجيل الحفظ`];
+      case "no_segments":
+        return [`${planGradeTaskLabels[task]}: لا توجد مقاطع في الخطة`];
+      default:
+        return [];
+    }
+  });
+  return messages.length ? <p className="text-[10px] text-warning leading-snug">{messages.join(" · ")}</p> : null;
+}
 
 interface PlanAwareTaskCellProps {
   student: Student;

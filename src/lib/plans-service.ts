@@ -130,10 +130,11 @@ async function fetchHalaqaPlanStatusesLegacy(
 export async function fetchHalaqaPlanStatuses(
   halaqaId: number,
   studentIds: string[] = [],
+  gradeAvailability = false,
 ): Promise<HalaqaPlanStatusEntry[]> {
   try {
     const res = await planFetch<{ statuses: HalaqaPlanStatusEntry[] }>(
-      `/plans/halaqa-status?halaqa_id=${encodeURIComponent(String(halaqaId))}`,
+      `/plans/halaqa-status?halaqa_id=${encodeURIComponent(String(halaqaId))}${gradeAvailability ? "&grade_availability=1" : ""}`,
     );
     return res.statuses ?? [];
   } catch (e) {

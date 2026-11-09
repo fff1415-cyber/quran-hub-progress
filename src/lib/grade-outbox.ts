@@ -142,7 +142,9 @@ export class GradeOutbox {
       else if (!snapshot || !equal(at(snapshot.value, change.path), change.base)) based = false;
       return { ...change, stamp: expected };
     });
-    this.write({ packet: { operation_id: this.id(), calendar_context: snapshot?.calendar_context ?? { known: false, active_semester_id: null }, changes, ...(plan ? { plan } : {}) }, order: Math.max(0, ...drafts.map(d => d.order)) + 1, dependencies: [...dependencies], status: based && (!plan || !!plan.expected_assignment_id) ? "pending" : "unbased" });
+    const operationId = this.id();
+    this.write({ packet: { operation_id: operationId, calendar_context: snapshot?.calendar_context ?? { known: false, active_semester_id: null }, changes, ...(plan ? { plan } : {}) }, order: Math.max(0, ...drafts.map(d => d.order)) + 1, dependencies: [...dependencies], status: based && (!plan || !!plan.expected_assignment_id) ? "pending" : "unbased" });
+    return operationId;
   }
   async flush(send: (packet: GradePacket) => Promise<{ ok: boolean; operation_id: string; input_sha256: string }>, current = () => true) {
     for (const initial of this.drafts().filter(d => d.status === "pending")) {

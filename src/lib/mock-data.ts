@@ -410,7 +410,7 @@ export function mutateStudentWeek(
   studentId: string,
   weekNum: number,
   fn: (w: WeekRecord) => WeekRecord,
-  options?: { sync?: boolean | "immediate"; plan?: PlanEffect },
+  options?: { sync?: boolean | "immediate"; plan?: PlanEffect; onQueued?: (id: string) => void },
 ): GradesStore {
   // Read at the moment of the tap, so each field patch starts with all prior taps.
   const latest = loadGrades();
@@ -495,9 +495,9 @@ export function loadGrades(): GradesStore {
   const raw = localStorage.getItem(KEY_LOCAL_GRADES);
   return gradeView(raw ? JSON.parse(raw) : {});
 }
-export function saveGrades(g: GradesStore, options?: { sync?: boolean | "immediate"; plan?: PlanEffect }) {
+export function saveGrades(g: GradesStore, options?: { sync?: boolean | "immediate"; plan?: PlanEffect; onQueued?: (id: string) => void }) {
   if (options?.sync !== false) {
-    if (!recordGradeEdit(loadGrades(), g, options?.plan)) localStorage.setItem(KEY_LOCAL_GRADES, JSON.stringify(g));
+    if (!recordGradeEdit(loadGrades(), g, options?.plan, options?.onQueued)) localStorage.setItem(KEY_LOCAL_GRADES, JSON.stringify(g));
   } else if (!hasAuthToken()) {
     localStorage.setItem(KEY_LOCAL_GRADES, JSON.stringify(g));
   }

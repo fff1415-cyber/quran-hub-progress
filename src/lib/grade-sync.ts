@@ -14,14 +14,19 @@ function identity(): { scope: string; cid: number; token: string } | null {
 export function currentGradeOutbox(): GradeOutbox | null { const session = identity(); return session && typeof window !== "undefined" ? new GradeOutbox(localStorage, session.scope, () => crypto.randomUUID(), notify) : null; }
 export function gradeView(fallback: GradesStore): GradesStore { return currentGradeOutbox()?.view(fallback) ?? fallback; }
 export function gradeLocalSaveError(): string { return localSaveError !== null && localSaveError.scope === (identity()?.scope ?? "unavailable") ? localSaveError.message : ""; }
-export function recordGradeEdit(before: GradesStore, after: GradesStore, plan?: PlanEffect): boolean {
+export function recordGradeEdit(before: GradesStore, after: GradesStore, plan?: PlanEffect, onQueued?: (id: string) => void): boolean {
   const box = currentGradeOutbox();
   if (!box) {
     if (!getToken()) return false;
     const message = "تعذّر تأكيد هوية جلسة الحفظ؛ أعد تسجيل الدخول قبل تعديل الدرجات. لم يُرسل التعديل.";
     localSaveError = { scope: "unavailable", message }; notify(); throw Error(message);
   }
-  try { box.edit(before, after, plan); localSaveError = null; return true; }
+  try {
+    const id = box.edit(before, after, plan);
+    if (id) onQueued?.(id);
+    localSaveError = null;
+    return true;
+  }
   catch (error) { localSaveError = { scope: identity()!.scope, message: "تعذّر حفظ المسودة على هذا الجهاز؛ لم يُرسل التعديل. وفّر مساحة أو تحقق من تخزين المتصفح ثم أعد التسجيل." }; notify(); throw error; }
 }
 export function rememberGradePlanAssignments(rows: { student_id: string; assignment_id?: string }[]) {
@@ -68,5 +73,24 @@ export function flushConfirmedGrades(): Promise<GradesStore> {
     const rejected = box.drafts().find(d => tracked.has(d.packet.operation_id) && (d.status === "conflict" || d.status === "archived"));
     if (rejected) throw new Error(rejected.message || "لم يتأكد الحفظ؛ بقيت المسودة للمراجعة.");
     return view;
+  });
+}
+
+/** Confirm this edit by its own receipt even when the queue contains other edits. */
+export function confirmGradeOperation(operationId: string): Promise<void> {
+  const session = identity(), box = currentGradeOutbox();
+  if (!session || !box) return Promise.reject(Error("يلزم تسجيل الدخول لتأكيد الحفظ"));
+  return enqueue(async () => {
+    const current = () => identity()?.scope === session.scope && getToken() === session.token;
+    try { await box.flush((packet) => secureGradeOperation(session.token, packet), current); }
+    catch { /* The individual draft still records its own result. */ }
+    finally { notify(); }
+    if (!current()) throw Error("تغيّرت جلسة الحفظ");
+    const draft = box.drafts().find((item) => item.packet.operation_id === operationId);
+    if (draft?.status !== "confirmed") {
+      throw Error(draft?.message || "لم يتأكد حفظ هذه الخانة بعد؛ بقيت مسودتها على الجهاز.");
+    }
+    // A failed read does not undo a receipt already confirmed by the server.
+    await read(session, box).catch(() => undefined);
   });
 }

@@ -2,12 +2,14 @@ export type PlanTrack = "gold" | "silver";
 export type PlanTaskType = "hifz" | "rabt" | "muraja";
 export type TapValue = "half" | "one" | "two";
 export type AssignmentStatus = "active" | "frozen" | "transferred";
+export type GradePlanAvailability = Record<PlanTaskType, "available" | "complete" | "awaiting_hifz" | "no_segments">;
 
 /** Lightweight plan link status for a halaqa roster (teacher prep board). */
 export type HalaqaPlanStatusEntry = {
   student_id: string;
   status: "active" | "frozen";
   assignment_id?: string;
+  availability?: GradePlanAvailability;
 };
 
 /** Daily face quotas + tap→face mapping (plan defaults, copied to assignment on link). */

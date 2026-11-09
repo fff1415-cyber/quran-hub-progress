@@ -29,6 +29,16 @@ assert.match(text(h.render(()=>Status())),/تعذّر حفظ المسودة/);lo
  transport.secureGradeSnapshot=async()=>box.snapshot();
  await assert.rejects(sync.flushConfirmedGrades(),new RegExp(conflict));
  assert.ok(box.drafts().some(draft=>draft.packet.plan&&draft.message===conflict));
- auth.decodeAuthTokenPayload=()=>null;assert.throws(()=>sync.recordGradeEdit({},{}),/هوية جلسة الحفظ/);assert.match(sync.gradeLocalSaveError(),/لم يُرسل/);assert.equal(sibling.drafts().length,2,'unidentified session cannot create a shared-cache fallback save');
+ let rejectedId, acceptedId;
+ mock.mutateStudentWeek('S',1,w=>({...w,days:{...w.days,sun:{...w.days.sun,muraja:'pass'}}}),{onQueued:id=>{rejectedId=id;}});
+ mock.mutateStudentWeek('S',1,w=>({...w,days:{...w.days,sun:{...w.days.sun,wajib:true}}}),{onQueued:id=>{acceptedId=id;}});
+ transport.secureGradeOperation=async(_token,packet)=>{
+   if(packet.operation_id===rejectedId) throw Object.assign(Error('لا توجد مقاطع متاحة'),{status:409});
+   return {ok:true,operation_id:packet.operation_id,input_sha256:'b'.repeat(64)};
+ };
+ await sync.confirmGradeOperation(acceptedId);
+ await assert.rejects(sync.confirmGradeOperation(rejectedId),/لا توجد مقاطع متاحة/);
+ assert.equal(box.drafts().find(d=>d.packet.operation_id===rejectedId).status,'conflict');
+ auth.decodeAuthTokenPayload=()=>null;assert.throws(()=>sync.recordGradeEdit({},{}),/هوية جلسة الحفظ/);assert.match(sync.gradeLocalSaveError(),/لم يُرسل/);assert.equal(sibling.drafts().length,4,'unidentified session cannot create a shared-cache fallback save');
  console.log('PASS: actual grade save/mutation wrappers preserve plan packet, ignore device clocks, retain prior data on storage failure, display local failure and refuse unmatched receipt; independent tab operations survive');
 })().catch(error=>{console.error(error);process.exitCode=1;});

@@ -1262,12 +1262,61 @@ function handle_halaqa_plan_status(): void
             ];
         }
 
+        if (($_GET['grade_availability'] ?? '') === '1') {
+            $ids = array_column(array_values(array_filter($statuses, static fn ($row) => $row['status'] === 'active')), 'assignment_id');
+            $availability = plans_grade_availability($pdo, $ids);
+            foreach ($statuses as &$row) {
+                if (isset($availability[$row['assignment_id']])) $row['availability'] = $availability[$row['assignment_id']];
+            }
+            unset($row);
+        }
         json_response(['statuses' => $statuses]);
     } catch (PDOException $e) {
         plans_abort_with_sql_error($pdo, $e, 'حالة خطط الحلقة');
     } catch (Throwable $e) {
         error_response('فشل تحميل حالة الخطط: ' . $e->getMessage(), 500);
     }
+}
+
+/** Advisory availability only. The grade transaction rechecks the current plan under its lock. */
+function plans_grade_availability(PDO $pdo, array $assignmentIds): array
+{
+    $out = [];
+    foreach (array_chunk($assignmentIds, 200) as $ids) {
+        $slots = implode(',', array_fill(0, count($ids), '?'));
+        $stmt = $pdo->prepare("SELECT a.id, a.start_segment_index, a.start_muraja_segment, p.level_number,
+            s.segment_index, c.task_type
+            FROM student_plan_assignments a JOIN education_plans p ON p.id=a.plan_id
+            LEFT JOIN plan_segments s ON s.plan_id=a.plan_id
+            LEFT JOIN segment_completions c ON c.student_id=a.student_id AND c.plan_id=a.plan_id
+              AND c.segment_index=s.segment_index
+              AND (c.assignment_id=a.id OR (c.assignment_id IS NULL AND c.created_at>=a.assigned_at))
+            WHERE a.status='active' AND a.id IN ($slots)");
+        $stmt->execute($ids);
+        $plans = [];
+        while ($row = $stmt->fetch()) {
+            $id = $row['id'];
+            $plans[$id] ??= ['start'=>(int)$row['start_segment_index'],
+                'reviewStart'=>$row['start_muraja_segment'] === null ? null : (int)$row['start_muraja_segment'],
+                'level'=>(int)$row['level_number'], 'segments'=>[], 'hifz'=>[], 'rabt'=>[], 'muraja'=>[]];
+            if ($row['segment_index'] === null) continue;
+            $segment = (int)$row['segment_index'];
+            $plans[$id]['segments'][$segment] = $segment;
+            if (in_array($row['task_type'], ['hifz','rabt','muraja'], true)) $plans[$id][$row['task_type']][] = $segment;
+        }
+        foreach ($plans as $id => $plan) {
+            $eligible = array_filter($plan['segments'], static fn ($i) => $i >= $plan['start']);
+            $hifzDone = array_intersect($eligible, $plan['hifz']);
+            $out[$id] = ['hifz'=>!$eligible ? 'no_segments' : (array_diff($eligible,$hifzDone) ? 'available' : 'complete')];
+            foreach (['rabt','muraja'] as $task) {
+                $next = plans_next_segment_for_task($task,$plan['start'],$plan['reviewStart'],$plan['level'],
+                    $plan['segments'],$plan['hifz'],$plan[$task]);
+                $out[$id][$task] = $next !== null ? 'available' :
+                    (!$eligible ? 'no_segments' : (!$hifzDone ? 'awaiting_hifz' : 'complete'));
+            }
+        }
+    }
+    return $out;
 }
 
 function handle_apply_plan_input(): void

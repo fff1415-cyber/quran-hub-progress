@@ -1,4 +1,4 @@
-import { confirmedGradePlanAssignment, rememberGradePlanAssignments, flushConfirmedGrades, currentGradeOutbox } from "@/lib/grade-sync";
+import { confirmedGradePlanAssignment, rememberGradePlanAssignments, confirmGradeOperation, flushConfirmedGrades, currentGradeOutbox } from "@/lib/grade-sync";
 import type { PlanEffect } from "@/lib/grade-outbox";
 import { planCompletionDate } from "@/lib/plan-completion-date";
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
@@ -58,9 +58,9 @@ import { getToken } from "@/lib/auth-session";
 import { secureListAppState } from "@/lib/secure-data.functions";
 import { COMPLEX_FEATURES_APP_STATE_KEY, saveComplexFeatures, type ComplexFeatures } from "@/lib/complex-features";
 import { changeSharedLatePermission, listSharedLatePermissions, LATE_PERMISSIONS_CHANGED, type SharedLatePermission } from "@/lib/late-permissions-service";
-import type { StudentPlanSheetData } from "@/lib/plan-types";
+import type { GradePlanAvailability, StudentPlanSheetData } from "@/lib/plan-types";
 import { StudentPlanSheet } from "@/components/plans/StudentPlanSheet";
-import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
+import { PlanAwareTaskCell, PlanGradeAvailabilityNote, planGradeTaskLabels } from "@/components/plans/PlanAwareTaskCell";
 import { AttSelect, CompensationSelect } from "@/components/plans/TeacherGradeInputs";
 import { TeacherStudentFollowupAlerts } from "@/components/teacher/TeacherStudentFollowupAlerts";
 import { StaffTasksPanel } from "@/components/StaffTasksPanel";
@@ -769,6 +769,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const [sendBusy, setSendBusy] = useState(false);
   const [showAssign, setShowAssign] = useState(false);
   const [planStudentIds, setPlanStudentIds] = useState<Set<string>>(new Set());
+  const [planAvailability, setPlanAvailability] = useState<Record<string, GradePlanAvailability>>({});
   const [frozenPlanStudentIds, setFrozenPlanStudentIds] = useState<Set<string>>(new Set());
   const [planLinkedIds, setPlanLinkedIds] = useState<Set<string>>(new Set());
   const [planSheetStudent, setPlanSheetStudent] = useState<Student | null>(null);
@@ -980,6 +981,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   };
 
   useEffect(() => {
+    setPlanAvailability({});
     if (!studentIdsKey) {
       setPlanStudentIds(new Set());
       setFrozenPlanStudentIds(new Set());
@@ -987,30 +989,43 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
       return;
     }
     let cancelled = false;
-    void (async () => {
+    let generation = 0;
+    const refresh = async () => {
+      if (document.hidden) return;
+      const request = ++generation;
       const active = new Set<string>();
       const frozen = new Set<string>();
       const linked = new Set<string>();
+      const availability: Record<string, GradePlanAvailability> = {};
       try {
         const rosterIds = studentIdsKey.split(",").filter(Boolean);
-        const statuses = await fetchHalaqaPlanStatuses(halaqaId, rosterIds);
-        if (cancelled) return;
+        const statuses = await fetchHalaqaPlanStatuses(halaqaId, rosterIds, true);
+        if (cancelled || request !== generation) return;
         rememberGradePlanAssignments(statuses);
         for (const row of statuses) {
           linked.add(row.student_id);
           if (row.status === "active") active.add(row.student_id);
           else if (row.status === "frozen") frozen.add(row.student_id);
+          if (row.availability) availability[row.student_id] = row.availability;
         }
       } catch {
-        /* ignore — plan status is optional UI hint */
+        return; // A transient read failure cannot clear the last known links.
       }
-      if (!cancelled) {
-        setPlanStudentIds(active);
-        setFrozenPlanStudentIds(frozen);
-        setPlanLinkedIds(linked);
-      }
-    })();
-    return () => { cancelled = true; };
+      setPlanStudentIds(active);
+      setFrozenPlanStudentIds(frozen);
+      setPlanLinkedIds(linked);
+      setPlanAvailability(availability);
+    };
+    void refresh();
+    const timer = window.setInterval(refresh, 45000);
+    window.addEventListener("qs-plan-grade-confirmed", refresh);
+    window.addEventListener("focus", refresh);
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+      window.removeEventListener("qs-plan-grade-confirmed", refresh);
+      window.removeEventListener("focus", refresh);
+    };
   }, [studentIdsKey, halaqaId]);
 
   const openPlanSheet = async (s: Student) => {
@@ -1032,9 +1047,30 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
   const refreshConfirmedPlan = async (s: Student) => {
     try {
       await flushConfirmedGrades();
+      window.dispatchEvent(new Event("qs-plan-grade-confirmed"));
       if (planSheetStudent?.id === s.id) setPlanSheetData(await fetchStudentPlanSheet(s.id));
       if (await checkAndHandlePlanCompletion(s, weekNum)) toast.info("اكتملت الخطة المؤكدة — بانتظار تحويل المشرف");
     } catch (e) { toast.error(e instanceof Error ? e.message : "لم يتأكد الحفظ؛ بقيت العملية معلقة على الجهاز"); }
+  };
+  const confirmPlanCell = async (s: Student, dayKey: string, task: PlanEffect["task_type"], action: "record" | "undo", operationId?: string) => {
+    if (!operationId) return;
+    const day = DAYS.find(item => item.key === dayKey)?.label ?? dayKey;
+    const label = `${s.name} · ${planGradeTaskLabels[task]} · ${day}`;
+    try {
+      await confirmGradeOperation(operationId);
+      toast.success(`${label} — ${action === "undo" ? "تم حفظ الإلغاء" : "تم الحفظ"}`);
+    } catch (error) {
+      toast.error(`${label} — ${error instanceof Error ? error.message : "بقيت المسودة على الجهاز"}`);
+      return;
+    } finally {
+      window.dispatchEvent(new Event("qs-plan-grade-confirmed"));
+    }
+    try {
+      if (planSheetStudent?.id === s.id) setPlanSheetData(await fetchStudentPlanSheet(s.id));
+      if (await checkAndHandlePlanCompletion(s, weekNum)) toast.info("اكتملت الخطة المؤكدة — بانتظار تحويل المشرف");
+    } catch {
+      // Grade confirmation stands even if reading the plan or referral fails.
+    }
   };
   const handlePlanHifz = async (s: Student, dayKey: string, value: HifzValue) => {
     const completedAt = planCompletionDate(calendar, weekNum, dayKey);
@@ -1046,27 +1082,29 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     }
     const expected = !value && day?.hifzPlanAssignmentId ? day.hifzPlanAssignmentId : confirmedGradePlanAssignment(s.id);
     const plan: PlanEffect = { student_id: s.id, expected_assignment_id: expected, task_type: "hifz", action: value ? "record" : "undo", tap: value || (s.levelType === "gold" ? "one" : "half"), completed_at: completedAt, cell_path: [s.id, String(weekNum), "days", dayKey, "hifz"] };
-    updateDay(s.id, dayKey, { hifz: value }, plan);
-    void refreshConfirmedPlan(s);
+    const operationId = updateDay(s.id, dayKey, { hifz: value }, plan);
+    void confirmPlanCell(s, dayKey, "hifz", value ? "record" : "undo", operationId);
   };
   const handlePlanPassFail = async (s: Student, dayKey: string, task: "rabt" | "muraja", value: "pass" | "fail" | "") => {
     const completedAt = planCompletionDate(calendar, weekNum, dayKey);
     if (!completedAt) { toast.error("تعذّر تحديد تاريخ اليوم الدراسي؛ أعد تحميل التقويم"); return; }
     const previous = loadGrades()[s.id]?.[weekNum]?.days[dayKey]?.[task];
     const plan: PlanEffect | undefined = value === "pass" || previous === "pass" ? { student_id: s.id, expected_assignment_id: confirmedGradePlanAssignment(s.id), task_type: task, action: value === "pass" ? "record" : "undo", tap: s.levelType === "gold" ? "one" : "half", completed_at: completedAt, cell_path: [s.id, String(weekNum), "days", dayKey, task] } : undefined;
-    updateDay(s.id, dayKey, { [task]: value }, plan);
-    void refreshConfirmedPlan(s);
+    const operationId = updateDay(s.id, dayKey, { [task]: value }, plan);
+    void confirmPlanCell(s, dayKey, task, value ? "record" : "undo", operationId);
   };
 
   const update = (studentId: string, fn: (w: WeekRecord) => WeekRecord, sync?: boolean | "immediate", plan?: PlanEffect) => {
+    let operationId: string | undefined;
     const next = mutateStudentWeek(
       studentId,
       weekNum,
       (w) => fn(ensureWeekDays(w, workingKeysList)),
-      { sync, plan },
+      { sync, plan, onQueued: (id) => { operationId = id; } },
     );
     setGrades(next);
     if (sync !== false) flushGradesToCloudSoon();
+    return operationId;
   };
 
   const handleDayCompensationChange = async (s: Student, dayKey: string, faces: number) => {
@@ -1130,7 +1168,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
     if (closedDayKeys.has(dayKey)) return;
     let mergedEntry!: DayEntry;
 
-    update(studentId, (w) => {
+    const operationId = update(studentId, (w) => {
       const base = ensureWeekDays(w, workingKeysList);
       mergedEntry = mergeDayEntryPatch(dayEntryFor(base, dayKey, workingKeysList), patch);
       return {
@@ -1184,6 +1222,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
         });
       }
     }
+    return operationId;
   };
 
   const markAllPresentForDay = (dayKey: string) => {
@@ -1338,6 +1377,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
           onTransferReasonChange={setTransferReason}
           onSubmitTransfer={() => void submitSend()}
           planStudentIds={planStudentIds}
+          planAvailability={planAvailability}
           frozenPlanStudentIds={frozenPlanStudentIds}
           planLinkedIds={planLinkedIds}
           onOpenPlanSheet={(s) => void openPlanSheet(s)}
@@ -1640,6 +1680,7 @@ function WeekTable({ halaqaId, weekNum, calendar, onWeekChange, isTalqeen, viewe
                     {planStudentIds.has(s.id) ? "الخطة" : frozenPlanStudentIds.has(s.id) ? "عرض (مجمّدة)" : "عرض الخطة"}
                   </button>
                   )}
+                  <PlanGradeAvailabilityNote availability={planAvailability[s.id]} />
                 </StudentNameCell>
                 {visibleDays.map((d) => {
                   const e = dayEntryFor(w, d.key, workingKeysList);

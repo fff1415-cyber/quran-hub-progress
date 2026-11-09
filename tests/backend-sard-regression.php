@@ -58,6 +58,18 @@ function seed(): TestDatabase {
 function activePlan(PDO $pdo): string {return (string)$pdo->query("SELECT plan_id FROM student_plan_assignments WHERE status='active'")->fetchColumn();}
 function queue(PDO $pdo): array {return json_decode((string)$pdo->query("SELECT value FROM app_state WHERE `key`='sard_queue'")->fetchColumn(),true);}
 $pdo=seed();
+$pdo->exec('ALTER TABLE students ADD COLUMN halaqa_id INTEGER DEFAULT 1; DELETE FROM segment_completions');
+$GLOBALS['auth']=['role'=>'teacher','halaqaId'=>1,'complexId'=>1];
+$_GET=['halaqa_id'=>1,'grade_availability'=>'1'];
+handle_halaqa_plan_status();
+check($GLOBALS['response']['statuses'][0]['availability']===['hifz'=>'available','rabt'=>'awaiting_hifz','muraja'=>'awaiting_hifz'],'linked tasks wait for confirmed memorization');
+$pdo->exec("INSERT INTO segment_completions(student_id,plan_id,segment_index,task_type,assignment_id) VALUES ('student-1','current',1,'hifz',NULL),('student-1','current',1,'rabt','old')");
+handle_halaqa_plan_status();
+check($GLOBALS['response']['statuses'][0]['availability']===['hifz'=>'available','rabt'=>'complete','muraja'=>'available'],'legacy current progress unlocks review independently and does not reopen completed linking');
+$_GET=['halaqa_id'=>1];handle_halaqa_plan_status();
+check(!isset($GLOBALS['response']['statuses'][0]['availability']),'existing callers still receive lightweight plan status');
+$_GET=[];
+$pdo=seed();
 $pdo->exec('ALTER TABLE students ADD COLUMN halaqa_id INTEGER DEFAULT 1; DELETE FROM segment_completions WHERE segment_index=2');
 $advance=$GLOBALS['input'];
 app_state_upsert($pdo,'sard_queue',[['id'=>'old-request','studentId'=>'student-1','assignmentId'=>'previous','status'=>'pending']],1);
