@@ -17,8 +17,8 @@ jobs:
       DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
       DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
       DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-      EXPECTED_RELEASE: 86845cb025e83fd47c4f77ce01785799c0e70d85
-      AUDIT_MODE: compatibility-only
+      EXPECTED_RELEASE: 2fb035f9932de580bf42af9557d38c46fdb0c862
+      AUDIT_MODE: preserve-before-percentage-fix
     steps:
       - uses: actions/checkout@v4
         with:
