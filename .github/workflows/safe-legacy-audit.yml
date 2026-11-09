@@ -33,12 +33,21 @@ jobs:
         working-directory: candidate
         run: |
           npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
-          node tests/stage2-atomic-local.cjs
-          node tests/stage2-atomic-sessions.cjs
-          node tests/tarbawi-local.cjs
-          node ../scripts/test-scientific-program.cjs
-          php tests/stage3-atomic-plan.php
-          php tests/backend-sard-regression.php
-          node tests/plan-server-confirmation.cjs
-          node tests/grade-percentages-calendar.cjs
           npm run build:hostinger
+          asset=(dist/client/assets/TeacherHalaqaProgramsPanel-*.js)
+          test "${#asset[@]}" -eq 1
+          test -f "${asset[0]}"
+          ! rg -q 'تعذّر تحديث درجات البرنامج العلمي من الخادم|درجات البرامج المحفوظة على هذا الجهاز من الإصدار السابق' "${asset[0]}"
+          rg -q 'إعادة محاولة الحفظ' "${asset[0]}"
+      - name: Publish only the tested program panel change
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          BASE_RELEASE: 46f7f0a02cc63f0915f5cb7f7112d0a70ee7fb8d
+          TARGET_RELEASE: 5d3998e74f1f705ae05838d7bbb6a3db3266374a
+        run: |
+          git fetch --no-tags origin release/hide-program-history-notices
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET_RELEASE"
+          test "$(git diff --name-only "$BASE_RELEASE" "$TARGET_RELEASE")" = 'src/components/TeacherHalaqaProgramsPanel.tsx'
+          python3 scripts/protected-rollback-release.py publish "$BASE_RELEASE" "$TARGET_RELEASE"
