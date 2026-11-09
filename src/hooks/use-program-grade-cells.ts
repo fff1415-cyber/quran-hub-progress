@@ -28,6 +28,7 @@ export function useProgramGradeCells(halaqaId: number, semesterId: string | null
     setError("");
     const box = new GradeOutbox<HalaqaProgramGradesStore>(localStorage, scope);
     try {
+      await box.hydrate();
       if (send) await send(box);
       const remote = await secureProgramGradeSnapshot(token);
       if (getToken() !== token) return;
@@ -65,9 +66,10 @@ export function useProgramGradeCells(halaqaId: number, semesterId: string | null
     });
   };
 
+  const volatile = scope ? new GradeOutbox<HalaqaProgramGradesStore>(localStorage, scope).volatileDrafts() : [];
   return {
     grades: snapshot?.context_complex_id === cid ? snapshot?.value[halaqaId] ?? emptyGrades : emptyGrades,
-    ready, busy, error, draftCount, setCell,
+    ready, busy, error, draftCount, setCell, volatile,
     retry: () => void synchronize(flush),
     refresh: () => void synchronize(),
   };

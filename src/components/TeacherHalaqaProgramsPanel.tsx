@@ -307,6 +307,10 @@ export function TeacherHalaqaProgramsPanel({
       {historyStatus === "loading" && <p role="status">جارٍ تحميل درجات البرنامج العلمي…</p>}
       {programGrades.busy && <p role="status">جارٍ تأكيد درجات البرامج…</p>}
       {programGrades.error && <p role="alert">{programGrades.error}</p>}
+      {programGrades.volatile.length > 0 && <a download="program-grade-drafts.json"
+        href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(programGrades.volatile))}`}>
+        تنزيل المسودات
+      </a>}
       {programGrades.error && <Button onClick={programGrades.refresh}>تحديث درجات البرامج</Button>}
       {programGrades.draftCount > 0 && <div role="status">
         <p>بقيت {programGrades.draftCount} مسودة على هذا الجهاز. تُعرض الدرجات المؤكدة في الجدول.</p>

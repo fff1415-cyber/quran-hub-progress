@@ -63,6 +63,7 @@ export function GradeSaveStatus() {
   }, []);
   const box = currentGradeOutbox(), drafts = box?.drafts() ?? [];
   const localError = gradeLocalSaveError();
+  const volatile = box?.volatileDrafts() ?? [];
   const unresolved = drafts.filter(d => ["pending", "unbased", "conflict"].includes(d.status));
   const conflicts = unresolved.filter(d => d.status !== "pending");
   const pending = unresolved.filter(d => d.status === "pending");
@@ -87,6 +88,8 @@ export function GradeSaveStatus() {
   };
   return <section aria-live="polite" className="border-b bg-secondary/40 p-3 text-sm" dir="rtl">
     {localError && <p role="alert">{localError}</p>}
+    {volatile.length > 0 && <a download="grade-drafts.json"
+      href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(volatile))}`}>تنزيل المسودات</a>}
     {unresolved.length > 0 && <p>{`مسودات على هذا الجهاز: ${conflicts.length} للمراجعة، و${pending.length} بانتظار تأكيد الحفظ.`}</p>}
     {unresolved.length > 0 && <button type="button" aria-expanded={reviewOpen}
       aria-controls="grade-save-review" className="min-h-11 rounded border px-3"
