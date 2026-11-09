@@ -18,9 +18,9 @@ jobs:
       DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
       DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
       EXPECTED_RELEASE: 46f7f0a02cc63f0915f5cb7f7112d0a70ee7fb8d
-      HAMMAM_RECOVERY_AUDIT: '1'
+      HAMMAM_RECOVERY_AUDIT: '0'
       HAMMAM_FRESH_BACKUP: '0'
-      HAMMAM_RECOVERY_MODE: revert
+      HAMMAM_RECOVERY_MODE: audit
       HAMMAM_REVERT_JOURNAL: hammam-restore-599653b63566b9989a81
     steps:
       - uses: actions/checkout@v4
