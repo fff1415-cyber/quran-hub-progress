@@ -6,13 +6,13 @@ import {
   dayEntryFor,
   emptyWeek,
   ensureWeekDays,
-  weekPercentage,
   compensationRemainingForDay,
   sumWeekCompensationFaces,
   WEEKLY_COMPENSATION_CAP,
   type HifzValue,
 } from "@/lib/mock-data";
 import { formatWeekOptionLabel, getSelectableWeeks, isWeekDayClosed } from "@/lib/academic-context";
+import { studentWeekOverallPercentage } from "@/lib/semester-grading";
 import { AttSelect, CompensationSelect } from "@/components/plans/TeacherGradeInputs";
 import { PlanAwareTaskCell } from "@/components/plans/PlanAwareTaskCell";
 import { ScientificGradeInput, ScientificGradesToolbar } from "@/components/teacher/ScientificGradesToolbar";
@@ -378,7 +378,7 @@ export function TeacherMobileDayBoard({
               workingKeysList,
             );
             const e = dayEntryFor(week, activeDayKey, workingKeysList);
-            const weekPct = weekPercentage(week, isTalqeen, s.levelType);
+            const weekPct = studentWeekOverallPercentage(s.id, isTalqeen, grades, weekNum, s.levelType, calendar);
             const hasPlan = planLinkedIds.has(s.id);
             const dayComp = e.compensationFaces ?? 0;
             const compMaxToday = compensationRemainingForDay(week, activeDayKey, workingKeysList);

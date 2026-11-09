@@ -19,6 +19,7 @@ import {
 import {
   fallbackWeeklyAverage,
   studentReportPercentages,
+  studentWeekOverallPercentage,
   studentReportPercentRows,
   type StudentReportPercentages,
 } from "@/lib/semester-grading";
@@ -111,7 +112,7 @@ export function buildStudentFullReport(
     .sort((a, b) => a - b)
     .map((w) => ({
       week: w,
-      percent: weekPercentage(weeks[w], isTalqeen, student.levelType),
+      percent: studentWeekOverallPercentage(student.id, isTalqeen, grades, w, student.levelType, calendar),
     }));
 
   return {

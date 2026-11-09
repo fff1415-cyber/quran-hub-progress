@@ -212,7 +212,7 @@ export function scoreWeeklyTests(
     earned += resultPoints(rabtAt(row, i), s.rabt_pass_points, s.rabt_fail_points);
   }
   const max = weekTestsMaxPoints(s);
-  const percent = max > 0 ? Math.round((earned / max) * 1000) / 10 : 0;
+  const percent = max > 0 ? Math.round((earned * 1000) / max) / 10 : 0;
   return { earned, max, percent };
 }
 
@@ -243,14 +243,15 @@ export function cumulativeWeeklyTestsPercent(
   settings: WeeklyTestsSettings = DEFAULT_WEEKLY_TESTS_SETTINGS,
 ): number {
   if (throughWeek < 1) return 0;
-  let sum = 0;
-  let count = 0;
+  let earned = 0;
+  let max = 0;
   for (let w = 1; w <= throughWeek; w++) {
     const row = getStudentWeeklyTests(store, studentId, w, settings);
-    sum += scoreWeeklyTests(row, settings).percent;
-    count++;
+    const score = scoreWeeklyTests(row, settings);
+    earned += score.earned;
+    max += score.max;
   }
-  return count > 0 ? Math.round((sum / count) * 10) / 10 : 0;
+  return max > 0 ? Math.round((earned * 1000) / max) / 10 : 0;
 }
 
 export function halaqaWeeklyTestsAverage(

@@ -86,6 +86,7 @@ export function StudentPortalPersonalSection({
         grades,
         weekNumber,
         student.levelType,
+        calendar,
       )
     : null;
 

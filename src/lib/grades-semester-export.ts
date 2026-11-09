@@ -3,11 +3,13 @@ import {
   loadStudents,
   loadHalaqat,
   loadGrades,
-  weekPercentage,
   HIFZ_LABELS,
   DAYS,
 } from "@/lib/mock-data";
 import { weekLabel } from "@/lib/arabic-numbers";
+import type { ActiveSemester } from "@/lib/academic-context";
+import { getCalendarIsoDate } from "@/lib/operational-date";
+import { studentWeekOverallPercentage } from "@/lib/semester-grading";
 
 const ATT_LABEL: Record<string, string> = {
   present: "حاضر",
@@ -22,7 +24,7 @@ function safeFilePart(name: string): string {
 }
 
 /** Export all students' grades for weeks 1..weekCount (full previous semester archive). */
-export function exportSemesterGradesExcel(semesterName: string, weekCount: number): boolean {
+export function exportSemesterGradesExcel(semester: ActiveSemester): boolean {
   const students = loadStudents();
   const halaqat = loadHalaqat();
   const grades = loadGrades();
@@ -30,7 +32,8 @@ export function exportSemesterGradesExcel(semesterName: string, weekCount: numbe
   if (students.length === 0) return false;
 
   const lo = 1;
-  const hi = Math.max(1, weekCount);
+  const hi = Math.max(1, semester.weeks_count);
+  const calendar = { semester, operationalDate: getCalendarIsoDate() };
   const wb = XLSX.utils.book_new();
 
   const summary: (string | number)[][] = [
@@ -42,7 +45,7 @@ export function exportSemesterGradesExcel(semesterName: string, weekCount: numbe
     for (let w = lo; w <= hi; w++) {
       const week = grades[s.id]?.[w];
       if (!week) continue;
-      const pct = weekPercentage(week, !!h?.isTalqeen, s.levelType);
+      const pct = studentWeekOverallPercentage(s.id, !!h?.isTalqeen, grades, w, s.levelType, calendar);
       let abs = 0;
       let late = 0;
       let exc = 0;
@@ -113,7 +116,7 @@ export function exportSemesterGradesExcel(semesterName: string, weekCount: numbe
 
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(daily), "تفاصيل يومية");
 
-  const fname = `درجات_${safeFilePart(semesterName)}_${weekLabel(hi)}.xlsx`;
+  const fname = `درجات_${safeFilePart(semester.name)}_${weekLabel(hi)}.xlsx`;
   XLSX.writeFile(wb, fname);
   return true;
 }

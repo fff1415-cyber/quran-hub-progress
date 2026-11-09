@@ -42,6 +42,7 @@ export function SecretaryWeeklyReportsPanel() {
           const report = buildWeeklyReport(cal, num, halaqat, students, grades);
           if (!report) continue;
           const key = weeklyReportKey(report.semesterId, num);
+          if (snapshots.has(key)) continue;
           snapshots.set(key, report);
           writes.push(secureSetAppState({ data: { token, key, value: report } }));
         }

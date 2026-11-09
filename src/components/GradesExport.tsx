@@ -2,12 +2,13 @@ import { useMemo, useState, useEffect } from "react";
 import * as XLSX from "xlsx";
 import {
   loadStudents, loadHalaqat, loadGrades,
-  weekPercentage, HIFZ_LABELS, DAYS,
+  HIFZ_LABELS, DAYS,
   type Student,
 } from "@/lib/mock-data";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import {
   studentReportPercentages,
+  studentWeekOverallPercentage,
   fallbackWeeklyAverage,
 } from "@/lib/semester-grading";
 import {
@@ -66,7 +67,7 @@ export function GradesExport() {
       for (let w = lo; w <= hi; w++) {
         const week = grades[s.id]?.[w];
         if (!week) continue;
-        const pct = weekPercentage(week, !!h?.isTalqeen, s.levelType);
+        const pct = studentWeekOverallPercentage(s.id, !!h?.isTalqeen, grades, w, s.levelType, calendar);
         let abs=0, late=0, exc=0, hifz=0, mp=0, mf=0, rp=0, rf=0;
         DAYS.forEach((d) => {
           const e = week.days[d.key]; if (!e) return;
