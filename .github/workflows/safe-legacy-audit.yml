@@ -42,21 +42,3 @@ jobs:
           node tests/plan-server-confirmation.cjs
           node tests/grade-percentages-calendar.cjs
           npm run build:hostinger
-      - name: Verify the protected handlers against the independent MariaDB restore
-        env:
-          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
-          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
-          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          QHP_SAFE_LEGACY_CANDIDATE: '1'
-        run: python3 scripts/rollback-compat-probe.py
-      - name: Publish the exact protected program-grade release
-        env:
-          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
-          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
-          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          BASE_RELEASE: 4e8cfc813651d36f49a3c1ed5ddb9561a5442eab
-          TARGET_RELEASE: 46f7f0a02cc63f0915f5cb7f7112d0a70ee7fb8d
-        run: |
-          git fetch --no-tags origin release/program-grade-cell-protection
-          test "$(git rev-parse FETCH_HEAD)" = "$TARGET_RELEASE"
-          python3 scripts/protected-rollback-release.py publish "$BASE_RELEASE" "$TARGET_RELEASE"

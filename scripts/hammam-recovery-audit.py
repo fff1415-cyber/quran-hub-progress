@@ -18,7 +18,11 @@ with tempfile.TemporaryDirectory() as folder:
     askpass.write_text('#!/bin/sh\nprintf "%s\\n" "$DEPLOY_SSH_PASSWORD"\n')
     askpass.chmod(0o700)
     env = dict(os.environ, SSH_ASKPASS=str(askpass), SSH_ASKPASS_REQUIRE='force', DISPLAY=':0')
-    cmd = shlex.join(['php','-d','display_errors=0','/dev/stdin',root])
+    release = os.environ.get('EXPECTED_RELEASE','4e8cfc813651d36f49a3c1ed5ddb9561a5442eab')
+    mode = os.environ.get('HAMMAM_RECOVERY_MODE','audit')
+    if not re.fullmatch('[a-f0-9]{40}',release) or mode not in ('audit','recover','revert'):
+        raise SystemExit('Invalid recovery mode or release')
+    cmd = shlex.join(['php','-d','display_errors=0','/dev/stdin',root,release,mode,os.environ.get('HAMMAM_REVERT_JOURNAL','')])
     script = pathlib.Path('scripts/hammam-recovery-audit.php').read_text(encoding='utf-8')
     helper = pathlib.Path('scripts/private-test-config.php').read_bytes()
     script = script.replace('declare(strict_types=1);','declare(strict_types=1);\n' +
@@ -26,7 +30,7 @@ with tempfile.TemporaryDirectory() as folder:
     result = subprocess.run(['ssh','-T','-p','65002','-o','ConnectTimeout=20','-o','StrictHostKeyChecking=accept-new',
         '-o','NumberOfPasswordPrompts=1',user+'@'+host,cmd],
         input=script,
-        env=env, encoding='utf-8',capture_output=True,timeout=100,start_new_session=True)
+        env=env, encoding='utf-8',capture_output=True,timeout=230,start_new_session=True)
     print(result.stdout,end='')
     if result.returncode:
         raise SystemExit('Read-only audit failed')

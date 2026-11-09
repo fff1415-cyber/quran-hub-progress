@@ -24,6 +24,132 @@ function hammam_cell_hash(array $cells): string {
     return hash('sha256',implode("\n",$lines));
 }
 
+function hammam_recovery_paths(array $live,array $old,array $history): array {
+    $students=array_fill_keys($live['studentIds'],true);
+    $programs=array_column($live['registry'],null,'id');
+    $paths=[];
+    foreach(read_hammam_cells($old['grades']) as $key=>$label) {
+        [$student,$week,$program,$slot]=explode('|',$key);
+        if(!isset($students[$student]))continue;
+        $cfg=$programs[$program]??null;
+        if(!$cfg||($cfg['active']??true)===false||!in_array($slot,$cfg['weekdays']??[],true)||
+            !in_array($label,array_column($cfg['levels']??[],'label'),true))continue;
+        foreach($history as $prior)if(($prior[$key]??null)!==$label)continue 2;
+        $paths[]=['path'=>[$live['hid'],$student,(string)$week,$program,$slot],'label'=>$label];
+    }
+    return $paths;
+}
+
+function hammam_versioned_recovery(PDO $db,string $home,array $live,array $old,array $history,bool $simulate): array {
+    $cid=(int)$live['cid'];$key='halaqa_program_grades';
+    if($live['semester']!==$old['semester']||count($live['semester'])!==1)throw new RuntimeException('recovery_semester_mismatch');
+    $paths=hammam_recovery_paths($live,$old,$history);
+    if(count($paths)<418)throw new RuntimeException('recovery_history_changed');
+    $db->beginTransaction();
+    try {
+        $store=grade_cells_store($db,$cid,$key,true);
+        $calendar=grade_cells_calendar($db,$cid,true);
+        if($calendar!==['known'=>true,'active_semester_id'=>$live['semester'][0]['id']])throw new RuntimeException('recovery_calendar_changed');
+        $scope=$db->prepare('SELECT id,halaqa_id FROM students WHERE complex_id=? AND halaqa_id=? FOR UPDATE');
+        $scope->execute([$cid,$live['hid']]);$students=array_fill_keys($scope->fetchAll(PDO::FETCH_COLUMN),true);
+        $registry=$db->prepare("SELECT value FROM app_state WHERE complex_id=? AND `key`='halaqa_programs' FOR UPDATE");
+        $registry->execute([$cid]);
+        $registryStore=json_decode((string)$registry->fetchColumn(),true,512,JSON_THROW_ON_ERROR);
+        if(($registryStore[$live['hid']]??[])!==$live['registry'])throw new RuntimeException('recovery_program_registry_changed');
+        $changes=[];$weeks=[];$skip=['occupied'=>0,'versioned'=>0,'roster'=>0];$expected=clone $store;
+        $expected=json_decode(json_encode($expected,JSON_THROW_ON_ERROR),false,512,JSON_THROW_ON_ERROR);
+        foreach($paths as $item){
+            $path=$item['path'];
+            if(!isset($students[$path[1]])){$skip['roster']++;continue;}
+            $base=grade_cells_at($store,$path,true);
+            if($base['present']){$skip['occupied']++;continue;}
+            $stamp=grade_cells_stamp($db,$cid,$key,$path,true);
+            if($stamp['subtree']!==null || array_filter($stamp['ancestors'],static fn($v)=>$v!==null)){$skip['versioned']++;continue;}
+            $next=['present'=>true,'value'=>$item['label']];
+            $changes[]=['path'=>$path,'base'=>$base,'next'=>$next,'stamp'=>$stamp];
+            $weeks[$path[2]]=($weeks[$path[2]]??0)+1;
+            grade_cells_set($expected,$path,$next,true);
+        }
+        if(count($changes)>418)throw new RuntimeException('recovery_scope_exceeds_authorization');
+        if(!$changes){$db->rollBack();return ['restored'=>0,'excluded'=>$skip];}
+        $operation='hammam-restore-'.bin2hex(random_bytes(10));
+        if(!$simulate){
+            $directory=$home.'/.qhp-private/hammam-recovery';
+            if(is_link($directory)||(!is_dir($directory)&&!mkdir($directory,0700))||realpath($directory)!==$directory||
+                (fileperms($directory)&0077)!==0)throw new RuntimeException('recovery_journal_directory');
+            $file=$directory.'/'.$operation.'.json';
+            $stream=fopen($file,'xb');
+            if(!$stream)throw new RuntimeException('recovery_journal_open');
+            try{
+                $journal=json_encode(['operation_id'=>$operation,'complex_id'=>$cid,'semester'=>$calendar,'changes'=>$changes],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
+                if(fwrite($stream,$journal)!==strlen($journal)||!fflush($stream)||!fsync($stream))throw new RuntimeException('recovery_journal_write');
+            }finally{fclose($stream);}
+        }
+        grade_cells_apply($db,$cid,$key,$operation,$calendar,$changes);
+        if(grade_cells_json(grade_cells_store($db,$cid,$key,true))!==grade_cells_json($expected))throw new RuntimeException('recovery_changed_other_values');
+        foreach($changes as $change) {
+            if(grade_cells_version($db,$cid,$key,$change['path'],true)['direct_version']!==$operation)throw new RuntimeException('recovery_missing_rollback_guard');
+        }
+        if($simulate){
+            $edited=$changes[0];
+            $newer='hammam-test-newer-'.bin2hex(random_bytes(8));
+            grade_cells_record_version($db,$cid,$key,$edited['path'],$newer);
+            $revert=hammam_rollback_changes($db,$cid,$key,$calendar,$live['hid'],$operation,$changes);
+            if($revert['skipped']!==1||count($revert['changes'])!==count($changes)-1)
+                throw new RuntimeException('test_rollback_newer_guard_failed');
+            if($revert['changes'])grade_cells_apply($db,$cid,$key,'hammam-test-undo-'.bin2hex(random_bytes(8)),$calendar,$revert['changes']);
+            if(grade_cells_at(grade_cells_store($db,$cid,$key,true),$edited['path'],true)!==$edited['next'])
+                throw new RuntimeException('test_rollback_removed_newer_value');
+            $db->rollBack();
+        }else $db->commit();
+        return ['restored'=>$simulate?0:count($changes),'simulated'=>$simulate?count($changes):0,'excluded'=>$skip,
+            'journal_id'=>$simulate?null:$operation,'production_writes'=>!$simulate,
+            'weeks'=>$weeks,
+            'selective_revert_preserved_newer_version'=>$simulate?true:null];
+    }catch(Throwable $error){
+        if($db->inTransaction())$db->rollBack();
+        throw $error;
+    }
+}
+
+function hammam_rollback_changes(PDO $db,int $cid,string $key,array $calendar,string $halaqa,string $id,array $items): array {
+    $store=grade_cells_store($db,$cid,$key,true);
+    $changes=[];$skipped=0;
+    foreach($items as $item) {
+        $path=$item['path'];
+        if(count($path)!==5||$path[0]!==$halaqa||$item['base']!==['present'=>false])throw new RuntimeException('rollback_path_scope');
+        $actual=grade_cells_at($store,$path,true);
+        $stamp=grade_cells_stamp($db,$cid,$key,$path,true);
+        if($actual!==$item['next']||$stamp['subtree']!==$id||
+            grade_cells_version($db,$cid,$key,$path,true)['direct_version']!==$id ||
+            array_filter($stamp['ancestors'],static fn($v)=>$v!==null)){$skipped++;continue;}
+        $changes[]=['path'=>$path,'base'=>$actual,'next'=>$item['base'],'stamp'=>$stamp];
+    }
+    return ['changes'=>$changes,'skipped'=>$skipped];
+}
+
+function hammam_selective_revert(PDO $db,string $home,string $id,array $live): array {
+    if(!preg_match('/^hammam-restore-[a-f0-9]{20}$/D',$id))throw new RuntimeException('invalid_recovery_journal_id');
+    $file=$home.'/.qhp-private/hammam-recovery/'.$id.'.json';
+    if(realpath($file)!==$file || (fileperms($file)&0077)!==0)throw new RuntimeException('rollback_journal_scope');
+    $journal=json_decode(file_get_contents($file),true,512,JSON_THROW_ON_ERROR);
+    $cid=(int)$live['cid'];$key='halaqa_program_grades';
+    if($journal['complex_id']!==$cid||$journal['operation_id']!==$id)throw new RuntimeException('rollback_journal_identity');
+    $db->beginTransaction();
+    try {
+        grade_cells_store($db,$cid,$key,true);
+        $calendar=grade_cells_calendar($db,$cid,true);
+        if($calendar!==$journal['semester'])throw new RuntimeException('rollback_semester_changed');
+        ['changes'=>$changes,'skipped'=>$skipped]=hammam_rollback_changes($db,$cid,$key,$calendar,$live['hid'],$id,$journal['changes']);
+        if($changes)grade_cells_apply($db,$cid,$key,'hammam-undo-'.bin2hex(random_bytes(10)),$calendar,$changes);
+        $db->commit();
+        return ['selectively_reverted'=>count($changes),'newer_or_unchanged_skipped'=>$skipped];
+    } catch(Throwable $error){
+        if($db->inTransaction())$db->rollBack();
+        throw $error;
+    }
+}
+
 function read_archive(string $file): array {
     $h = gzopen($file,'rb');
     if (!$h) throw new RuntimeException('archive_open');
@@ -200,8 +326,11 @@ function verify_selective_restore_on_test(string $home,array $live,array $old,ar
 
 try {
     $root=$argv[1]??'';
+    $release=$argv[2]??'4e8cfc813651d36f49a3c1ed5ddb9561a5442eab';
+    $mode=$argv[3]??'audit';
     if (!preg_match('~^(/home/[A-Za-z0-9_-]+)/domains/msht[.]io/public_html$~D',$root,$match) ||
-        realpath($root)!==$root || trim(file_get_contents($root.'/deploy-sha.txt'))!=='4e8cfc813651d36f49a3c1ed5ddb9561a5442eab') {
+        !preg_match('/^[a-f0-9]{40}$/D',$release) || !in_array($mode,['audit','recover','revert'],true) ||
+        realpath($root)!==$root || trim(file_get_contents($root.'/deploy-sha.txt'))!==$release) {
         throw new RuntimeException('release_scope');
     }
     require $root.'/api/config.php';
@@ -248,6 +377,7 @@ try {
         $day=substr($id,0,8);$selected[$day][]=$path;
     }
     $timeline=[];$exactOld=null;$history=[];
+    $latest='';
     foreach($selected as $paths){
         sort($paths,SORT_STRING);
         foreach(substr(basename(dirname($paths[0])),0,8)==='20261109' ? $paths : array_unique([$paths[0],end($paths)]) as $path){
@@ -256,6 +386,7 @@ try {
             if(realpath($file)!==$file || !hash_equals($manifest['sha256']??'',hash_file('sha256',$file)))continue;
             $archive=hammam_summary(read_archive($file));
             $id=basename(dirname($path));
+            if($id>$latest)$latest=$id;
             $cells=read_hammam_cells($archive['grades']);
             if(hammam_cell_hash($cells)===NOVEMBER_2_CELL_HASH)$exactOld=$archive;
             if($id<='20261109T024234Z-5e974a1fec' && $archive['semester']===$live['semester'])$history[$id]=$cells;
@@ -263,6 +394,38 @@ try {
         }
     }
     if(count($history)<4 || !isset($history['20261109T024234Z-5e974a1fec']))throw new RuntimeException('pre_loss_history_unavailable');
+    if($mode!=='audit'){
+        require_once $root.'/api/tenant.php';
+        require_once $root.'/api/routes/app_state.php';
+        require_once $root.'/api/routes/plans.php';
+        if(!grade_writes_enabled() || !function_exists('grade_write_program_cell') ||
+            !str_contains(file_get_contents($root.'/api/routes/app_state.php'),"grade_write_program_cell(\$pdo,\$cid,"))
+            throw new RuntimeException('production_protection_required');
+        if($mode==='revert'){
+            echo json_encode(hammam_selective_revert($pdo,$match[1],$argv[4]??'',$live),JSON_THROW_ON_ERROR).PHP_EOL;
+            exit(0);
+        }
+        if(!$exactOld || $latest==='' || $otherActiveSessions!==0)throw new RuntimeException('recovery_preflight_not_ready');
+        $backupTime=DateTimeImmutable::createFromFormat('!Ymd\THis\Z',substr($latest,0,16),new DateTimeZone('UTC'));
+        if(!$backupTime || $backupTime->getTimestamp()<filemtime($root.'/deploy-sha.txt') ||
+            time()-$backupTime->getTimestamp()>900)throw new RuntimeException('fresh_protected_backup_required');
+        $secret=$match[1].'/.qhp-private/msht-test.php';
+        if(realpath($secret)!==$secret || (fileperms($secret)&0077)!==0)throw new RuntimeException('recovery_test_scope');
+        $settings=qhp_load_private_test_config((string)file_get_contents($secret));
+        if($settings['database']!=='u112851217_msht_test'||$settings['user']===DB_USER)throw new RuntimeException('isolated_database_required');
+        $test=new PDO('mysql:host='.$settings['host'].';dbname='.$settings['database'].';charset=utf8mb4',
+            $settings['user'],$settings['password'],[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
+        if($test->query('SELECT DATABASE()')->fetchColumn()!=='u112851217_msht_test')throw new RuntimeException('test_database_identity');
+        $simulation=hammam_versioned_recovery($test,$match[1],$live,$exactOld,$history,true);
+        if(($simulation['simulated']??0)<1)throw new RuntimeException('no_verified_recovery_cells');
+        foreach($pdo->query('SHOW FULL PROCESSLIST')->fetchAll() as $process) {
+            if((string)$process['Id']!==$ownConnection && $process['db']===DB_NAME && $process['Command']!=='Sleep')
+                throw new RuntimeException('active_production_session_try_later');
+        }
+        $actual=hammam_versioned_recovery($pdo,$match[1],$live,$exactOld,$history,false);
+        echo json_encode(['status'=>'protected_recovery_complete','backup_id'=>$latest,'test'=>$simulation,'production'=>$actual],JSON_THROW_ON_ERROR).PHP_EOL;
+        exit(0);
+    }
     $simulation=$exactOld ? verify_selective_restore_on_test($match[1],$live,$exactOld,$history) : ['matched_exact_november_2_source'=>false];
     echo json_encode(['status'=>'read_only_recovery_evidence','live'=>array_diff_key($live,array_flip(['grades','registry','studentIds','hid'])),
         'journal'=>$journal,'log_settings'=>$vars,'binlogs'=>$binlogs,'history_tables'=>$possibleHistory,'archives'=>$timeline,
