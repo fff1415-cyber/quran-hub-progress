@@ -32,7 +32,8 @@ async function stop(){
  assert.deepEqual((await (await legacy('teacher')).json())[0].value,prior);
  await stop();
  await start(false);
- const program=async(role,packet,legacy=false)=>{
+ {
+ const programGrade=async(role,packet,legacy=false)=>{
   const key='halaqa_program_grades';
   const response=await fetch(base+(packet?'':'?key='+key+'&grade_protocol=1'),{
    method:packet?'POST':'GET',headers:{Authorization:'Bearer fixture-'+role,'Content-Type':'application/json'},
@@ -41,32 +42,33 @@ async function stop(){
  };
  const programTeacher=new GradeOutbox(storage(),'program-teacher',id);
  const programAssistant=new GradeOutbox(storage(),'program-assistant',id);
- const initialPrograms=await program('teacher');
- programTeacher.accept(initialPrograms);programAssistant.accept(await program('assistant'));
+ const initialPrograms=await programGrade('teacher');
+ programTeacher.accept(initialPrograms);programAssistant.accept(await programGrade('assistant'));
  const sun=['1','S','1','test-program','sun'],mon=['1','S','1','test-program','mon'];
  programTeacher.editCell(initialPrograms.value,sun,'yes');
  programAssistant.editCell(initialPrograms.value,mon,'no');
- await Promise.all([programTeacher.flush(p=>program('teacher',p)),programAssistant.flush(p=>program('assistant',p))]);
- await assert.rejects(program('teacher',initialPrograms.value,true),{status:409});
- const both=await program('assistant');
+ await Promise.all([programTeacher.flush(p=>programGrade('teacher',p)),programAssistant.flush(p=>programGrade('assistant',p))]);
+ await assert.rejects(programGrade('teacher',initialPrograms.value,true),{status:409});
+ const both=await programGrade('assistant');
  assert.deepEqual(both.value[1].S[1]['test-program'],{sun:'yes',mon:'no'});
  assert.equal(both.value[1].S[2]['test-program'].tue,'yes');
  programAssistant.accept(both);
  programAssistant.editCell(both.value,sun,'');
  const cancel=programAssistant.drafts().at(-1).packet;
- await programAssistant.flush(p=>program('assistant',p));
- assert.equal((await program('assistant',cancel)).replayed,true);
- const current=await program('teacher');
+ await programAssistant.flush(p=>programGrade('assistant',p));
+ assert.equal((await programGrade('assistant',cancel)).replayed,true);
+ const current=await programGrade('teacher');
  assert.deepEqual(current.value[1].S[1]['test-program'],{mon:'no'});
  const staleStorage=storage(),stale=new GradeOutbox(staleStorage,'stale-program',id);
  stale.accept(initialPrograms);
  stale.editCell(initialPrograms.value,sun,'no');
- await stale.flush(p=>program('teacher',p));
+ await stale.flush(p=>programGrade('teacher',p));
  const reopened=new GradeOutbox(staleStorage,'stale-program',id);
  assert.equal(reopened.drafts()[0].status,'conflict');
  assert.equal(reopened.drafts()[0].packet.changes[0].next.value,'no');
- assert.deepEqual((await program('teacher')).value,current.value);
+ assert.deepEqual((await programGrade('teacher')).value,current.value);
  console.log('PASS: program cells support concurrent teacher/assistant saves, cancellation, replay and retained stale drafts; old whole-store requests cannot erase restored grades');
+ }
  assert.deepEqual((await request('assistant')).value,prior);
  for(const role of ['manager','teacher','assistant']){
   const response=await fetch(base+'?omit_grade_value=1',{headers:{Authorization:'Bearer fixture-'+role}});
