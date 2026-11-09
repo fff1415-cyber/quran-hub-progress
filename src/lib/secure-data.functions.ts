@@ -271,3 +271,16 @@ export async function secureGradeSnapshot(token: string, cursor?: string) {
 export async function secureGradeOperation(token: string, packet: import("./grade-outbox").GradePacket) {
   return apiFetch<{ ok: boolean; operation_id: string; input_sha256: string; replayed: boolean }>("/app-state", { method: "POST", auth: token, body: JSON.stringify({ key: "grades", grade_write_protocol: 1, value: packet }) });
 }
+
+export function secureProgramGradeSnapshot(token: string) {
+  return apiFetch<import("./grade-outbox").GradeSnapshot<import("./halaqa-programs").HalaqaProgramGradesStore>>(
+    "/app-state?key=halaqa_program_grades&grade_protocol=1", { auth: token },
+  );
+}
+
+export function secureProgramGradeOperation(token: string, packet: import("./grade-outbox").GradePacket) {
+  return apiFetch<{ ok: boolean; operation_id: string; input_sha256: string }>("/app-state", {
+    method: "POST", auth: token,
+    body: JSON.stringify({ key: "halaqa_program_grades", grade_write_protocol: 1, value: packet }),
+  });
+}

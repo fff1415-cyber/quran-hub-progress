@@ -29,8 +29,8 @@ import { savePushNotificationSettings, type PushNotificationSettings } from "./p
 import { saveTarbawiStore, type TarbawiStore, ensureTarbawiSemester, mergeTarbawiStores, loadTarbawiStore } from "./tarbawi-program";
 import type { AcademicPhaseRecord } from "./academic-record";
 import { saveAcademicRecords } from "./academic-record";
-import type { HalaqaProgramsStore, HalaqaProgramGradesStore } from "./halaqa-programs";
-import { saveAllHalaqaPrograms, saveAllProgramGrades } from "./halaqa-programs";
+import type { HalaqaProgramsStore } from "./halaqa-programs";
+import { saveAllHalaqaPrograms } from "./halaqa-programs";
 import {
   secureListStudents,
   secureListHalaqatFull,
@@ -351,7 +351,6 @@ export async function syncFromCloud(options?: {
           const merged = mergeHalaqaProgramsStores(cloud, loadAllHalaqaPrograms());
           saveAllHalaqaPrograms(merged);
         }
-        if (state.has("halaqa_program_grades")) saveAllProgramGrades(state.get("halaqa_program_grades") as HalaqaProgramGradesStore);
         if (state.has("scientific_grades") && scientificDataBeforePull === scientificDataGeneration) {
           const {
             loadScientificGradesStore,

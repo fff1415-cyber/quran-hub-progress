@@ -7,8 +7,8 @@ type GradeEdit = Omit<Change, "stamp">;
 type Calendar = { known: boolean; active_semester_id: string | null };
 export type PlanEffect = { student_id: string; expected_assignment_id: string; task_type: "hifz" | "rabt" | "muraja"; action: "record" | "undo" | "compensation"; tap: "half" | "one" | "two"; completed_at: string; cell_path: string[] };
 export type GradePacket = { operation_id: string; calendar_context: Calendar; changes: Change[]; plan?: PlanEffect };
-export type GradeSnapshot = { protocol: 1; context_complex_id: number; cursor?: string; value: GradesStore; calendar_context: Calendar; versions: Record<string, { direct_version: string | null; subtree_version: string | null }> };
-export type GradeSnapshotResult = GradeSnapshot | { protocol: 1; context_complex_id: number; cursor: string; unchanged: true };
+export type GradeSnapshot<T = GradesStore> = { protocol: 1; context_complex_id: number; cursor?: string; value: T; calendar_context: Calendar; versions: Record<string, { direct_version: string | null; subtree_version: string | null }> };
+export type GradeSnapshotResult<T = GradesStore> = GradeSnapshot<T> | { protocol: 1; context_complex_id: number; cursor: string; unchanged: true };
 export type GradeDraft = { packet: GradePacket; order: number; dependencies: string[]; status: "pending" | "unbased" | "conflict" | "confirmed" | "superseded" | "discarded" | "reconciled" | "archived"; message?: string; observed?: boolean };
 const equal = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 const object = (v: unknown): v is Record<string, unknown> => v !== null && typeof v === "object" && !Array.isArray(v);
@@ -51,7 +51,7 @@ function changesBetween(before: unknown, after: unknown, path: string[] = []): G
   if (before === undefined && (after === "" || after === false || Array.isArray(after) && after.length === 0)) return [];
   return [{ path, base: before === undefined ? { present: false } : { present: true, value: before }, next: after === undefined ? { present: false } : { present: true, value: after } }];
 }
-function stamp(snapshot: GradeSnapshot, path: string[]): Stamp {
+function stamp(snapshot: GradeSnapshot<unknown>, path: string[]): Stamp {
   return { ancestors: path.map((_, i) => snapshot.versions[JSON.stringify(path.slice(0, i))]?.direct_version ?? null), subtree: snapshot.versions[JSON.stringify(path)]?.subtree_version ?? null };
 }
 const active = (draft: GradeDraft) => ["pending", "unbased", "conflict"].includes(draft.status);
@@ -61,24 +61,24 @@ export const cancelsDayGrade = (draft: GradeDraft): boolean => draft.packet.chan
     (["rabt","muraja"].includes(path[4]) && base.value==="pass" && next.value==="fail")));
 
 /** Each immutable packet has its own storage key: two tabs cannot replace each other's queues. */
-export class GradeOutbox {
+export class GradeOutbox<T extends Record<string, unknown> = GradesStore> {
   readonly prefix: string;
   constructor(private storage: Storage, scope: string, private id = () => crypto.randomUUID(), private changed = () => {}) { this.prefix = "qhp_grade_outbox_v1:" + encodeURIComponent(scope) + ":"; }
-  snapshot(): GradeSnapshot | null { const raw = this.storage.getItem(this.prefix + "snapshot"); return raw ? JSON.parse(raw) : null; }
+  snapshot(): GradeSnapshot<T> | null { const raw = this.storage.getItem(this.prefix + "snapshot"); return raw ? JSON.parse(raw) : null; }
   drafts(): GradeDraft[] {
     const result: GradeDraft[] = [];
     for (let i = 0; i < this.storage.length; i++) { const key = this.storage.key(i); if (key?.startsWith(this.prefix + "operation:")) result.push(JSON.parse(this.storage.getItem(key)!)); }
     return result.sort((a, b) => a.order - b.order || a.packet.operation_id.localeCompare(b.packet.operation_id));
   }
   private write(draft: GradeDraft) { this.storage.setItem(this.prefix + "operation:" + draft.packet.operation_id, JSON.stringify(draft)); this.changed(); }
-  accept(snapshot: GradeSnapshot) {
+  accept(snapshot: GradeSnapshot<T>) {
     if (snapshot.protocol !== 1 || !object(snapshot.value) || !object(snapshot.versions) || !snapshot.calendar_context || typeof snapshot.calendar_context.known !== "boolean") throw Error("لم يؤكد الخادم بروتوكول الحفظ؛ بقيت المسودات محفوظة");
     this.storage.setItem(this.prefix + "snapshot", JSON.stringify(snapshot));
     for (const draft of this.drafts()) if (draft.status === "confirmed" && !draft.observed) this.write({ ...draft, observed: true });
     this.reconcile(snapshot);
     this.changed();
   }
-  private reconciliationStatus(draft: GradeDraft, snapshot: GradeSnapshot): "reconciled" | "archived" | undefined {
+  private reconciliationStatus(draft: GradeDraft, snapshot: GradeSnapshot<T>): "reconciled" | "archived" | undefined {
     const { packet } = draft;
     if (!equal(packet.calendar_context, snapshot.calendar_context)) return;
     const decisions = packet.changes.map(change => {
@@ -94,7 +94,7 @@ export class GradeOutbox {
     if (decisions.every(decision => decision === "same") && !packet.plan) return "reconciled";
     if (!cancelsDayGrade(draft) && decisions.includes("server") && !decisions.includes("unresolved")) return "archived";
   }
-  reconcile(snapshot: GradeSnapshot) {
+  reconcile(snapshot: GradeSnapshot<T>) {
     if (!snapshot.calendar_context.known) return;
     const drafts = this.drafts();
     const confirmed = new Set(drafts.filter(draft => draft.status === "confirmed").map(draft => draft.packet.operation_id));
@@ -120,14 +120,22 @@ export class GradeOutbox {
       if (settled.length === chain.length) for (const draft of settled.reverse()) this.write(draft);
     }
   }
-  view(fallback: GradesStore): GradesStore {
+  view(fallback: T): T {
     const value = clone(this.snapshot()?.value ?? fallback);
     for (const draft of this.drafts().filter(d => active(d) || d.status === "confirmed" && !d.observed)) for (const change of draft.packet.changes) set(value, change.path, change.next);
     return value;
   }
-  edit(before: GradesStore, after: GradesStore, plan?: PlanEffect) {
+  edit(before: T, after: T, plan?: PlanEffect) {
     const edits = changesBetween(before, after).filter(change =>
       !isEmptyCompensationDefault(change) || !!plan && equal(change.path, plan.cell_path));
+    this.enqueueEdits(edits, plan);
+  }
+  editCell(before: T, path: string[], value: string) {
+    const base = at(before, path);
+    const next: Cell = value ? { present: true, value } : { present: false };
+    if (!equal(base, next)) this.enqueueEdits([{ path, base, next }]);
+  }
+  private enqueueEdits(edits: GradeEdit[], plan?: PlanEffect) {
     if (!edits.length) return;
     if (edits.length > 100) throw Error("التعديل كبير؛ احفظ دفعات أصغر دون إغلاق الصفحة");
     const snapshot = this.snapshot(), drafts = this.drafts(), dependencies = new Set<string>();
@@ -147,8 +155,8 @@ export class GradeOutbox {
   async flush(send: (packet: GradePacket) => Promise<{ ok: boolean; operation_id: string; input_sha256: string }>, current = () => true) {
     for (const initial of this.drafts().filter(d => d.status === "pending")) {
       if (!current()) return;
-      const drafts = this.drafts(), draft = drafts.find(d => d.packet.operation_id === initial.packet.operation_id)!;
-      if (draft.status !== "pending" || draft.dependencies.some(id => drafts.find(d => d.packet.operation_id === id)?.status !== "confirmed")) continue;
+      const drafts = this.drafts(), draft = drafts.find(d => d.packet.operation_id === initial.packet.operation_id);
+      if (draft?.status !== "pending" || draft.dependencies.some(id => drafts.find(d => d.packet.operation_id === id)?.status !== "confirmed")) continue;
       try {
         const receipt = await send(clone(draft.packet));
         if (!receipt.ok || receipt.operation_id !== draft.packet.operation_id || !/^[a-f0-9]{64}$/.test(receipt.input_sha256)) throw Error("لم يؤكد الخادم هوية الحفظ؛ بقي الطلب معلقًا");

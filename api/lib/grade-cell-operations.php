@@ -50,7 +50,7 @@ function grade_cells_calendar(PDO $pdo,int $cid,bool $lock): array
 
 function grade_cells_store(PDO $pdo,int $cid,string $key,bool $lock): stdClass
 {
-    if(!in_array($key,['grades','weekly_tests','scientific_grades'],true))throw new RuntimeException('مخزن الدرجات غير مدعوم');
+    if(!in_array($key,['grades','weekly_tests','scientific_grades','halaqa_program_grades'],true))throw new RuntimeException('مخزن الدرجات غير مدعوم');
     $scoped=app_state_tenant_enabled($pdo);
     $query=$pdo->prepare('SELECT value FROM app_state WHERE '.($scoped?'complex_id=? AND ':'').'`key`=?'.($lock?' FOR UPDATE':''));
     $query->execute($scoped?[$cid,$key]:[$key]);$raw=$query->fetchColumn();
@@ -62,10 +62,11 @@ function grade_cells_store(PDO $pdo,int $cid,string $key,bool $lock): stdClass
     return $value;
 }
 
-function grade_cells_at(stdClass $value,array $path): array
+function grade_cells_at(stdClass $value,array $path,bool $legacyEmptyArrays=false): array
 {
     $current=$value;
     foreach($path as $part) {
+        if($legacyEmptyArrays && $current===[])return ['present'=>false];
         if(!($current instanceof stdClass))throw new RuntimeException('بنية خلية الدرجة تغيرت؛ لم تُستبدل بيانات أخرى',409);
         if(!property_exists($current,$part))return ['present'=>false];
         $current=$current->{$part};
@@ -73,10 +74,14 @@ function grade_cells_at(stdClass $value,array $path): array
     return ['present'=>true,'value'=>$current];
 }
 
-function grade_cells_set(stdClass $value,array $path,array $next): void
+function grade_cells_set(stdClass $value,array $path,array $next,bool $legacyEmptyArrays=false): void
 {
     $current=$value;$last=array_pop($path);
     foreach($path as $part) {
+        if($legacyEmptyArrays && ($current->{$part}??null)===[]) {
+            if(!$next['present'])return;
+            $current->{$part}=new stdClass();
+        }
         if(!property_exists($current,$part)) {
             if(!$next['present'])return;
             $current->{$part}=new stdClass();
@@ -160,10 +165,10 @@ function grade_cells_apply(PDO $pdo,int $cid,string $key,string $operation,array
             foreach(['base','next'] as $field)if(!is_array($change[$field]??null)||!is_bool($change[$field]['present']??null)||($change[$field]['present']&&!array_key_exists('value',$change[$field])))throw new RuntimeException('قيمة الدرجة غير مكتملة');
             foreach($paths as $other)if(array_slice($path,0,min(count($path),count($other)))===array_slice($other,0,min(count($path),count($other))))throw new RuntimeException('طلب الدرجة يحتوي مسارات متداخلة؛ لم يُطبق جزء منه');
             $paths[]=$path;
-            if(grade_cells_json(grade_cells_at($store,$path))!==grade_cells_json($change['base'])||grade_cells_json(grade_cells_stamp($pdo,$context,$key,$path,true))!==grade_cells_json($change['stamp']??null))throw new RuntimeException('عدّل مستخدم آخر الخلية أو بنيتها؛ بقيت مسودتك للمقارنة دون استبدال كتابته',409);
+            if(grade_cells_json(grade_cells_at($store,$path,$key==='halaqa_program_grades'))!==grade_cells_json($change['base'])||grade_cells_json(grade_cells_stamp($pdo,$context,$key,$path,true))!==grade_cells_json($change['stamp']??null))throw new RuntimeException('عدّل مستخدم آخر الخلية أو بنيتها؛ بقيت مسودتك للمقارنة دون استبدال كتابته',409);
         }
         foreach($changes as $i=>$change) {
-            grade_cells_set($store,$paths[$i],$change['next']);
+            grade_cells_set($store,$paths[$i],$change['next'],$key==='halaqa_program_grades');
             grade_cells_record_version($pdo,$context,$key,$paths[$i],$operation);
         }
         if($effect)$effect($store);

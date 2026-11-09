@@ -269,6 +269,11 @@ function handle_list_app_state(): void
         json_response(grade_write_snapshot($pdo, $cid, (string) ($_GET['grade_cursor'] ?? '')));
         return;
     }
+    if ($keyFilter === 'halaqa_program_grades' && ($_GET['grade_protocol'] ?? '') === '1') {
+        if (!$tenants || !grade_writes_enabled()) error_response('تعذّر تأكيد وضع حفظ درجات البرامج', 503);
+        json_response(grade_write_snapshot($pdo,$cid,(string)($_GET['grade_cursor']??''),$keyFilter));
+        return;
+    }
     if ($tenants) {
         if ($keyFilter !== '') {
             $stmt = $pdo->prepare('SELECT `key`, value FROM app_state WHERE complex_id = ? AND `key` = ?');
@@ -468,6 +473,20 @@ function handle_set_app_state(): void
     }
     if ($key === 'scientific_grades') {
         error_response('رُفض استبدال سجل الدرجات العلمية. حدّث الصفحة مع الاحتفاظ ببيانات المتصفح.', 409);
+    }
+    if ($key === 'halaqa_program_grades') {
+        if (($input['grade_write_protocol']??null)!==1) error_response('رُفض استبدال درجات البرامج. احتفظ ببيانات هذا المتصفح وحدّث الصفحة.',409);
+        $pdo=db();
+        if (!app_state_tenant_enabled($pdo)||!grade_writes_enabled()) error_response('تعذّر تأكيد وضع حفظ درجات البرامج',503);
+        try {
+            $receipt=grade_write_program_cell($pdo,$cid,is_array($input['value']??null)?$input['value']:[]);
+        } catch (PDOException | JsonException $error) {
+            error_response('تعذّر تأكيد درجة البرنامج؛ بقيت المسودة على الجهاز',503);
+        } catch (RuntimeException $error) {
+            error_response($error->getMessage(),$error->getCode()===400?400:409);
+        }
+        json_response(['ok'=>true]+$receipt);
+        return;
     }
     if (in_array($key, ['academic_records','sard_history'], true)) {
         try {

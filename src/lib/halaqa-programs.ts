@@ -71,12 +71,6 @@ function persistPrograms(value: HalaqaProgramsStore) {
   void import("./cloud-sync").then((m) => m.pushAppState("halaqa_programs", value)).catch(() => undefined);
 }
 
-function persistProgramGrades(value: HalaqaProgramGradesStore) {
-  if (typeof window === "undefined" || !hasAuthToken()) return;
-  if (sessionStorage.getItem("qs_syncing") === "1") return;
-  void import("./cloud-sync").then((m) => m.pushAppState("halaqa_program_grades", value)).catch(() => undefined);
-}
-
 export function normalizeProgram(raw: LegacyHalaqaProgram): HalaqaProgram {
   if (raw.levels?.length) {
     const { options: _o, maxScore: _m, ...rest } = raw;
@@ -182,26 +176,17 @@ export function loadAllProgramGrades(): HalaqaProgramGradesStore {
   const raw = localStorage.getItem(KEY_PROGRAM_GRADES);
   if (!raw) return {};
   try {
-    return JSON.parse(raw) as HalaqaProgramGradesStore;
+    const value = JSON.parse(raw);
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   } catch {
     return {};
   }
-}
-
-export function saveAllProgramGrades(store: HalaqaProgramGradesStore) {
-  localStorage.setItem(KEY_PROGRAM_GRADES, JSON.stringify(store));
-  persistProgramGrades(store);
 }
 
 export function loadProgramGrades(halaqaId: number): HalaqaProgramGradesStore[string] {
   return loadAllProgramGrades()[String(halaqaId)] ?? {};
 }
 
-export function saveProgramGrades(halaqaId: number, grades: HalaqaProgramGradesStore[string]) {
-  const store = loadAllProgramGrades();
-  store[String(halaqaId)] = grades;
-  saveAllProgramGrades(store);
-}
 
 export function newProgramId(): string {
   return `hp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;

@@ -16,7 +16,6 @@ import {
   programSlots,
   PROGRAM_DAYS,
   saveHalaqaPrograms,
-  saveProgramGrades,
   SCHEDULE_MODE_LABELS,
   type HalaqaProgram,
   type ProgramWeekTotals,
@@ -64,6 +63,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { useGradeViewerStudents } from "@/hooks/use-grade-viewer-students";
+import { useProgramGradeCells } from "@/hooks/use-program-grade-cells";
 
 type Props = {
   halaqaId: number;
@@ -88,7 +88,9 @@ export function TeacherHalaqaProgramsPanel({
 }: Props) {
   const [mode, setMode] = useState<"fill" | "charts" | "setup">("fill");
   const [programs, setPrograms] = useState<HalaqaProgram[]>(() => loadHalaqaPrograms(halaqaId));
-  const [grades, setGrades] = useState(() => loadProgramGrades(halaqaId));
+  const programGrades = useProgramGradeCells(halaqaId, calendar.semester?.id ?? null);
+  const { grades } = programGrades;
+  const legacyGrades = loadProgramGrades(halaqaId);
   const [editorOpen, setEditorOpen] = useState(false);
   const [editing, setEditing] = useState<HalaqaProgram | null>(null);
   const [exportOpen, setExportOpen] = useState(false);
@@ -130,7 +132,6 @@ export function TeacherHalaqaProgramsPanel({
 
   useEffect(() => {
     refreshPrograms();
-    setGrades(loadProgramGrades(halaqaId));
     const onProgramsChanged = () => refreshPrograms();
     const onSciChanged = () => refreshPrograms();
     window.addEventListener(HALAQA_PROGRAMS_CHANGED_EVENT, onProgramsChanged);
@@ -148,22 +149,9 @@ export function TeacherHalaqaProgramsPanel({
     };
   }, [halaqaId]);
 
-  const persistGrades = (next: typeof grades) => {
-    setGrades(next);
-    saveProgramGrades(halaqaId, next);
-  };
-
   const setCell = (studentId: string, programId: string, slotKey: string, value: string) => {
     if (readOnly) return;
-    const next = { ...grades };
-    if (!next[studentId]) next[studentId] = {};
-    if (!next[studentId][weekNum]) next[studentId][weekNum] = {};
-    if (!next[studentId][weekNum][programId]) next[studentId][weekNum][programId] = {};
-    const slotMap = { ...next[studentId][weekNum][programId] };
-    if (value) slotMap[slotKey] = value;
-    else delete slotMap[slotKey];
-    next[studentId][weekNum][programId] = slotMap;
-    persistGrades(next);
+    programGrades.setCell(studentId, weekNum, programId, slotKey, value);
   };
 
   const openNewProgram = () => {
@@ -237,7 +225,7 @@ export function TeacherHalaqaProgramsPanel({
       toast.error("لا توجد برامج");
       return;
     }
-    downloadHalaqaProgramsWorkbook(students, halaqaId, halaqaName, calendar, fromDate, toDate);
+    downloadHalaqaProgramsWorkbook(students, halaqaId, halaqaName, calendar, fromDate, toDate, grades);
     setExportOpen(false);
     toast.success("تم تصدير برامج الحلقة");
   };
@@ -319,6 +307,20 @@ export function TeacherHalaqaProgramsPanel({
 
       {historyStatus === "loading" && <p role="status">جارٍ تحميل درجات البرنامج العلمي…</p>}
       {historyStatus === "failed" && <p role="status">تعذّر تحديث درجات البرنامج العلمي من الخادم. تُعرض البيانات المتاحة على هذا الجهاز.</p>}
+      {programGrades.busy && <p role="status">جارٍ تأكيد درجات البرامج…</p>}
+      {programGrades.error && <p role="alert">{programGrades.error}</p>}
+      {programGrades.error && <Button onClick={programGrades.refresh}>تحديث درجات البرامج</Button>}
+      {programGrades.draftCount > 0 && <div role="status">
+        <p>بقيت {programGrades.draftCount} مسودة على هذا الجهاز. تُعرض الدرجات المؤكدة في الجدول.</p>
+        <Button disabled={programGrades.busy} onClick={programGrades.retry}>إعادة محاولة الحفظ</Button>
+      </div>}
+      {Object.keys(legacyGrades).length > 0 && <details>
+        <summary>درجات البرامج المحفوظة على هذا الجهاز من الإصدار السابق</summary>
+        <a download="program-grade-local-backup.json"
+          href={`data:application/json;charset=utf-8,${encodeURIComponent(JSON.stringify(legacyGrades))}`}>
+          تنزيل النسخة المحلية للمراجعة
+        </a>
+      </details>}
       {mode === "setup" && canManagePrograms && !readOnly ? (
         <ProgramSetupSection
           programs={loadHalaqaProgramsAll(halaqaId).filter((p) => p.active !== false && !isScientificHalaqaProgram(p))}
@@ -350,7 +352,7 @@ export function TeacherHalaqaProgramsPanel({
           calendar={calendar}
           selectableWeeks={selectableWeeks}
           grades={grades}
-          readOnly={readOnly}
+          readOnly={readOnly || !programGrades.ready || programGrades.busy}
           onWeekChange={onWeekChange}
           onCellChange={setCell}
           daysByWeek={daysByWeek}
