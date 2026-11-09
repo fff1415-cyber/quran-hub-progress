@@ -37,8 +37,7 @@ jobs:
           asset=(dist/client/assets/TeacherHalaqaProgramsPanel-*.js)
           test "${#asset[@]}" -eq 1
           test -f "${asset[0]}"
-          ! rg -q 'تعذّر تحديث درجات البرنامج العلمي من الخادم|درجات البرامج المحفوظة على هذا الجهاز من الإصدار السابق' "${asset[0]}"
-          rg -q 'إعادة محاولة الحفظ' "${asset[0]}"
+          node -e 'const s=require("node:fs").readFileSync(process.argv[1],"utf8").replace(/\\u([\da-f]{4})/gi,(_,n)=>String.fromCharCode(parseInt(n,16))); if(/تعذّر تحديث درجات البرنامج العلمي من الخادم|درجات البرامج المحفوظة على هذا الجهاز من الإصدار السابق/.test(s)||!s.includes("إعادة محاولة الحفظ"))process.exit(1)' "${asset[0]}"
       - name: Publish only the tested program panel change
         env:
           DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
