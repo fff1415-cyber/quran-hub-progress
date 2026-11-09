@@ -16,7 +16,7 @@ import urllib.parse
 mode, base, target = sys.argv[1:4]
 host = str(ipaddress.IPv4Address(os.environ['DEPLOY_HOST'].strip()))
 user = os.environ['DEPLOY_USER'].strip().split('@')[0]
-if mode not in ('check', 'publish') or not re.fullmatch(r'[A-Za-z0-9_-]+', user) or not all(
+if mode not in ('check', 'publish', 'revert') or not re.fullmatch(r'[A-Za-z0-9_-]+', user) or not all(
         re.fullmatch(r'[0-9a-f]{40}', sha) for sha in (base, target)):
     raise SystemExit('Invalid protected rollback parameters')
 home = '/home/' + user
@@ -71,7 +71,33 @@ def live_acceptance():
         status, _ = site('/api/r.php?' + urllib.parse.urlencode({'path':route}), 'POST')
         if status != 401:
             return False
+    published = (client / 'index.html').read_bytes()
+    paths = set(re.findall(rb'(?:src|href)="(/assets/[a-zA-Z0-9_.-]+\.(?:js|css))"', published))
+    if not paths:
+        return False
+    for path in paths:
+        relative = path.decode()
+        status, body = site(relative)
+        if status != 200 or digest(body) != digest((client / relative.lstrip('/')).read_bytes()):
+            return False
     return True
+
+if mode == 'revert':
+    if live_marker() != target:
+        raise SystemExit('Refusing rollback because the live release has moved')
+    with tempfile.TemporaryDirectory() as temp:
+        ask = pathlib.Path(temp) / 'askpass'
+        ask.write_text('#!/bin/sh\nprintf "%s\\n" "$DEPLOY_SSH_PASSWORD"\n')
+        ask.chmod(0o700)
+        env = dict(os.environ, SSH_ASKPASS=str(ask), SSH_ASKPASS_REQUIRE='force', DISPLAY=':0')
+        ssh = ['ssh','-T','-p','65002','-o','ConnectTimeout=20','-o','StrictHostKeyChecking=accept-new',
+               '-o','NumberOfPasswordPrompts=1',user+'@'+host]
+        command = shlex.join(['php','-d','display_errors=0',stage+'/protected-rollback-release.php','revert',home,base,target])
+        subprocess.run(ssh+[command], env=env, start_new_session=True, timeout=100, check=True)
+    if live_marker() != base or not health():
+        raise SystemExit('Rollback has not passed live verification')
+    print('LIVE_OK previous code restored; database untouched')
+    raise SystemExit(0)
 
 if git('rev-parse', target + '^{tree}').decode().strip() != pathlib.Path('scripts/safe-legacy-tree.txt').read_text().strip():
     raise SystemExit('The approved release tree does not match the tested source')

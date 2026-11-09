@@ -82,10 +82,64 @@ function test_safe_legacy_restore(PDO $pdo, int $cid, array $reads): void {
     $scientific = test_scientific_config_and_scores($pdo,$cid,$id);
     $GLOBALS['stage'] = 'legacy_plan_atomic_save';
     $plan = test_legacy_plan_atomic_save($pdo,$cid,$id);
+    if (getenv('QHP_PERCENTAGE_SAMPLE') === '1') test_percentage_sample($pdo);
     echo json_encode(['database'=>'isolated_test','reads'=>$reads,'teacher_and_assistant_write'=>[200,200],
         'receipt_replayed'=>true,'stale_status'=>$staleStatus,'empty_replacements'=>$bulk,
         'tarbawi_rejections'=>$tarbawiStatuses,'tarbawi_preserved'=>true,
         'historical_values_unchanged'=>true,'synthetic_changes_reverted'=>true,'production_writes'=>false]+$more+$scientific+$plan,JSON_THROW_ON_ERROR).PHP_EOL;
+}
+
+/** Replay one real restored holiday week without exporting names or identifiers. */
+function test_percentage_sample(PDO $pdo): void {
+    $pdo->exec('SET TRANSACTION READ ONLY');
+    $pdo->beginTransaction();
+    try {
+        $cid=(int)$pdo->query("SELECT id FROM complexes WHERE subdomain='m6'")->fetchColumn();
+        $q=$pdo->prepare("SELECT start_date,weeks_count,working_days,excluded_dates FROM semesters WHERE complex_id=? AND is_active=1");
+        $q->execute([$cid]); $semester=$q->fetch();
+        if (!$semester) throw new RuntimeException('percentage_sample_semester_missing');
+        $working=json_decode($semester['working_days'],true,512,JSON_THROW_ON_ERROR);
+        $holidays=array_map(static fn($item)=>is_array($item)?$item['date']:$item,json_decode($semester['excluded_dates'],true,512,JSON_THROW_ON_ERROR));
+        $week=5;
+        $start=new DateTimeImmutable($semester['start_date']);
+        $sunday=$start->modify('-'.$start->format('w').' days')->modify('+'.(($week-1)*7).' days');
+        $keys=['sun','mon','tue','wed','thu','fri','sat'];
+        $eligible=[];
+        foreach ($keys as $offset=>$day) {
+            $date=$sunday->modify('+'.$offset.' days')->format('Y-m-d');
+            if ($date>=$semester['start_date'] && in_array($offset,$working,true) && !in_array($date,$holidays,true)) $eligible[]=$day;
+        }
+        if (!$eligible || count($eligible)===5) throw new RuntimeException('percentage_sample_holiday_missing');
+        $store=grade_cells_store($pdo,$cid,'grades',false);
+        $q=$pdo->prepare('SELECT s.id FROM students s JOIN halaqat h ON h.id=s.halaqa_id AND h.complex_id=s.complex_id
+            WHERE s.complex_id=? AND s.level_type=\'gold\' AND h.is_talqeen=0');
+        $q->execute([$cid]);
+        foreach ($q->fetchAll(PDO::FETCH_COLUMN) as $id) {
+            $record=$store->{$id}->{$week}??null;
+            if (!$record) continue;
+            $earned=0; $days=[];
+            foreach ($keys as $day) {
+                $entry=$record->days->{$day}??null;
+                if (!$entry) continue;
+                $clean=array_intersect_key((array)$entry,array_flip(['attendance','hifz','rabt','muraja','wajib','compensationFaces']));
+                $days[$day]=$clean;
+                if (!in_array($day,$eligible,true)) continue;
+                $earned+=(['present'=>15,'late'=>10,'excused'=>5][$entry->attendance??'']??0);
+                $earned+=in_array($entry->hifz??'', ['half','one','two'],true)?20:0;
+                foreach (['rabt','muraja'] as $task) $earned+=(['pass'=>15,'fail'=>5][$entry->{$task}??'']??0);
+            }
+            $faces=array_sum(array_map(static fn($day)=>(float)($days[$day]['compensationFaces']??0),$eligible));
+            if ($earned===0 || $faces!==0.0 || (float)($record->compensationFaces??0)!==0.0) continue;
+            echo 'PERCENTAGE_SAMPLE '.json_encode([
+                'semester'=>['start_date'=>$semester['start_date'],'weeks_count'=>(int)$semester['weeks_count'],
+                    'working_days'=>$working,'excluded_dates'=>array_map(static fn($date)=>['date'=>$date],$holidays)],
+                'end'=>$sunday->modify('+6 days')->format('Y-m-d'),'week'=>$week,'days'=>$days,
+                'expected'=>(int)round(100*$earned/(65*count($eligible))),
+            ],JSON_THROW_ON_ERROR).PHP_EOL;
+            return;
+        }
+        throw new RuntimeException('percentage_sample_not_found');
+    } finally { $pdo->rollBack(); }
 }
 
 function test_legacy_plan_atomic_save(PDO $pdo,int $cid,string $student): array {

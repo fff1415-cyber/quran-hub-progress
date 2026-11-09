@@ -47,6 +47,13 @@ try {
     $restore = static function () use ($items,$root,$entry,$marker,$backup,$base,$profile): void {
         if (!is_file($backup . '/index.html') || !is_file($backup . '/deploy-sha.txt') ||
             trim(file_get_contents($backup . '/deploy-sha.txt')) !== $base) throw new RuntimeException('release_rollback_missing');
+        $oldEntry = file_get_contents($backup . '/index.html');
+        $entryHash = trim(file_get_contents($backup . '/index.sha256'));
+        if (!hash_equals($entryHash,hash('sha256',$oldEntry)) ||
+            !str_contains($oldEntry,'<!-- qhp-grade-release:' . $base . ' -->')) {
+            throw new RuntimeException('release_rollback_entry_hash');
+        }
+        grade_release_check_assets($root,$oldEntry);
         foreach ($items as $relative=>$row) {
             $old = file_get_contents($backup . '/api/' . $relative);
             if ($old === false || hash('sha256',$old) !== $row['beforeSha256']) throw new RuntimeException('release_rollback_hash');
@@ -57,7 +64,7 @@ try {
         if (is_file($backup . '/retired-plan-profile.php') && !is_file($root . '/api/' . $profile)) {
             grade_release_atomic($root . '/api/' . $profile, file_get_contents($backup . '/retired-plan-profile.php'));
         }
-        grade_release_atomic($entry, file_get_contents($backup . '/index.html'));
+        grade_release_atomic($entry, $oldEntry);
         grade_release_atomic($marker, $base . "\n");
     };
 
@@ -106,6 +113,12 @@ try {
             if (!copy($entry, $backup . '/index.html') || !copy($marker, $backup . '/deploy-sha.txt')) {
                 throw new RuntimeException('release_backup_entry');
             }
+            $entryHash = hash_file('sha256',$entry);
+            if ($entryHash !== hash_file('sha256',$backup . '/index.html') ||
+                file_put_contents($backup . '/index.sha256',$entryHash . "\n") !== 65) {
+                throw new RuntimeException('release_backup_entry_hash');
+            }
+            grade_release_check_assets($root,file_get_contents($backup . '/index.html'));
             foreach ($items as $relative=>$row) {
                 $destination = $backup . '/api/' . $relative;
                 if (!is_dir(dirname($destination)) && !mkdir(dirname($destination), 0700, true)) throw new RuntimeException('release_backup_path');

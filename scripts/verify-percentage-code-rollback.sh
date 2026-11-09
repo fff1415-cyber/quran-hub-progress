@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+set -euo pipefail
+base="$1"
+target="$2"
+[[ "$base" =~ ^[a-f0-9]{40}$ && "$target" =~ ^[a-f0-9]{40}$ ]]
+fixture="/home/qhp-pct-revert-${GITHUB_RUN_ID:?}"
+[[ "$fixture" =~ ^/home/qhp-pct-revert-[0-9]+$ && ! -e "$fixture" ]]
+sudo install -d -m 700 -o "$(id -un)" -g "$(id -gn)" "$fixture"
+root="$fixture/domains/msht.io/public_html"
+private="$fixture/.qhp-private"
+stage="$private/qalaid-release-$target"
+mkdir -p "$root/assets" "$root/api" "$stage/assets"
+chmod 700 "$private" "$stage"
+printf '1' > "$private/grade-cutover.lock"
+printf '%s\n' "$base" > "$root/deploy-sha.txt"
+printf '/* previous immutable bundle */\n' > "$root/assets/previous.js"
+printf '<html><head><script src="/assets/previous.js"></script><!-- qhp-grade-protocol:1 --><!-- qhp-grade-release:%s --></head><body></body></html>\n' "$base" > "$root/index.html"
+printf 'unchanged api\n' > "$root/api/original.php"
+cp "$root/index.html" "$fixture/expected-index"
+cp "$root/api/original.php" "$fixture/expected-api"
+cp scripts/grade-release-entry.php scripts/protected-rollback-release.php "$stage/"
+cp candidate/dist/client/index.html "$stage/"
+cp candidate/dist/client/assets/* "$stage/assets/"
+printf '[]\n' > "$stage/api.json"
+: > "$stage/retired-sha.txt"
+php "$stage/protected-rollback-release.php" check "$fixture" "$base" "$target"
+php "$stage/protected-rollback-release.php" publish "$fixture" "$base" "$target"
+test "$(cat "$root/deploy-sha.txt")" = "$target"
+php "$stage/protected-rollback-release.php" finish "$fixture" "$base" "$target"
+php "$stage/protected-rollback-release.php" revert "$fixture" "$base" "$target"
+cmp "$fixture/expected-index" "$root/index.html"
+cmp "$fixture/expected-api" "$root/api/original.php"
+test "$(cat "$root/deploy-sha.txt")" = "$base"
+test "$(cat "$private/grade-cutover.lock")" = '1'
+echo 'PASS: exact previous HTML and release marker restored; API and atomic-save switch unchanged'
