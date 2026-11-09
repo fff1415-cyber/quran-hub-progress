@@ -42,9 +42,23 @@ function grade_plan_effect(PDO $pdo,int $cid,array $auth,array $effect,string $o
         $done=grade_plan_current_progress($pdo,$student,$assignment);
         $hifz=array_map('intval',array_column(array_filter($done,static fn($r)=>$r['task_type']==='hifz'),'segment_index'));
         $taskDone=array_map('intval',array_column(array_filter($done,static fn($r)=>$r['task_type']===$task),'segment_index'));
-        if($task==='hifz')$next=plans_next_hifz_segments_for_tap($assignment['track'],$tap,(int)$assignment['start_segment_index'],$segments,$hifz);
-        else{$segment=plans_next_segment_for_task($task,(int)$assignment['start_segment_index'],$assignment['start_muraja_segment']===null?null:(int)$assignment['start_muraja_segment'],(int)$assignment['level_number'],$segments,$hifz,$taskDone);$next=$segment===null?[]:[$segment];}
-        if(!$next)throw new RuntimeException('لا توجد مقاطع متاحة؛ لم تُحفظ الدرجة وحدها',409);
+        $start=(int)$assignment['start_segment_index'];
+        if($task==='hifz'){
+            if(plans_segments_for_tap($assignment['track'],$tap)<1)throw new RuntimeException('مقدار الحفظ غير معتمد لمسار الخطة',400);
+            $next=plans_next_hifz_segments_for_tap($assignment['track'],$tap,$start,$segments,$hifz);
+        }else{
+            $segment=plans_next_segment_for_task($task,$start,$assignment['start_muraja_segment']===null?null:(int)$assignment['start_muraja_segment'],(int)$assignment['level_number'],$segments,$hifz,$taskDone);
+            $next=$segment===null?[]:[$segment];
+        }
+        if(!$next){
+            $planSegments=array_filter($segments,static fn($segment)=>$segment >= $start);
+            if(!$planSegments)throw new RuntimeException('تعيين الخطة لا يحتوي مقاطع صالحة للتسجيل',409);
+            if(!array_diff($planSegments,$hifz)){
+                throw new RuntimeException('الخطة مكتملة، ولا توجد مقاطع متاحة للتسجيل لهذا اليوم',409);
+            }
+            // An independent daily mark on an unfinished plan has no completion
+            // to insert or remove. Its empty event still commits with its receipt.
+        }
         foreach($next as $segment) $rows[]=grade_plan_insert_completion($pdo,$student,$assignment,$segment,$task,$date,$auth);
     }else throw new RuntimeException('إجراء الإنجاز غير صالح',400);
     $event=['operation_id'=>$operation,'assignment_id'=>$expected,'student_id'=>$student,'plan_id'=>$assignment['plan_id'],'task_type'=>$task,'cell_path'=>$path,'action'=>$action,'rows'=>$rows,'previous_operation'=>$previous['operation_id']??null];

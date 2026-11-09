@@ -72,4 +72,34 @@ function atomicPlanCases(PDO $pdo):void {
     grade_write_request($pdo,1,$comp('plan-legacy-compensation-reduce','mon',0.0,'legacy-plan','legacy-assignment'),$auth);
     check($pdo->query("SELECT * FROM segment_completions WHERE student_id='legacy-plan'")->fetchAll()===[$legacyRow],
         'reducing compensation preserves the original legacy completion');
+
+    $link=$packet('plan-link-first-segment','sun','rabt','pass','record','legacy-assignment','legacy-plan');
+    grade_write_request($pdo,1,$link,$auth);
+    $original=$pdo->query("SELECT * FROM segment_completions WHERE student_id='legacy-plan' ORDER BY id")->fetchAll();
+    $gradeOnly=$packet('plan-link-caught-up','mon','rabt','pass','record','legacy-assignment','legacy-plan');
+    $receipt=grade_write_request($pdo,1,$gradeOnly,$auth);
+    $q->execute(['grade_plan_event:'.hash('sha256',$receipt['operation_id'])]);
+    check(json_decode((string)$q->fetchColumn(),true)['rows']===[] &&
+        json_decode(gradeCellRaw($pdo,1),true)['legacy-plan'][1]['days']['mon']['rabt']==='pass' &&
+        grade_write_request($pdo,1,$gradeOnly,$auth)['replayed'] &&
+        $pdo->query("SELECT * FROM segment_completions WHERE student_id='legacy-plan' ORDER BY id")->fetchAll()===$original,
+        'an unfinished plan accepts a caught-up daily mark once without duplicating a completion');
+    grade_write_request($pdo,1,$packet('plan-link-caught-up-undo','mon','rabt','','undo','legacy-assignment','legacy-plan'),$auth);
+    check($pdo->query("SELECT * FROM segment_completions WHERE student_id='legacy-plan' ORDER BY id")->fetchAll()===$original &&
+        json_decode(gradeCellRaw($pdo,1),true)['legacy-plan'][1]['days']['mon']['rabt']==='',
+        'undoing a daily-only mark preserves the earlier linked completion');
+    grade_write_request($pdo,1,$packet('plan-review-first-segment','sun','muraja','pass','record','legacy-assignment','legacy-plan'),$auth);
+    grade_write_request($pdo,1,$packet('plan-review-caught-up','mon','muraja','pass','record','legacy-assignment','legacy-plan'),$auth);
+    check((int)$pdo->query("SELECT COUNT(*) FROM segment_completions WHERE student_id='legacy-plan' AND task_type='muraja'")->fetchColumn()===1,
+        'review also accepts a daily mark without inventing a completion');
+    grade_write_request($pdo,1,$packet('plan-final-two-segments','mon','hifz','one','record','legacy-assignment','legacy-plan'),$auth);
+    grade_write_request($pdo,1,$packet('plan-final-one-segment','tue','hifz','one','record','legacy-assignment','legacy-plan'),$auth);
+    $before=gradeCellRaw($pdo,1);
+    gradeCellFailure(fn()=>grade_write_request($pdo,1,$packet('plan-finished-memorization','wed','hifz','one','record','legacy-assignment','legacy-plan'),$auth),'الخطة مكتملة');
+    check(gradeCellRaw($pdo,1)===$before,'completed-plan rejection changes neither the daily mark nor plan progress');
+    grade_write_request($pdo,1,$packet('plan-finished-hifz-link-remains','wed','rabt','pass','record','legacy-assignment','legacy-plan'),$auth);
+    check((int)$pdo->query("SELECT COUNT(*) FROM segment_completions WHERE student_id='legacy-plan' AND task_type='rabt'")->fetchColumn()===2,
+        'a remaining linking segment can still be recorded after memorization is complete');
+    grade_write_request($pdo,1,$packet('plan-final-rabt','tue','rabt','pass','record','legacy-assignment','legacy-plan'),$auth);
+    gradeCellFailure(fn()=>grade_write_request($pdo,1,$packet('plan-finished-rabt','mon','rabt','pass','record','legacy-assignment','legacy-plan'),$auth),'الخطة مكتملة');
 }
