@@ -35,6 +35,8 @@ if os.environ.get('QHP_SAFE_LEGACY_CANDIDATE') == '1':
         probe = probe.replace('declare(strict_types=1);', "declare(strict_types=1);\nputenv('QHP_PERCENTAGE_SAMPLE=1');", 1)
     if os.environ.get('QHP_DAILY_WITHOUT_SEGMENT') == '1':
         probe = probe.replace('declare(strict_types=1);', "declare(strict_types=1);\nputenv('QHP_DAILY_WITHOUT_SEGMENT=1');", 1)
+    if os.environ.get('QHP_PROGRAM_DISPLAY_ACCEPTANCE') == '1':
+        probe = probe.replace('declare(strict_types=1);', "declare(strict_types=1);\nputenv('QHP_PROGRAM_DISPLAY_ACCEPTANCE=1');", 1)
 else:
     pieces.extend(subprocess.check_output(['git','show',old+':'+name]) for name in paths)
 loaded = ''.join("eval(substr(base64_decode('" + base64.b64encode(piece).decode() + "'),5));\n" for piece in pieces)
@@ -48,6 +50,17 @@ with tempfile.TemporaryDirectory() as folder:
     result = subprocess.run(['ssh','-T','-p','65002','-o','ConnectTimeout=30','-o','StrictHostKeyChecking=accept-new',
         '-o','NumberOfPasswordPrompts=1',user+'@'+host,command], input=probe, env=env, encoding='utf-8',
         capture_output=True, timeout=100, start_new_session=True)
-    print(result.stdout, end='')
+    prefix = 'QHP_PRIVATE_PROGRAM_FIXTURE '
+    fixtures = []
+    for line in result.stdout.splitlines():
+        if line.startswith(prefix):
+            fixtures.append(line[len(prefix):])
+        else:
+            print(line)
     if result.returncode:
         raise SystemExit('Isolated legacy compatibility probe did not complete')
+    if os.environ.get('QHP_PROGRAM_DISPLAY_ACCEPTANCE') == '1':
+        if len(fixtures) != 1:
+            raise SystemExit('Expected one isolated program display fixture')
+        subprocess.run(['node', '../scripts/verify-program-display.cjs'], cwd='candidate',
+                       input=fixtures[0], encoding='utf-8', check=True)

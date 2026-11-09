@@ -30,6 +30,17 @@ function verify_teacher_program_history(PDO $pdo): void {
         }
         ksort($weekCounts);
         echo json_encode(['m6_scientific_history'=>$weekCounts,'reads'=>$statuses,'database'=>'isolated_test'],JSON_THROW_ON_ERROR).PHP_EOL;
+        if (getenv('QHP_PROGRAM_DISPLAY_ACCEPTANCE') === '1') {
+            $calendar = probe('handle_get_active_semester')->body;
+            $programs = probe('handle_list_app_state',['key'=>'halaqa_programs'])->body[0]['value'] ?? [];
+            $grades = probe('handle_list_app_state',['key'=>'halaqa_program_grades'])->body[0]['value'] ?? [];
+            $students = $pdo->prepare('SELECT id,halaqa_id FROM students WHERE complex_id=?');
+            $students->execute([$complex]);
+            echo 'QHP_PRIVATE_PROGRAM_FIXTURE '.json_encode([
+                'calendar'=>$calendar,'scientific'=>$response->body[0]['value'],
+                'programs'=>$programs,'grades'=>$grades,'students'=>$students->fetchAll(),
+            ],JSON_THROW_ON_ERROR).PHP_EOL;
+        }
     } finally {
         $pdo->rollBack();
         $GLOBALS['testAuth'] = $previousAuth;
