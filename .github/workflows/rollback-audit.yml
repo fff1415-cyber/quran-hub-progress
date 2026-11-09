@@ -8,7 +8,7 @@ jobs:
   preserve:
     if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 8
     concurrency:
       group: hostinger-independent-test-restoration
       cancel-in-progress: false
@@ -17,34 +17,16 @@ jobs:
       DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
       DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
       DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-      EXPECTED_RELEASE: 1c86b492ae4f7815219ad040cfb8e92658da59a6
-      AUDIT_MODE: compatibility-only
+      EXPECTED_RELEASE: 4e8cfc813651d36f49a3c1ed5ddb9561a5442eab
+      HAMMAM_RECOVERY_AUDIT: '1'
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 24
-      - name: Preserve exact deployed code and inspect production aggregates read only
-        if: env.AUDIT_MODE != 'compatibility-only'
-        run: python3 scripts/rollback-audit.py
-      - name: Create and verify the private production database archive
-        if: env.AUDIT_MODE != 'compatibility-only'
+      - name: Create a fresh private production backup
+        if: env.HAMMAM_RECOVERY_AUDIT == '1'
         run: python3 scripts/create-private-db-backup.py
-      - name: Restore the private archive only to the separate test database and verify hashes
-        if: env.AUDIT_MODE != 'compatibility-only'
+      - name: Restore and verify the archive only in the independent test database
+        if: env.HAMMAM_RECOVERY_AUDIT == '1'
         run: python3 scripts/restore-hostinger-test.py
-      - name: Test pinned legacy handlers against the fresh restored copy
-        run: python3 scripts/rollback-compat-probe.py
-      - name: Verify protected handlers with the same isolated restore
-        env:
-          QHP_SAFE_LEGACY_CANDIDATE: '1'
-          QHP_PROGRAM_DISPLAY_ACCEPTANCE: '1'
-        run: |
-          git worktree add --detach candidate 7e9adf1d4059f20289f182e31613e18fe2cf0877
-          cat scripts/safe-legacy-patch-*.b64 | base64 --decode | gzip -dc > "$RUNNER_TEMP/safe-legacy.patch"
-          git -C candidate apply --index "$RUNNER_TEMP/safe-legacy.patch"
-          test "$(git -C candidate write-tree)" = "$(cat scripts/safe-legacy-tree.txt)"
-          npm --prefix candidate ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
-          python3 scripts/rollback-compat-probe.py
+      - name: Trace the grading history with production reads only
+        if: env.HAMMAM_RECOVERY_AUDIT == '1'
+        run: python3 scripts/hammam-recovery-audit.py
