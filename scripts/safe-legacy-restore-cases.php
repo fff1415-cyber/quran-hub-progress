@@ -1,5 +1,6 @@
 <?php
 function verify_teacher_program_history(PDO $pdo): void {
+    $previousAuth = $GLOBALS['testAuth'];
     $pdo->exec('SET TRANSACTION READ ONLY');
     $pdo->beginTransaction();
     try {
@@ -31,6 +32,7 @@ function verify_teacher_program_history(PDO $pdo): void {
         echo json_encode(['m6_scientific_history'=>$weekCounts,'reads'=>$statuses,'database'=>'isolated_test'],JSON_THROW_ON_ERROR).PHP_EOL;
     } finally {
         $pdo->rollBack();
+        $GLOBALS['testAuth'] = $previousAuth;
     }
 }
 // Appended to the isolated-restore probe after the read checks. Runs only on
