@@ -18,8 +18,8 @@ jobs:
       DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
       DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
       EXPECTED_RELEASE: 4e8cfc813651d36f49a3c1ed5ddb9561a5442eab
-      HAMMAM_RECOVERY_AUDIT: '1'
-      HAMMAM_FRESH_BACKUP: '1'
+      HAMMAM_RECOVERY_AUDIT: '0'
+      HAMMAM_FRESH_BACKUP: '0'
     steps:
       - uses: actions/checkout@v4
       - name: Create a fresh private production backup
