@@ -212,6 +212,10 @@ function test_legacy_plan_atomic_save(PDO $pdo,int $cid,string $student): array 
     $first=$packet('one','record');
     $receipt=$write($first,'teacher');
     $retry=$write($first,'teacher');
+    $availability=plans_grade_availability($pdo,[$assignment])[$assignment]??null;
+    if ($availability!==['hifz'=>'available','rabt'=>'available','muraja'=>'available']) {
+        throw new RuntimeException('restored_plan_availability_mismatch');
+    }
     [$value,$done]=$read('assistant');sort($done);
     if ($receipt->getCode()!==200 || ($receipt->body['operation_id']??null)!==$first['operation_id'] ||
         ($retry->body['replayed']??false)!==true || $value!=='one' || $done!==array_slice($segments,0,2)) {
