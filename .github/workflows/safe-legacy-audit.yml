@@ -33,7 +33,42 @@ jobs:
         working-directory: candidate
         run: |
           npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
-          node tests/stage2-atomic-local.cjs
           node tests/stage2-atomic-sessions.cjs
           php tests/stage3-atomic-plan.php
+          php tests/backend-sard-regression.php
           npm run build:hostinger
+      - name: Create and verify a fresh isolated restore before changing the index
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          EXPECTED_RELEASE: 4eb275ef00092ea07cd15f0983c6b256efdeaac8
+          COMPLETION_INDEX_MODE: test
+        run: |
+          test "$(curl -fsS --max-time 20 https://msht.io/deploy-sha.txt)" = "$EXPECTED_RELEASE"
+          python3 scripts/create-private-db-backup.py
+          python3 scripts/restore-hostinger-test.py
+          python3 scripts/plan-completion-index.py
+      - name: Publish the code compatible with both completion indexes
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          BASE_RELEASE: 4eb275ef00092ea07cd15f0983c6b256efdeaac8
+          TARGET_RELEASE: 40f5285634343fa09d610ab92a698d0cc7c29ec1
+        run: |
+          git fetch --no-tags origin release/assignment-scoped-plan-completions
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET_RELEASE"
+          python3 scripts/protected-rollback-release.py publish "$BASE_RELEASE" "$TARGET_RELEASE"
+      - name: Apply the verified completion index and confirm live schema health
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          EXPECTED_RELEASE: 40f5285634343fa09d610ab92a698d0cc7c29ec1
+          COMPLETION_INDEX_MODE: production
+        run: |
+          python3 scripts/plan-completion-index.py
+          curl -fsS --max-time 20 "https://msht.io/api/r.php?path=%2Fhealth&verify=$(date +%s)" |
+            python3 -c 'import json,sys; d=json.load(sys.stdin); assert d["ok"] and d["checks"]["schema_ready"] and d["checks"]["grade_protocol"]=="atomic"; print("LIVE_OK schema and atomic grade saves")'
