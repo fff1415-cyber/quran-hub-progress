@@ -1,0 +1,24 @@
+name: Emergency database preservation
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  preserve:
+    if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 6
+    concurrency:
+      group: hostinger-independent-test-restoration
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+      DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+      DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+      DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compare the two complexes in verified archives
+        run: python3 scripts/two-complex-incident.py
+

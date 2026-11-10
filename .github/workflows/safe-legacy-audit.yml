@@ -1,0 +1,39 @@
+name: Verify old Qalaid with protected saves
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  acceptance:
+    if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    concurrency:
+      group: hostinger-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: pdo_sqlite
+      - name: Reconstruct the exact candidate from the approved old code
+        run: |
+          git worktree add --detach candidate 7e9adf1d4059f20289f182e31613e18fe2cf0877
+          cat scripts/safe-legacy-patch-*.b64 | base64 --decode | gzip -dc > "$RUNNER_TEMP/safe-legacy.patch"
+          git -C candidate apply --index "$RUNNER_TEMP/safe-legacy.patch"
+          test "$(git -C candidate write-tree)" = "$(cat scripts/safe-legacy-tree.txt)"
+      - name: Build and test the candidate without production access
+        working-directory: candidate
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+          node tests/stage2-atomic-sessions.cjs
+          php tests/stage3-atomic-plan.php
+          php tests/backend-sard-regression.php
+          npm run build:hostinger
