@@ -90,8 +90,10 @@ function grade_plan_insert_completion(PDO $pdo,string $student,array $assignment
         $pdo->prepare('INSERT INTO segment_completions(id,student_id,plan_id,segment_index,task_type,completed_at,recorded_by,assignment_id) VALUES(?,?,?,?,?,?,?,?)')
             ->execute([$id,$student,$assignment['plan_id'],$segment,$task,$date,(string)($auth['name']??'المعلم'),$assignment['id']]);
     } catch (PDOException $error) {
-        if ((int)($error->errorInfo[1]??0)!==1062 ||
-            !str_contains((string)($error->errorInfo[2]??''),'uk_completion')) throw $error;
+        $detail=(string)($error->errorInfo[2]??'');
+        if ((int)($error->errorInfo[1]??0)!==1062 || !str_contains($detail,'uk_completion')) throw $error;
+        if (str_contains($detail,'uk_completion_assignment'))
+            throw new RuntimeException('سُجّل هذا المقطع في التعيين الحالي؛ حدّث الخطة قبل إعادة التسجيل.',409,$error);
         throw new RuntimeException('المقطع مرتبط بإنجاز سابق لا يخص التعيين الحالي. بقيت الدرجة مسودة والإنجاز السابق محفوظًا.',409,$error);
     }
     $q=$pdo->prepare('SELECT * FROM segment_completions WHERE id=?');

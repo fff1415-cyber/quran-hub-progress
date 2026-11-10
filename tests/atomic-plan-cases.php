@@ -8,7 +8,7 @@ function atomicPlanCases(PDO $pdo):void {
     CREATE TABLE education_plans(id VARCHAR(36) PRIMARY KEY,complex_id INT,track VARCHAR(10),level_number INT);INSERT INTO education_plans VALUES('plan',1,'gold',1001);
     CREATE TABLE student_plan_assignments(id VARCHAR(36) PRIMARY KEY,student_id VARCHAR(50),plan_id VARCHAR(36),status VARCHAR(20),start_segment_index INT,start_muraja_segment INT,assigned_at TIMESTAMP);INSERT INTO student_plan_assignments VALUES('assignment','planned','plan','active',1,NULL,'2026-10-04 00:00:00');
     CREATE TABLE plan_segments(plan_id VARCHAR(36),segment_index INT);INSERT INTO plan_segments VALUES('plan',1),('plan',2),('plan',3);
-    CREATE TABLE segment_completions(id VARCHAR(36) PRIMARY KEY,student_id VARCHAR(50),plan_id VARCHAR(36),segment_index INT,task_type VARCHAR(10),completed_at VARCHAR(10),recorded_by VARCHAR(50),assignment_id VARCHAR(36),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,UNIQUE(student_id,plan_id,segment_index,task_type));");
+    CREATE TABLE segment_completions(id VARCHAR(36) PRIMARY KEY,student_id VARCHAR(50),plan_id VARCHAR(36),segment_index INT,task_type VARCHAR(10),completed_at VARCHAR(10),recorded_by VARCHAR(50),assignment_id VARCHAR(36),created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,CONSTRAINT uk_completion_assignment UNIQUE(student_id,plan_id,segment_index,task_type,assignment_id));");
     $auth=['role'=>'teacher','complexId'=>1,'halaqaId'=>1,'name'=>'fixture'];
     $pdo->exec("ALTER TABLE semesters ADD COLUMN start_date VARCHAR(10);ALTER TABLE semesters ADD COLUMN weeks_count INT;ALTER TABLE semesters ADD COLUMN working_days TEXT;ALTER TABLE semesters ADD COLUMN excluded_dates TEXT;UPDATE semesters SET start_date='2026-10-04',weeks_count=4,working_days='[0,1,2,3,4]',excluded_dates='[]'");
     $packet=static function(string $operation,string $day,string $task,string $value,string $action='record',string $assignment='assignment',string $student='planned')use($pdo):array{
@@ -102,4 +102,21 @@ function atomicPlanCases(PDO $pdo):void {
         'a remaining linking segment can still be recorded after memorization is complete');
     grade_write_request($pdo,1,$packet('plan-final-rabt','tue','rabt','pass','record','legacy-assignment','legacy-plan'),$auth);
     gradeCellFailure(fn()=>grade_write_request($pdo,1,$packet('plan-finished-rabt','mon','rabt','pass','record','legacy-assignment','legacy-plan'),$auth),'الخطة مكتملة');
+
+    $pdo->exec("INSERT INTO students VALUES('reassigned',1,1);
+        INSERT INTO student_plan_assignments VALUES
+        ('old-reassigned','reassigned','plan','transferred',1,NULL,'2026-08-04 00:00:00'),
+        ('new-reassigned','reassigned','plan','active',1,NULL,'2026-10-04 00:00:00');
+        INSERT INTO segment_completions(id,student_id,plan_id,segment_index,task_type,completed_at,recorded_by,assignment_id)
+        VALUES('old-completion','reassigned','plan',1,'hifz','2026-08-04','historic','old-reassigned')");
+    $historical=$pdo->query("SELECT * FROM segment_completions WHERE id='old-completion'")->fetch();
+    $new=$packet('plan-reassigned-hifz','sun','hifz','one','record','new-reassigned','reassigned');
+    grade_write_request($pdo,1,$new,$auth);
+    check(grade_write_request($pdo,1,$new,$auth)['replayed'] &&
+        (int)$pdo->query("SELECT COUNT(*) FROM segment_completions WHERE student_id='reassigned' AND segment_index=1")->fetchColumn()===2 &&
+        $pdo->query("SELECT * FROM segment_completions WHERE id='old-completion'")->fetch()===$historical,
+        'reassigned plan records the same segment once for its new assignment and preserves the historical row');
+    grade_write_request($pdo,1,$packet('plan-reassigned-undo','sun','hifz','','undo','new-reassigned','reassigned'),$auth);
+    check($pdo->query("SELECT * FROM segment_completions WHERE student_id='reassigned'")->fetchAll()===[$historical],
+        'canceling the new grade preserves the previous assignment completion');
 }

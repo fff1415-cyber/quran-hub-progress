@@ -81,7 +81,13 @@ function schema_inspect(PDO $pdo): array
     }
     $missingKeys = [];
     foreach (schema_required_unique_keys() as $table => $expected) {
-        foreach ($expected as $key) if (!in_array($key, array_values($keys[$table] ?? []), true)) $missingKeys[] = $table . '(' . implode(',', $key) . ')';
+        foreach ($expected as $key) {
+            $available = array_values($keys[$table] ?? []);
+            if (in_array($key, $available, true)) continue;
+            if ($table === 'segment_completions' && $key === ['student_id', 'plan_id', 'segment_index', 'task_type'] &&
+                in_array([...$key, 'assignment_id'], $available, true)) continue;
+            $missingKeys[] = $table . '(' . implode(',', $key) . ')';
+        }
     }
     $stateType = $present['app_state']['value'] ?? null;
     $capacityReady = in_array($stateType, ['json', 'longtext'], true);

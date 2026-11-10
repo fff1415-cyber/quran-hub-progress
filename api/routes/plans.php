@@ -1434,7 +1434,7 @@ function handle_remove_plan_completions(): void
     }
 
     $assignStmt = $pdo->prepare(
-        'SELECT plan_id FROM student_plan_assignments WHERE student_id = ? AND status = \'active\' ORDER BY assigned_at DESC LIMIT 1'
+        'SELECT id,plan_id,assigned_at FROM student_plan_assignments WHERE student_id = ? AND status = \'active\' ORDER BY assigned_at DESC LIMIT 1'
     );
     $assignStmt->execute([$studentId]);
     $assignment = $assignStmt->fetch();
@@ -1451,9 +1451,10 @@ function handle_remove_plan_completions(): void
     }
 
     $placeholders = implode(',', array_fill(0, count($indexes), '?'));
-    $params = array_merge([$studentId, $planId, $taskType], $indexes);
+    $params = array_merge([$studentId, $planId, $taskType, $assignment['id'], $assignment['assigned_at']], $indexes);
     $stmt = $pdo->prepare(
-        "DELETE FROM segment_completions WHERE student_id = ? AND plan_id = ? AND task_type = ? AND segment_index IN ($placeholders)"
+        "DELETE FROM segment_completions WHERE student_id = ? AND plan_id = ? AND task_type = ?
+         AND (assignment_id = ? OR (assignment_id IS NULL AND created_at >= ?)) AND segment_index IN ($placeholders)"
     );
     $stmt->execute($params);
 
@@ -1536,18 +1537,12 @@ function handle_supervisor_plan_hifz(): void
 
         $completionStmt = $pdo->prepare(
             "SELECT id, assignment_id FROM segment_completions
-             WHERE student_id = ? AND plan_id = ? AND segment_index = ? AND task_type = 'hifz' FOR UPDATE"
+             WHERE student_id = ? AND plan_id = ? AND segment_index = ? AND task_type = 'hifz'
+               AND (assignment_id = ? OR (assignment_id IS NULL AND created_at >= ?))
+             ORDER BY assignment_id IS NULL LIMIT 1 FOR UPDATE"
         );
-        $completionStmt->execute([$studentId, $assignment['plan_id'], $segment]);
+        $completionStmt->execute([$studentId, $assignment['plan_id'], $segment, $assignmentId, $assignment['assigned_at']]);
         $completion = $completionStmt->fetch();
-        if ($completion && $completion['assignment_id'] !== $assignmentId) {
-            // Legacy NULL rows are valid only when they were recorded after this assignment.
-            $legacy = $pdo->prepare('SELECT 1 FROM segment_completions WHERE id = ? AND assignment_id IS NULL AND created_at >= ?');
-            $legacy->execute([$completion['id'], $assignment['assigned_at']]);
-            if (!$legacy->fetchColumn()) {
-                throw new RuntimeException('هذا اليوم مرتبط بخطة سابقة — لا يمكن الكتابة فوق سجله');
-            }
-        }
         if ($action === 'complete' && !$completion) {
             $insert = $pdo->prepare(
                 "INSERT INTO segment_completions
