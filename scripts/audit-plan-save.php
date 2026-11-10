@@ -3,7 +3,7 @@ declare(strict_types=1);
 if (PHP_SAPI!=='cli') exit(1);
 $root=$argv[1]??'';
 if (!preg_match('~^/home/[A-Za-z0-9_-]+/domains/msht\.io/public_html$~D',$root) || realpath($root)!==$root ||
-    trim(file_get_contents($root.'/deploy-sha.txt'))!=='484c404fed5f950e4868138d1039a45115c6f0b9') exit(1);
+    trim(file_get_contents($root.'/deploy-sha.txt'))!=='4eb275ef00092ea07cd15f0983c6b256efdeaac8') exit(1);
 require $root.'/api/config.php';
 require $root.'/api/routes/plans.php';
 if (DB_NAME!=='u112851217_msht_io') exit(1);
@@ -12,7 +12,9 @@ try {
         [PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC]);
     $pdo->exec('SET TRANSACTION READ ONLY');$pdo->beginTransaction();
     $indices=$pdo->query("SELECT INDEX_NAME,GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) AS columns_used FROM information_schema.STATISTICS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='segment_completions' AND NON_UNIQUE=0 GROUP BY INDEX_NAME")->fetchAll();
-    $legacy=$pdo->query("SELECT spa.id,spa.student_id,spa.plan_id,spa.start_segment_index,spa.assigned_at,ep.track FROM student_plan_assignments spa JOIN education_plans ep ON ep.id=spa.plan_id WHERE spa.status='active' AND EXISTS(SELECT 1 FROM segment_completions c WHERE c.student_id=spa.student_id AND c.plan_id=spa.plan_id AND c.task_type='hifz' AND (c.assignment_id IS NULL OR c.assignment_id<>spa.id))")->fetchAll();
+    $scope=$pdo->query("SELECT h.name FROM halaqat h JOIN complexes x ON x.id=h.complex_id WHERE h.id=14 AND x.subdomain='m6'")->fetchColumn();
+    if(!$scope)throw new RuntimeException('m6_halaqa_scope');
+    $legacy=$pdo->query("SELECT spa.id,spa.student_id,spa.plan_id,spa.start_segment_index,spa.assigned_at,ep.track FROM student_plan_assignments spa JOIN education_plans ep ON ep.id=spa.plan_id JOIN students s ON s.id=spa.student_id JOIN complexes x ON x.id=s.complex_id WHERE x.subdomain='m6' AND s.halaqa_id=14 AND spa.status='active' AND EXISTS(SELECT 1 FROM segment_completions c WHERE c.student_id=spa.student_id AND c.plan_id=spa.plan_id AND c.task_type='hifz' AND (c.assignment_id IS NULL OR c.assignment_id<>spa.id))")->fetchAll();
     $segment=$pdo->prepare('SELECT segment_index FROM plan_segments WHERE plan_id=? ORDER BY segment_index');
     $completions=$pdo->prepare("SELECT assignment_id,segment_index,created_at FROM segment_completions WHERE student_id=? AND plan_id=? AND task_type='hifz'");
     $counts=['active_with_other_or_legacy_completion'=>count($legacy),'current_selector_duplicate'=>0,'fixed_selector_duplicate'=>0,'fixed_can_save'=>0,'older_assignment_collision'=>0,'legacy_current_collision'=>0];
@@ -38,7 +40,7 @@ try {
         elseif ($fixed) $counts['fixed_can_save']++;
     }
     $pdo->rollBack();
-    echo json_encode(['status'=>'plan_save_audit','production_writes'=>false,'unique_indexes'=>$indices]+$counts,JSON_THROW_ON_ERROR).PHP_EOL;
+    echo json_encode(['status'=>'plan_save_audit','halaqa'=>$scope,'production_writes'=>false,'unique_indexes'=>$indices]+$counts,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE).PHP_EOL;
 } catch(Throwable $e) {
     echo json_encode(['status'=>'audit_failed','class'=>get_class($e)]).PHP_EOL;exit(1);
 }
