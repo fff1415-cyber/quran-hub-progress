@@ -255,3 +255,7 @@ export type GradeHistoryRow = { key: import("./grade-outbox").GradeStoreKey; val
 export function secureGradeHistory(token: string, key: import("./grade-outbox").GradeStoreKey) {
   return apiFetch<GradeHistoryRow[]>("/app-state?key=" + key + "&history=1", { auth: token });
 }
+export function secureListTransfers(token: string) { return apiFetch<import("./transfer-outbox").TransferSnapshot>("/transfers", { auth: token }); }
+export function secureTransferOperation(token: string, packet: import("./transfer-outbox").TransferCommand) {
+  return apiFetch<{ ok: boolean; operation_id: string; thread_id: string; input_sha256: string }>("/transfers", { method: "POST", auth: token, body: JSON.stringify(packet) });
+}

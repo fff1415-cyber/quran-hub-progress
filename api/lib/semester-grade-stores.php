@@ -23,7 +23,7 @@ function grade_store_key(PDO $pdo,int $cid,string $key,array $calendar):string {
     return 'term:'.$semester.':'.grade_store_base_key($key);
 }
 function grade_store_current_key(PDO $pdo,int $cid,string $key):string{return grade_store_key($pdo,$cid,$key,grade_cells_calendar($pdo,$cid,false));}
-function grade_store_internal_key(string $key):bool{return str_starts_with($key,'term:')||str_starts_with($key,'grade_plan_');}
+function grade_store_internal_key(string $key):bool{$key=strtolower($key);return str_starts_with($key,'term:')||str_starts_with($key,'grade_plan_')||str_starts_with($key,'transfer_');}
 
 /** Weekly slots have a virtual pristine blank, permitting independent first writes to different indices. */
 function grade_weekly_slot(string $key,array $path):bool{return grade_store_base_key($key)==='weekly_tests'&&count($path)===4&&in_array($path[2],['muraja','rabt'],true)&&ctype_digit($path[3])&&(int)$path[3]<=5;}

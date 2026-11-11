@@ -1,3 +1,4 @@
+import { isSharedTransfer } from "@/lib/shared-transfers";
 import { useState } from "react";
 import { Check, Trash2 } from "lucide-react";
 import {
@@ -32,6 +33,7 @@ export function InboxItemActions({
   onDismiss,
   onRemove,
 }: Props) {
+  const shared = isSharedTransfer(id);
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -54,7 +56,7 @@ export function InboxItemActions({
       else deleteNotification(id);
       setOpen(false);
       onDone();
-      toast.success("تم الحذف");
+      toast.success(shared ? "أُخفي الإشعار من عرض هذا الحساب؛ بقي السجل محفوظًا" : "تم الحذف");
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "تعذّر حذف الإشعار");
     } finally { setBusy(false); }
@@ -81,16 +83,16 @@ export function InboxItemActions({
             className="p-2 rounded-lg bg-destructive/10 text-destructive border border-destructive/30"
             aria-label="حذف"
             disabled={busy}
-            title="حذف نهائي"
+            title={shared ? "إخفاء من هذا الحساب" : "حذف نهائي"}
           >
             <Trash2 className="w-4 h-4" />
           </button>
         </AlertDialogTrigger>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>حذف هذا السجل؟</AlertDialogTitle>
+            <AlertDialogTitle>{shared ? "إخفاء هذا الإشعار؟" : "حذف هذا السجل؟"}</AlertDialogTitle>
             <AlertDialogDescription>
-              {isLateEntry
+              {shared ? "سيُخفى من عرض هذا الحساب فقط، ويبقى سجل التحويل وإجراءاته محفوظًا لدى الجهات المخولة." : isLateEntry
                 ? "سيُحذف الإشعار من القائمة. سجل إذن الدخول في النظام يبقى كما هو."
                 : "سيُحذف نهائياً من هذا الجهاز ولا يمكن التراجع."}
             </AlertDialogDescription>

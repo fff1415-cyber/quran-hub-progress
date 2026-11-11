@@ -53,6 +53,7 @@ function handle_list_app_state(): void
     $pdo = db();
     $tenants = app_state_tenant_enabled($pdo);
     $keyFilter = (string) ($_GET['key'] ?? '');
+    if ($keyFilter !== '' && !preg_match('/^[a-z0-9_:-]+$/D', $keyFilter)) error_response('معرّف مخزن غير صالح؛ استخدم معرّف الواجهة المعتمد', 400);
     if (grade_store_internal_key($keyFilter)) error_response('سجلات الحفظ الداخلية غير متاحة من مخزن التطبيق العام', 403);
     if ($keyFilter === 'staff_tasks_v1') error_response('اعرض المهام من الواجهة المخصصة', 403);
 
@@ -84,7 +85,7 @@ function handle_list_app_state(): void
             $stmt->execute([$cid, $keyFilter]);
             $rows = $stmt->fetchAll();
         } else {
-            $stmt = $pdo->prepare("SELECT `key`, value FROM app_state WHERE complex_id = ? AND SUBSTR(`key`,1,11) <> 'grade_plan_' AND SUBSTR(`key`,1,5) <> 'term:'");
+            $stmt = $pdo->prepare("SELECT `key`, value FROM app_state WHERE complex_id = ? AND SUBSTR(`key`,1,11) <> 'grade_plan_' AND SUBSTR(`key`,1,5) <> 'term:' AND SUBSTR(`key`,1,9) <> 'transfer_'");
             $stmt->execute([$cid]);
             $rows = $stmt->fetchAll();
         }
@@ -93,9 +94,9 @@ function handle_list_app_state(): void
         $stmt->execute([$keyFilter]);
         $rows = $stmt->fetchAll();
     } else {
-        $rows = $pdo->query("SELECT `key`, value FROM app_state WHERE SUBSTR(`key`,1,11) <> 'grade_plan_' AND SUBSTR(`key`,1,5) <> 'term:'")->fetchAll();
+        $rows = $pdo->query("SELECT `key`, value FROM app_state WHERE SUBSTR(`key`,1,11) <> 'grade_plan_' AND SUBSTR(`key`,1,5) <> 'term:' AND SUBSTR(`key`,1,9) <> 'transfer_'")->fetchAll();
     }
-    $rows = array_values(array_filter($rows, static fn (array $row): bool => ($row['key'] ?? '') !== 'staff_tasks_v1' && !str_starts_with((string)($row['key'] ?? ''), 'grade_plan_')));
+    $rows = array_values(array_filter($rows, static fn (array $row): bool => ($row['key'] ?? '') !== 'staff_tasks_v1' && !grade_store_internal_key((string)($row['key'] ?? ''))));
     foreach ($rows as &$row) {
         $row['value'] = json_decode($row['value'] ?? '{}', true);
         $row['context_complex_id'] = $cid;
@@ -364,6 +365,7 @@ function handle_set_app_state(): void
     $cid = require_complex_id($auth);
     $input = json_input();
     $key = (string) ($input['key'] ?? '');
+    if ($key !== '' && !preg_match('/^[a-z0-9_:-]+$/D', $key)) error_response('معرّف مخزن غير صالح؛ لم تتغير البيانات', 400);
     if (grade_store_internal_key($key)) error_response('سجلات الحفظ الداخلية لا تُستبدل من مخزن التطبيق العام', 403);
     if ($key === 'late_permissions') error_response('سجّل إذن الدخول من الواجهة المخصصة', 403);
     if ($key === 'staff_tasks_v1') error_response('حدّث المهام من الواجهة المخصصة', 403);

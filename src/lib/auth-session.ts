@@ -74,6 +74,7 @@ export function decodeAuthTokenPayload(token: string | null = getToken()): {
   role?: string;
   name?: string;
   accountId?: string;
+  taskActorId?: string;
   halaqaId?: number;
   complexId?: number;
   studentId?: string;
@@ -94,6 +95,7 @@ export function decodeAuthTokenPayload(token: string | null = getToken()): {
       role: typeof payload.role === "string" ? payload.role : undefined,
       name: typeof payload.name === "string" ? payload.name : undefined,
       accountId: typeof payload.accountId === "string" ? payload.accountId : undefined,
+      taskActorId: typeof payload.taskActorId === "string" ? payload.taskActorId : undefined,
       halaqaId: num(payload.halaqaId),
       complexId: num(payload.complexId ?? payload.complex_id),
       studentId: typeof payload.studentId === "string" ? payload.studentId : undefined,
