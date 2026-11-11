@@ -1,0 +1,35 @@
+name: Main site release preflight
+on:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.head_ref == 'fix/stability-main-release-preflight' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Verify live marker, main roots, schema and candidate API baseline without writes
+        env:
+          RELEASE_CANDIDATE: 99aa8943ded9315dd2c661f58480e29b2e210d85
+          REQUIRE_PUBLISHED_CANDIDATE: 'true'
+          REQUIRE_ATOMIC_GRADE_MODE: 'true'
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_FRONTEND: ${{ secrets.FTP_SERVER_DIR }}
+          DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+        run: |
+          for attempt in {1..20}; do
+            marker=$(curl -fsS --connect-timeout 10 --max-time 15 --resolve "msht.io:443:${DEPLOY_HOST}" "https://msht.io/deploy-sha.txt?check=${GITHUB_RUN_ID}-${attempt}" 2>/dev/null || true)
+            if [[ "$marker" == "$RELEASE_CANDIDATE" ]]; then
+              python3 scripts/diagnose-manager-reads.py
+              exit $?
+            fi
+            sleep 12
+          done
+          echo 'Expected main-site release marker did not arrive within the verification window'
+          exit 1
