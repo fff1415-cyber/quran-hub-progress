@@ -1,8 +1,7 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
-import { useEffect, useMemo, useState } from "react";
-import { loadGrades, loadStudents, loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
-import { getCalendarDayKey } from "@/lib/operational-date";
-import { fetchActiveCalendar } from "@/lib/academic-context";
+import { useMemo, useState } from "react";
+import { loadSardQueue, countTransfersForRole } from "@/lib/mock-data";
+import { useSecretaryAttendance } from "@/hooks/use-secretary-attendance";
 import { getSessionName } from "@/lib/session-role";
 import { AppHeader } from "@/components/AppHeader";
 import { RoleShell, RolePageHeader, type RoleTab } from "@/components/role-workspace/RoleShell";
@@ -16,7 +15,6 @@ import { StaffTasksPanel } from "@/components/StaffTasksPanel";
 import { useStaffTaskCount } from "@/hooks/use-staff-task-count";
 import { Clipboard, CalendarDays, Users, BarChart3, Wallet, ListTodo } from "lucide-react";
 import { Toaster } from "sonner";
-import type { WeekRecord } from "@/lib/mock-data";
 
 const MAIN_TABS = ["daily", "tasks", "students", "finances", "reports"] as const;
 type MainTab = (typeof MAIN_TABS)[number];
@@ -82,28 +80,13 @@ export function SecretaryPage() {
   const navigate = useNavigate();
   const search = useSearch({ strict: false }) as ReturnType<typeof secretaryValidateSearch>;
   const name = getSessionName("السكرتير");
-  const students = loadStudents();
-  const grades = loadGrades();
-  const todayKey = getCalendarDayKey();
-  const [currentWeek, setCurrentWeek] = useState(1);
+  const attendance = useSecretaryAttendance();
   const [queue] = useState(() => loadSardQueue());
-
-  useEffect(() => {
-    fetchActiveCalendar()
-      .then((cal) => setCurrentWeek(cal.currentWeekNumber))
-      .catch(() => {});
-  }, []);
 
   const mainTab = resolveMainTab(search.tab);
   const section = resolveSection(mainTab, search.tab, search.section);
 
-  const todayCount = useMemo(() => {
-    return students.filter((s) => {
-      const w: WeekRecord | undefined = grades[s.id]?.[currentWeek];
-      const status = w?.days[todayKey]?.attendance;
-      return status === "absent" || status === "late";
-    }).length;
-  }, [students, grades, todayKey, currentWeek]);
+  const todayCount = attendance.rows.length;
 
   const passedSard = useMemo(() => queue.filter((q) => q.status === "passed"), [queue]);
   const finalFailed = useMemo(() => queue.filter((q) => q.status === "final_failed"), [queue]);
@@ -151,6 +134,7 @@ export function SecretaryPage() {
           section={section}
           onSectionChange={setSection}
           todayCount={todayCount}
+          attendance={attendance}
           forwardedTransfers={forwardedTransfers}
         />
       ),

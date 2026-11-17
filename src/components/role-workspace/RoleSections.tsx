@@ -1,10 +1,11 @@
+import type { SecretaryAttendance } from "@/hooks/use-secretary-attendance";
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   loadHalaqat, loadStudents, loadGrades, loadSardQueue,
   loadLatePermissions, loadMessageTemplates, formatMessage,
   pushNotification, updateSardItem, DAYS,
-  type WeekRecord, type Student, type GradesStore,
+  type GradesStore,
 } from "@/lib/mock-data";
 import {
   buildForceImmediatePatch,
@@ -13,7 +14,7 @@ import {
 } from "@/lib/sard-phased-flow";
 import { weekLabel } from "@/lib/arabic-numbers";
 import { refreshSardReferrals, updateSupervisorSardQueue } from "@/lib/plans-service";
-import { getCalendarDayKey, getCalendarIsoDate } from "@/lib/operational-date";
+import { getCalendarIsoDate } from "@/lib/operational-date";
 import { fetchActiveCalendar, type AcademicCalendar } from "@/lib/academic-context";
 import { TabBadge } from "@/components/role-workspace/RoleShell";
 import { daysSinceLabel, notifyTeacherHalaqa } from "@/lib/teacher-notifications";
@@ -58,28 +59,9 @@ function whatsappAbsenceMessage(studentName: string, status: "absent" | "late", 
   return `السلام عليكم، نُعلمكم بـ ${statusWord} الطالب ${studentName} ليوم ${todayLabel(dayKey)}.`;
 }
 
-export function SecretaryAttendancePanel() {
+export function SecretaryAttendancePanel({ attendance }: { attendance: SecretaryAttendance }) {
   const halaqat = loadHalaqat();
-  const students = loadStudents();
-  const grades = loadGrades();
-  const [currentWeek, setCurrentWeek] = useState(1);
-  const todayKey = getCalendarDayKey();
-
-  useEffect(() => {
-    fetchActiveCalendar().then((cal) => setCurrentWeek(cal.currentWeekNumber)).catch(() => {});
-  }, []);
-
-  const todayAbsentOrLate = useMemo(() => {
-    return students
-      .map((s) => {
-        const w: WeekRecord | undefined = grades[s.id]?.[currentWeek];
-        const status = (w?.days[todayKey]?.attendance || "") as "absent" | "late" | "";
-        return { s, status };
-      })
-      .filter((x): x is { s: Student; status: "absent" | "late" } =>
-        x.status === "absent" || x.status === "late",
-      );
-  }, [students, grades, todayKey, currentWeek]);
+  const { rows: todayAbsentOrLate, todayKey, loading, error } = attendance;
 
   return (
     <Card className="glass-card border-primary/15 shadow-none">
@@ -91,7 +73,10 @@ export function SecretaryAttendancePanel() {
         <CardDescription>حالة اليوم ({todayLabel(todayKey)}) — إرسال واتساب لولي الأمر</CardDescription>
       </CardHeader>
       <CardContent>
-        {todayAbsentOrLate.length === 0 ? (
+        {error && <p role="alert" className="text-destructive text-sm mb-3">تعذّر تحديث غياب اليوم؛ تُعرض آخر بيانات متاحة. ستُعاد المحاولة تلقائيًا عند عودة الاتصال.</p>}
+        {loading ? (
+          <p className="text-muted-foreground text-center py-8 text-sm">جارٍ تحميل غياب وتأخر اليوم…</p>
+        ) : error && todayAbsentOrLate.length === 0 ? null : todayAbsentOrLate.length === 0 ? (
           <p className="text-muted-foreground text-center py-8 text-sm">لا يوجد غياب أو تأخر اليوم</p>
         ) : (
           <div className="space-y-2">

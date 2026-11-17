@@ -1,3 +1,4 @@
+import type { SecretaryAttendance } from "@/hooks/use-secretary-attendance";
 import { useMemo } from "react";
 import { hasPerm } from "@/lib/permissions";
 import { getSessionRole } from "@/lib/session-role";
@@ -37,8 +38,9 @@ export function SecretaryDailyPanel({
   section,
   onSectionChange,
   todayCount,
+  attendance,
   forwardedTransfers,
-}: Props & { todayCount: number; forwardedTransfers: number }) {
+}: Props & { todayCount: number; forwardedTransfers: number; attendance: SecretaryAttendance }) {
   const tabs = useMemo(
     () =>
       filterSubTabs([
@@ -50,7 +52,7 @@ export function SecretaryDailyPanel({
           badge: todayCount,
           content: (
             <div className="space-y-6">
-              <SecretaryAttendancePanel />
+              <SecretaryAttendancePanel attendance={attendance} />
               <SecretaryAbsenceThresholdPanel />
             </div>
           ),
@@ -71,7 +73,7 @@ export function SecretaryDailyPanel({
           content: <SecretaryLatePermitPanel />,
         },
       ]),
-    [todayCount, forwardedTransfers],
+    [todayCount, forwardedTransfers, attendance],
   );
 
   return <ManagerSubTabs tabs={tabs} value={section} onValueChange={onSectionChange} />;
