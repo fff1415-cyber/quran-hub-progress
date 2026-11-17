@@ -35,27 +35,3 @@ jobs:
           npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
           node tests/secretary-attendance.cjs
           npm run build:hostinger
-      - name: Back up production and verify an isolated restore
-        env:
-          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
-          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
-          DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
-          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          EXPECTED_RELEASE: 40f5285634343fa09d610ab92a698d0cc7c29ec1
-        run: |
-          test "$(curl -fsS --max-time 20 https://msht.io/deploy-sha.txt)" = "$EXPECTED_RELEASE"
-          python3 scripts/create-private-db-backup.py
-          cp candidate/api/schema.php api/schema.php
-          python3 scripts/restore-hostinger-test.py
-          python3 scripts/secretary-attendance-probe.py
-      - name: Publish the secretary display fix with exact code rollback
-        env:
-          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
-          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
-          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-          BASE_RELEASE: 40f5285634343fa09d610ab92a698d0cc7c29ec1
-          TARGET_RELEASE: 67d0b73f3317d835c001f70ea1530d93e5bed899
-        run: |
-          git fetch --no-tags origin release/secretary-attendance-live
-          test "$(git rev-parse FETCH_HEAD)" = "$TARGET_RELEASE"
-          python3 scripts/protected-rollback-release.py publish "$BASE_RELEASE" "$TARGET_RELEASE"
