@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict');
-const {load}=require('./candidate/tests/independent-test-support.cjs');
+const {load}=require('../candidate/tests/independent-test-support.cjs');
 const {secretaryAttendanceRows}=load('candidate/src/hooks/use-secretary-attendance.ts',{'react':{},'@/lib/academic-context':{},'@/lib/grade-sync':{},'@/lib/mock-data':{},'@/lib/operational-date':{}});
 let raw='';process.stdin.setEncoding('utf8');process.stdin.on('data',part=>raw+=part);
 process.stdin.on('end',()=>{
