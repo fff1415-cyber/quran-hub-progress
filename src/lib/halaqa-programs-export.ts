@@ -241,23 +241,16 @@ export function downloadHalaqaProgramsWorkbook(
     for (const s of students) {
       for (const wk of weeks) {
         const vals = allGrades[s.id]?.[wk.week_number]?.[p.id] ?? {};
-        let earned = 0;
-        let max = 0;
-        for (const sl of slots) {
-          max += slotMax;
-          const v = vals[sl.key];
-          if (v) earned += programLevelScore(p, v);
-        }
-        const rowPct = max > 0 ? Math.round((earned / max) * 100) : 0;
+        const total = studentAllProgramsWeekTotals([p], allGrades, s.id, wk.week_number);
         rows.push([
           s.name,
           weekLabel(wk.week_number),
           ...slots.map((sl) => {
             const v = vals[sl.key];
-            return v ? `${v} (${programLevelScore(p, v)})` : "—";
+            return v ? `${v} (${p.levels.some(level => level.label === v) ? programLevelScore(p, v) : "نقاط غير محددة"})` : "—";
           }),
-          earned,
-          rowPct,
+          total.unresolvedSlots ? "غير مكتمل" : total.earned,
+          total.unresolvedSlots ? "غير مكتمل" : total.percent,
         ]);
       }
     }

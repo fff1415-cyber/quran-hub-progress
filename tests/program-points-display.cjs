@@ -42,6 +42,7 @@ memory.set('qshatawi_halaqa_programs_v1',JSON.stringify({7:[p]}));
 exportPrograms.downloadHalaqaProgramsWorkbook([{id:'S',name:'Fixture'}],7,'Fixture',calendar,'2026-11-01','2026-11-03',grades);
 assert.equal(workbook.Sheets['ملخص شامل'].at(-1).at(-1),'غير مكتمل');
 assert.ok(JSON.stringify(workbook.Sheets['تفاصيل أسبوعية']).includes('نقاط غير محددة'));
+assert.equal(workbook.Sheets.Fixture.at(-1).at(-1),'غير مكتمل');
 assert.equal(JSON.stringify(grades),before);
 const support=require('./independent-test-support.cjs');
 const {CustomFieldSelect}=support.load('src/components/plans/TeacherGradeInputs.tsx',{
