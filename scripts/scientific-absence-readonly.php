@@ -4,50 +4,30 @@ if(PHP_SAPI!=='cli')exit(1);
 try{
  $root=$argv[1]??'';
  if(!preg_match('~^/home/[A-Za-z0-9_-]+/domains/msht\.io/public_html$~D',$root)||realpath($root)!==$root||trim(file_get_contents($root.'/deploy-sha.txt'))!=='67d0b73f3317d835c001f70ea1530d93e5bed899')throw new RuntimeException('scope');
- require $root.'/api/config.php';
+ require $root.'/api/config.php';require $root.'/api/auth.php';require $root.'/api/lib/grade-cell-operations.php';
  if(DB_NAME!=='u112851217_msht_io')throw new RuntimeException('database_scope');
  $pdo=new PDO('mysql:host='.DB_HOST.';dbname='.DB_NAME.';charset=utf8mb4',DB_USER,DB_PASS,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::MYSQL_ATTR_MULTI_STATEMENTS=>false]);
  $pdo->exec('SET SESSION MAX_STATEMENT_TIME=15');$pdo->exec('SET SESSION TRANSACTION READ ONLY');$pdo->beginTransaction();
- $complexes=$pdo->query('SELECT id,name,subdomain FROM complexes ORDER BY id')->fetchAll();
- $stores=[];foreach($pdo->query("SELECT complex_id,`key`,value FROM app_state WHERE `key` IN ('grades','scientific_grades')") as $r)$stores[$r['complex_id']][$r['key']]=json_decode($r['value'],true,512,JSON_THROW_ON_ERROR)??[];
- $students=[];foreach($pdo->query('SELECT id,complex_id,halaqa_id FROM students') as $s)$students[$s['complex_id']][$s['id']]=(string)$s['halaqa_id'];
- $terms=[];foreach($pdo->query('SELECT id,complex_id,start_date,weeks_count,working_days,excluded_dates,name FROM semesters WHERE is_active=1') as $s){$s['working_days']=json_decode($s['working_days'],true);$s['excluded_dates']=json_decode($s['excluded_dates']??'[]',true);$terms[$s['complex_id']][]=$s;}
- $versions=[];$q=$pdo->query("SELECT context_id,path_json,updated_at FROM grade_cell_versions WHERE store_key='grades' AND direct_version<>'' AND JSON_LENGTH(path_json)=5");foreach($q as $v){$p=json_decode($v['path_json'],true);$versions[$v['context_id']][json_encode($p)]=$v['updated_at'];}
- $receiptColumns=$pdo->query("SHOW COLUMNS FROM grade_operation_receipts")->fetchAll(PDO::FETCH_COLUMN);$dateColumn=in_array("applied_at",$receiptColumns,true)?"applied_at":(in_array("created_at",$receiptColumns,true)?"created_at":null);$latest=$dateColumn?"MAX($dateColumn)":"NULL";
- $receipts=[];foreach($pdo->query("SELECT context_id,COUNT(*) AS count,$latest AS latest FROM grade_operation_receipts WHERE store_key='grades' GROUP BY context_id") as $r)$receipts[$r['context_id']]=['count'=>(int)$r['count'],'latest'=>$r['latest']];
- $out=[];
- foreach($complexes as $c){
-  $cid=(int)$c['id'];$prep=$stores[$cid]['grades']??[];$sci=$stores[$cid]['scientific_grades']??[];
-  $summary=['complex'=>$c['name'],'slug'=>$c['subdomain'],'students'=>count($students[$cid]??[]),'active_terms'=>$terms[$cid]??[],'receipt'=>$receipts[$cid]??null,'configured_halaqat'=>count($sci['configs']??[]),'enabled_missing_default'=>[],'matched'=>0,'missing_projected'=>0,'missing_projected_versioned'=>0,'missing_versioned_dates'=>[],'different_pairs'=>[],'different_projected'=>0,'manual_overrides'=>0,'prep_without_numeric_default'=>0,'prep_without_enabled_field'=>0,'affected_halaqat'=>[],'absence_by_week_day'=>[]];
-  foreach($sci['configs']??[] as $group=>$config)foreach(['hifz','rabt','muraja'] as $field)if(($config['fields'][$field]??false)===true&&!is_numeric($config['defaultScores'][$field]??null))$summary['enabled_missing_default'][]=['halaqa'=>$group,'field'=>$field];
-  foreach($students[$cid]??[] as $id=>$group)foreach($prep[$id]??[] as $week=>$entry)foreach($entry['days']??[] as $day=>$d){
-   if(in_array($d['attendance']??'', ['absent','late'],true)){$key=$week.':'.$day;$summary['absence_by_week_day'][$key]=($summary['absence_by_week_day'][$key]??0)+1;}
-   foreach(['hifz','rabt','muraja'] as $field){
-    $value=$d[$field]??null;if($field==='hifz'?!in_array($value,['half','one','two'],true):$value!=='pass')continue;
-    if(($sci['configs'][$group]['fields'][$field]??false)!==true){$summary['prep_without_enabled_field']++;continue;}
-    $default=$sci['configs'][$group]['defaultScores'][$field]??null;
-    if(!is_numeric($default)){$summary['prep_without_numeric_default']++;continue;}
-    if(($sci['overrides'][$group][$id][$week][$day][$field]??false)===true){$summary['manual_overrides']++;continue;}
-    $score=$sci['data'][$group][$id][$week][$day][$field]??null;
-    if($score===null||$score===''){$summary['missing_projected']++;if(isset($versions[$cid][json_encode([(string)$id,(string)$week,'days',(string)$day,$field])])){$summary['missing_projected_versioned']++;$vdate=substr($versions[$cid][json_encode([(string)$id,(string)$week,'days',(string)$day,$field])],0,10);$summary['missing_versioned_dates'][$vdate]=($summary['missing_versioned_dates'][$vdate]??0)+1;}$summary['affected_halaqat'][$group]=($summary['affected_halaqat'][$group]??0)+1;}
-    elseif(is_numeric($score)&&(float)$score===(float)$default)$summary['matched']++;
-    else {$summary['different_projected']++;$pair=(string)$score.'->'.(string)$default;$summary['different_pairs'][$pair]=($summary['different_pairs'][$pair]??0)+1;}
-   }
+ $q=$pdo->query("SELECT id FROM complexes WHERE subdomain='mm'");$cid=(int)$q->fetchColumn();if($cid!==22)throw new RuntimeException('complex_scope');
+ $q=$pdo->prepare("SELECT value FROM app_state WHERE complex_id=? AND `key`='grades'");$q->execute([$cid]);$store=json_decode($q->fetchColumn(),false,512,JSON_THROW_ON_ERROR);
+ $q=$pdo->prepare('SELECT id,halaqa_id FROM students WHERE complex_id=?');$q->execute([$cid]);$roster=[];foreach($q as $s)$roster[$s['id']]=(int)$s['halaqa_id'];
+ $q=$pdo->prepare('SELECT id,name FROM halaqat WHERE complex_id=?');$q->execute([$cid]);$halaqat=[];foreach($q as $h)$halaqat[$h['id']]=$h['name'];
+ $q=$pdo->prepare('SELECT id,start_date,weeks_count FROM semesters WHERE complex_id=? AND is_active=1');$q->execute([$cid]);$term=$q->fetch();
+ $now=new DateTimeImmutable('now',new DateTimeZone('Asia/Riyadh'));$start=new DateTimeImmutable($term['start_date'],new DateTimeZone('Asia/Riyadh'));$start=$start->modify('-'.(int)$start->format('w').' days');$week=max(1,min((int)$term['weeks_count'],intdiv((int)$start->diff($now)->days,7)+1));$day=['sun','mon','tue','wed','thu','fri','sat'][(int)$now->format('w')];
+ $daily=[];foreach($roster as $id=>$h)foreach($store->{$id}??new stdClass() as $w=>$record)foreach($record->days??new stdClass() as $d=>$entry){$status=$entry->attendance??'';if(!in_array($status,['absent','late'],true))continue;$key=$w.':'.$d.':'.$h;$daily[$key]??=['week'=>(int)$w,'day'=>$d,'halaqa'=>$halaqat[$h]??(string)$h,'absent'=>0,'late'=>0];$daily[$key][$status==='absent'?'absent':'late']++;}
+ $q=$pdo->prepare("SELECT path_json,updated_at FROM grade_cell_versions WHERE context_id=? AND store_key='grades' AND direct_version IS NOT NULL AND JSON_UNQUOTE(JSON_EXTRACT(path_json,'$[4]'))='attendance' ORDER BY updated_at DESC LIMIT 40");$q->execute([$cid]);$recent=[];foreach($q as $v){$p=json_decode($v['path_json'],true);$status=$store->{$p[0]}->{$p[1]}->days->{$p[3]}->attendance??'';if(!in_array($status,['absent','late'],true))continue;$h=$roster[$p[0]]??null;$recent[]=['week'=>$p[1],'day'=>$p[3],'halaqa'=>$halaqat[$h]??null,'status'=>$status,'saved_at_utc'=>$v['updated_at']];}
+ $q=$pdo->prepare("SELECT id,role FROM role_accounts WHERE complex_id=? AND role='secretary' LIMIT 1");$q->execute([$cid]);$account=$q->fetch();$pdo->rollBack();
+ $http=[];
+ if($account){
+  // Short-lived diagnostic credential for an existing role; never logged or stored.
+  $token=generate_token(['role'=>$account['role'],'accountId'=>$account['id'],'complexId'=>$cid,'exp'=>time()*1000+120000]);
+  foreach(['/semesters/active','/app-state?key=grades&grade_protocol=1'] as $route){
+   $url='https://msht.io/api/r.php?path='.rawurlencode($route);$curl=curl_init($url);curl_setopt_array($curl,[CURLOPT_HTTPHEADER=>['Authorization: Bearer '.$token,'Cache-Control: no-cache'],CURLOPT_RETURNTRANSFER=>true,CURLOPT_CONNECTTIMEOUT=>8,CURLOPT_TIMEOUT=>20]);$body=curl_exec($curl);$code=curl_getinfo($curl,CURLINFO_HTTP_CODE);curl_close($curl);$response=is_string($body)?json_decode($body):null;
+   $item=['path'=>$route,'status'=>$code,'error'=>$response->error??null];
+   if(str_starts_with($route,'/app-state')){$item['context_complex_id']=$response->context_complex_id??null;$item['grades_match_database']=isset($response->value)&&grade_cells_json($response->value)===grade_cells_json($store);}
+   else{$item['semester_matches_database']=($response->semester->id??null)===$term['id'];}
+   $http[]=$item;
   }
-  $summary['config_by_halaqa']=[];foreach($sci['configs']??[] as $group=>$config)$summary['config_by_halaqa'][$group]=['fields'=>$config['fields']??[],'defaultScores'=>$config['defaultScores']??[]];
-  $out[]=$summary;
  }
- $recent=[];$q=$pdo->query("SELECT context_id,path_json,updated_at FROM grade_cell_versions WHERE store_key='grades' AND direct_version IS NOT NULL AND updated_at>=CURRENT_TIMESTAMP-INTERVAL 2 DAY ORDER BY updated_at DESC LIMIT 120");
- foreach($q as $row){$path=json_decode($row['path_json'],true);if(count($path)!==5||$path[2]!=='days')continue;$cid=(int)$row['context_id'];$id=$path[0];$group=$students[$cid][$id]??null;$next=$stores[$cid]['grades'][$id][$path[1]]['days'][$path[3]][$path[4]]??null;$projected=$group===null?null:($stores[$cid]['scientific_grades']['data'][$group][$id][$path[1]][$path[3]][$path[4]]??null);
- $recent[]=['complex_id'=>$cid,'halaqa'=>$group,'week'=>$path[1],'day'=>$path[3],'field'=>$path[4],'value'=>is_scalar($next)?$next:null,'scientific'=>is_scalar($projected)?$projected:null,'changed_at'=>$row['updated_at']];}
- $halaqaNames=$pdo->query('SELECT complex_id,id,name FROM halaqat')->fetchAll();
- $serverNow=$pdo->query('SELECT CURRENT_TIMESTAMP')->fetchColumn();$pdo->rollBack();
- $logSummary=['readable_files'=>0,'atomic_failures'=>[]];
- foreach([$root.'/api/error_log',$root.'/error_log',$root.'/logs/error.log',dirname($root,3).'/.logs/php_errors.log'] as $file){
-  if(!is_file($file)||!is_readable($file)||is_link($file))continue;$logSummary['readable_files']++;
-  $f=fopen($file,'r');fseek($f,max(0,filesize($file)-131072));$tail=stream_get_contents($f);fclose($f);
-  foreach(explode("\n",$tail) as $line){$at=strpos($line,'{"event":"qhp_failure"');if($at===false)continue;$event=json_decode(substr($line,$at),true);if(!is_array($event)||($event['context']??'')!=='atomic_grade_write')continue;$logSummary['atomic_failures'][]=array_intersect_key($event,array_flip(['reference','context','errno','category','file','line']));}
- }
- $logSummary['atomic_failures']=array_slice($logSummary['atomic_failures'],-15);
- echo json_encode(['release'=>trim(file_get_contents($root.'/deploy-sha.txt')),'read_only'=>true,'checked_at'=>gmdate('c'),'server_now'=>$serverNow,'recent_changes'=>$recent,'halaqat'=>$halaqaNames,'logs'=>$logSummary,'complexes'=>$out],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+ echo json_encode(['release'=>trim(file_get_contents($root.'/deploy-sha.txt')),'read_only'=>true,'at_riyadh'=>$now->format('c'),'today'=>['week'=>$week,'day'=>$day],'secretary_account_exists'=>(bool)$account,'api'=>$http,'current_week_absence'=>array_values(array_filter($daily,fn($r)=>$r['week']===$week)),'recent_confirmed_absence'=>$recent],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 }catch(Throwable $error){if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();echo json_encode(['audit'=>'failed','class'=>get_class($error),'errno'=>$error instanceof PDOException?(int)($error->errorInfo[1]??0):null]);exit(1);}
