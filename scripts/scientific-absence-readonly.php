@@ -37,6 +37,10 @@ try{
   $summary['config_by_halaqa']=[];foreach($sci['configs']??[] as $group=>$config)$summary['config_by_halaqa'][$group]=['fields'=>$config['fields']??[],'defaultScores'=>$config['defaultScores']??[]];
   $out[]=$summary;
  }
+ $recent=[];$q=$pdo->query("SELECT context_id,path_json,updated_at FROM grade_cell_versions WHERE store_key='grades' AND direct_version IS NOT NULL AND updated_at>=CURRENT_TIMESTAMP-INTERVAL 2 DAY ORDER BY updated_at DESC LIMIT 120");
+ foreach($q as $row){$path=json_decode($row['path_json'],true);if(count($path)!==5||$path[2]!=='days')continue;$cid=(int)$row['context_id'];$id=$path[0];$group=$students[$cid][$id]??null;$next=$stores[$cid]['grades'][$id][$path[1]]['days'][$path[3]][$path[4]]??null;$projected=$group===null?null:($stores[$cid]['scientific_grades']['data'][$group][$id][$path[1]][$path[3]][$path[4]]??null);
+ $recent[]=['complex_id'=>$cid,'halaqa'=>$group,'week'=>$path[1],'day'=>$path[3],'field'=>$path[4],'value'=>is_scalar($next)?$next:null,'scientific'=>is_scalar($projected)?$projected:null,'changed_at'=>$row['updated_at']];}
+ $halaqaNames=$pdo->query('SELECT complex_id,id,name FROM halaqat')->fetchAll();
  $serverNow=$pdo->query('SELECT CURRENT_TIMESTAMP')->fetchColumn();$pdo->rollBack();
  $logSummary=['readable_files'=>0,'atomic_failures'=>[]];
  foreach([$root.'/api/error_log',$root.'/error_log',$root.'/logs/error.log',dirname($root,3).'/.logs/php_errors.log'] as $file){
@@ -45,5 +49,5 @@ try{
   foreach(explode("\n",$tail) as $line){$at=strpos($line,'{"event":"qhp_failure"');if($at===false)continue;$event=json_decode(substr($line,$at),true);if(!is_array($event)||($event['context']??'')!=='atomic_grade_write')continue;$logSummary['atomic_failures'][]=array_intersect_key($event,array_flip(['reference','context','errno','category','file','line']));}
  }
  $logSummary['atomic_failures']=array_slice($logSummary['atomic_failures'],-15);
- echo json_encode(['release'=>trim(file_get_contents($root.'/deploy-sha.txt')),'read_only'=>true,'checked_at'=>gmdate('c'),'server_now'=>$serverNow,'logs'=>$logSummary,'complexes'=>$out],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+ echo json_encode(['release'=>trim(file_get_contents($root.'/deploy-sha.txt')),'read_only'=>true,'checked_at'=>gmdate('c'),'server_now'=>$serverNow,'recent_changes'=>$recent,'halaqat'=>$halaqaNames,'logs'=>$logSummary,'complexes'=>$out],JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
 }catch(Throwable $error){if(isset($pdo)&&$pdo->inTransaction())$pdo->rollBack();echo json_encode(['audit'=>'failed','class'=>get_class($error),'errno'=>$error instanceof PDOException?(int)($error->errorInfo[1]??0):null]);exit(1);}
