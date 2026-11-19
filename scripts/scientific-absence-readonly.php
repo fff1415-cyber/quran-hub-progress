@@ -21,7 +21,7 @@ try{
  foreach($m6Halaqat as $h){
   $g=(string)$h['id'];$defs=$programStores['halaqa_programs'][$g]??[];$byId=[];foreach($defs as $p)$byId[$p['id']]=$p;
   $cfg=$programStores['scientific_grades']['configs'][$g]??null;$scientific=['config_exists'=>$cfg!==null,'fields'=>$cfg['fields']??[],'defaultScores'=>$cfg['defaultScores']??[]];
-  $counts=['saved_nonempty'=>0,'recognized'=>0,'unknown_program'=>0,'inactive_program'=>0,'scientific_legacy'=>0,'unknown_level'=>0,'unknown_slot'=>0];$weekly=[];$definitions=[];
+  $counts=['saved_nonempty'=>0,'recognized'=>0,'unknown_program'=>0,'inactive_program'=>0,'scientific_legacy'=>0,'unknown_level'=>0,'unknown_slot'=>0];$weekly=[];$definitions=[];$unmatched=[];
   foreach($defs as $p)if(($p['kind']??'')!=='scientific'&&$p['id']!=='scientific-grades-auto')$definitions[]=['name'=>$p['name']??'','active'=>$p['active']??true,'scheduleMode'=>$p['scheduleMode']??null,'levels'=>$p['levels']??[],'options'=>$p['options']??[]];
   foreach($programStores['halaqa_program_grades'][$g]??[] as $student=>$weeks)foreach($weeks as $w=>$programs)foreach($programs as $pid=>$slots)foreach($slots as $slot=>$value){
    if(!is_string($value)||$value==='')continue;$counts['saved_nonempty']++;$p=$byId[$pid]??null;
@@ -30,13 +30,13 @@ try{
    if(($p['active']??true)===false){$counts['inactive_program']++;continue;}
    $levels=$p['levels']??[];if(!$levels){$options=$p['options']??[];$max=$p['maxScore']??100;foreach($options as $i=>$label)$levels[]=['label'=>$label,'score'=>count($options)===1?$max:round($max*(1-$i/max(1,count($options)-1)))];if(!$levels)$levels=[['label'=>'ممتاز','score'=>100],['label'=>'جيد','score'=>75],['label'=>'ضعيف','score'=>50]];}
    $scores=[];foreach($levels as $level)$scores[trim($level['label'])]=max(0,(float)$level['score']);
-   if(!array_key_exists($value,$scores)){$counts['unknown_level']++;continue;}
+   if(!array_key_exists($value,$scores)){$counts['unknown_level']++;$reason=($p['name']??'').': '.json_encode($value,JSON_UNESCAPED_UNICODE).' مقابل '.json_encode(array_keys($scores),JSON_UNESCAPED_UNICODE);$unmatched[$reason]=($unmatched[$reason]??0)+1;continue;}
    $allowed=($p['scheduleMode']??'')==='weekdays'?($p['weekdays']??[]):array_map(fn($i)=>'slot-'.$i,range(0,max(1,min(7,(int)($p['timesPerWeek']??1)))-1));
    if(!in_array($slot,$allowed,true)){$counts['unknown_slot']++;continue;}
    $counts['recognized']++;$weekly[$w][$student]=($weekly[$w][$student]??0)+$scores[$value];
   }
   $totals=[];foreach($weekly as $w=>$studentsInWeek)$totals[]=['week'=>(int)$w,'students'=>count($studentsInWeek),'min'=>min($studentsInWeek),'max'=>max($studentsInWeek),'total'=>array_sum($studentsInWeek)];
-  $programReport[]=['halaqa'=>$h['name'],'id'=>$h['id'],'scientific'=>$scientific,'standard_definitions'=>$definitions,'standard_grade_counts'=>$counts,'standard_weekly_totals'=>$totals];
+  $programReport[]=['halaqa'=>$h['name'],'id'=>$h['id'],'scientific'=>$scientific,'standard_definitions'=>$definitions,'standard_grade_counts'=>$counts,'unmatched_labels'=>$unmatched,'standard_weekly_totals'=>$totals];
  }
 
  $q=$pdo->prepare("SELECT id,role FROM role_accounts WHERE complex_id=? AND role='secretary' LIMIT 1");$q->execute([$cid]);$account=$q->fetch();$pdo->rollBack();
