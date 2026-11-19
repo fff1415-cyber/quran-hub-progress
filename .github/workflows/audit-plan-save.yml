@@ -1,0 +1,19 @@
+name: Inspect plan save collisions read only
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  inspect:
+    if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 4
+    env:
+      DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+      DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+      DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 scripts/audit-plan-save.py
+
