@@ -448,6 +448,32 @@ function test_scientific_config_and_scores(PDO $pdo,int $cid,string $student): a
             throw new RuntimeException('cancellation_not_visible_in_test_database');
         }
     }
+    // Teacher-chosen points apply only to the explicit field. No historical sweep.
+    $legacy=grade_cells_store($pdo,$cid,'scientific_grades',true);
+    $legacy->data->{$realGroup}->{$student}->{'1'}->tue->hifz='4';
+    app_state_upsert($pdo,'scientific_grades',$legacy,$cid);
+    $mark('hifz','one','tue','teacher');
+    if(($read()['value']['data'][$realGroup][$student][1]['tue']['hifz']??null)!=='11')throw new RuntimeException('current_teacher_points_not_applied');
+    $legacy=grade_cells_store($pdo,$cid,'scientific_grades',true);
+    $legacy->data->{$realGroup}->{$student}->{'1'}->tue->muraja='17';
+    $legacy->overrides->{$realGroup}->{$student}->{'1'}->tue=(object)['muraja'=>true];
+    app_state_upsert($pdo,'scientific_grades',$legacy,$cid);
+    $mark('muraja','pass','tue','assistant');
+    if(($read()['value']['data'][$realGroup][$student][1]['tue']['muraja']??null)!=='17')throw new RuntimeException('manual_override_changed');
+    $beforeInvalid=$read();$incomplete=$projectConfig;unset($incomplete['defaultScores']['hifz']);
+    if($write(['scientific_base'=>$beforeInvalid['revision'],'scientific_config'=>['halaqaId'=>$realGroup,'settings'=>$incomplete]])!==400 || $read()!==$beforeInvalid)throw new RuntimeException('incomplete_config_not_preserved');
+    $current=$read();$nextConfig=$projectConfig;$nextConfig['defaultScores']['hifz']='13';
+    if($write(['scientific_base'=>$current['revision'],'scientific_config'=>['halaqaId'=>$realGroup,'settings'=>$nextConfig]])!==200)throw new RuntimeException('teacher_config_not_saved');
+    if(($read()['value']['data'][$realGroup][$student][1]['tue']['hifz']??null)!=='11')throw new RuntimeException('config_rewrote_history');
+    $mark('hifz','two','tue','assistant');
+    if(($read()['value']['data'][$realGroup][$student][1]['tue']['hifz']??null)!=='13')throw new RuntimeException('changed_teacher_points_not_applied');
+    $mark('hifz','','tue','assistant');
+    if(($read()['value']['data'][$realGroup][$student][1]['tue']['hifz']??null)!=='')throw new RuntimeException('changed_teacher_points_not_canceled');
+    $current=$read();$disabledConfig=$nextConfig;$disabledConfig['fields']['hifz']=false;
+    if($write(['scientific_base'=>$current['revision'],'scientific_config'=>['halaqaId'=>$realGroup,'settings'=>$disabledConfig]])!==200)throw new RuntimeException('disabled_config_not_saved');
+    $legacy=grade_cells_store($pdo,$cid,'scientific_grades',true);$legacy->data->{$realGroup}->{$student}->{'1'}->tue->hifz='23';app_state_upsert($pdo,'scientific_grades',$legacy,$cid);
+    $mark('hifz','one','tue','teacher');
+    if(($read()['value']['data'][$realGroup][$student][1]['tue']['hifz']??null)!=='23')throw new RuntimeException('disabled_scientific_history_changed');
     $pdo->rollBack();
     if ([$enabled,$disabled,$reenabled,$stale,$noPrep,$failedPrep,$earned] !== [200,200,200,409,409,409,200] ||
         $offRead['value']['configs'][$group]['fields']['hifz'] !== false ||
@@ -459,7 +485,7 @@ function test_scientific_config_and_scores(PDO $pdo,int $cid,string $student): a
     return ['scientific_config_on_off_on'=>[200,200,200], 'stale_settings'=>409,
         'scientific_missing_and_failed_prep'=>[409,409], 'scientific_earned'=>200, 'scientific_history_unchanged'=>true,
         'attendance_only'=>true,'clear_preserves_confirmed_and_manual_scores'=>true,'stale_attendance_rejected'=>409,
-        'four_grade_cancellations_persist_in_isolated_database'=>true];
+        'four_grade_cancellations_persist_in_isolated_database'=>true,'teacher_points_confirmed_after_config_change'=>true,'existing_history_not_recalculated'=>true];
 }
 
 function test_safe_legacy_login_and_transitions(PDO $pdo,int $cid,string $fixture): array {

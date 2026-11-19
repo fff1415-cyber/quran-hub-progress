@@ -8,7 +8,7 @@ jobs:
   acceptance:
     if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
-    timeout-minutes: 10
+    timeout-minutes: 12
     concurrency:
       group: hostinger-production
       cancel-in-progress: false
@@ -29,9 +29,43 @@ jobs:
           cat scripts/safe-legacy-patch-*.b64 | base64 --decode | gzip -dc > "$RUNNER_TEMP/safe-legacy.patch"
           git -C candidate apply --index "$RUNNER_TEMP/safe-legacy.patch"
           test "$(git -C candidate write-tree)" = "$(cat scripts/safe-legacy-tree.txt)"
-      - name: Build and test the candidate without production access
+      - name: Test current teacher points, attendance dates and atomic saves
         working-directory: candidate
         run: |
           npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
+          node tests/program-points-display.cjs
           node tests/secretary-attendance.cjs
+          node tests/grade-percentages-calendar.cjs
+          node tests/stage2-atomic-sessions.cjs
+          php tests/stage3-atomic-plan.php
           npm run build:hostinger
+      - name: Verify a fresh private backup and restored database acceptance
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          EXPECTED_RELEASE: 67d0b73f3317d835c001f70ea1530d93e5bed899
+          QHP_SAFE_LEGACY_CANDIDATE: '1'
+        run: |
+          test "$(curl -fsS --max-time 20 https://msht.io/deploy-sha.txt)" = "$EXPECTED_RELEASE"
+          python3 scripts/create-private-db-backup.py
+          cp candidate/api/schema.php api/schema.php
+          python3 scripts/restore-hostinger-test.py
+          python3 scripts/rollback-compat-probe.py
+          python3 scripts/days-program-restored-probe.py
+      - name: Publish the pinned points and attendance fix
+        env:
+          DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+          DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+          DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+          BASE_RELEASE: 67d0b73f3317d835c001f70ea1530d93e5bed899
+          TARGET_RELEASE: 37751424c5f5fcc3f51225eff525719134015a6a
+        run: |
+          git fetch --no-tags origin release/teacher-points-attendance-days
+          test "$(git rev-parse FETCH_HEAD)" = "$TARGET_RELEASE"
+          python3 scripts/protected-rollback-release.py publish "$BASE_RELEASE" "$TARGET_RELEASE"
+          if ! python3 scripts/points-postpublish-readonly.py; then
+            python3 scripts/protected-rollback-release.py revert "$BASE_RELEASE" "$TARGET_RELEASE"
+            exit 1
+          fi
