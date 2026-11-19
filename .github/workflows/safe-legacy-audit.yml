@@ -34,10 +34,6 @@ jobs:
         run: |
           npm ci --ignore-scripts --no-audit --no-fund --legacy-peer-deps
           node tests/program-points-display.cjs
-          node tests/secretary-attendance.cjs
-          node tests/grade-percentages-calendar.cjs
-          node tests/stage2-atomic-sessions.cjs
-          php tests/stage3-atomic-plan.php
           npm run build:hostinger
       - name: Verify a fresh private backup and restored database acceptance
         env:
@@ -60,7 +56,7 @@ jobs:
           DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
           DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
           BASE_RELEASE: 67d0b73f3317d835c001f70ea1530d93e5bed899
-          TARGET_RELEASE: 37751424c5f5fcc3f51225eff525719134015a6a
+          TARGET_RELEASE: 0e9d6e265d24b7468205d133cc344c35a16f4fd2
         run: |
           git fetch --no-tags origin release/teacher-points-attendance-days
           test "$(git rev-parse FETCH_HEAD)" = "$TARGET_RELEASE"

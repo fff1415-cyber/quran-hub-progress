@@ -294,12 +294,17 @@ function test_legacy_plan_atomic_save(PDO $pdo,int $cid,string $student): array 
         echo "PASS: isolated MariaDB daily mark, receipt retry and cancellation with zero invented completions\n";
     }
     $insert->execute([$legacy,$student,$plan,$segments[0],$date,null]);
+    // The published assignment-scoped index permits a new assignment while
+    // retaining the old completion, and still rejects a duplicate for that assignment.
+    $otherCompletion=new_uuid();
+    $insert->execute([$otherCompletion,$student,$plan,$segments[0],$date,$assignment]);
     try {
         $insert->execute([new_uuid(),$student,$plan,$segments[0],$date,$assignment]);
-        throw new RuntimeException('legacy_collision_not_reproduced');
+        throw new RuntimeException('same_assignment_duplicate_not_blocked');
     } catch (PDOException $e) {
         if ((int)($e->errorInfo[1]??0)!==1062) throw $e;
     }
+    $pdo->prepare('DELETE FROM segment_completions WHERE id=? AND student_id=?')->execute([$otherCompletion,$student]);
     $read=static function(string $role) use($cid,$group,$student,$path): array {
         $GLOBALS['testAuth']=['role'=>$role,'complexId'=>$cid,'halaqaId'=>$group];
         $grade=probe('handle_list_app_state',['key'=>'grades','grade_protocol'=>'1']);

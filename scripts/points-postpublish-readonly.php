@@ -3,7 +3,7 @@ declare(strict_types=1);
 if(PHP_SAPI!=='cli')exit(1);
 try{
  $root=$argv[1]??'';
- if(!preg_match('~^/home/[A-Za-z0-9_-]+/domains/msht\.io/public_html$~D',$root)||realpath($root)!==$root||trim(file_get_contents($root.'/deploy-sha.txt'))!=='37751424c5f5fcc3f51225eff525719134015a6a')throw new RuntimeException('scope');
+ if(!preg_match('~^/home/[A-Za-z0-9_-]+/domains/msht\.io/public_html$~D',$root)||realpath($root)!==$root||trim(file_get_contents($root.'/deploy-sha.txt'))!=='0e9d6e265d24b7468205d133cc344c35a16f4fd2')throw new RuntimeException('scope');
  require $root.'/api/config.php';require $root.'/api/auth.php';require $root.'/api/lib/grade-cell-operations.php';
  if(DB_NAME!=='u112851217_msht_io')throw new RuntimeException('database_scope');
  $pdo=new PDO('mysql:host='.DB_HOST.';dbname='.DB_NAME.';charset=utf8mb4',DB_USER,DB_PASS,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::MYSQL_ATTR_MULTI_STATEMENTS=>false]);
