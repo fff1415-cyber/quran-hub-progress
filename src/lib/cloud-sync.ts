@@ -546,6 +546,11 @@ export function pushScientificConfig(halaqaId: number, settings: import("./scien
     if (getToken() !== token) throw new Error("تغيّرت جلسة حفظ إعدادات البرنامج العلمي");
     const result = await secureSaveScientificConfig(token, revision, halaqaId, settings);
     if (!result.ok || getToken() !== token) throw new Error("لم تتأكد إعدادات البرنامج العلمي لهذه الجلسة");
+    const { value: confirmed } = await readScientificStore(token);
+    const { scientificConfigMatches } = await import("./scientific-grades");
+    if (getToken() !== token || !scientificConfigMatches(settings, confirmed.configs?.[String(halaqaId)])) {
+      throw new Error("لم تتطابق نقاط المعلم مع القراءة المؤكدة من الخادم؛ بقيت الإعدادات في نافذة التحرير للتحقق قبل إعادة الحفظ.");
+    }
     scientificConfigGeneration++;
   });
 }

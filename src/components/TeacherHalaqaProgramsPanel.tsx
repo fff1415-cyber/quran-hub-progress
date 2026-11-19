@@ -37,6 +37,7 @@ import {
   loadScientificData,
   SCIENTIFIC_FIELD_LABELS,
   SCIENTIFIC_GRADES_CHANGED_EVENT,
+  validateDefaultScoresForFields,
   type ScientificGradeField,
 } from "@/lib/scientific-grades";
 import { CustomFieldSelect } from "@/components/plans/TeacherGradeInputs";
@@ -112,17 +113,37 @@ export function TeacherHalaqaProgramsPanel({
     [calendar, selectableWeeks],
   );
   const hasPrograms = programs.length > 0 || isScientificProgramEnabled(loadScientificConfig(halaqaId));
+  const scientificConfig = loadScientificConfig(halaqaId);
+  const scientificSetupError = isScientificProgramEnabled(scientificConfig)
+    ? validateDefaultScoresForFields(scientificConfig.fields, scientificConfig.defaultScores) : null;
 
   useEffect(() => {
     const token = getToken();
     if (!token) return;
     let active = true;
+    let running = false;
+    const refresh = async () => {
+      if (!active || running || document.hidden) return;
+      running = true;
+      try {
+        await refreshScientificFromCloud(token);
+        if (active) setHistoryStatus("ready");
+      } catch { if (active) setHistoryStatus("failed"); }
+      finally { running = false; }
+    };
     setHistoryStatus("loading");
-    void refreshScientificFromCloud(token).then(
-      () => { if (active) setHistoryStatus("ready"); },
-      () => { if (active) setHistoryStatus("failed"); },
-    );
-    return () => { active = false; };
+    void refresh();
+    const timer = setInterval(() => void refresh(), 60_000);
+    window.addEventListener("focus", refresh);
+    window.addEventListener("online", refresh);
+    document.addEventListener("visibilitychange", refresh);
+    return () => {
+      active = false;
+      clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+      window.removeEventListener("online", refresh);
+      document.removeEventListener("visibilitychange", refresh);
+    };
   }, [halaqaId]);
 
   const refreshPrograms = () => {
@@ -305,6 +326,10 @@ export function TeacherHalaqaProgramsPanel({
       </div>
 
       {historyStatus === "loading" && <p role="status">جارٍ تحميل درجات البرنامج العلمي…</p>}
+      {historyStatus === "failed" && <p role="alert">تعذّر تأكيد آخر درجات العلمي. ستُعاد القراءة عند عودة الاتصال؛ لا تُعد التسجيل قبل التحقق من حفظه.</p>}
+      {scientificSetupError && <p role="status">إعداد نقاط العلمي غير مكتمل: {scientificSetupError}. يبقى تسجيل التحضير محفوظًا؛ يلزم اعتماد النقاط من إعدادات البرنامج العلمي.</p>}
+      {programs.some(p => !isScientificHalaqaProgram(p) && ["الحفظ", "الربط", "المراجعة", "الحضور"].includes(p.name.trim())) &&
+        <p className="text-sm text-muted-foreground">درجات العلمي مصدرها تبويب التحضير. البرامج العادية، ولو حملت الاسم نفسه، لها تسجيل مستقل هنا.</p>}
       {programGrades.busy && <p role="status">جارٍ تأكيد درجات البرامج…</p>}
       {programGrades.error && <p role="alert">{programGrades.error}</p>}
       {programGrades.volatile.length > 0 && <a download="program-grade-drafts.json"
@@ -832,7 +857,7 @@ function ProgramFillSection({
                     </>
                   )}
                   <td className="p-1 border-r border-border/30 text-center text-xs font-bold text-sky-800 dark:text-sky-300 bg-sky-500/5">
-                    {weekly.hasData ? weekly.earned : "—"}
+                    {weekly.unresolvedSlots ? "غير مكتمل" : weekly.hasData ? weekly.earned : "—"}
                   </td>
                   <td className="p-1 border-r border-border/30 text-center bg-sky-500/5">
                     <ProgramsTotalsBreakdown
@@ -850,7 +875,7 @@ function ProgramFillSection({
                     />
                   </td>
                   <td className="p-1 border-r border-border/30 text-center text-xs font-bold text-primary bg-primary/5">
-                    {cumulative.hasData ? cumulative.earned : "—"}
+                    {cumulative.unresolvedSlots ? "غير مكتمل" : cumulative.hasData ? cumulative.earned : "—"}
                   </td>
                   <td className="p-1 border-r border-border/30 text-center bg-primary/5">
                     <ProgramsTotalsBreakdown
@@ -935,12 +960,12 @@ function ProgramsTotalsBreakdown({
                   <div className="text-xs font-medium text-foreground leading-tight truncate">{program.name}</div>
                   {totals.filledSlots > 0 && (
                     <div className="text-[9px] text-muted-foreground leading-tight mt-0.5">
-                      {totals.earned} من {totals.maxPossible}
+                      {totals.unresolvedSlots ? "توجد قيمة سابقة بلا نقاط معتمدة في الإعدادات الحالية" : `${totals.earned} من ${totals.maxPossible}`}
                     </div>
                   )}
                 </div>
                 <span className="text-sm font-bold shrink-0 text-primary">
-                  {totals.filledSlots > 0 ? `${totals.percent}%` : "—"}
+                  {totals.unresolvedSlots ? "غير مكتمل" : totals.filledSlots > 0 ? `${totals.percent}%` : "—"}
                 </span>
               </li>
             ))}

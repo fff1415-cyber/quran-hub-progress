@@ -33,6 +33,7 @@ import {
   ALL_SCIENTIFIC_ATTENDANCE_OPTIONS,
   ALL_SCIENTIFIC_FIELDS,
   SCIENTIFIC_FIELD_LABELS,
+  SCIENTIFIC_GRADES_CHANGED_EVENT,
   defaultScientificFields,
   enabledScientificFields,
   isScientificProgramEnabled,
@@ -73,8 +74,10 @@ export function ScientificGradesToolbar({ halaqaId, onConfigChange }: Props) {
   );
 
   useEffect(() => {
-    const next = loadScientificConfig(halaqaId);
-    setConfig(next);
+    const refresh = () => setConfig(loadScientificConfig(halaqaId));
+    refresh();
+    window.addEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, refresh);
+    return () => window.removeEventListener(SCIENTIFIC_GRADES_CHANGED_EVENT, refresh);
   }, [halaqaId]);
 
   const isActive = isScientificProgramEnabled(config);

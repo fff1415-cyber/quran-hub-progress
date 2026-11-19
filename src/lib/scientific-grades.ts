@@ -106,6 +106,8 @@ function normalizeAttendanceScores(raw: unknown): ScientificAttendanceScores {
     const v = (raw as Record<string, unknown>)[opt];
     if (typeof v === "string" && v.trim() !== "") {
       out[opt] = v.trim();
+    } else if (typeof v === "number" && Number.isFinite(v)) {
+      out[opt] = String(v);
     }
   }
   return out;
@@ -118,6 +120,8 @@ function normalizeDefaultScores(raw: unknown): ScientificDefaultScores {
 
   if (typeof obj.attendance === "string" && obj.attendance.trim() !== "") {
     out.attendance = { present: obj.attendance.trim() };
+  } else if (typeof obj.attendance === "number" && Number.isFinite(obj.attendance)) {
+    out.attendance = { present: String(obj.attendance) };
   } else if (obj.attendance && typeof obj.attendance === "object") {
     out.attendance = normalizeAttendanceScores(obj.attendance);
   }
@@ -126,10 +130,25 @@ function normalizeDefaultScores(raw: unknown): ScientificDefaultScores {
     const v = obj[field];
     if (typeof v === "string" && v.trim() !== "") {
       out[field] = v.trim();
+    } else if (typeof v === "number" && Number.isFinite(v)) {
+      out[field] = String(v);
     }
   }
 
   return out;
+}
+
+/** Confirm the exact teacher-selected settings after the server acknowledges them. */
+export function scientificConfigMatches(expected: ScientificGradesConfig, actual: ScientificGradesConfig | undefined): boolean {
+  if (!actual) return false;
+  const values = (config: ScientificGradesConfig) => {
+    const scores = normalizeDefaultScores(config.defaultScores);
+    const point = (score: string | undefined) => score === undefined ? null : Number(score);
+    return [config.visible, ALL_SCIENTIFIC_FIELDS.map(field => config.fields?.[field]),
+      ALL_SCIENTIFIC_ATTENDANCE_OPTIONS.map(status => point(scores.attendance?.[status])),
+      [point(scores.hifz), point(scores.rabt), point(scores.muraja)]];
+  };
+  return JSON.stringify(values(expected)) === JSON.stringify(values(actual));
 }
 
 /** Resolve the manager-configured score for one field given the day's entry. */
@@ -765,6 +784,12 @@ export function studentScientificPeriodTotals(
 }
 
 /** Best-case points per working day from manager defaults (for cumulative % denominator). */
+export function scientificMaxPossibleKnown(config: ScientificGradesConfig): boolean {
+  return enabledScientificFields(config.fields).every(field => field === "attendance"
+    ? Object.values(config.defaultScores.attendance ?? {}).some(score => parseScientificScore(score) !== null)
+    : parseScientificScore(config.defaultScores[field]) !== null);
+}
+
 export function scientificDailyMaxPossible(config: ScientificGradesConfig): number {
   const fields = enabledScientificFields(config.fields);
   if (fields.length === 0) return 0;

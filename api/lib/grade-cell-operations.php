@@ -240,7 +240,11 @@ function grade_cells_project_scientific(PDO $pdo, int $cid, stdClass $grades, ar
         foreach ($updates as $target=>$score) {
             if (($store->overrides->{$group}->{$student}->{$week}->{$day}->{$target} ?? false) === true) continue;
             $existing = $store->data->{$group}->{$student}->{$week}->{$day}->{$target} ?? '';
-            if ($existing!=='' && (!is_numeric($existing) || !is_numeric($prior[$target]) ||
+            // An explicit preparation edit uses the teacher's current points.
+            // Keep the historical-score guard for indirect attendance cleanup.
+            $explicitScore = $target===$field && ($score!==null ||
+                (($nextPrep===null || $nextPrep==='') && $prior[$target]!==null));
+            if (!$explicitScore && $existing!=='' && (!is_numeric($existing) || !is_numeric($prior[$target]) ||
                 (float)$existing!==(float)$prior[$target])) continue;
             $next = $score ?? '';
             if ((string)$existing===$next) continue;

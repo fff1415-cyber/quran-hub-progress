@@ -248,6 +248,7 @@ export function CustomFieldSelect({
       title={options.join(" · ")}
     >
       <option value="">—</option>
+      {value && !options.includes(value) && <option value={value} disabled>{value} (قيمة محفوظة سابقة)</option>}
       {options.map((opt) => (
         <option key={opt} value={opt}>{opt}</option>
       ))}

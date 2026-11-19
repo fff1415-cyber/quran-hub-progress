@@ -1,7 +1,8 @@
+import { buildCombinedProgramTotals, elapsedProgramDays } from "@/lib/halaqa-program-combined-totals";
 import * as XLSX from "xlsx";
 import type { Student } from "@/lib/mock-data";
 import type { AcademicCalendar } from "@/lib/academic-context";
-import { getSelectableWeeks, workingDayKeysFromSemester } from "@/lib/academic-context";
+import { getSelectableWeeks } from "@/lib/academic-context";
 import {
   filterStandardPrograms,
   SCIENTIFIC_PROGRAM_NAME,
@@ -13,8 +14,8 @@ import {
   loadScientificData,
   SCIENTIFIC_FIELD_LABELS,
   SCIENTIFIC_TOTAL_LABELS,
-  scientificPeriodMaxPossible,
-  studentScientificPeriodTotals,
+  scientificDailyMaxPossible,
+  scientificMaxPossibleKnown,
   studentScientificWeekTotals,
 } from "@/lib/scientific-grades";
 import { ATTENDANCE_OPTION_LABELS } from "@/lib/grade-input-settings";
@@ -35,26 +36,16 @@ function combinedPeriodTotals(
   programGrades: ReturnType<typeof loadProgramGrades>,
   studentId: string,
   weekNums: number[],
-  workingDayKeys: string[],
+  daysByWeek: Record<number, string[]>,
 ) {
   const std = studentAllProgramsPeriodTotals(standardPrograms, programGrades, studentId, weekNums);
   const sciConfig = loadScientificConfig(halaqaId);
   const sciFields = enabledScientificFields(sciConfig.fields);
-  const sciData = loadScientificData(halaqaId);
-
-  if (!isScientificProgramEnabled(sciConfig) || sciFields.length === 0) {
-    return { std, sci: null as ReturnType<typeof studentScientificPeriodTotals> | null, sciMax: 0, combinedEarned: std.earned, combinedMax: std.maxPossible };
-  }
-
-  const sci = studentScientificPeriodTotals(sciData, studentId, weekNums, sciFields, workingDayKeys);
-  const sciMax = scientificPeriodMaxPossible(sciConfig, weekNums, workingDayKeys);
-  return {
-    std,
-    sci,
-    sciMax,
-    combinedEarned: std.earned + sci.total,
-    combinedMax: std.maxPossible + sciMax,
-  };
+  const total = buildCombinedProgramTotals(standardPrograms, programGrades, studentId, weekNums,
+    loadScientificData(halaqaId), sciFields, daysByWeek, sciConfig);
+  return { std, sci: total.sciTotals, scientificRecordedFields: total.scientificRecordedFields,
+    sciMax: scientificDailyMaxPossible(sciConfig) * weekNums.reduce((n, week) => n + (daysByWeek[week]?.length ?? 0), 0),
+    combinedEarned: total.earned, combinedMax: total.maxPossible, hasPercent: total.hasPercent };
 }
 
 function combinedWeekTotals(
@@ -63,25 +54,9 @@ function combinedWeekTotals(
   programGrades: ReturnType<typeof loadProgramGrades>,
   studentId: string,
   weekNum: number,
-  workingDayKeys: string[],
+  daysByWeek: Record<number, string[]>,
 ) {
-  const std = studentAllProgramsWeekTotals(standardPrograms, programGrades, studentId, weekNum);
-  const sciConfig = loadScientificConfig(halaqaId);
-  const sciFields = enabledScientificFields(sciConfig.fields);
-  const sciData = loadScientificData(halaqaId);
-
-  if (!isScientificProgramEnabled(sciConfig) || sciFields.length === 0) {
-    return { std, sci: null, combinedEarned: std.earned, combinedMax: std.maxPossible };
-  }
-
-  const sci = studentScientificWeekTotals(sciData, studentId, weekNum, sciFields, workingDayKeys);
-  const sciMax = scientificPeriodMaxPossible(sciConfig, [weekNum], workingDayKeys);
-  return {
-    std,
-    sci,
-    combinedEarned: std.earned + sci.total,
-    combinedMax: std.maxPossible + sciMax,
-  };
+  return combinedPeriodTotals(halaqaId, standardPrograms, programGrades, studentId, [weekNum], daysByWeek);
 }
 
 function pct(earned: number, max: number): number {
@@ -102,11 +77,11 @@ export function downloadHalaqaProgramsWorkbook(
   const sciConfig = loadScientificConfig(halaqaId);
   const sciFields = enabledScientificFields(sciConfig.fields);
   const showSci = isScientificProgramEnabled(sciConfig) && sciFields.length > 0;
-  const workingDayKeys = [...workingDayKeysFromSemester(calendar.semester?.working_days)];
   const weeks = getSelectableWeeks(calendar).filter(
     (w) => w.end_date >= fromIso && w.start_date <= toIso,
   );
   const weekNums = weeks.map((w) => w.week_number);
+  const daysByWeek = elapsedProgramDays(calendar, weekNums);
 
   const wb = XLSX.utils.book_new();
 
@@ -129,20 +104,20 @@ export function downloadHalaqaProgramsWorkbook(
   ];
 
   for (const s of students) {
-    const t = combinedPeriodTotals(halaqaId, standardPrograms, allGrades, s.id, weekNums, workingDayKeys);
+    const t = combinedPeriodTotals(halaqaId, standardPrograms, allGrades, s.id, weekNums, daysByWeek);
     summaryRows.push([
       s.name,
-      t.std.earned,
+      t.std.unresolvedSlots ? "غير مكتمل" : t.std.earned,
       t.std.maxPossible,
-      pct(t.std.earned, t.std.maxPossible),
+      t.std.unresolvedSlots ? "غير مكتمل" : pct(t.std.earned, t.std.maxPossible),
       ...(showSci && t.sci
-        ? [t.sci.total, t.sciMax, pct(t.sci.total, t.sciMax)]
+        ? [t.sci.total, t.sciMax, scientificMaxPossibleKnown(sciConfig) && t.sciMax > 0 ? pct(t.sci.total, t.sciMax) : "—"]
         : showSci
           ? [0, 0, 0]
           : []),
-      t.combinedEarned,
+      t.std.unresolvedSlots ? "غير مكتمل" : t.combinedEarned,
       t.combinedMax,
-      pct(t.combinedEarned, t.combinedMax),
+      t.std.unresolvedSlots ? "غير مكتمل" : t.hasPercent ? pct(t.combinedEarned, t.combinedMax) : "—",
     ]);
   }
 
@@ -188,16 +163,16 @@ export function downloadHalaqaProgramsWorkbook(
           s.id,
           wk.week_number,
           sciFields,
-          workingDayKeys,
+          daysByWeek[wk.week_number] ?? [],
         );
-        const max = scientificPeriodMaxPossible(sciConfig, [wk.week_number], workingDayKeys);
+        const max = scientificDailyMaxPossible(sciConfig) * (daysByWeek[wk.week_number]?.length ?? 0);
         sciRows.push([
           s.name,
           weekLabel(wk.week_number),
           ...sciFields.map((f) => totals[f]),
           totals.total,
           max,
-          pct(totals.total, max),
+          scientificMaxPossibleKnown(sciConfig) && max > 0 ? pct(totals.total, max) : "—",
         ]);
       }
     }
@@ -227,7 +202,7 @@ export function downloadHalaqaProgramsWorkbook(
         const vals = allGrades[s.id]?.[wk.week_number]?.[p.id] ?? {};
         for (const sl of slots) {
           const label = vals[sl.key] ?? "—";
-          const pts = label !== "—" ? programLevelScore(p, label) : "—";
+          const pts = label !== "—" ? p.levels.some(level => level.label === label) ? programLevelScore(p, label) : "نقاط غير محددة" : "—";
           row.push(`${label}${label !== "—" ? ` (${pts})` : ""}`);
         }
       }
@@ -237,7 +212,7 @@ export function downloadHalaqaProgramsWorkbook(
         allGrades,
         s.id,
         wk.week_number,
-        workingDayKeys,
+        daysByWeek,
       );
       if (showSci && combined.sci) {
         for (const field of sciFields) {
@@ -245,7 +220,7 @@ export function downloadHalaqaProgramsWorkbook(
         }
         row.push(combined.sci.total);
       }
-      row.push(combined.combinedEarned, combined.combinedMax, pct(combined.combinedEarned, combined.combinedMax));
+      row.push(combined.std.unresolvedSlots ? "غير مكتمل" : combined.combinedEarned, combined.combinedMax, combined.std.unresolvedSlots ? "غير مكتمل" : combined.hasPercent ? pct(combined.combinedEarned, combined.combinedMax) : "—");
       weeklyRows.push(row);
     }
   }

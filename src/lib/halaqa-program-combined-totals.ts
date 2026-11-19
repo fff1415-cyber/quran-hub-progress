@@ -16,6 +16,7 @@ import {
   loadScientificData,
   parseScientificScore,
   scientificDailyMaxPossible,
+  scientificMaxPossibleKnown,
   type ScientificGradeField,
   type ScientificWeekTotals,
 } from "@/lib/scientific-grades";
@@ -40,6 +41,7 @@ export type CombinedProgramTotals = {
   percent: number;
   hasData: boolean;
   hasPercent: boolean;
+  unresolvedSlots: number;
   sciTotals: ScientificWeekTotals | null;
   scientificRecordedFields: Set<ScientificGradeField>;
   programBreakdown: { program: HalaqaProgram; totals: ProgramWeekTotals }[];
@@ -90,7 +92,8 @@ export function buildCombinedProgramTotals(
     maxPossible,
     percent: maxPossible > 0 ? Math.round((earned / maxPossible) * 100) : 0,
     hasData: stdTotals.filledSlots > 0 || scientificRecordedFields.size > 0,
-    hasPercent: maxPossible > 0,
+    hasPercent: maxPossible > 0 && !stdTotals.unresolvedSlots && (!sciTotals || scientificMaxPossibleKnown(sciConfig)),
+    unresolvedSlots: stdTotals.unresolvedSlots ?? 0,
     sciTotals,
     scientificRecordedFields,
     programBreakdown: standardPrograms.map((p) => ({

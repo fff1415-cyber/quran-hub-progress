@@ -48,6 +48,8 @@ type ChartRow = {
   earned: number;
   maxPossible: number;
   hasData: boolean;
+  unresolvedSlots: number;
+  percentAvailable: boolean;
   color: string;
 };
 
@@ -118,9 +120,11 @@ function buildChartRows(
         earned: totals.earned,
         maxPossible: totals.maxPossible,
         hasData: totals.hasData,
+        unresolvedSlots: totals.unresolvedSlots,
+        percentAvailable: totals.hasPercent,
       };
     })
-    .sort((a, b) => b.percent - a.percent || b.earned - a.earned || a.name.localeCompare(b.name, "ar"));
+    .sort((a, b) => Number(!!a.unresolvedSlots) - Number(!!b.unresolvedSlots) || b.percent - a.percent || b.earned - a.earned || a.name.localeCompare(b.name, "ar"));
 
   return ranked.map((row, index) => ({
     ...row,
@@ -334,9 +338,9 @@ export function HalaqaProgramAchievementChart({
                         const row = item.payload as ChartRow;
                         return (
                           <div className="flex flex-col gap-0.5 text-right">
-                            <span className="font-bold">{row.percent}%</span>
+                            <span className="font-bold">{row.unresolvedSlots ? "غير مكتمل" : row.percentAvailable ? `${row.percent}%` : "—"}</span>
                             <span className="text-muted-foreground text-xs">
-                              {row.hasData ? `${row.earned} / ${row.maxPossible}` : "لا بيانات بعد"}
+                              {row.unresolvedSlots ? "توجد قيمة محفوظة سابقة تحتاج تحديد نقاطها" : row.hasData ? `${row.earned} / ${row.maxPossible}` : "لا بيانات بعد"}
                             </span>
                           </div>
                         );

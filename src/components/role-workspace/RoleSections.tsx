@@ -54,9 +54,9 @@ function todayLabel(dayKey: string): string {
   return DAYS.find((d) => d.key === dayKey)?.label ?? dayKey;
 }
 
-function whatsappAbsenceMessage(studentName: string, status: "absent" | "late", dayKey: string): string {
+function whatsappAbsenceMessage(studentName: string, status: "absent" | "late", dayKey: string, date: string): string {
   const statusWord = status === "absent" ? "غياب" : "تأخر";
-  return `السلام عليكم، نُعلمكم بـ ${statusWord} الطالب ${studentName} ليوم ${todayLabel(dayKey)}.`;
+  return `السلام عليكم، نُعلمكم بـ ${statusWord} الطالب ${studentName} ليوم ${todayLabel(dayKey)} (${date}).`;
 }
 
 export function SecretaryAttendancePanel({ attendance }: { attendance: SecretaryAttendance }) {
@@ -67,23 +67,30 @@ export function SecretaryAttendancePanel({ attendance }: { attendance: Secretary
     <Card className="glass-card border-primary/15 shadow-none">
       <CardHeader>
         <CardTitle className="text-lg flex items-center gap-2 text-primary">
-          <UserX className="w-5 h-5" /> غياب وتأخر اليوم
+          <UserX className="w-5 h-5" /> الغياب والتأخر حسب اليوم
           <TabBadge count={todayAbsentOrLate.length} />
         </CardTitle>
-        <CardDescription>حالة اليوم ({todayLabel(todayKey)}) — إرسال واتساب لولي الأمر</CardDescription>
+        <CardDescription>حالة {todayLabel(todayKey)} ({attendance.date}) — إرسال واتساب لولي الأمر</CardDescription>
+        <div className="flex items-center gap-2 flex-wrap">
+          <label htmlFor="secretary-attendance-date" className="text-sm">يوم التحضير</label>
+          <Input id="secretary-attendance-date" type="date" className="w-auto" value={attendance.selectedDate}
+            min={attendance.minDate || undefined} max={attendance.maxDate}
+            onChange={event => attendance.setDate(event.target.value)} />
+          <Button type="button" size="sm" variant="outline" onClick={() => attendance.setDate("")}>اليوم</Button>
+        </div>
       </CardHeader>
       <CardContent>
-        {error && <p role="alert" className="text-destructive text-sm mb-3">تعذّر تحديث غياب اليوم؛ تُعرض آخر بيانات متاحة. ستُعاد المحاولة تلقائيًا عند عودة الاتصال.</p>}
+        {error && <p role="alert" className="text-destructive text-sm mb-3">تعذّر تحديث بيانات الغياب؛ تُعرض آخر بيانات متاحة. ستُعاد المحاولة تلقائيًا عند عودة الاتصال.</p>}
         {loading ? (
-          <p className="text-muted-foreground text-center py-8 text-sm">جارٍ تحميل غياب وتأخر اليوم…</p>
+          <p className="text-muted-foreground text-center py-8 text-sm">جارٍ تحميل غياب وتأخر اليوم المحدد…</p>
         ) : error && todayAbsentOrLate.length === 0 ? null : todayAbsentOrLate.length === 0 ? (
-          <p className="text-muted-foreground text-center py-8 text-sm">لا يوجد غياب أو تأخر اليوم</p>
+          <p className="text-muted-foreground text-center py-8 text-sm">لا يوجد غياب أو تأخر في اليوم المحدد</p>
         ) : (
           <div className="space-y-2">
             {todayAbsentOrLate.map(({ s, status }) => {
               const h = halaqat.find((x) => x.id === s.halaqaId);
               const isAbsent = status === "absent";
-              const msg = encodeURIComponent(whatsappAbsenceMessage(s.name, status, todayKey));
+              const msg = encodeURIComponent(whatsappAbsenceMessage(s.name, status, todayKey, attendance.date));
               return (
                 <div key={s.id} className="flex items-center justify-between gap-3 p-3 rounded-lg bg-secondary/50 flex-wrap">
                   <div className="flex items-center gap-3">

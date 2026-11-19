@@ -230,6 +230,8 @@ export type ProgramWeekTotals = {
   percent: number;
   filledSlots: number;
   totalSlots: number;
+  /** Stored labels whose historical points are not part of the current settings. */
+  unresolvedSlots?: number;
 };
 
 /** Sum all programs for one student in one week (number + percentage). */
@@ -243,6 +245,7 @@ export function studentAllProgramsWeekTotals(
   let maxPossible = 0;
   let filledSlots = 0;
   let totalSlots = 0;
+  let unresolvedSlots = 0;
 
   for (const program of programs) {
     const slots = programSlots(program);
@@ -254,13 +257,14 @@ export function studentAllProgramsWeekTotals(
       const v = vals?.[slot.key];
       if (v) {
         filledSlots++;
-        earned += programLevelScore(program, v);
+        if (program.levels.some(level => level.label === v)) earned += programLevelScore(program, v);
+        else unresolvedSlots++;
       }
     }
   }
 
   const percent = maxPossible > 0 ? Math.round((earned / maxPossible) * 100) : 0;
-  return { earned, maxPossible, percent, filledSlots, totalSlots };
+  return { earned, maxPossible, percent, filledSlots, totalSlots, ...(unresolvedSlots ? { unresolvedSlots } : {}) };
 }
 
 /** Sum one program for one student across multiple weeks. */
@@ -274,6 +278,7 @@ export function studentSingleProgramPeriodTotals(
   let maxPossible = 0;
   let filledSlots = 0;
   let totalSlots = 0;
+  let unresolvedSlots = 0;
   const slots = programSlots(program);
   const slotMax = programMaxSlotScore(program);
 
@@ -285,13 +290,14 @@ export function studentSingleProgramPeriodTotals(
       const v = vals?.[slot.key];
       if (v) {
         filledSlots++;
-        earned += programLevelScore(program, v);
+        if (program.levels.some(level => level.label === v)) earned += programLevelScore(program, v);
+        else unresolvedSlots++;
       }
     }
   }
 
   const percent = maxPossible > 0 ? Math.round((earned / maxPossible) * 100) : 0;
-  return { earned, maxPossible, percent, filledSlots, totalSlots };
+  return { earned, maxPossible, percent, filledSlots, totalSlots, ...(unresolvedSlots ? { unresolvedSlots } : {}) };
 }
 
 /** Period totals across weeks (for export). */
@@ -305,6 +311,7 @@ export function studentAllProgramsPeriodTotals(
   let maxPossible = 0;
   let filledSlots = 0;
   let totalSlots = 0;
+  let unresolvedSlots = 0;
 
   for (const weekNum of weekNums) {
     const w = studentAllProgramsWeekTotals(programs, grades, studentId, weekNum);
@@ -312,10 +319,11 @@ export function studentAllProgramsPeriodTotals(
     maxPossible += w.maxPossible;
     filledSlots += w.filledSlots;
     totalSlots += w.totalSlots;
+    unresolvedSlots += w.unresolvedSlots ?? 0;
   }
 
   const percent = maxPossible > 0 ? Math.round((earned / maxPossible) * 100) : 0;
-  return { earned, maxPossible, percent, filledSlots, totalSlots };
+  return { earned, maxPossible, percent, filledSlots, totalSlots, ...(unresolvedSlots ? { unresolvedSlots } : {}) };
 }
 
 export const SCHEDULE_MODE_LABELS: Record<ProgramScheduleMode, string> = {

@@ -169,6 +169,15 @@ function app_state_write_preserved_store(PDO $pdo, int $cid, string $key, array 
                     if (!is_bool($config['fields'][$field] ?? null)) {
                         throw new RuntimeException('حالة بند البرنامج العلمي غير صالحة.', 400);
                     }
+                    if (!$config['fields'][$field]) continue;
+                    $rawPoints = $config['defaultScores'][$field] ?? null;
+                    $points = $field==='attendance' && is_array($rawPoints) ? array_values($rawPoints) : [$rawPoints];
+                    if (!$points) throw new RuntimeException('أكمل نقاط الحضور في إعدادات البرنامج العلمي؛ لم تتغير الإعدادات السابقة.',400);
+                    foreach ($points as $point) {
+                        if (!is_numeric($point) || !is_finite((float)$point)) {
+                            throw new RuntimeException('أكمل نقاط البنود المفعلة في إعدادات البرنامج العلمي؛ لم تتغير الإعدادات السابقة.', 400);
+                        }
+                    }
                 }
                 $store = $raw === false ? (object)['data'=>(object)[],'overrides'=>(object)[]] : json_decode($raw);
                 if (!$store instanceof stdClass) throw new RuntimeException('صيغة السجل تحتاج مراجعة.', 409);
