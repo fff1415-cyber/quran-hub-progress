@@ -1,0 +1,35 @@
+name: Preserve current site for rollback audit
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  preserve:
+    if: github.head_ref == 'audit/rollback-preservation' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    concurrency:
+      group: hostinger-independent-test-restoration
+      cancel-in-progress: false
+    env:
+      DEPLOY_HOST: ${{ secrets.FTP_SERVER }}
+      DEPLOY_USER: ${{ secrets.FTP_USERNAME }}
+      DEPLOY_API_PATH: ${{ secrets.FTP_API_DIR }}
+      DEPLOY_SSH_PASSWORD: ${{ secrets.FTP_PASSWORD }}
+      EXPECTED_RELEASE: 46f7f0a02cc63f0915f5cb7f7112d0a70ee7fb8d
+      HAMMAM_RECOVERY_AUDIT: '0'
+      HAMMAM_FRESH_BACKUP: '0'
+      HAMMAM_RECOVERY_MODE: audit
+      HAMMAM_REVERT_JOURNAL: hammam-restore-599653b63566b9989a81
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create a fresh private production backup
+        if: env.HAMMAM_FRESH_BACKUP == '1'
+        run: python3 scripts/create-private-db-backup.py
+      - name: Restore and verify the archive only in the independent test database
+        if: env.HAMMAM_FRESH_BACKUP == '1'
+        run: python3 scripts/restore-hostinger-test.py
+      - name: Revert only cells whose value and version still match the recovery journal
+        if: env.HAMMAM_RECOVERY_AUDIT == '1'
+        run: python3 scripts/hammam-recovery-audit.py
